@@ -406,8 +406,8 @@ class TradeDisciplineService:
             "effective_version": effective_version,
         }
 
-    def list_rules_with_state(self, trade_date: date | None) -> list[dict[str, Any]]:
-        rows = self.repo.list_rules_with_lifecycle(trade_date)
+    def list_rules_with_state(self, trade_date: date | None, *, conn=None) -> list[dict[str, Any]]:
+        rows = self.repo.list_rules_with_lifecycle(trade_date, **({"conn": conn} if conn is not None else {}))
         hidden = {
             "management_event_type", "management_event_seq", "management_version_no",
             "management_occurred_at", "management_activated_at",

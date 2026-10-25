@@ -1,13 +1,10 @@
 <script setup lang="ts">
 import AppControlRow from '@/components/AppControlRow.vue'
-import AppForm from '@/components/AppForm.vue'
-import AppFormHelp from '@/components/AppFormHelp.vue'
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowRight } from '@element-plus/icons-vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppDialog from '@/components/AppDialog.vue'
-import { holdingCountWarning } from '@/utils/tradeDisciplineConditions'
 import { quickNoOperationTradeDisciplineCheckin, type CheckinSummaryRule } from '@/api/tradeDiscipline'
 import { useTradeDisciplineSummary } from '@/composables/useTradeDisciplineSummary'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
@@ -31,8 +28,6 @@ const actionErrorMessage = ref('')
 const confirmationOpen = ref(false)
 const pendingRule = ref<CheckinSummaryRule | null>(null)
 const quickTradeDate = ref('')
-const peakPositions = ref<number | null>(null)
-const countError = computed(() => holdingCountWarning(pendingRule.value?.max_positions, peakPositions.value))
 
 const completionText = computed(() => {
   if (!summary.value) return '—'
@@ -42,7 +37,7 @@ const allCompleted = computed(() => Boolean(summary.value?.total && summary.valu
 
 function ruleStatus(rule: NonNullable<typeof summary.value>['rules'][number]): string {
   if (!rule.checkin_id) return '待打卡'
-  const result = checkinAssessmentLabel(rule.assessment!)
+  const result = rule.assessment ? checkinAssessmentLabel(rule.assessment) : '待核对'
   return rule.status === 'amended' ? `${result} · 已修正` : result
 }
 
@@ -58,7 +53,6 @@ function openQuickConfirmation(ruleId: string): void {
   const rule = summary.value?.rules.find((item) => item.rule_id === ruleId)
   if (!props.canSubmit || !rule || !summary.value?.trade_date || submittingRuleId.value) return
   pendingRule.value = rule
-  peakPositions.value = rule.max_positions ?? null
   quickTradeDate.value = summary.value.trade_date
   actionErrorRuleId.value = ''
   confirmationOpen.value = true
@@ -72,18 +66,16 @@ function openPendingCheckin(): void {
 async function quickSubmit(): Promise<void> {
   const ruleId = pendingRule.value?.rule_id
   const tradeDate = quickTradeDate.value
-  if (!props.canSubmit || !ruleId || !tradeDate || countError.value || submittingRuleId.value) return
+  if (!props.canSubmit || !ruleId || !tradeDate || submittingRuleId.value) return
   submittingRuleId.value = ruleId
   actionErrorRuleId.value = ''
   actionErrorMessage.value = ''
   try {
-    const result = peakPositions.value == null
-      ? await quickNoOperationTradeDisciplineCheckin(ruleId, tradeDate)
-      : await quickNoOperationTradeDisciplineCheckin(ruleId, tradeDate, peakPositions.value)
+    const result = await quickNoOperationTradeDisciplineCheckin(ruleId, tradeDate)
     confirmationOpen.value = false
     notifyTradeDisciplineChanged({ ruleId, tradeDate, source: 'quick' })
     await refreshSummary(tradeDate)
-    ElMessage.success(result.idempotent ? '该交易日已完成打卡' : '已记录无操作履约')
+    ElMessage.success(result.idempotent ? '该交易日已完成打卡' : '已记录今日无操作')
   } catch (error) {
     if (getErrorStatus(error) === 409) {
       confirmationOpen.value = false
@@ -139,12 +131,10 @@ async function quickSubmit(): Promise<void> {
       state="empty"
       size="tiny"
       title="还没有生效的交易规则"
-      description="先建立规则，下一交易日起即可开始打卡。"
+      description="可先建立规则，也可进入交易打卡设置真实持仓、记录实际成交。"
     >
       <template #extra>
-        <el-button size="small" type="primary" plain @click="emit('navigate', { tab: 'rules' })">
-          创建第一套规则
-        </el-button>
+        <AppControlRow size="small"><el-button type="primary" plain @click="navigateToCheckin()">进入交易打卡</el-button><el-button text @click="emit('navigate', { tab: 'rules' })">查看规则</el-button></AppControlRow>
       </template>
     </AppStateBlock>
     <div v-else class="quick-rule-list">
@@ -167,7 +157,7 @@ async function quickSubmit(): Promise<void> {
             :disabled="Boolean(submittingRuleId)"
             @click="openQuickConfirmation(rule.rule_id)"
           >
-            无操作履约
+            今日无操作
           </el-button>
           <el-button size="small" text @click="navigateToCheckin(rule.rule_id)">
             去打卡<el-icon><ArrowRight /></el-icon>
@@ -181,40 +171,19 @@ async function quickSubmit(): Promise<void> {
         <el-button size="small" text @click="emit('navigate', { tab: 'rules' })">管理规则</el-button>
       </div>
     </div>
-    <AppDialog v-model="confirmationOpen" title="确认无操作履约" size="compact" boundary="app" :close-on-click-modal="false">
+    <AppDialog v-model="confirmationOpen" title="确认今日无操作" size="compact" boundary="app" :close-on-click-modal="false">
       <div class="quick-confirm-content">
         <div class="quick-confirm-context">
           <strong class="app-section-title">{{ pendingRule?.rule_name }}</strong>
           <span class="app-caption-text">交易日 · <time :datetime="quickTradeDate">{{ quickTradeDate }}</time></span>
         </div>
-        <p class="quick-confirm-outcome app-body-text">本次将记录为<strong>已履约 · 今日无操作</strong></p>
-        <AppForm v-if="pendingRule?.max_positions != null" label-position="top" class="quick-confirm-form">
-          <el-form-item label="当日最大同时持仓数" required>
-            <div class="quick-confirm-count">
-              <el-input-number
-                v-model="peakPositions"
-                class="app-control-width-short"
-                :min="0"
-                :max="2147483647"
-                :precision="0"
-                :controls="false"
-                :disabled="Boolean(submittingRuleId)"
-                aria-label="当日最大同时持仓数"
-                data-testid="quick-peak-positions"
-              />
-              <span>只</span>
-              <el-tag class="quick-confirm-limit" type="info" effect="plain">上限 {{ pendingRule.max_positions }} 只</el-tag>
-            </div>
-            <AppFormHelp>无操作也可能有持仓，请填写当日实际峰值；没有持仓填 0。</AppFormHelp>
-          </el-form-item>
-          <p v-if="countError" class="quick-rule-error" role="alert">{{ countError }}。请进入“去打卡”记录实际情况。</p>
-        </AppForm>
+        <p class="quick-confirm-outcome app-body-text">确认今日没有买卖操作，也没有应买未买或应卖未卖；系统将根据已有持仓自动核对全部有效规则。</p>
+
         <p v-if="actionErrorRuleId === pendingRule?.rule_id" class="quick-rule-error" role="alert">{{ actionErrorMessage }}</p>
       </div>
       <template #footer>
         <el-button :disabled="Boolean(submittingRuleId)" @click="confirmationOpen = false">取消</el-button>
-        <el-button v-if="countError" @click="openPendingCheckin">去打卡</el-button>
-        <el-button v-permission="'trade-discipline:checkin-submit'" type="primary" :disabled="Boolean(countError)" :loading="Boolean(submittingRuleId)" data-testid="quick-confirm" @click="quickSubmit">确认打卡</el-button>
+        <el-button v-permission="'trade-discipline:checkin-submit'" type="primary" :loading="Boolean(submittingRuleId)" data-testid="quick-confirm" @click="quickSubmit">确认打卡</el-button>
       </template>
     </AppDialog>
   </section>

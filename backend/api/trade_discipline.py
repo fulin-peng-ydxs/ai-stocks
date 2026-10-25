@@ -18,6 +18,7 @@ from backend.common.exceptions import NotFoundError, ValidationError
 from backend.services.audit_service import AuditService
 from backend.services.stock_st_status import StockSTStatusService, STStatusNotReadyError
 from backend.services.trade_discipline_service import TradeDisciplineService
+from backend.services.trade_ledger_service import TradeLedgerService
 from backend.storage import get_read_client as get_client
 
 router = APIRouter(prefix="/api/trade-discipline", tags=["trade-discipline"])
@@ -185,7 +186,144 @@ class AmendCheckinBody(CheckinContentBody):
 class QuickNoOperationBody(StrictBody):
     rule_id: str
     trade_date: date
-    peak_positions: Annotated[int, Field(strict=True, ge=0, le=2147483647)] | None = None
+
+
+class LedgerOpeningBody(StrictBody):
+    stock_code: str = Field(min_length=1, max_length=32)
+    quantity: FourPlaceDecimal
+    cost: MoneyDecimal | None = None
+    cost_price: FourPlaceDecimal | None = None
+    rule_id: str | None = None
+    stock_rule_id: str | None = None
+
+
+class LedgerInitializeBody(StrictBody):
+    trade_date: date
+    expected_revision: int = Field(strict=True, ge=0)
+    positions: list[LedgerOpeningBody] = Field(default_factory=list, max_length=3000)
+    cash: MoneyDecimal | None = None
+
+
+class LedgerRuleCheckBody(StrictBody):
+    rule_id: str
+    stock_rule_id: str
+    action_rule_id: str
+    action_matches: bool = True
+    stock_matches: bool = True
+    checklist_results: list[ChecklistResultBody] = Field(default_factory=list, max_length=1000)
+    loss_status: Literal["yes", "no"] | None = None
+    st_risk_status: Literal["yes", "no"] | None = None
+
+
+class LedgerEventBody(StrictBody):
+    event_id: str = Field(min_length=1, max_length=96)
+    kind: Literal["trade", "position", "cash"] = "trade"
+    rule_id: str | None = None
+    stock_code: str | None = Field(default=None, max_length=32)
+    side: Literal["buy", "sell"] | None = None
+    direction: Literal["in", "out"] | None = None
+    adjustment_type: Literal["transfer", "bonus", "split", "correction", "deposit", "withdrawal", "dividend", "other"] | None = None
+    stock_rule_id: str | None = None
+    action_rule_id: str | None = None
+    price: FourPlaceDecimal | None = None
+    cost_price: FourPlaceDecimal | None = None
+    quantity: FourPlaceDecimal | None = None
+    amount: MoneyDecimal | None = None
+    amount_mode: Literal["auto", "manual"] = "auto"
+    fee: MoneyDecimal | None = None
+    operated_at: datetime
+    display_order: int = Field(strict=True, gt=0)
+    note: str | None = Field(default=None, max_length=8000)
+    action_matches: bool = True
+    stock_matches: bool = True
+    checklist_results: list[ChecklistResultBody] = Field(default_factory=list, max_length=1000)
+    loss_status: Literal["yes", "no"] | None = None
+    st_risk_status: Literal["yes", "no"] | None = None
+    rule_checks: list[LedgerRuleCheckBody] = Field(default_factory=list, max_length=100)
+
+
+class LedgerOmissionBody(StrictBody):
+    kind: Literal["missed_buy", "missed_sell"]
+    stock_code: str = Field(min_length=1, max_length=32)
+    rule_id: str
+
+
+class LedgerSubmitBody(StrictBody):
+    trade_date: date
+    request_id: str = Field(min_length=1, max_length=96)
+    expected_account_revision: int = Field(strict=True, ge=0)
+    expected_revision: int = Field(strict=True, ge=0)
+    events: list[LedgerEventBody] = Field(default_factory=list, max_length=3000)
+    omissions: list[LedgerOmissionBody] = Field(default_factory=list, max_length=3000)
+    review_note: str | None = Field(default=None, max_length=8000)
+
+
+class LedgerWithdrawBody(StrictBody):
+    trade_date: date
+    expected_account_revision: int = Field(strict=True, ge=0)
+
+
+@router.get("/ledger", response_model=ApiResponse,
+            dependencies=[Depends(require_perm(CHECKIN_VIEW))])
+def ledger_context(trade_date: date) -> ApiResponse:
+    return ok(_call(TradeLedgerService().context, trade_date))
+
+
+@router.post("/ledger/initialize", response_model=ApiResponse,
+             dependencies=[Depends(require_perm(CHECKIN_SUBMIT))])
+def ledger_initialize(body: LedgerInitializeBody) -> ApiResponse:
+    result = _call(TradeLedgerService().initialize, body.trade_date,
+                   [p.model_dump() for p in body.positions], body.cash, body.expected_revision)
+    _audit("ledger_initialize", "trade_discipline_account", "default", CHECKIN_SUBMIT)
+    return ok(result, msg="期初持仓已初始化")
+
+
+@router.post("/ledger/days", response_model=ApiResponse,
+             dependencies=[Depends(require_perm(CHECKIN_SUBMIT))])
+def ledger_submit(body: LedgerSubmitBody) -> ApiResponse:
+    result = _call(TradeLedgerService().submit, body.trade_date, body.model_dump(exclude={"trade_date"}))
+    _audit("ledger_submit", "trade_discipline_ledger_day", str(body.trade_date), CHECKIN_SUBMIT)
+    return ok(result, msg="当日记录已保存")
+
+
+@router.post("/ledger/preview", response_model=ApiResponse,
+             dependencies=[Depends(require_perm(CHECKIN_SUBMIT))])
+def ledger_preview(body: LedgerSubmitBody) -> ApiResponse:
+    return ok(_call(TradeLedgerService().submit, body.trade_date,
+                    body.model_dump(exclude={"trade_date"}), preview=True))
+
+
+@router.post("/ledger/withdraw", response_model=ApiResponse,
+             dependencies=[Depends(require_perm(CHECKIN_SUBMIT))])
+def ledger_withdraw(body: LedgerWithdrawBody) -> ApiResponse:
+    result = _call(TradeLedgerService().withdraw, body.trade_date, body.expected_account_revision)
+    _audit("ledger_withdraw", "trade_discipline_ledger_day", str(body.trade_date), CHECKIN_SUBMIT)
+    return ok(result, msg="已撤回最新日结，历史修订仍可追溯")
+
+
+@router.get("/ledger/history", response_model=ApiResponse,
+            dependencies=[Depends(require_perm(CHECKIN_VIEW))])
+def ledger_history(
+    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    assessment: Literal["complied", "partial", "breached", "pending"] | None = None,
+    stock_code: str | None = Query(None, max_length=32), rule_id: str | None = None,
+    date_from: date | None = None, date_to: date | None = None,
+    sort_order: Literal["asc", "desc"] = "desc",
+    include_withdrawn: bool = False,
+) -> ApiResponse:
+    if date_from and date_to and date_from > date_to:
+        raise _ApiValidationError("开始日期不能晚于结束日期")
+    return ok(TradeLedgerService().repo.history(
+        limit=page_size, offset=(page - 1) * page_size, assessment=assessment,
+        stock_code=stock_code, rule_id=rule_id, date_from=date_from, date_to=date_to,
+        sort_order=sort_order, include_withdrawn=include_withdrawn,
+    ))
+
+
+@router.get("/ledger/revisions/{trade_date}/{revision_no}", response_model=ApiResponse,
+            dependencies=[Depends(require_perm(CHECKIN_VIEW))])
+def ledger_revision(trade_date: date, revision_no: int = Path(ge=1)) -> ApiResponse:
+    return ok(_call(TradeLedgerService().revisions, trade_date, revision_no))
 
 
 def _latest_market_date(service: TradeDisciplineService, *, required: bool) -> date | None:
@@ -206,7 +344,7 @@ def _latest_market_date(service: TradeDisciplineService, *, required: bool) -> d
 def summary(trade_date: date | None = None) -> ApiResponse:
     service = _service()
     target_date = trade_date or _latest_market_date(service, required=True)
-    return ok(_call(service.summary, target_date))
+    return ok(_call(TradeLedgerService(market=service.market).summary, target_date))
 
 
 @router.get("/rules", response_model=ApiResponse, dependencies=[Depends(require_perm(VIEW))])
@@ -363,10 +501,7 @@ def current_checkin(rule_id: str, trade_date: date) -> ApiResponse:
     dependencies=[Depends(require_perm(CHECKIN_SUBMIT))],
 )
 def submit_checkin(body: SubmitCheckinBody) -> ApiResponse:
-    payload = body.model_dump(exclude={"rule_id", "trade_date"})
-    result = _call(_service().submit_checkin, body.rule_id, body.trade_date, payload)
-    _audit("checkin_submit", "trade_discipline_checkin", str(result["checkin_id"]), CHECKIN_SUBMIT)
-    return ok(result, msg="打卡已提交")
+    raise _ApiValidationError("填报已升级为统一账户日结，请刷新页面后提交")
 
 
 @router.post(
@@ -375,8 +510,7 @@ def submit_checkin(body: SubmitCheckinBody) -> ApiResponse:
     dependencies=[Depends(require_perm(CHECKIN_SUBMIT))],
 )
 def quick_no_operation(body: QuickNoOperationBody) -> ApiResponse:
-    kwargs = {"peak_positions": body.peak_positions} if body.peak_positions is not None else {}
-    result = _call(_service().quick_no_operation, body.rule_id, body.trade_date, **kwargs)
+    result = _call(TradeLedgerService().quick_no_operation, body.rule_id, body.trade_date)
     _audit(
         "checkin_quick_no_operation",
         "trade_discipline_checkin",
@@ -393,15 +527,7 @@ def quick_no_operation(body: QuickNoOperationBody) -> ApiResponse:
     dependencies=[Depends(require_perm(CHECKIN_SUBMIT))],
 )
 def amend_checkin(checkin_id: str, body: AmendCheckinBody) -> ApiResponse:
-    payload = body.model_dump(exclude={"expected_revision"})
-    result = _call(
-        _service().amend_checkin,
-        checkin_id,
-        payload,
-        expected_revision=body.expected_revision,
-    )
-    _audit("checkin_amend", "trade_discipline_checkin", checkin_id, CHECKIN_SUBMIT)
-    return ok(result, msg="打卡已修正")
+    raise _ApiValidationError("旧记录只读，请在账户日结中修正最新交易日")
 
 
 @router.get(

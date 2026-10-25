@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ElementPlus, { ElMessageBox } from 'element-plus'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent } from 'vue'
 import TradeDisciplineView from '@/views/TradeDisciplineView.vue'
+import TradeLedgerWorkspace from '@/views/trade-discipline/components/TradeLedgerWorkspace.vue'
+import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import { useAuthStore } from '@/stores/auth'
 import { permission } from '@/directives/permission'
@@ -73,6 +75,20 @@ vi.mock('@/composables/usePageSettings', async () => {
 
 let mountedRouter: ReturnType<typeof createRouter>
 
+const ledgerHarness = { load: vi.fn(async () => undefined), leave: vi.fn(async () => true), dirty: false }
+const mountedWrappers: { unmount: () => void }[] = []
+const LedgerStub = defineComponent({
+  name: 'TradeLedgerWorkspace', props: ['mode', 'tradeDate', 'canSubmit', 'pageSize', 'conditionPanelDefaults', 'preferredRuleId'],
+  emits: ['request-date-change', 'submitted'],
+  setup(_, { expose }) {
+    expose({ isDirty: () => ledgerHarness.dirty, requestLeave: ledgerHarness.leave, load: ledgerHarness.load,
+      startAmend: vi.fn(async () => true), reload: vi.fn(async () => undefined) })
+    return {}
+  },
+  template: '<section data-testid="ledger-stub">{{ mode }} {{ tradeDate }}</section>',
+})
+afterEach(() => { for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount() })
+
 async function mountPage(
   permissions: string[],
   initialPath = '/trade-discipline',
@@ -94,8 +110,9 @@ async function mountPage(
   await router.push(initialPath)
   await router.isReady()
   const wrapper = mount(TradeDisciplineView, {
-    global: { plugins: [pinia, router, ElementPlus], directives: { permission }, stubs: stubs as any },
+    global: { plugins: [pinia, router, ElementPlus], directives: { permission }, stubs: { TradeLedgerWorkspace: LedgerStub, ...stubs } as any },
   })
+  mountedWrappers.push(wrapper)
   await flushPromises()
   return wrapper
 }
@@ -116,335 +133,115 @@ function ruleState(id = 'rule-1', index = 0) {
   }
 }
 
-describe('交易纪律 T5 工作台壳', () => {
+describe('交易纪律账户工作台', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetTradeDisciplineSummaryForTests()
+    ledgerHarness.dirty = false
+    ledgerHarness.leave.mockResolvedValue(true)
     layoutHarness.historyPageSize!.value = 20
     layoutHarness.conditionCollapsed!.value = ['basic', 'risk', 'technical', 'notes']
     layoutHarness.setComponentKnob.mockImplementation((_slot, _field, value) => { layoutHarness.conditionCollapsed!.value = value })
     tradeDateStatus.value = 'ready'
     listRules.mockResolvedValue([])
-    listCheckins.mockResolvedValue({ total: 0, page: 1, page_size: 20, list: [] })
-    getSummary.mockResolvedValue({
-      trade_date: '2026-08-22', total: 0, completed: 0, pending: 0, rules: [],
-    })
-    getCheckinContext.mockResolvedValue({
-      trade_date: '2026-08-22',
-      version: {
-        rule_id: 'rule-1', version_no: 1, name: '纪律一', capital: '100000',
-        stock_rules: [], action_rules: [],
-      },
-      checkin: null,
-    })
+    getSummary.mockResolvedValue({ trade_date: '2026-08-22', total: 0, completed: 0, pending: 0, rules: [] })
   })
-
-  it('加载交易日和规则，并提供三段业务页签与设置入口', async () => {
-    const wrapper = await mountPage([
-      'trade-discipline:view',
-      'trade-discipline:rule-manage',
-      'trade-discipline:checkin-view',
-    ])
+  const view = ['trade-discipline:view', 'trade-discipline:checkin-view']
+  it('从快捷卡携带的规则标识透传给账户成交入口', async () => {
+    listRules.mockResolvedValue([ruleState('first'), ruleState('second', 1)])
+    const wrapper = await mountPage(view, '/trade-discipline?tab=checkin&rule_ref=second')
+    expect(wrapper.findComponent(TradeLedgerWorkspace).props('preferredRuleId')).toBe('second')
+    await mountedRouter.replace('/trade-discipline?tab=checkin&rule_ref=first')
+    await flushPromises()
+    expect(wrapper.findComponent(TradeLedgerWorkspace).props('preferredRuleId')).toBe('first')
+  })
+  it('四个页签承接统一账户日结，规则为空也能初始化和记录计划外成交', async () => {
+    const wrapper = await mountPage(view)
     expect(ensureTradeDates).toHaveBeenCalled()
     expect(listRules).toHaveBeenCalledWith('2026-08-22')
-    expect(getSummary).toHaveBeenCalledWith('2026-08-22')
-    expect(wrapper.get('[data-testid="trade-discipline-tabs"]')).toBeTruthy()
-    expect(wrapper.text()).toContain('今日打卡')
+    expect(wrapper.text()).toContain('现有持仓')
     expect(wrapper.text()).toContain('规则管理')
     expect(wrapper.text()).toContain('历史记录')
-    expect(wrapper.text()).toContain('前往规则管理')
-    expect(wrapper.findAll('.el-empty')).toHaveLength(1)
-    expect(wrapper.text()).not.toContain('最新交易日')
-    expect(wrapper.text()).not.toContain('已完成')
-    expect(wrapper.text()).not.toContain('待打卡')
+    expect(wrapper.findComponent(TradeLedgerWorkspace).props()).toMatchObject({ mode: 'checkin', tradeDate: '2026-08-22' })
   })
-
-  it('历史交易日没有生效规则时提供返回最新交易日但不提供创建入口', async () => {
-    const wrapper = await mountPage(
-      [
-        'trade-discipline:view',
-        'trade-discipline:rule-manage',
-        'trade-discipline:checkin-view',
-      ],
-      '/trade-discipline?trade_date=2026-08-15',
-    )
-
-    expect(getSummary).toHaveBeenCalledWith('2026-08-15')
-    expect(wrapper.text()).toContain('该交易日暂无生效规则')
-    expect(wrapper.text()).toContain('这是历史日期的真实空状态')
-    expect(wrapper.findAll('.el-empty')).toHaveLength(1)
-    const returnButton = wrapper.findAll('button')
-      .find((button) => button.text() === '返回最新交易日')
-    expect(returnButton).toBeTruthy()
-    expect(wrapper.findAll('button').some((button) => button.text() === '前往规则管理'))
-      .toBe(false)
-    expect(wrapper.findAll('button').some((button) => button.text() === '新建规则'))
-      .toBe(false)
-
-    await returnButton!.trigger('click')
+  it('历史日期透传给账本，日期和页签切换不重建工作台', async () => {
+    const wrapper = await mountPage(view, '/trade-discipline?trade_date=2026-08-15')
+    const ledger = wrapper.findComponent(TradeLedgerWorkspace)
+    expect(ledger.props('tradeDate')).toBe('2026-08-15')
+    ledger.vm.$emit('request-date-change', '2026-08-22')
     await flushPromises()
-    expect(getSummary).toHaveBeenLastCalledWith('2026-08-22')
-    expect(wrapper.findAll('button').some((button) => button.text() === '返回最新交易日'))
-      .toBe(false)
-  })
-
-  it('切换交易日时保持工作台结构并让左右组件独立加载', async () => {
-    const rule = ruleState()
-    listRules.mockResolvedValue([rule])
-    getSummary.mockResolvedValueOnce({
-      trade_date: '2026-08-22', total: 1, completed: 0, pending: 1,
-      rules: [{
-        rule_id: rule.id, rule_name: rule.name, version_no: 1,
-        effective_from_trade_date: '2026-08-22', checkin_id: null,
-        current_revision_no: null, status: null, assessment: null, no_operation: null,
-      }],
-    })
-    let resolveSummary: ((value: unknown) => void) | undefined
-    getSummary.mockReturnValueOnce(new Promise((resolve) => { resolveSummary = resolve }))
-    const CheckinStub = defineComponent({
-      name: 'TradeCheckinForm', emits: ['request-date-change'],
-      setup(_props, { expose }) {
-        expose({
-          isDirty: () => false,
-          requestLeave: async () => true,
-        })
-      },
-      template: '<button data-testid="change-checkin-date" @click="$emit(\'request-date-change\', \'2026-08-15\')">切换日期</button>',
-    })
-    const wrapper = await mountPage(
-      ['trade-discipline:view', 'trade-discipline:checkin-view'],
-      '/trade-discipline',
-      { TradeCheckinForm: CheckinStub },
-    )
-
-    await wrapper.get('[data-testid="change-checkin-date"]').trigger('click')
-    await wrapper.vm.$nextTick()
-
-    expect(wrapper.find('.master-detail-shell').exists()).toBe(true)
-    expect(wrapper.find('.rule-master').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="trade-discipline-tabs"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('正在解析当日履约状态…')
-    expect(wrapper.text()).not.toContain('正在加载交易纪律…')
-
-    resolveSummary?.({
-      trade_date: '2026-08-15', total: 0, completed: 0, pending: 0, rules: [],
-    })
+    expect(wrapper.findComponent(TradeLedgerWorkspace).element).toBe(ledger.element)
+    expect(ledger.props('tradeDate')).toBe('2026-08-22')
+    wrapper.findComponent(PageSegmented).vm.$emit('update:modelValue', 'positions')
     await flushPromises()
+    expect(ledger.props('mode')).toBe('positions')
   })
-
-  it('在标题帮助中解释草稿、待生效、今日日期和历史版本口径', async () => {
-    const wrapper = await mountPage(
-      ['trade-discipline:view', 'trade-discipline:checkin-view'],
-      '/trade-discipline',
-      {
-        HelpTip: defineComponent({
-          template: '<div data-testid="rendered-help-tip"><slot /></div>',
-        }),
-      },
-    )
-    const help = wrapper.get('[data-testid="rendered-help-tip"]')
-    expect(help.text()).toContain('新建时只是可编辑草稿，发布后才生成正式版本')
-    expect(help.text()).toContain('本地行情中最新已入库的交易日')
-    expect(help.text()).toContain('等生效日行情入库后')
-    expect(help.text()).toContain('每次打卡绑定当时生效的正式版本')
-  })
-
-  it('KeepAlive 页面离开到其他路由时不把目标页 query 误当交易纪律参数', async () => {
-    const rule = ruleState()
-    listRules.mockResolvedValue([rule])
-    const wrapper = await mountPage(
-      ['trade-discipline:view', 'trade-discipline:checkin-view'],
-      '/trade-discipline?tab=history&trade_date=2098-06-10',
-    )
-    vi.clearAllMocks()
-
-    await mountedRouter.push('/system/users')
+  it('未保存决策拒绝切换时保留当前页签和填写现场', async () => {
+    const wrapper = await mountPage(view)
+    ledgerHarness.dirty = true
+    ledgerHarness.leave.mockResolvedValue(false)
+    wrapper.findComponent(PageSegmented).vm.$emit('update:modelValue', 'history')
     await flushPromises()
-
-    expect(mountedRouter.currentRoute.value.path).toBe('/system/users')
+    expect(ledgerHarness.leave).toHaveBeenCalled()
+    expect(wrapper.findComponent(TradeLedgerWorkspace).props('mode')).toBe('checkin')
+    ledgerHarness.dirty = false
+  })
+  it('缺少基础查看权限时不请求业务数据', async () => {
+    const wrapper = await mountPage([])
+    expect(wrapper.text()).toContain('无权限查看交易纪律')
     expect(listRules).not.toHaveBeenCalled()
-    expect(getSummary).not.toHaveBeenCalled()
-    expect(getCheckinContext).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-testid="trade-discipline-tabs"]').text()).toContain('历史记录')
+    expect(wrapper.findComponent(TradeLedgerWorkspace).exists()).toBe(false)
   })
-
-  it('缺少履约查看权限时显示无权限态而非空态', async () => {
+  it('缺少履约查看权限时展示权限态', async () => {
     const wrapper = await mountPage(['trade-discipline:view'])
-    expect(wrapper.text()).toContain('无权限查看履约打卡')
-    expect(wrapper.text()).not.toContain('创建第一套规则')
+    expect(wrapper.text()).toContain('无权限查看交易记录')
+    expect(wrapper.findComponent(TradeLedgerWorkspace).exists()).toBe(false)
   })
-
-  it('缺少基础查看权限时优先显示整页权限态且不请求业务数据', async () => {
-    const wrapper = await mountPage(['trade-discipline:checkin-view'])
-    expect(wrapper.text()).toContain('无权限查看交易纪律')
-    expect(ensureTradeDates).not.toHaveBeenCalled()
-    expect(listRules).not.toHaveBeenCalled()
-    expect(getSummary).not.toHaveBeenCalled()
-  })
-
-  it('基础规则接口实际返回 403 时从通用失败升级为权限态', async () => {
-    listRules.mockRejectedValue({ response: { status: 403 } })
-    const wrapper = await mountPage(['trade-discipline:view', 'trade-discipline:checkin-view'])
-    expect(wrapper.text()).toContain('无权限查看交易纪律')
-    expect(wrapper.text()).not.toContain('交易纪律加载失败')
-  })
-
-  it('交易日加载失败时整页 fail-closed 并提供重试', async () => {
+  it('交易日不可用时停止展示写入口并允许重试', async () => {
     tradeDateStatus.value = 'error'
-    const wrapper = await mountPage(['trade-discipline:view'])
+    const wrapper = await mountPage(view)
     expect(wrapper.text()).toContain('交易纪律加载失败')
-    expect(wrapper.text()).toContain('重试')
+    expect(wrapper.findComponent(TradeLedgerWorkspace).exists()).toBe(false)
     expect(listRules).not.toHaveBeenCalled()
   })
-
-  it('履约摘要失败由打卡区局部接管并停止伪装为空态', async () => {
-    getSummary.mockRejectedValue(new Error('summary unavailable'))
-    const wrapper = await mountPage(['trade-discipline:view', 'trade-discipline:checkin-view'])
-    expect(wrapper.text()).toContain('履约摘要加载失败')
-    expect(wrapper.text()).not.toContain('该交易日暂无生效规则')
-    expect(listRules).toHaveBeenCalled()
+  it('规则接口明确拒绝查看时升级为权限态', async () => {
+    listRules.mockRejectedValue({ response: { status: 403 } })
+    const wrapper = await mountPage(view)
+    expect(wrapper.text()).toContain('无权限查看交易纪律')
   })
-
-  it('脏编辑器触发规则列表刷新失败时只接管左侧列表并保留输入', async () => {
-    const rule = ruleState()
-    listRules.mockResolvedValueOnce([rule])
-    const EditorStub = defineComponent({
-      name: 'TradeRuleEditor', emits: ['changed'],
-      data: () => ({ draftName: '' }),
-      template: '<section data-testid="editor-stub"><input data-testid="dirty-rule-input" v-model="draftName"><button data-testid="refresh-rules" @click="$emit(\'changed\')">刷新列表</button></section>',
-    })
-    const wrapper = await mountPage(
-      ['trade-discipline:view', 'trade-discipline:rule-manage'],
-      '/trade-discipline?tab=rules',
-      { TradeRuleEditor: EditorStub },
-    )
-    await wrapper.get('[data-testid="dirty-rule-input"]').setValue('未保存名称')
-    listRules.mockRejectedValueOnce(new Error('refresh failed'))
-    await wrapper.get('[data-testid="refresh-rules"]').trigger('click')
+  it('KeepAlive 离开到其他页面后不消费其查询参数', async () => {
+    const wrapper = await mountPage(view)
+    const calls = listRules.mock.calls.length
+    await mountedRouter.push('/system/users?tab=history&trade_date=2026-08-15')
     await flushPromises()
-
-    expect(wrapper.text()).toContain('规则列表刷新失败')
-    expect(wrapper.text()).not.toContain('交易纪律加载失败')
-    expect((wrapper.get('[data-testid="dirty-rule-input"]').element as HTMLInputElement).value)
-      .toBe('未保存名称')
+    expect(listRules).toHaveBeenCalledTimes(calls)
+    expect(wrapper.findComponent(TradeLedgerWorkspace).props('tradeDate')).toBe('2026-08-22')
   })
-
-  it('同页快捷参数切换被未保存保护拒绝后恢复当前真实 URL', async () => {
-    const rules = ['rule-1', 'rule-2'].map(ruleState)
-    listRules.mockResolvedValue(rules)
-    getSummary.mockResolvedValue({
-      trade_date: '2026-08-22', total: 2, completed: 0, pending: 2,
-      rules: rules.map((rule) => ({
-        rule_id: rule.id, rule_name: rule.name, version_no: 1,
-        effective_from_trade_date: '2026-08-22', checkin_id: null,
-        current_revision_no: null, status: null, assessment: null, no_operation: null,
-      })),
-    })
-    getCheckinContext.mockImplementation(async (ruleId: string) => ({
-      trade_date: '2026-08-22',
-      version: {
-        rule_id: ruleId, version_no: 1, name: ruleId === 'rule-1' ? '纪律一' : '纪律二',
-        capital: '100000', stock_rules: [], action_rules: [],
-      },
-      checkin: null,
-    }))
-    const wrapper = await mountPage([
-      'trade-discipline:view',
-      'trade-discipline:checkin-view',
-      'trade-discipline:checkin-submit',
-    ])
-    await wrapper.find('textarea').setValue('尚未提交的复盘内容')
-    vi.spyOn(ElMessageBox, 'confirm').mockRejectedValueOnce('cancel')
-
-    await mountedRouter.push({
-      path: '/trade-discipline',
-      query: { tab: 'checkin', rule_ref: 'rule-2', trade_date: '2026-08-22' },
-    })
-    await flushPromises()
-
-    expect(mountedRouter.currentRoute.value.query).toEqual({
-      tab: 'checkin', rule_ref: 'rule-1', trade_date: '2026-08-22',
-    })
-    expect(wrapper.get('h3').text()).toBe('纪律一')
-  })
-
-  it('属性抽屉默认折叠写回现有组件配置，透传规则与历史，并显式重置会话', async () => {
-    listRules.mockResolvedValue([ruleState()])
-    const Editor = defineComponent({ props: ['conditionPanelDefaults'], template: '<div />' })
-    const History = defineComponent({ props: ['conditionPanelDefaults'], template: '<div />' })
-    const wrapper = await mountPage(['trade-discipline:view', 'trade-discipline:rule-manage'],
-      '/trade-discipline?tab=rules', { TradeRuleEditor: Editor, TradeCheckinRevisionDrawer: History })
+  it('继续复用默认条件折叠和历史分页配置，恢复默认调用原入口', async () => {
+    const wrapper = await mountPage(view)
     const drawer = wrapper.findComponent(PageSettingsDrawer)
-    const editor = wrapper.findComponent(Editor)
-    const history = wrapper.findComponent(History)
-    expect(editor.props('conditionPanelDefaults')).toMatchObject({ defaultCollapsed: ['basic', 'risk', 'technical', 'notes'], resetKey: 0 })
-    const config = drawer.props('config')!
-    config.setComponentKnob('stockConditions', 'defaultCollapsed', ['risk', 'notes'])
+    const config = drawer.props('config') as { setComponentKnob: (slot: string, field: string, value: unknown) => void }
+    config.setComponentKnob('stockConditions', 'defaultCollapsed', ['risk'])
     drawer.vm.$emit('component-default-change', 'stockConditions', 'defaultCollapsed')
-    await flushPromises()
-    expect(layoutHarness.setComponentKnob).toHaveBeenCalledWith('stockConditions', 'defaultCollapsed', ['risk', 'notes'])
-    expect(editor.props('conditionPanelDefaults')).toMatchObject({ defaultCollapsed: ['risk', 'notes'], resetKey: 1 })
-    expect(history.props('conditionPanelDefaults')).toMatchObject(editor.props('conditionPanelDefaults'))
-    drawer.vm.$emit('reset')
-    await flushPromises()
-    expect(editor.props('conditionPanelDefaults').resetKey).toBe(2)
-    expect(layoutHarness.resetLayout).toHaveBeenCalledTimes(1)
-    wrapper.unmount()
-  })
-
-  it('历史分页默认值重载并在恢复默认时同时重置页面与布局配置', async () => {
-    const reload = vi.fn(async () => undefined)
-    const HistoryStub = defineComponent({
-      name: 'TradeDisciplineHistory',
-      props: { pageSize: { type: Number, required: true } },
-      setup(_props, { expose }) {
-        expose({ reload })
-      },
-      template: '<div data-testid="history-page-size">{{ pageSize }}</div>',
-    })
-    const wrapper = await mountPage(
-      ['trade-discipline:view', 'trade-discipline:checkin-view'],
-      '/trade-discipline?tab=history',
-      { TradeDisciplineHistory: HistoryStub },
-    )
-
-    expect(wrapper.get('[data-testid="history-page-size"]').text()).toBe('20')
     layoutHarness.historyPageSize!.value = 50
     await flushPromises()
-    expect(wrapper.get('[data-testid="history-page-size"]').text()).toBe('50')
-    expect(reload).toHaveBeenCalledTimes(1)
-
-    wrapper.findComponent(PageSettingsDrawer).vm.$emit('reset')
-    await wrapper.vm.$nextTick()
-    expect(layoutHarness.resetPageSettings).toHaveBeenCalledTimes(1)
-    expect(layoutHarness.resetLayout).toHaveBeenCalledTimes(1)
-  })
-
-  it('快捷入口变更广播会刷新当前工作台摘要、规则和选中表单', async () => {
-    const rule = ruleState()
-    listRules.mockResolvedValue([rule])
-    getSummary.mockResolvedValue({
-      trade_date: '2026-08-22', total: 1, completed: 0, pending: 1,
-      rules: [{
-        rule_id: 'rule-1', rule_name: '纪律一', version_no: 1,
-        effective_from_trade_date: '2026-08-22', checkin_id: null,
-        current_revision_no: null, status: null, assessment: null, no_operation: null,
-      }],
-    })
-    await mountPage([
-      'trade-discipline:view',
-      'trade-discipline:checkin-view',
-      'trade-discipline:checkin-submit',
-    ])
-    vi.clearAllMocks()
-
-    useTradeDisciplineSummary().notifyTradeDisciplineChanged({
-      ruleId: 'rule-1', tradeDate: '2026-08-22', source: 'quick',
-    })
+    expect(wrapper.findComponent(TradeLedgerWorkspace).props('pageSize')).toBe(50)
+    expect(wrapper.findComponent(TradeLedgerWorkspace).props('conditionPanelDefaults')).toMatchObject({ defaultCollapsed: ['risk'], resetKey: 1 })
+    drawer.vm.$emit('reset')
     await flushPromises()
-
-    expect(getSummary).toHaveBeenCalledWith('2026-08-22')
-    expect(listRules).toHaveBeenCalledWith('2026-08-22')
-    expect(getCheckinContext).toHaveBeenCalledWith('rule-1', '2026-08-22')
+    expect(layoutHarness.resetLayout).toHaveBeenCalled()
+    expect(layoutHarness.resetPageSettings).toHaveBeenCalled()
+  })
+  it('快捷入口变更刷新账户，存在未保存输入时保留现场', async () => {
+    await mountPage(view)
+    const shared = useTradeDisciplineSummary()
+    shared.notifyTradeDisciplineChanged({ ruleId: 'account', tradeDate: '2026-08-22', source: 'quick' })
+    await flushPromises()
+    expect(ledgerHarness.load).toHaveBeenCalledTimes(1)
+    ledgerHarness.dirty = true
+    shared.notifyTradeDisciplineChanged({ ruleId: 'account', tradeDate: '2026-08-22', source: 'quick' })
+    await flushPromises()
+    expect(ledgerHarness.load).toHaveBeenCalledTimes(1)
+    ledgerHarness.dirty = false
   })
 })

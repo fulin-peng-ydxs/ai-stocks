@@ -8,7 +8,7 @@ import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
-import { checkinAssessmentOptions, checkinAssessmentGuides } from '@/utils/tradeDisciplineAssessment'
+import { checkinAssessmentOptions } from '@/utils/tradeDisciplineAssessment'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppDialog from '@/components/AppDialog.vue'
@@ -33,24 +33,20 @@ import { getErrorStatus } from '@/utils/error'
 import {
   listTradeDisciplineRules,
   createTradeDisciplineRule,
-  getTradeDisciplineSummary,
-  type CheckinSummary,
-  type CheckinHistoryQuery,
-  type CheckinHistoryRow,
   type TradeDisciplineRule,
 } from '@/api/tradeDiscipline'
 import RuleMasterList from '@/views/trade-discipline/components/RuleMasterList.vue'
 import TradeRuleEditor from '@/views/trade-discipline/components/TradeRuleEditor.vue'
-import TradeCheckinForm from '@/views/trade-discipline/components/TradeCheckinForm.vue'
-import TradeCheckinRevisionDrawer from '@/views/trade-discipline/components/TradeCheckinRevisionDrawer.vue'
-import TradeDisciplineHistory from '@/views/trade-discipline/components/TradeDisciplineHistory.vue'
+import TradeLedgerWorkspace from '@/views/trade-discipline/components/TradeLedgerWorkspace.vue'
 
-type PanelKey = 'checkin' | 'rules' | 'history'
+type PanelKey = 'checkin' | 'positions' | 'rules' | 'history'
 
 const PAGE_KEY = 'trade-discipline'
+const menuPageTitle = useMenuPageTitle({ fallback: '交易纪律' })
 const HISTORY_SORT_FIELDS = ['trade_date'] as const
 const PANEL_OPTIONS = [
   { label: '今日打卡', value: 'checkin' },
+  { label: '现有持仓', value: 'positions' },
   { label: '规则管理', value: 'rules' },
   { label: '历史记录', value: 'history' },
 ]
@@ -128,7 +124,7 @@ const drawerConfig = {
 const { reset: resetPageSettings } = usePageSettings(PAGE_KEY, {})
 const settingsOpen = ref(false)
 
-const initialPanel = ['checkin', 'rules', 'history'].includes(String(route.query.tab))
+const initialPanel = ['checkin', 'positions', 'rules', 'history'].includes(String(route.query.tab))
   ? String(route.query.tab) as PanelKey
   : 'checkin'
 const activePanel = ref<PanelKey>(initialPanel)
@@ -143,30 +139,16 @@ const {
   changeVersion: tradeDisciplineChangeVersion,
   latestChange: latestTradeDisciplineChange,
   notifyTradeDisciplineChanged,
+  refreshSummary,
 } = useTradeDisciplineSummary()
 const rules = ref<TradeDisciplineRule[]>([])
 const rulesLoading = ref(false)
 const rulesError = ref(false)
 const rulesTradeDate = ref('')
 const pagePermissionDenied = ref(false)
-const checkinSummary = ref<CheckinSummary | null>(null)
-const summaryLoading = ref(false)
-const summaryError = ref(false)
 const checkinTradeDate = ref('')
 const selectedRuleId = ref('')
-const checkinRuleIds = computed(() => new Set(checkinSummary.value?.rules.map((item) => item.rule_id) ?? []))
-const displayRules = computed(() => activePanel.value === 'checkin'
-  ? rules.value.filter((rule) => checkinSummary.value
-    ? checkinRuleIds.value.has(rule.id)
-    : rule.effective_status === 'active' && !!rule.effective_version)
-  : rules.value)
-const selectedRule = computed(
-  () => displayRules.value.find((rule) => rule.id === selectedRuleId.value) ?? displayRules.value[0] ?? null,
-)
-const isLatestCheckinDate = computed(() => checkinTradeDate.value === dataMax.value)
-const checkinEmptyDescription = computed(() => isLatestCheckinDate.value
-  ? '当前交易日没有可履约的正式规则；新规则发布后从下一真实交易日起生效'
-  : '这是历史日期的真实空状态，不能通过新建规则补写过去的履约关系')
+const displayRules = computed(() => rules.value)
 const ruleEditorRef = ref<{
   isDirty: () => boolean
   requestLeave: () => Promise<boolean>
@@ -181,39 +163,20 @@ const checkinFormRef = ref<{
   requestLeave: () => Promise<boolean>
   load: () => Promise<void>
   startAmend: () => Promise<boolean>
+  reload: () => Promise<void>
 } | null>(null)
 let unregisterUnsavedHandler: (() => void) | undefined
 let rulesLoadSeq = 0
-let summaryLoadSeq = 0
 let routeIntentReady = false
 
-const historyPage = ref(1)
-const historyQuery = ref<CheckinHistoryQuery>({})
-const historyRef = ref<{ reload: () => Promise<void> } | null>(null)
-const historyDetailOpen = ref(false)
-const historyDetailRow = ref<CheckinHistoryRow | null>(null)
-const returnToHistoryAfterAmend = ref(false)
-const historyHiddenColumns = computed<string[]>(() => {
-  const raw = componentValueOf('history', 'hiddenColumns')
-  return Array.isArray(raw) ? raw.map(String) : []
-})
-const {
-  sortBy: historySortBy,
-  sortOrder: historySortOrder,
-  elementDefaultSort: historyDefaultSort,
-  onSortChange: onHistorySortChange,
-} = useTableSort({
-  slotId: 'history',
-  defaultSort: 'trade_date:desc',
-  componentValueOf,
-  allowedFields: HISTORY_SORT_FIELDS,
-  onChanged: () => { historyPage.value = 1 },
-})
 const { pageSize: historyPageSize, changePageSize } = useComponentPageSizeSession({
   resolveDefault: () => componentValueOf('history', 'pageSize'),
   fallback: 20,
-  resetPage: () => { historyPage.value = 1 },
-  reload: () => historyRef.value?.reload(),
+  resetPage: () => undefined,
+  reload: () => undefined,
+})
+const { sortOrder: historySortOrder, elementDefaultSort: historyDefaultSort, onSortChange: onHistorySortChange } = useTableSort({
+  slotId: 'history', defaultSort: 'trade_date:desc', componentValueOf, allowedFields: HISTORY_SORT_FIELDS,
 })
 
 const pageLoading = computed(
@@ -256,31 +219,8 @@ async function refreshRules(): Promise<void> {
   await loadRules(activePanel.value === 'checkin' ? checkinTradeDate.value : dataMax.value)
 }
 
-async function loadCheckinSummary(): Promise<void> {
-  if (!canViewCheckins.value || !checkinTradeDate.value) return
-  const seq = ++summaryLoadSeq
-  summaryLoading.value = true
-  summaryError.value = false
-  try {
-    const result = await getTradeDisciplineSummary(checkinTradeDate.value)
-    if (seq !== summaryLoadSeq) return
-    checkinSummary.value = result
-    const candidates = checkinSummary.value.rules
-    if (!candidates.some((item) => item.rule_id === selectedRuleId.value)) {
-      selectedRuleId.value = candidates.find((item) => !item.checkin_id)?.rule_id
-        ?? candidates[0]?.rule_id ?? ''
-    }
-  } catch {
-    if (seq !== summaryLoadSeq) return
-    summaryError.value = true
-  } finally {
-    if (seq === summaryLoadSeq) summaryLoading.value = false
-  }
-}
-
 async function loadCheckinWorkspace(): Promise<void> {
-  checkinSummary.value = null
-  await Promise.all([loadRules(checkinTradeDate.value), loadCheckinSummary()])
+  await loadRules(checkinTradeDate.value)
 }
 
 async function loadPage(): Promise<void> {
@@ -305,7 +245,6 @@ async function switchPanel(value: string | number | boolean): Promise<void> {
   const next = String(value) as PanelKey
   if (next === activePanel.value) return
   if (!(await confirmLeave(route.path, 'context-change'))) return
-  if (activePanel.value === 'checkin' && next !== 'checkin') returnToHistoryAfterAmend.value = false
   activePanel.value = next
   await router.replace({ query: { ...route.query, tab: next } })
   if (next === 'checkin') await loadCheckinWorkspace()
@@ -315,7 +254,6 @@ async function switchPanel(value: string | number | boolean): Promise<void> {
 async function selectRule(ruleId: string): Promise<void> {
   if (ruleId === selectedRuleId.value) return
   if (!(await confirmLeave(route.path, 'context-change'))) return
-  if (activePanel.value === 'checkin') returnToHistoryAfterAmend.value = false
   selectedRuleId.value = ruleId
 }
 
@@ -330,13 +268,18 @@ async function createRule(): Promise<void> {
   } catch { /* 统一请求层已反馈 */ }
 }
 
-async function openRuleManagement(): Promise<void> {
-  await switchPanel('rules')
+async function openLedgerCheckin(tradeDate: string): Promise<void> {
+  if (!(await confirmLeave(route.path, 'context-change'))) return
+  checkinTradeDate.value = tradeDate
+  activePanel.value = 'checkin'
+  await router.replace({ query: { ...route.query, tab: 'checkin', trade_date: tradeDate } })
+  await nextTick()
+  await checkinFormRef.value?.load()
+  await checkinFormRef.value?.startAmend()
 }
 
-async function returnToLatestCheckinDate(): Promise<void> {
-  if (!dataMax.value) return
-  await changeCheckinTradeDate(dataMax.value)
+async function openRuleManagement(): Promise<void> {
+  await switchPanel('rules')
 }
 
 async function handleRuleDeleted(): Promise<void> {
@@ -386,67 +329,22 @@ async function saveRuleChangesAndLeave(): Promise<void> {
 async function changeCheckinTradeDate(value: string): Promise<void> {
   if (value === checkinTradeDate.value) return
   if (!(await confirmLeave(route.path, 'context-change'))) return
-  returnToHistoryAfterAmend.value = false
   checkinTradeDate.value = value
   selectedRuleId.value = ''
   await loadCheckinWorkspace()
 }
 
 async function handleCheckinSubmitted(): Promise<void> {
-  await Promise.all([loadCheckinSummary(), loadRules(checkinTradeDate.value)])
-  if (selectedRuleId.value) {
-    notifyTradeDisciplineChanged({
-      ruleId: selectedRuleId.value,
-      tradeDate: checkinTradeDate.value,
-      source: 'workbench',
-    })
-  }
-  if (returnToHistoryAfterAmend.value) {
-    returnToHistoryAfterAmend.value = false
-    activePanel.value = 'history'
-    await router.replace({ query: { ...route.query, tab: 'history' } })
-    await nextTick()
-  }
-}
-
-function changeHistoryPage(page: number): void {
-  historyPage.value = page
-}
-
-function updateHistoryQuery(value: CheckinHistoryQuery): void {
-  historyQuery.value = value
-}
-
-function openHistoryDetail(row: CheckinHistoryRow): void {
-  historyDetailRow.value = row
-  historyDetailOpen.value = true
-}
-
-async function amendFromHistory(value: { ruleId: string; tradeDate: string }): Promise<void> {
-  if (!canSubmitCheckins.value) return
-  historyDetailOpen.value = false
-  checkinTradeDate.value = value.tradeDate
-  selectedRuleId.value = value.ruleId
-  returnToHistoryAfterAmend.value = true
-  activePanel.value = 'checkin'
-  await router.replace({ query: { ...route.query, tab: 'checkin' } })
-  await loadCheckinWorkspace()
-  await nextTick()
-  const started = await checkinFormRef.value?.startAmend()
-  if (!started) {
-    returnToHistoryAfterAmend.value = false
-    ElMessage.error('当前修订未能载入，无法发起修正')
-    return
-  }
-  ElMessage.info('已载入当前修订，提交后将生成新修订并返回历史记录')
+  notifyTradeDisciplineChanged({ ruleId: 'account', tradeDate: checkinTradeDate.value, source: 'workbench' })
+  await refreshSummary(dataMax.value || checkinTradeDate.value)
 }
 
 onMounted(() => {
   unregisterUnsavedHandler = registerUnsavedHandler(route.path, {
-    isDirty: () => activePanel.value === 'checkin'
+    isDirty: () => activePanel.value !== 'rules'
       ? checkinFormRef.value?.isDirty() ?? false
       : ruleEditorRef.value?.isDirty() ?? false,
-    requestLeave: () => activePanel.value === 'checkin'
+    requestLeave: () => activePanel.value !== 'rules'
       ? checkinFormRef.value?.requestLeave() ?? true
       : ruleEditorRef.value?.requestLeave() ?? true,
   })
@@ -462,7 +360,7 @@ watch(
   async ([tab, ruleRef, tradeDate]) => {
     // KeepAlive 页面离开后仍会观察到其他路由的 query；只能消费属于本页面的会话参数。
     if (!routeIntentReady || route.path !== '/trade-discipline') return
-    const nextPanel = ['checkin', 'rules', 'history'].includes(String(tab))
+    const nextPanel = ['checkin', 'positions', 'rules', 'history'].includes(String(tab))
       ? String(tab) as PanelKey
       : 'checkin'
     const nextTradeDate = typeof tradeDate === 'string' && tradeDateSet.value.has(tradeDate)
@@ -471,12 +369,12 @@ watch(
     const nextRuleId = typeof ruleRef === 'string' ? ruleRef : ''
     if (
       nextPanel === activePanel.value
-      && (nextPanel !== 'checkin' || nextTradeDate === checkinTradeDate.value)
+      && (nextPanel === 'rules' || nextTradeDate === checkinTradeDate.value)
       && (!nextRuleId || nextRuleId === selectedRuleId.value)
     ) return
     if (!(await confirmLeave(route.path, 'context-change'))) {
       const restoredQuery: Record<string, string> = { tab: activePanel.value }
-      if (activePanel.value === 'checkin' && checkinTradeDate.value) {
+      if (activePanel.value !== 'rules' && checkinTradeDate.value) {
         restoredQuery.trade_date = checkinTradeDate.value
       }
       if (selectedRuleId.value) restoredQuery.rule_ref = selectedRuleId.value
@@ -485,7 +383,7 @@ watch(
     }
     if (route.path !== '/trade-discipline') return
     activePanel.value = nextPanel
-    if (nextPanel === 'checkin') {
+    if (nextPanel !== 'rules') {
       checkinTradeDate.value = nextTradeDate
       selectedRuleId.value = nextRuleId
       await loadCheckinWorkspace()
@@ -501,14 +399,12 @@ watch(
 watch(tradeDisciplineChangeVersion, async () => {
   const change = latestTradeDisciplineChange.value
   if (!change || change.source === 'workbench' || change.tradeDate !== checkinTradeDate.value) return
-  if (activePanel.value === 'checkin') {
-    await Promise.all([loadCheckinSummary(), loadRules(checkinTradeDate.value)])
-    if (selectedRuleId.value === change.ruleId) await checkinFormRef.value?.load()
-  } else if (activePanel.value === 'history') {
-    await historyRef.value?.reload()
+  if (checkinFormRef.value?.isDirty()) {
+    ElMessage.warning('账户已从其他入口更新，请保留当前填写并重新核对后提交')
+    return
   }
+  await checkinFormRef.value?.load()
 })
-const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -524,29 +420,32 @@ const menuPageTitle = useMenuPageTitle()
                 :width="480"
                 test-id="trade-discipline-help-tip"
               >
-                <HelpTipItem question="规则怎么生效">
+                <HelpTipItem question="第一次怎么开始">
                   <ul>
-                    <li>新建时只是可编辑草稿，发布后才生成正式版本；发布新版本、归档或恢复，都从操作后的下一真实交易日起生效，避免事后改规则影响当日复盘。</li>
+                    <li>选择起算日，填写当天开始前的股票和数量；空仓直接勾选确认。成本、现金选填，缺失不按零计算。</li>
                   </ul>
                 </HelpTipItem>
-                <HelpTipItem question="“今日”是哪一天">
+                <HelpTipItem question="每天需要填什么">
                   <ul>
-                    <li>今日打卡和首页今日交易纪律使用本地行情中最新已入库的交易日。当天收盘数据尚未入库时，这里仍会显示上一个交易日。</li>
+                    <li>录入成交价格、数量、时间和费用，金额自动计算，可按交割单修改；核对项默认符合，仅改实际不符项。</li>
+                    <li>漏买漏卖需指定股票和规则；操作违规、持仓超限由系统归集。无操作也可提交并延续持仓。</li>
                   </ul>
                 </HelpTipItem>
-                <HelpTipItem question="为什么显示待生效">
+                <HelpTipItem question="履约结果如何计算">
                   <ul>
-                    <li>正式版本已经发布，但生效日晚于当前可打卡交易日；等生效日行情入库后，规则会自动出现在今日打卡中。</li>
+                    <li v-for="option in checkinAssessmentOptions" :key="option.value">{{ option.label }}：{{ option.value === 'complied' ? '没有违规或遗漏' : option.value === 'partial' ? '既有合规操作，也有违规或遗漏' : '存在违规或遗漏，没有合规操作' }}</li>
+                    <li>部分履约可为一笔合规操作加漏卖。单笔违规仍为未履约；必要数据缺失则待核对，不计履约率。</li>
                   </ul>
                 </HelpTipItem>
-                <HelpTipItem question="履约自评怎么选">
+                <HelpTipItem question="持仓和历史怎么修正">
                   <ul>
-                    <li v-for="option in checkinAssessmentOptions" :key="option.value">{{ option.label }}：{{ checkinAssessmentGuides[option.value].summary }}</li>
+                    <li>持仓随成交更新；转入转出、送转和分红记调整。只修正账户最新日，更早错误须逐日撤回后重填。</li>
+                    <li>历史保留全部修订；勾选“显示已撤回”可追溯撤回日，不计持仓和统计。</li>
                   </ul>
                 </HelpTipItem>
-                <HelpTipItem question="历史如何保留">
+                <HelpTipItem question="日期和规则版本如何确定">
                   <ul>
-                    <li>每次打卡绑定当时生效的正式版本，之后修改规则不会覆盖既有记录。</li>
+                    <li>“今日”取最新入库交易日。规则发布、归档、恢复从下一真实交易日起生效；未到日期显示待生效，历史固定绑定原版本。</li>
                   </ul>
                 </HelpTipItem>
               </HelpTip>
@@ -596,89 +495,31 @@ const menuPageTitle = useMenuPageTitle()
           />
         </div>
 
-        <section v-if="activePanel === 'checkin'" class="discipline-panel">
-          <AppStateBlock
-            v-if="!canViewCheckins"
-            state="error"
-            variant="permission"
-            title="无权限查看履约打卡"
+        <section v-if="activePanel !== 'rules'" class="discipline-panel app-surface">
+          <AppStateBlock v-if="!canViewCheckins" state="error" variant="permission" title="无权限查看交易记录" />
+          <TradeLedgerWorkspace
+            v-else
+            ref="checkinFormRef"
+            :mode="activePanel"
+            :trade-date="checkinTradeDate"
+            :can-submit="canSubmitCheckins"
+            :page-size="historyPageSize"
+            :rule-options="rules"
+            :preferred-rule-id="selectedRuleId"
+            :table-border="tableBorder('history')"
+            :default-sort="historyDefaultSort"
+            :sort-order="historySortOrder"
+            :hidden-columns="Array.isArray(componentValueOf('history', 'hiddenColumns')) ? componentValueOf('history', 'hiddenColumns') as string[] : []"
+            :condition-panel-defaults="conditionPanelDefaults"
+            @request-date-change="changeCheckinTradeDate"
+            @request-checkin="openLedgerCheckin"
+            @page-size-change="changePageSize"
+            @sort-change="onHistorySortChange"
+            @submitted="handleCheckinSubmitted"
           />
-          <AppScrollArea v-else class="master-detail-shell">
-            <RuleMasterList
-              :rules="displayRules"
-              :selected-id="selectedRuleId"
-              :loading="rulesLoading"
-              :error="rulesError"
-              :can-manage="canManageRules"
-              :show-create="false"
-              :checkin-states="checkinSummary?.rules"
-              @select="selectRule"
-              @retry="refreshRules"
-            />
-            <AppStateBlock
-              v-if="summaryLoading"
-              class="panel-detail"
-              state="loading"
-              title="正在解析当日履约状态…"
-            />
-            <AppStateBlock
-              v-else-if="summaryError"
-              class="panel-detail"
-              state="error"
-              title="履约摘要加载失败"
-              description="已停止展示和提交，重试后继续"
-              retry
-              @retry="loadCheckinSummary"
-            />
-            <AppStateBlock
-              v-else-if="rulesError && !displayRules.length"
-              class="panel-detail"
-              state="error"
-              title="规则列表刷新失败"
-              description="当前交易日规则不可用，重试后继续"
-              retry
-              @retry="refreshRules"
-            />
-            <AppStateBlock
-              v-else-if="!displayRules.length"
-              class="panel-detail"
-              state="empty"
-              title="该交易日暂无生效规则"
-              :description="checkinEmptyDescription"
-            >
-              <template #extra>
-                <el-button
-                  v-if="!isLatestCheckinDate"
-                  type="primary"
-                  @click="returnToLatestCheckinDate"
-                >
-                  返回最新交易日
-                </el-button>
-                <el-button
-                  v-else-if="canManageRules"
-                  v-permission="'trade-discipline:rule-manage'"
-                  type="primary"
-                  plain
-                  @click="openRuleManagement"
-                >
-                  前往规则管理
-                </el-button>
-              </template>
-            </AppStateBlock>
-            <TradeCheckinForm
-              :condition-panel-defaults="conditionPanelDefaults"
-              v-else-if="selectedRule"
-              ref="checkinFormRef"
-              :rule-id="selectedRule.id"
-              :trade-date="checkinTradeDate"
-              :can-submit="canSubmitCheckins"
-              @request-date-change="changeCheckinTradeDate"
-              @submitted="handleCheckinSubmitted"
-            />
-          </AppScrollArea>
         </section>
 
-        <section v-else-if="activePanel === 'rules'" class="discipline-panel">
+        <section v-else class="discipline-panel app-surface">
           <AppScrollArea class="master-detail-shell">
             <RuleMasterList
               :rules="rules"
@@ -711,32 +552,7 @@ const menuPageTitle = useMenuPageTitle()
           </AppScrollArea>
         </section>
 
-        <section v-else class="discipline-panel history-panel">
-          <AppStateBlock
-            v-if="!canViewCheckins"
-            state="error"
-            variant="permission"
-            title="无权限查看履约历史"
-          />
-          <TradeDisciplineHistory
-            v-else
-            ref="historyRef"
-            :query="historyQuery"
-            :page="historyPage"
-            :page-size="historyPageSize"
-            :rules="rules"
-            :border="tableBorder('history')"
-            :sort-by="historySortBy"
-            :sort-order="historySortOrder"
-            :default-sort="historyDefaultSort"
-            :hidden-columns="historyHiddenColumns"
-            @update:query="updateHistoryQuery"
-            @page-change="changeHistoryPage"
-            @size-change="changePageSize"
-            @sort-change="onHistorySortChange"
-            @detail="openHistoryDetail"
-          />
-        </section>
+
       </div>
     </template>
 
@@ -756,13 +572,6 @@ const menuPageTitle = useMenuPageTitle()
           <el-button v-permission="'trade-discipline:rule-manage'" type="primary" :loading="ruleLeaveSaving" @click="saveRuleChangesAndLeave">保存草稿</el-button>
         </template>
       </AppDialog>
-      <TradeCheckinRevisionDrawer
-        :condition-panel-defaults="conditionPanelDefaults"
-        v-model="historyDetailOpen"
-        :row="historyDetailRow"
-        :can-submit="canSubmitCheckins"
-        @amend="amendFromHistory"
-      />
       <PageSettingsDrawer
         v-model="settingsOpen"
         title="交易纪律"
@@ -794,7 +603,7 @@ const menuPageTitle = useMenuPageTitle()
 .discipline-workspace { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: var(--app-space-3); }
 .discipline-rail { flex: none; }
 .discipline-rail :deep(.page-segmented) { min-width: 360px; }
-.discipline-panel { min-height: 0; flex: 1 1 auto; overflow: hidden; }
+.discipline-panel { min-width: 0; min-height: 0; flex: 1 1 auto; padding: var(--layout-card-padding); overflow: hidden; }
 .master-detail-shell {
   height: 100%;
   min-height: 0;

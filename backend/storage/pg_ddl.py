@@ -25,6 +25,8 @@ import json
 import os
 import secrets
 
+from backend.storage.trade_ledger_schema import LEDGER_DDL, LEDGER_PK
+
 from backend.auth.constants import (
     ASSET_PUBLIC_PUBLISH_RESOURCE_CODES,
     ASSET_TENANT_PUBLISH_RESOURCE_CODES,
@@ -1209,6 +1211,7 @@ CREATE TABLE IF NOT EXISTS dict_item (
 
 # 归属表 → 复合主键（含归属列）。asset_repository / 各仓库 ON CONFLICT 必须与此一致。
 ASSET_PK: dict[str, list[str]] = {
+    **LEDGER_PK,
     "screen_profile": ["tenant_id", "owner_user_id", "id"],
     "screen_profile_version": ["tenant_id", "owner_user_id", "id", "version"],
     "score_profile": ["tenant_id", "owner_user_id", "id"],
@@ -1257,6 +1260,7 @@ ASSET_PK: dict[str, list[str]] = {
 
 # 表 DDL（建表用）
 _ASSET_TABLES: dict[str, str] = {
+    **LEDGER_DDL,
     "screen_profile": DDL_SCREEN_PROFILE,
     "screen_profile_version": DDL_SCREEN_PROFILE_VERSION,
     "score_profile": DDL_SCORE_PROFILE,

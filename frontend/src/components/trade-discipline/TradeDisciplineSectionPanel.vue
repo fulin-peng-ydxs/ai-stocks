@@ -1,19 +1,25 @@
 <script setup lang="ts">
-defineProps<{
+import AppControlRow from '@/components/AppControlRow.vue'
+withDefaults(defineProps<{
   title: string
   description?: string
-}>()
+  /** 主内容分区可将标题、动作与正文一起纳入边框，避免正文重复套框。 */
+  borderPlacement?: 'body' | 'panel'
+  /** 空分区可只保留标题和动作；既有消费者默认继续展示正文。 */
+  showBody?: boolean
+}>(), { showBody: true, borderPlacement: 'body' })
 </script>
 
 <template>
-  <section class="trade-discipline-section-panel">
+  <section class="trade-discipline-section-panel" :class="{ 'is-header-only': showBody === false, 'is-panel-bordered': borderPlacement === 'panel', 'app-surface': borderPlacement === 'panel' }">
     <header class="trade-discipline-section-panel__head">
       <div>
         <h4 class="app-section-title">{{ title }}</h4>
         <p v-if="description">{{ description }}</p>
       </div>
+      <AppControlRow v-if="$slots.actions"><slot name="actions" /></AppControlRow>
     </header>
-    <div class="trade-discipline-section-panel__body" data-testid="trade-discipline-section-body">
+    <div v-if="showBody !== false" class="trade-discipline-section-panel__body" data-testid="trade-discipline-section-body">
       <slot />
     </div>
   </section>
@@ -23,6 +29,8 @@ defineProps<{
 .trade-discipline-section-panel {
   min-width: 0;
 }
+.trade-discipline-section-panel.is-panel-bordered { padding: var(--layout-card-padding, var(--app-space-4)); }
+.is-panel-bordered .trade-discipline-section-panel__body { padding: 0; border: 0; background: transparent; }
 .trade-discipline-section-panel__head {
   display: flex;
   align-items: flex-start;
@@ -36,6 +44,7 @@ defineProps<{
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
 }
+.trade-discipline-section-panel.is-header-only .trade-discipline-section-panel__head { margin-bottom: 0; }
 .trade-discipline-section-panel__body {
   min-width: 0;
   padding: var(--app-space-4);

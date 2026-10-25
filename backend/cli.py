@@ -147,6 +147,32 @@ def cmd_trade_discipline_rbac(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_trade_discipline_reset(args: argparse.Namespace) -> int:
+    """一次性私人交易纪律重置，默认只读预检，不通过启动 seed 执行。"""
+    import json
+    import subprocess
+    from datetime import date
+    from pathlib import Path
+
+    from backend.common.exceptions import AIStocksError
+    from backend.devtools.trade_discipline_reset import reset_history
+    from backend.services.trade_discipline_service import TradeDisciplineService
+
+    try:
+        target = date.fromisoformat(args.effective_date)
+        TradeDisciplineService()._require_trade_date(target)
+        report = reset_history(
+            apply=args.apply, expected_fingerprint=args.expected_pg_fingerprint,
+            effective_date=target,
+            backup_path=Path(args.backup_path) if args.backup_path else None,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0
+    except (AIStocksError, RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
+        print(f"交易纪律重置未完成：{exc}", file=sys.stderr)
+        return 1
+
+
 def cmd_task_runtime_storage(args: argparse.Namespace) -> int:
     """Inspect, migrate, or explicitly roll back task runtime storage."""
     import json
@@ -827,6 +853,13 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("audit-cleanup", help="按 audit.retention_days 清理超保留期审计日志").set_defaults(
         func=cmd_audit_cleanup
     )
+
+    p_reset = sub.add_parser("trade-discipline-reset", help="全用户交易纪律历史重置，默认仅预检")
+    p_reset.add_argument("--apply", action="store_true", help="执行已授权的全用户重置")
+    p_reset.add_argument("--expected-pg-fingerprint", required=True, help="已核实目标的64位指纹")
+    p_reset.add_argument("--effective-date", required=True, help="新v1规则的起算交易日")
+    p_reset.add_argument("--backup-path", help="实际执行时必填的 pg_dump 备份路径")
+    p_reset.set_defaults(func=cmd_trade_discipline_reset)
 
     p_td = sub.add_parser("trade-discipline-rbac", help="交易纪律 RBAC 受控运维")
     td_sub = p_td.add_subparsers(dest="trade_discipline_rbac_action", required=True)

@@ -8,11 +8,12 @@ export interface TradeDirectionGroup {
 
 defineProps<{
   groups: TradeDirectionGroup[]
+  columns?: 1 | 2
 }>()
 </script>
 
 <template>
-  <div class="trade-direction-group-grid">
+  <div class="trade-direction-group-grid" :class="{ 'is-two-columns': columns === 2 }">
     <section
       v-for="group in groups"
       :key="group.value"
@@ -39,6 +40,7 @@ defineProps<{
   grid-template-columns: minmax(0, 1fr);
   gap: var(--app-space-3);
 }
+.trade-direction-group-grid.is-two-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .trade-direction-group {
   min-width: 0;
   padding-top: var(--app-space-2);
@@ -63,5 +65,8 @@ defineProps<{
   font-size: var(--app-font-size-caption);
 }
 .trade-direction-group__body { min-width: 0; }
+@container app-viewport (max-width: 760px) {
+  .trade-direction-group-grid.is-two-columns { grid-template-columns: minmax(0, 1fr); }
+}
 
 </style>

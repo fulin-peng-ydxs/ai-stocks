@@ -6,7 +6,6 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import AppDatePicker from '@/components/AppDatePicker.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
-import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppSummaryDisclosureCard from '@/components/AppSummaryDisclosureCard.vue'
 import BuiltinOptionRow from '@/components/BuiltinOptionRow.vue'
 import TradeDisciplineSectionPanel from '@/components/trade-discipline/TradeDisciplineSectionPanel.vue'
@@ -36,16 +35,19 @@ import type {
 } from '@/api/tradeDiscipline'
 
 import {
-  conditionFactOptions, manualConditionFields, manualConditionDefaults, checklistDefaults, checklistMissing, type ConditionSection, type ConditionSectionsState,
+  conditionFactOptions, manualConditionFields, manualConditionDefaults, checklistDefaults, checklistMissing, checklistMissingItem, checklistCategory, type ConditionSection, type ConditionSectionsState,
   stockConditionSummary, stockConditionWarnings, stockConditionViolations, conditionFactLabel,
 } from '@/utils/tradeDisciplineConditions'
 
 const props = defineProps<{
+  sectionTitle?: string
+  borderPlacement?: 'body' | 'panel'
   conditionPanelDefaults?: StockConditionPanelDefaults
   modelValue: CheckinOperation[]
   version: RuleVersionDetail
   tradeDate: string
   showCompliance?: boolean
+  automatic?: boolean
   disabled?: boolean
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: CheckinOperation[]] }>()
@@ -63,10 +65,14 @@ function setConditionRef(operation: CheckinOperation, index: number, component: 
 let operationKey = 0
 // 单一展开 key 保证多笔成交仍保持紧凑；新增和校验失败会主动切换到目标卡片。
 const expandedOperationKey = ref<string | null>(null)
-const operationGroups: TradeDirectionGroup[] = [
+const operationGroupDefinitions: TradeDirectionGroup[] = [
   { value: 'buy', label: '买入操作', hint: '建仓与加仓成交事实', testId: 'buy-operation-group' },
   { value: 'sell', label: '卖出操作', hint: '减仓与清仓成交事实', testId: 'sell-operation-group' },
 ]
+const operationGroups = computed(() => operationGroupDefinitions.map(group => ({
+  ...group,
+  hint: `${props.modelValue.filter(operation => operation.side === group.value).length} 笔 · ${group.hint}`,
+})))
 
 const stockRules = computed(() => props.version.stock_rules.filter((item) => item.enabled && item.detail_id))
 function actionRules(side: 'buy' | 'sell') {
@@ -85,6 +91,7 @@ function defaultOperatedAt(tradeDate: string, now = new Date()): string {
 function emptyOperation(order: number, side: 'buy' | 'sell'): CheckinOperation {
   const stockRule = stockRules.value.length === 1 ? stockRules.value[0] : undefined
   return {
+    event_id: props.automatic ? crypto.randomUUID() : undefined,
     client_key: `operation-${Date.now()}-${++operationKey}`,
     stock_code: '', stock_name_snapshot: '', side,
     stock_rule_id: stockRule?.detail_id ?? '',
@@ -92,6 +99,7 @@ function emptyOperation(order: number, side: 'buy' | 'sell'): CheckinOperation {
     price: null, quantity: null, amount: null, fee: null,
     operated_at: defaultOperatedAt(props.tradeDate), note: null,
     checklist_results: checklistDefaults(stockRule, side),
+    amount_mode: 'auto', action_matches: true, stock_matches: true,
     compliance_status: props.showCompliance ? 'complied' : null, ...manualConditionDefaults(stockRule, side), display_order: order,
   }
 }
@@ -156,7 +164,9 @@ function operationIssue(operation: CheckinOperation): string | null {
   if (!operation.stock_code || !operation.stock_name_snapshot
     || !operation.stock_rule_id || !operation.action_rule_id) return '信息未完整'
   if (checklistMissing(selectedStockRule(operation), operation)) return '选股条件待核对'
+  if (operation.side === 'buy' && requiredFactFields(operation).some(field => !operation[field.key])) return '亏损/ST风险待核对'
   if (props.showCompliance && !operation.compliance_status) return '履约状态未选择'
+  if (props.automatic && !operation.operated_at) return '操作时间未填写'
   const missingFinancial = missingOperationFinancialField(operation)
   if (missingFinancial) return `${missingFinancial.label}未填写`
   if (operation.operated_at && operation.operated_at.slice(0, 10) !== props.tradeDate) {
@@ -165,7 +175,7 @@ function operationIssue(operation: CheckinOperation): string | null {
   for (const { key, scale } of operationFinancialFields) {
     const value = operation[key]
     const units = decimalToMinorUnits(value, scale)
-    if (units === null || units < 0n) return '数值需检查'
+    if (units === null || units < 0n || (props.automatic && key !== 'fee' && units === 0n)) return '数值需检查'
   }
   return amountMismatch(operation) ? '金额不一致' : null
 }
@@ -186,6 +196,19 @@ function expandOperation(index: number, section?: ConditionSection, itemId?: str
   }
 }
 
+/** 提交校验与摘要使用同一判断，主动展开出错成交；交割单金额修正只提示差异。 */
+function validate(): string | null {
+  for (const [index, operation] of props.modelValue.entries()) {
+    const issue = operationIssue(operation)
+    if (!issue || issue === '金额不一致') continue
+    const missing = checklistMissingItem(selectedStockRule(operation), operation)
+    expandOperation(index, missing ? checklistCategory(missing.category)
+      : issue === '亏损/ST风险待核对' ? 'risk' : undefined, missing?.item_id)
+    return `操作 ${index + 1}：${issue}`
+  }
+  return null
+}
+
 function guardCompliance(operation: CheckinOperation): CheckinOperation {
   return operation.compliance_status === 'complied'
     && stockConditionViolations(selectedStockRule(operation), operation).length
@@ -194,8 +217,22 @@ function guardCompliance(operation: CheckinOperation): CheckinOperation {
 }
 
 function update(index: number, patch: Partial<CheckinOperation>): void {
-  emit('update:modelValue', props.modelValue.map((item, position) =>
-    position === index ? guardCompliance({ ...item, ...patch }) : item))
+  emit('update:modelValue', props.modelValue.map((item, position) => {
+    if (position !== index) return item
+    const next = { ...item, ...patch }
+    if (props.automatic) {
+      if ('amount' in patch) next.amount_mode = 'manual'
+      if (next.amount_mode !== 'manual') {
+        const value = multiplyToMinorUnits(next.price, next.quantity)
+        next.amount = value === null ? null : formatMinorUnits(value)
+      }
+    }
+    return guardCompliance(next)
+  }))
+}
+
+function restoreAutoAmount(index: number): void {
+  update(index, { amount_mode: 'auto' })
 }
 
 function updateCompliance(index: number, value: unknown): void {
@@ -217,12 +254,12 @@ function remove(index: number): void {
   if (expandedOperationKey.value === removedKey) expandedOperationKey.value = null
   emit('update:modelValue', props.modelValue
     .filter((_, position) => position !== index)
-    .map((item, position) => ({ ...item, display_order: position + 1 })))
+    .map((item, position) => props.automatic ? item : ({ ...item, display_order: position + 1 })))
 }
 
 function selectStock(index: number, stock: StockOption | null): void {
   const operation = props.modelValue[index]
-  if (!operation || props.disabled) return
+  if (!operation || props.disabled || operation.linked) return
   if (operation.stock_code === (stock?.code ?? '')) {
     update(index, { stock_name_snapshot: stock?.name ?? '' })
     return
@@ -291,17 +328,18 @@ watch(() => props.modelValue.map(itemKey), (keys) => {
   }
 })
 
-defineExpose({ expandOperation })
+defineExpose({ expandOperation, validate })
 </script>
 
 <template>
   <TradeDisciplineSectionPanel
     class="operation-editor"
-    title="操作事实"
-    description="按方向分组记录成交；规则关联以本次打卡绑定的版本为准。"
+    :title="sectionTitle || '操作事实'"
+    :border-placement="borderPlacement"
+    description="只填写实际成交；没有买卖时可直接提交。"
     data-testid="checkin-operation-section"
   >
-    <TradeDirectionGroupGrid :groups="operationGroups">
+    <TradeDirectionGroupGrid :groups="operationGroups" :columns="modelValue.length ? 1 : 2">
       <template #actions="{ group }">
         <el-button
           v-permission="'trade-discipline:checkin-submit'"
@@ -313,13 +351,7 @@ defineExpose({ expandOperation })
         >添加</el-button>
       </template>
       <template #default="{ group }">
-        <AppStateBlock
-          v-if="!groupedOperations(group.value).length"
-          state="empty"
-          size="tiny"
-          :title="`尚未添加${group.label}`"
-        />
-        <div v-else class="operation-card-list">
+        <div v-if="groupedOperations(group.value).length" class="operation-card-list">
           <AppSummaryDisclosureCard
             v-for="({ operation, index }, groupIndex) in groupedOperations(group.value)"
             :key="itemKey(operation, index)"
@@ -365,21 +397,24 @@ defineExpose({ expandOperation })
         <section class="operation-form-section" aria-label="操作依据" data-testid="operation-context-section">
           <header>
             <h5 class="app-section-title">操作依据</h5>
-            <p>记录标的、执行时间及本次操作对应的纪律规则。</p>
+            <p>{{ operation.linked ? '引用同一笔已录成交，仅核对本套规则；成交数量和金额不会重复记账。' : '记录标的、执行时间及本次操作对应的纪律规则。' }}</p>
           </header>
           <div class="operation-grid">
             <el-form-item label="股票" required class="operation-field operation-field--stock">
               <StockOptionSelect
                 :model-value="operation.stock_code ? { code: operation.stock_code, name: operation.stock_name_snapshot, board: null, industry: null, is_st: operation.is_st, st_as_of_date: operation.st_as_of_date } : null"
-                :disabled="disabled"
+                :disabled="disabled || operation.linked"
                 :trade-date="tradeDate"
                 @update:model-value="selectStock(index, $event)"
               />
             </el-form-item>
-            <el-form-item label="操作时间" class="operation-field operation-field--time">
-              <AppDatePicker :model-value="operation.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" format="YYYY-MM-DD HH:mm" :disabled="disabled" @update:model-value="update(index, { operated_at: $event })" />
+            <el-form-item label="操作时间" :required="automatic" class="operation-field operation-field--time" :class="{ 'has-order': automatic }">
+              <AppDatePicker :model-value="operation.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" format="YYYY-MM-DD HH:mm" :disabled="disabled || operation.linked" @update:model-value="update(index, { operated_at: $event })" />
             </el-form-item>
-            <el-form-item label="选股规则" required class="operation-field operation-field--rule">
+            <el-form-item v-if="automatic" label="同时间顺序" required class="operation-field operation-field--order">
+              <el-input-number :model-value="operation.display_order" :min="1" :precision="0" :controls="false" :disabled="disabled || operation.linked" @update:model-value="update(index, { display_order: $event ?? 1 })" />
+            </el-form-item>
+            <el-form-item v-if="!automatic || version.rule_id" label="选股规则" required class="operation-field operation-field--rule">
               <AppSelect
                 :model-value="operation.stock_rule_id"
                 :disabled="disabled || !stockRules.length"
@@ -391,7 +426,7 @@ defineExpose({ expandOperation })
               </AppSelect>
               <small v-if="!stockRules.length" class="field-error">当前版本没有可用选股规则</small>
             </el-form-item>
-            <el-form-item :label="operation.side === 'sell' ? '卖出规则' : '买入规则'" required class="operation-field operation-field--rule">
+            <el-form-item v-if="!automatic || version.rule_id" :label="operation.side === 'sell' ? '卖出规则' : '买入规则'" required class="operation-field operation-field--rule">
               <AppSelect
                 :model-value="operation.action_rule_id"
                 :disabled="disabled || !actionRules(operation.side).length"
@@ -422,10 +457,14 @@ defineExpose({ expandOperation })
                 @update:model-value="updateCompliance(index, $event)"
               />
             </el-form-item>
+            <el-form-item v-if="automatic && version.rule_id" label="买卖规则核对" class="operation-field operation-field--compliance">
+              <el-segmented :model-value="operation.action_matches ?? true" :options="[{ label: '符合', value: true }, { label: '不符合', value: false }]" :disabled="disabled" @update:model-value="update(index, { action_matches: Boolean($event) })" />
+              <AppFormHelp>{{ version.action_rules.find(rule => rule.detail_id === operation.action_rule_id)?.content || '按实际执行情况核对所选买卖规则。' }}</AppFormHelp>
+            </el-form-item>
           </div>
         </section>
 
-        <section v-if="operation.side === 'buy' && selectedStockRule(operation)" class="operation-form-section" aria-label="选股条件核对" data-testid="operation-conditions">
+        <section v-if="operation.side === 'buy' && selectedStockRule(operation) && (!automatic || version.rule_id)" class="operation-form-section" aria-label="选股条件核对" data-testid="operation-conditions">
           <header><h5 class="app-section-title">选股条件核对</h5><p>检查项默认符合，可按实际修改；股价按本笔成交价核对。</p></header>
           <StockRuleConditionChecklist :panel-defaults="conditionPanelDefaults" :ref="(component: unknown) => setConditionRef(operation, index, component)" :rule="selectedStockRule(operation)!" :operation="operation" :results="operation.checklist_results" checking :disabled="disabled"
             :open-sections="conditionSections[conditionKey(operation, index)] ?? {}" @update:open-sections="conditionSections[conditionKey(operation, index)] = $event" @update:results="update(index, { checklist_results: $event })">
@@ -448,24 +487,29 @@ defineExpose({ expandOperation })
           <AppFormHelp>ST按交易日逐日数据核对；亏损与ST风险按规则预填，可按实际修改。</AppFormHelp>
             </template>
           </StockRuleConditionChecklist>
+          <el-form-item v-if="automatic && selectedStockRule(operation)?.content?.trim()" label="补充选股条件核对">
+            <el-segmented :model-value="operation.stock_matches ?? true" :options="[{ label: '符合', value: true }, { label: '不符合', value: false }]" :disabled="disabled" @update:model-value="update(index, { stock_matches: Boolean($event) })" />
+            <AppFormHelp>{{ selectedStockRule(operation)?.content }}</AppFormHelp>
+          </el-form-item>
           <ul v-if="stockConditionViolations(selectedStockRule(operation), operation).length" class="condition-warnings" role="status"><li v-for="warning in stockConditionViolations(selectedStockRule(operation), operation)" :key="warning">{{ warning }}</li></ul>
         </section>
 
         <section class="operation-form-section" aria-label="成交明细" data-testid="operation-trade-section">
           <header>
             <h5 class="app-section-title">成交明细</h5>
-            <p>成交价、数量、成交金额和费用均须填写；费用可填0，系统不会覆盖手工填写值。</p>
+            <p>{{ automatic ? '金额按价格×数量自动计算，可按交割单修正；费用可填0。' : '成交价、数量、成交金额和费用均须填写；费用可填0，系统不会覆盖手工填写值。' }}</p>
           </header>
           <div class="operation-grid">
-            <el-form-item label="成交价" :required="!disabled" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.price" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { price: $event })" /></el-form-item>
-            <el-form-item label="数量" :required="!disabled" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.quantity" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { quantity: $event })" /></el-form-item>
+            <el-form-item label="成交价" :required="!disabled" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.price" :scale="4" :integer-digits="16" :disabled="disabled || operation.linked" placeholder="0.0000" @update:model-value="update(index, { price: $event })" /></el-form-item>
+            <el-form-item label="数量" :required="!disabled" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.quantity" :scale="4" :integer-digits="16" :disabled="disabled || operation.linked" placeholder="0.0000" @update:model-value="update(index, { quantity: $event })" /></el-form-item>
             <el-form-item label="成交金额" :required="!disabled" class="operation-field operation-field--amount">
-              <FixedDecimalInput :model-value="operation.amount" grouped :disabled="disabled" @update:model-value="update(index, { amount: $event })" />
+              <FixedDecimalInput :model-value="operation.amount" grouped :disabled="disabled || operation.linked" @update:model-value="update(index, { amount: $event })" />
+              <el-button v-if="automatic && operation.amount_mode === 'manual' && !disabled && !operation.linked" text size="small" @click="restoreAutoAmount(index)">恢复自动计算</el-button>
               <small v-if="computedAmount(operation) !== null" :class="{ 'field-error': amountMismatch(operation) }">
                 价 × 量 = {{ computedAmount(operation) }}{{ amountMismatch(operation) ? '，与填写金额不一致' : '' }}
               </small>
             </el-form-item>
-            <el-form-item label="费用" :required="!disabled" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.fee" grouped :disabled="disabled" @update:model-value="update(index, { fee: $event })" /></el-form-item>
+            <el-form-item label="费用" :required="!disabled" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.fee" grouped :disabled="disabled || operation.linked" @update:model-value="update(index, { fee: $event })" /></el-form-item>
           </div>
         </section>
 
@@ -484,6 +528,7 @@ defineExpose({ expandOperation })
 </template>
 
 <style scoped>
+.operation-editor { container: trade-operation / inline-size; }
 .condition-warnings { margin: var(--app-space-2) 0; padding-left: var(--app-space-4); color: var(--el-color-warning); font-size: var(--app-font-size-caption); }
 .operation-card-list { display: grid; gap: var(--app-space-2); }
 .operation-card__issue {
@@ -516,17 +561,21 @@ defineExpose({ expandOperation })
 .operation-field--rule { grid-column: span 6; }
 .operation-field--amount { grid-column: span 3; }
 .operation-field--time { grid-column: span 6; }
+.operation-field--time.has-order { grid-column: span 4; }
+.operation-field--order { grid-column: span 2; }
 .operation-field--compliance { grid-column: span 6; }
 .operation-grid :deep(.el-select), .operation-grid :deep(.el-input), .operation-grid :deep(.el-date-editor) { width: 100%; }
 .operation-grid :deep(.el-form-item__content) { display: block; }
 .operation-note { margin-bottom: 0; }
 .field-error { display: block; margin-top: var(--app-space-1); color: var(--el-color-danger); }
-@container app-viewport (max-width: 1180px) {
+@container trade-operation (max-width: 1180px) {
   .operation-field--stock, .operation-field--time { grid-column: span 12; }
+  .operation-field--time.has-order, .operation-field--order { grid-column: span 6; }
   .operation-field--rule, .operation-field--amount { grid-column: span 6; }
 }
-@container app-viewport (max-width: 760px) {
+@container trade-operation (max-width: 760px) {
   .operation-grid { grid-template-columns: 1fr; }
   .operation-field, .operation-note { grid-column: auto; }
+  .operation-field--time.has-order, .operation-field--order { grid-column: auto; }
 }
 </style>

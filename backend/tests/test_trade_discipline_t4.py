@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager
 from datetime import date
 
 import pandas as pd
@@ -75,6 +76,33 @@ def _route_codes(route) -> set[str]:
     return codes
 
 
+@contextmanager
+def _ledger_rule(client, pg, market, monkeypatch, payload=None):
+    from backend.tests.test_trade_discipline_t3 import _rule_payload, _seed_market
+
+    dates = _seed_market(market)
+    monkeypatch.setattr('backend.services.trade_discipline_service.get_client', lambda: market)
+    identity = _make_user(pg, ['trade-discipline:view', 'trade-discipline:rule-manage',
+                              'trade-discipline:checkin-view', 'trade-discipline:checkin-submit'])
+    headers = _auth(identity[0], identity[1])
+    try:
+        created = client.post('/api/trade-discipline/rules', headers=headers, json=payload or _rule_payload())
+        assert created.status_code == 200, created.text
+        rule_id = created.json()['data']['id']
+        published = client.post(f'/api/trade-discipline/rules/{rule_id}/publish', headers=headers,
+                                json={'expected_revision': 1})
+        assert published.status_code == 200, published.text
+        initialized = client.post('/api/trade-discipline/ledger/initialize', headers=headers, json={
+            'trade_date': str(dates[0]), 'expected_revision': 0, 'positions': [], 'cash': None,
+        })
+        assert initialized.status_code == 200, initialized.text
+        yield dates, rule_id, headers, {'trade_date': str(dates[0]), 'request_id': uuid.uuid4().hex,
+                                       'expected_revision': 0, 'expected_account_revision': 1,
+                                       'events': [], 'omissions': []}
+    finally:
+        _remove_user(pg, identity)
+
+
 def test_operation_request_allows_server_owned_stock_name_snapshot():
     from backend.api.trade_discipline import OperationBody
 
@@ -89,148 +117,70 @@ def test_operation_request_allows_server_owned_stock_name_snapshot():
     assert body.stock_name_snapshot is None
 
 
-def test_structured_conditions_and_peak_roundtrip_via_authorized_api(
-    client, pg, market, monkeypatch
-):
-    from backend.services.trade_discipline_service import TradeDisciplineService
-    from backend.storage.trade_discipline_repository import TradeDisciplineRepository
-    from backend.tests.test_trade_discipline_t3 import _operation, _rule_payload, _seed_market
+def test_structured_conditions_and_peak_roundtrip_via_authorized_api(client, pg, market, monkeypatch):
+    from backend.tests.test_trade_discipline_t3 import _operation, _rule_payload
 
-    trade_date, second, _ = _seed_market(market)
-    identity = _make_user(pg, [
-        "trade-discipline:view", "trade-discipline:rule-manage",
-        "trade-discipline:checkin-view", "trade-discipline:checkin-submit",
+    rule = _rule_payload()
+    rule['max_positions'] = 2
+    rule['stock_rules'][0].update(price_min='5.1234', loss_filter='exclude', checklist_items=[
+        {'item_id': 'trend', 'category': 'technical', 'text': '涨幅不超过50%', 'display_order': 1},
     ])
-    headers = _auth(identity[0], identity[1])
-    monkeypatch.setattr(
-        "backend.api.trade_discipline._service",
-        lambda: TradeDisciplineService(TradeDisciplineRepository(pg), market),
-    )
-    try:
-        payload = _rule_payload()
-        payload["max_positions"] = 2
-        payload["stock_rules"][0].update(price_min="5.1234", loss_filter="exclude")
-        payload["stock_rules"][0]["checklist_items"] = [
-            {"item_id": "trend", "category": "technical", "text": "涨幅不超过50%", "display_order": 1},
-        ]
-        created = client.post("/api/trade-discipline/rules", headers=headers, json=payload)
-        assert created.status_code == 200, created.text
-        rule_id = created.json()["data"]["id"]
-        published = client.post(
-            f"/api/trade-discipline/rules/{rule_id}/publish", headers=headers,
-            json={"expected_revision": 1},
-        )
-        assert published.status_code == 200, published.text
-        operation = dict(_operation(trade_date), operated_at=None)
-        operation.update(loss_status="unknown", price="5.1234")
-        operation["checklist_results"] = [{"item_id": "trend", "status": "unknown"}]
-        content = {
-            "rule_id": rule_id, "trade_date": str(trade_date),
-            "assessment": "complied", "no_operation": False, "peak_positions": 3,
-            "operations": [operation],
-        }
-        submitted = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
-        assert submitted.status_code == 422, submitted.text
-        content["peak_positions"] = 2
-        # 直接 API 不能绕过逐项核对、引用范围或明确违规守卫。
-        for results in ([], [{"item_id": "foreign", "status": "yes"}],
-                        [{"item_id": "trend", "status": "yes"}] * 2,
-                        [{"item_id": "trend", "status": "no"}]):
-            operation["checklist_results"] = results
-            rejected = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
-            assert rejected.status_code == 422, rejected.text
-        operation["checklist_results"] = [{"item_id": "trend", "status": "unknown"}]
-        submitted = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
-        assert submitted.status_code == 200, submitted.text
-        data = submitted.json()["data"]
-        assert data["peak_positions"] == 2
-        assert data["operations"][0]["price"] == "5.1234"
-        assert data["operations"][0]["selection_facts"]["loss_status"] == "unknown"
-        assert data["operations"][0]["checklist_results"] == [{"item_id": "trend", "status": "unknown"}]
-        assert "亏损状态未知，无法核对" in data["operations"][0]["condition_warnings"]
-        draft = client.get(
-            f"/api/trade-discipline/rules/{rule_id}", headers=headers,
-        ).json()["data"]["latest_version"]
-        assert draft["max_positions"] == 2
-        assert draft["stock_rules"][0]["price_min"] == "5.1234"
-        quick_body = {"rule_id": rule_id, "trade_date": str(second), "peak_positions": 3}
-        endpoint = "/api/trade-discipline/checkins/quick-no-operation"
-        assert client.post(endpoint, headers=headers, json=quick_body).status_code == 422
-        quick_body["peak_positions"] = 0
-        quick = client.post(endpoint, headers=headers, json=quick_body)
+    with _ledger_rule(client, pg, market, monkeypatch, rule) as (dates, rule_id, headers, content):
+        operation = dict(_operation(dates[0]), event_id='one-fill', rule_id=rule_id,
+                         price='5.1234', loss_status='no')
+        operation.pop('stock_name_snapshot')
+        operation['operated_at'] = operation['operated_at'].isoformat()
+        content['events'] = [operation]
+        endpoint = '/api/trade-discipline/ledger/days'
+        for results in ([], [{'item_id': 'foreign', 'status': 'yes'}],
+                        [{'item_id': 'trend', 'status': 'yes'}] * 2):
+            operation['checklist_results'] = results
+            assert client.post(endpoint, headers=headers, json=content).status_code == 422
+        operation['checklist_results'] = [{'item_id': 'trend', 'status': 'unknown'}]
+        pending = client.post(endpoint, headers=headers, json=content)
+        assert pending.status_code == 200, pending.text
+        data = pending.json()['data']
+        assert data['peak_positions'] == 1
+        assert data['assessment'] is None and not data['complete']
+        assert data['events'][0]['price'] == '5.1234'
+        assert data['events'][0]['checklist_results'][0]['status'] == 'unknown'
+        # 峰值只能由账本算，旧客户端不能伪造为0。
+        assert client.post(endpoint, headers=headers, json={**content, 'peak_positions': 0}).status_code == 422
+        next_date = str(dates[1])
+        quick = client.post('/api/trade-discipline/checkins/quick-no-operation', headers=headers,
+                            json={'rule_id': rule_id, 'trade_date': next_date})
         assert quick.status_code == 200, quick.text
-        assert quick.json()["data"]["peak_positions"] == 0
-        assert client.post(endpoint, headers=headers, json=quick_body).json()["data"]["idempotent"]
-        quick_body["peak_positions"] = 1
-        assert client.post(endpoint, headers=headers, json=quick_body).status_code == 409
-        content["operations"][0]["is_st"] = False
-        forged = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
-        assert forged.status_code == 422
-    finally:
-        _remove_user(pg, identity)
+        snapshot = client.get('/api/trade-discipline/ledger', headers=headers,
+                              params={'trade_date': next_date}).json()['data']['snapshot']
+        assert snapshot['peak_positions'] == 1
+        assert snapshot['assessment'] == 'complied'
+
 
 
 def test_partial_evidence_guard_cannot_be_bypassed_via_api(client, pg, market, monkeypatch):
-    from backend.services.trade_discipline_service import TradeDisciplineService
-    from backend.storage.trade_discipline_repository import TradeDisciplineRepository
-    from backend.tests.test_trade_discipline_t3 import _operation, _rule_payload, _seed_market
+    from backend.tests.test_trade_discipline_t3 import _operation
 
-    trade_date, *_ = _seed_market(market)
-    identity = _make_user(pg, [
-        "trade-discipline:view", "trade-discipline:rule-manage",
-        "trade-discipline:checkin-view", "trade-discipline:checkin-submit",
-    ])
-    headers = _auth(identity[0], identity[1])
-    monkeypatch.setattr(
-        "backend.api.trade_discipline._service",
-        lambda: TradeDisciplineService(TradeDisciplineRepository(pg), market),
-    )
-    try:
-        created = client.post("/api/trade-discipline/rules", headers=headers, json=_rule_payload())
-        assert created.status_code == 200, created.text
-        rule_id = created.json()["data"]["id"]
-        assert client.post(
-            f"/api/trade-discipline/rules/{rule_id}/publish", headers=headers,
-            json={"expected_revision": 1},
-        ).status_code == 200
-        content = {
-            "rule_id": rule_id, "trade_date": str(trade_date),
-            "assessment": "partial", "no_operation": False,
-            "reason_code": "unplanned_operation", "violation_detail": "只有文字描述偏差",
-            "operations": [dict(_operation(trade_date), operated_at=None, compliance_status="complied")],
-        }
-        for status, message in (("complied", "未履约依据"), ("breached", "已履约操作")):
-            content["operations"][0]["compliance_status"] = status
-            rejected = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
-            assert rejected.status_code == 422, rejected.text
-            assert message in rejected.text
-        content["operations"][0]["compliance_status"] = "complied"
-        content["violation_items"] = ["missed_sell"]
-        for field in ("price", "quantity", "amount", "fee"):
-            original = content["operations"][0].pop(field)
-            rejected = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
-            assert rejected.status_code == 422, rejected.text
-            assert rejected.json()["msg"] == "请求参数不合法，请检查填写内容"
-            content["operations"][0][field] = None
-            assert client.post("/api/trade-discipline/checkins", headers=headers, json=content).status_code == 422
-            content["operations"][0][field] = original
-        content["operations"][0]["fee"] = "0"
-        submitted = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
-        assert submitted.status_code == 200, submitted.text
-        result = submitted.json()["data"]
-        assert result["assessment"] == "partial"
-        assert result["violation_items"] == ["missed_sell"]
-        # 修正入口复用同一服务守卫，不能移除唯一未履约依据。
-        amendment = {key: value for key, value in content.items() if key not in {"rule_id", "trade_date"}}
-        amendment.update(expected_revision=1, violation_items=[])
-        rejected = client.post(
-            f"/api/trade-discipline/checkins/{result['checkin_id']}/amendments",
-            headers=headers, json=amendment,
-        )
-        assert rejected.status_code == 422, rejected.text
-        assert "未履约依据" in rejected.text
-    finally:
-        _remove_user(pg, identity)
+    with _ledger_rule(client, pg, market, monkeypatch) as (dates, rule_id, headers, content):
+        operation = dict(_operation(dates[0]), event_id='one-fill', rule_id=rule_id, action_matches=False)
+        operation.pop('stock_name_snapshot')
+        operation['operated_at'] = operation['operated_at'].isoformat()
+        content['events'] = [operation]
+        endpoint = '/api/trade-discipline/ledger/days'
+        assert client.post(endpoint, headers=headers, json={**content, 'assessment': 'complied'}).status_code == 422
+        first = client.post(endpoint, headers=headers, json=content)
+        assert first.status_code == 200, first.text
+        assert first.json()['data']['assessment'] == 'breached'
+        context = client.get('/api/trade-discipline/ledger', headers=headers,
+                             params={'trade_date': str(dates[0])}).json()['data']
+        content.update(request_id=uuid.uuid4().hex, expected_revision=1,
+                       expected_account_revision=context['account_revision'],
+                       omissions=[{'kind': 'missed_buy', 'stock_code': '600000.SH', 'rule_id': rule_id}])
+        operation['action_matches'] = True
+        changed = client.post(endpoint, headers=headers, json=content)
+        assert changed.status_code == 200, changed.text
+        assert changed.json()['data']['assessment'] == 'partial'
+        assert changed.json()['data']['positions'][0]['quantity'] == '1000'
+
 
 
 def test_partial_assessment_and_operation_status_are_openapi_validated():
@@ -320,6 +270,14 @@ def test_trade_discipline_routes_are_openapi_visible_and_precisely_guarded(clien
             "trade-discipline:checkin-view",
             "trade-discipline:checkin-submit"
         },
+        **{("GET", path): {"trade-discipline:checkin-view"} for path in (
+            "/api/trade-discipline/ledger", "/api/trade-discipline/ledger/history",
+            "/api/trade-discipline/ledger/revisions/{trade_date}/{revision_no}",
+        )},
+        **{("POST", path): {"trade-discipline:checkin-submit"} for path in (
+            "/api/trade-discipline/ledger/initialize", "/api/trade-discipline/ledger/days",
+            "/api/trade-discipline/ledger/preview", "/api/trade-discipline/ledger/withdraw",
+        )},
     }
     found: dict[tuple[str, str], set[str]] = {}
     for route in client.app.routes:
@@ -531,7 +489,13 @@ def test_decimal_request_bounds_return_422_before_service_or_postgres(
                 "operations": [operation],
             },
         )
-        assert accepted_checkin.status_code == 200
+        assert accepted_checkin.status_code == 422  # 旧入口已冻结，不再接受人工履约结果。
+        from backend.api.trade_discipline import LedgerEventBody
+        validated = LedgerEventBody.model_validate({
+            **{key: value for key, value in operation.items() if key != 'stock_name_snapshot'},
+            'event_id': 'bounds-only', 'operated_at': '2026-08-22T10:00:00+08:00',
+        })
+        assert str(validated.price) == operation['price']
 
         invalid_requests = [
             ("/api/trade-discipline/rules", {
@@ -672,6 +636,7 @@ def test_all_trade_discipline_endpoint_contracts_return_unified_response(
 
     stub = StubService()
     monkeypatch.setattr("backend.api.trade_discipline._service", lambda: stub)
+    monkeypatch.setattr("backend.api.trade_discipline.TradeLedgerService", lambda **kwargs: stub)
     identity = _make_user(
         pg,
         [
@@ -720,9 +685,10 @@ def test_all_trade_discipline_endpoint_contracts_return_unified_response(
     try:
         for method, path, body in calls:
             response = client.request(method, path, headers=headers, json=body)
-            assert response.status_code == 200, (method, path, response.text)
+            deprecated = method == 'POST' and (path == '/api/trade-discipline/checkins' or path.endswith('/amendments'))
+            assert response.status_code == (422 if deprecated else 200), (method, path, response.text)
             assert set(response.json()) == {"code", "msg", "data"}
-            assert response.json()["code"] == 0
+            assert response.json()["code"] == (4000 if deprecated else 0)
             if method == "GET" and path.startswith("/api/trade-discipline/rules?"):
                 state = response.json()["data"][0]
                 assert state["latest_management_event"]["effective_from_trade_date"] == (
@@ -758,7 +724,7 @@ def test_quick_conflict_response_contains_existing_opaque_reference(client, pg, 
             }
             raise conflict
 
-    monkeypatch.setattr("backend.api.trade_discipline._service", ConflictService)
+    monkeypatch.setattr("backend.api.trade_discipline.TradeLedgerService", ConflictService)
     identity = _make_user(pg, ["trade-discipline:checkin-submit"])
     try:
         response = client.post(
@@ -777,48 +743,23 @@ def test_quick_conflict_response_contains_existing_opaque_reference(client, pg, 
 
 
 def test_violation_items_authorized_submit_amend_and_history_roundtrip(client, pg, market, monkeypatch):
-    from backend.services.trade_discipline_service import TradeDisciplineService
-    from backend.storage.trade_discipline_repository import TradeDisciplineRepository
-    from backend.tests.test_trade_discipline_t3 import _rule_payload, _seed_market
-
-    trade_date, *_ = _seed_market(market)
-    identity = _make_user(pg, [
-        "trade-discipline:view", "trade-discipline:rule-manage",
-        "trade-discipline:checkin-view", "trade-discipline:checkin-submit",
-    ])
-    headers = _auth(identity[0], identity[1])
-    monkeypatch.setattr("backend.api.trade_discipline._service",
-                        lambda: TradeDisciplineService(TradeDisciplineRepository(pg), market))
-    try:
-        response = client.post("/api/trade-discipline/rules", headers=headers, json=_rule_payload())
-        rule_id = response.json()["data"]["id"]
-        published = client.post(f"/api/trade-discipline/rules/{rule_id}/publish",
-                                headers=headers, json={"expected_revision": 1})
-        assert published.status_code == 200, published.text
-        content = {
-            "rule_id": rule_id, "trade_date": str(trade_date), "assessment": "breached",
-            "no_operation": True, "reason_code": "missed_required_action",
-            "violation_detail": "达到加仓和止损条件，但均未执行", "operations": [],
-        }
-        endpoint = "/api/trade-discipline/checkins"
-        assert client.post(endpoint, headers=headers, json=content).status_code == 422
-        content["violation_items"] = ["missed_sell", "missed_buy"]
-        created = client.post(endpoint, headers=headers, json=content)
-        assert created.status_code == 200, created.text
-        data = created.json()["data"]
-        checkin_id = data["checkin_id"]
-        assert data["violation_items"] == ["missed_buy", "missed_sell"]
-        content.pop("rule_id")
-        content.pop("trade_date")
-        amended = client.post(f"{endpoint}/{checkin_id}/amendments", headers=headers,
-                              json={**content, "violation_items": ["other"], "expected_revision": 1})
-        assert amended.status_code == 200, amended.text
-        assert amended.json()["data"]["violation_items"] == ["other"]
-        original = client.get(f"{endpoint}/{checkin_id}/revisions/1", headers=headers)
-        assert original.status_code == 200, original.text
-        assert original.json()["data"]["violation_items"] == ["missed_buy", "missed_sell"]
-        current = client.get(f"{endpoint}/current", headers=headers,
-                             params={"rule_id": rule_id, "trade_date": str(trade_date)})
-        assert current.json()["data"]["checkin"]["violation_items"] == ["other"]
-    finally:
-        _remove_user(pg, identity)
+    with _ledger_rule(client, pg, market, monkeypatch) as (dates, rule_id, headers, content):
+        endpoint = '/api/trade-discipline/ledger/days'
+        content['omissions'] = [{'kind': 'missed_sell', 'stock_code': '600000.SH', 'rule_id': rule_id}]
+        malformed = {**content, 'omissions': [{'kind': 'other', 'stock_code': '600000.SH', 'rule_id': rule_id}]}
+        assert client.post(endpoint, headers=headers, json=malformed).status_code == 422
+        first = client.post(endpoint, headers=headers, json=content)
+        assert first.status_code == 200, first.text
+        assert first.json()['data']['assessment'] == 'breached'
+        history = client.get('/api/trade-discipline/ledger/history', headers=headers,
+                             params={'stock_code': '600000.SH'}).json()['data']
+        assert history['total'] == 1
+        context = client.get('/api/trade-discipline/ledger', headers=headers,
+                             params={'trade_date': str(dates[0])}).json()['data']
+        content.update(request_id=uuid.uuid4().hex, expected_revision=1,
+                       expected_account_revision=context['account_revision'], omissions=[])
+        changed = client.post(endpoint, headers=headers, json=content)
+        assert changed.status_code == 200, changed.text
+        assert changed.json()['data']['assessment'] == 'complied'
+        original = client.get(f'/api/trade-discipline/ledger/revisions/{dates[0]}/1', headers=headers)
+        assert original.json()['data']['snapshot']['omissions'][0]['kind'] == 'missed_sell'

@@ -15,6 +15,20 @@ const version: RuleVersionDetail = {
 }
 
 describe('TradeOperationEditor', () => {
+  it('自动模式拒绝零价零数量，交割单手工金额差异允许继续提交', async () => {
+    const operation = { event_id: 'fill', stock_code: '600000.SH', stock_name_snapshot: '浦发银行', side: 'buy' as const,
+      stock_rule_id: 'stock-1', action_rule_id: 'buy-1', price: '10', quantity: '100', amount: '999.99',
+      amount_mode: 'manual' as const, fee: '0', operated_at: '2026-10-23T10:00:00', note: null, display_order: 1 }
+    const wrapper = mount(TradeOperationEditor, { props: { modelValue: [operation], version, tradeDate: '2026-10-23', automatic: true },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } } })
+    const exposed = wrapper.vm as unknown as { validate: () => string | null }
+    expect(exposed.validate()).toBeNull()
+    for (const field of ['price', 'quantity']) {
+      await wrapper.setProps({ modelValue: [{ ...operation, [field]: '0' }] })
+      expect(exposed.validate()).toContain('数值需检查')
+    }
+    wrapper.unmount()
+  })
   it('分类展开状态按操作隔离，收起外层卡片不丢失已展开分类或核对结果', async () => {
     const withChecklist: RuleVersionDetail = { ...version, stock_rules: [{ ...version.stock_rules[0],
       checklist_items: [{ item_id: 'c', category: 'technical', text: '涨幅不超过50%', display_order: 1 }] }] }
@@ -250,6 +264,8 @@ describe('TradeOperationEditor', () => {
     const body = section.get('[data-testid="trade-discipline-section-body"]')
     expect(body.find('[data-testid="buy-operation-group"]').exists()).toBe(true)
     expect(body.find('[data-testid="sell-operation-group"]').exists()).toBe(true)
+    expect(body.text()).toContain('0 笔')
+    expect(body.find('.app-state-block').exists()).toBe(false)
     expect(body.text()).not.toContain('操作事实')
   })
 

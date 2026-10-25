@@ -200,6 +200,11 @@ export interface ViolationReason {
 }
 
 export interface CheckinOperation {
+  event_id?: string
+  amount_mode?: 'auto' | 'manual'
+  action_matches?: boolean
+  stock_matches?: boolean
+  linked?: boolean
   checklist_results?: StockChecklistResult[] | null
   loss_status?: ConditionFact | null
   st_risk_status?: ConditionFact | null
@@ -414,12 +419,10 @@ export function submitTradeDisciplineCheckin(
 export function quickNoOperationTradeDisciplineCheckin(
   ruleId: string,
   tradeDate: string,
-  peakPositions?: number,
-): Promise<TradeDisciplineCheckin & { idempotent: boolean }> {
+): Promise<{ checkin_id: string; idempotent: boolean }> {
   return http.post('/trade-discipline/checkins/quick-no-operation', {
     rule_id: ruleId,
     trade_date: tradeDate,
-    ...(peakPositions === undefined ? {} : { peak_positions: peakPositions }),
   })
 }
 

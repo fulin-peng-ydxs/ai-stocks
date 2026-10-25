@@ -79,7 +79,7 @@
 | 🪜 **连板天梯** | `LimitLadderView`（`/limit-ladder`） | `/api/limit-ladder/*` | 按交易日查看收盘涨停梯队、固定窗口活跃度和走势相关热点；进入个股分析/详情，system 可发起单日重算 | [limit-ladder.md](agent-works/architecture/limit-ladder.md) |
 | 🧮 **策略筛选** | `ScreenView` | `/api/screen*`, `/api/profiles` | 统一条件构建器（AND/OR 树，叶子可选指标条件或表达式，同一份 AST）；方案可存、版本回看、按权限公开和复制 | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
 | 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率；历史记录可按权限公开，公开记录可复用参数重跑 | [backtest.md](agent-works/architecture/backtest.md) |
-| ✅ **交易纪律** | `TradeDisciplineView`（`/trade-discipline`） | `/api/trade-discipline/*` | 维护私人交易规则和不可变版本，按真实交易日完成履约打卡、操作记录、历史修订；用户中心支持查看待办和快捷无操作履约 | [trade-discipline.md](agent-works/architecture/trade-discipline.md) |
+| ✅ **交易纪律** | `TradeDisciplineView`（`/trade-discipline`） | `/api/trade-discipline/*` | 维护私人交易规则和不可变版本，初始化真实持仓后按交易日记录成交，自动核对持仓与履约结果，仅最新日可修正；用户中心支持查看待办和快捷无操作打卡 | [trade-discipline.md](agent-works/architecture/trade-discipline.md) |
 | 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 服务端排序分页与跨页分组；查询页可在共享工作台中做多股走势对比和 K 线分析；详情页及共享分析面板可从日 K 下钻已采集的历史价格/均价/量能分时 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) / [stock-intraday.md](agent-works/architecture/stock-intraday.md) |
 | 🧭 **走势板块关联** | `StocksView` / `BoardView` / `ScreenView` / `LimitLadderView` / `ScheduleView` | `/api/stocks/*`, `/api/board/run`, `/api/screen/run`, `/api/limit-ladder/*`, `/api/data/*` | 在累计行业/概念候选中按市场中性化相关性选出当前冠军；页面统一展示相关度、有效样本和截止日，管理员通过任务与调度维护结果 | [stock-board-correlation.md](agent-works/architecture/stock-board-correlation.md) |
 | ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底，可公开/复制）/ 技术指标（注册表）/ 系统设置（数据源、回测成本、认证与审计白名单） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
@@ -130,7 +130,7 @@ flowchart LR
 | 验证策略能否交易 | 策略筛选 + 评分方案 + 买卖方案 → 回测验证 | 净值、回撤、逐笔成交、卖出原因、分层命中率 |
 | 跟踪一批股票 | 个股查询跨页勾选 → 工作台走势对比/K 线分析 → 存为分组 → 详情页连续翻看 | 统一交易日相对走势、分组篮子、组内涨幅与买卖信号 |
 | 练盘感 / 验手感 | 盘感训练 → 配置窗口/资金 → 盲测随机股逐日买卖 → 结算看评级与成长曲线 | 成交明细、资金曲线、评分、身份揭晓、跨局成长轨迹 |
-| 记录交易纪律 | 交易纪律 → 维护并发布规则 → 按交易日打卡 → 历史查看或修正 | 私人规则版本、履约结论、操作事实和不可变修订链 |
+| 记录交易纪律 | 交易纪律 → 维护并发布规则 → 初始化期初持仓 → 按交易日录入成交 → 持仓/历史查看与最新日修正 | 私人规则版本、履约结论、操作事实和不可变修订链 |
 
 ---
 

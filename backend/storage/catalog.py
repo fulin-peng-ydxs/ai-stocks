@@ -897,6 +897,9 @@ _PG_META_GROUPS: tuple[tuple[str, str, dict[str, str]], ...] = (
         "board_watchlist": "板块自选",
     }),
     ("交易纪律", "tenant_user", {
+        "trade_discipline_account": "交易账户期初",
+        "trade_discipline_ledger_day": "交易账户日结",
+        "trade_discipline_ledger_revision": "交易账本不可变修订",
         "trade_discipline_rule": "交易纪律规则",
         "trade_discipline_rule_name_claim": "交易纪律名称占用",
         "trade_discipline_rule_version": "交易纪律规则版本",
@@ -1032,6 +1035,17 @@ for _category, _scope, _names in _PG_META_GROUPS:
         }
 
 _PG_TABLE_META["scheduled_job"]["relations"] = ["dependency_job_id → scheduled_job.id"]
+for _ledger_table, _ledger_purpose in {
+    "trade_discipline_account": "保存真实期初持仓、可空期初现金及账户并发修订号。",
+    "trade_discipline_ledger_day": "保存账户交易日的有效修订指针，撤回保留历史。",
+    "trade_discipline_ledger_revision": "保存不可变有序成交及调整、持仓和自动履约结果。",
+}.items():
+    _PG_TABLE_META[_ledger_table]["purpose"] = _ledger_purpose
+    _PG_TABLE_META[_ledger_table]["source"] = "用户真实成交及期初输入，服务端统一记账与规则核对"
+    _PG_TABLE_META[_ledger_table]["relations"] = [
+        "tenant_id + owner_user_id + account_id → trade_discipline_account",
+        "trade_date → trade_calendar（服务层分别读取，不跨库 JOIN）",
+    ]
 _PG_TABLE_META["scheduled_job_dependency"]["relations"] = [
     "upstream_job_id → scheduled_job.id", "downstream_job_id → scheduled_job.id",
 ]

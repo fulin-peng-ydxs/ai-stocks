@@ -51,6 +51,16 @@ describe('TradeDisciplineQuickCard', () => {
     quickSubmit.mockResolvedValue({ idempotent: false })
   })
 
+  it('没有生效规则也能进入账户打卡，不把建规则作为记账前提', async () => {
+    getSummary.mockResolvedValue({ ...pendingSummary, total: 0, completed: 0, pending: 0, rules: [] })
+    await useTradeDisciplineSummary().refreshSummary('2026-08-22')
+    const wrapper = await mountCard(true)
+    await wrapper.findAll('button').find(node => node.text() === '进入交易打卡')!.trigger('click')
+    expect(wrapper.emitted('navigate')?.at(-1)).toEqual([{ tab: 'checkin', ruleId: undefined, tradeDate: '2026-08-22' }])
+    expect(quickSubmit).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it.each([true, false])('持仓上限不隐藏无操作快捷入口（提交权限：%s）', async (canSubmit) => {
     getSummary.mockResolvedValue({ ...pendingSummary, rules: pendingSummary.rules.map((rule) => ({ ...rule, max_positions: 2 })) })
     const state = useTradeDisciplineSummary()
@@ -63,31 +73,27 @@ describe('TradeDisciplineQuickCard', () => {
     const actions = wrapper.get('.quick-rule-actions').findAll('button')
     expect(actions).toHaveLength(canSubmit ? 2 : 1)
     if (canSubmit) {
-      expect(actions[0].text()).toBe('无操作履约')
+      expect(actions[0].text()).toBe('今日无操作')
       await actions[0].trigger('click')
-      expect(wrapper.get<HTMLInputElement>('[data-testid="quick-peak-positions"] input').element.value).toBe('2')
+      expect(wrapper.find('[data-testid="quick-peak-positions"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('自动核对全部有效规则')
     }
     await actions.at(-1)!.trigger('click')
     expect(quickSubmit).not.toHaveBeenCalled()
     expect(wrapper.emitted('navigate')?.at(-1)).toEqual([{ tab: 'checkin', ruleId: 'rule-1', tradeDate: '2026-08-22' }])
   })
 
-  it('快捷确认允许按实际修改峰值，超限不能确认', async () => {
+  it('快捷入口不再填持仓数，仅提交规则和交易日交由服务端判断', async () => {
     getSummary.mockResolvedValue({ ...pendingSummary, rules: pendingSummary.rules.map((rule) => ({ ...rule, max_positions: 2 })) })
     await useTradeDisciplineSummary().refreshSummary('2026-08-22')
     const wrapper = await mountCard(true)
     await wrapper.get('.quick-rule-actions button.el-button--primary').trigger('click')
-    const input = wrapper.get('[data-testid="quick-peak-positions"] input')
-    await input.setValue('3')
-    await input.trigger('change')
-    expect(wrapper.get('[data-testid="quick-confirm"]').attributes('disabled')).toBeDefined()
-    await wrapper.get('[data-testid="quick-confirm"]').trigger('click')
-    expect(quickSubmit).not.toHaveBeenCalled()
-    await input.setValue('0')
-    await input.trigger('change')
+    expect(wrapper.find('[data-testid="quick-peak-positions"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('根据已有持仓自动核对')
     await wrapper.get('[data-testid="quick-confirm"]').trigger('click')
     await flushPromises()
-    expect(quickSubmit).toHaveBeenCalledWith('rule-1', '2026-08-22', 0)
+    expect(quickSubmit).toHaveBeenCalledWith('rule-1', '2026-08-22')
+    wrapper.unmount()
   })
 
   it('展示最新日摘要和待打卡规则，并按维护权限控制快捷动作', async () => {
@@ -95,11 +101,11 @@ describe('TradeDisciplineQuickCard', () => {
     const writable = await mountCard(true)
     expect(writable.text()).toContain('0/1')
     expect(writable.text()).toContain('趋势纪律')
-    expect(writable.text()).toContain('无操作履约')
+    expect(writable.text()).toContain('今日无操作')
 
     writable.unmount()
     const readonly = await mountCard(false)
-    expect(readonly.text()).not.toContain('无操作履约')
+    expect(readonly.text()).not.toContain('今日无操作')
     expect(readonly.text()).toContain('去打卡')
     expect(readonly.text()).toContain('管理规则')
     await readonly.findAll('button').find((button) => button.text() === '管理规则')!.trigger('click')

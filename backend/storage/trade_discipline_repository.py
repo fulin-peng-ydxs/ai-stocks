@@ -140,6 +140,7 @@ class TradeDisciplineRepository:
         trade_date: date | None,
         *,
         rule_id: str | None = None,
+        conn: psycopg.Connection | None = None,
     ) -> list[dict[str, Any]]:
         """批量返回规则、最新管理事件和目标日有效事件，避免 API 按规则 N+1 查询。"""
         rule_filter = " AND r.id=%s" if rule_id is not None else ""
@@ -151,7 +152,7 @@ class TradeDisciplineRepository:
         ]
         if rule_id is not None:
             params.append(rule_id)
-        df = self.pg.query_df(
+        statement = (
             "WITH latest_management AS ("
             "SELECT DISTINCT ON (rule_id) rule_id,event_type,event_seq,version_no,"
             "occurred_at,activated_at,effective_from_trade_date "
@@ -178,10 +179,13 @@ class TradeDisciplineRepository:
             "AND ev.owner_user_id=r.owner_user_id AND ev.rule_id=r.id "
             "AND ev.version_no=ef.version_no "
             "WHERE r.tenant_id=%s AND r.owner_user_id=%s AND r.deleted_at IS NULL"
-            f"{rule_filter} ORDER BY r.updated_at DESC,r.id",
-            params,
+            f"{rule_filter} ORDER BY r.updated_at DESC,r.id"
         )
-        return df.to_dict("records")
+        if conn is None:
+            return self.pg.query_df(statement, params).to_dict("records")
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(statement, params)
+            return [dict(row) for row in cur.fetchall()]
 
     def create_rule(self, conn: psycopg.Connection, rule_id: str) -> None:
         with conn.cursor() as cur:

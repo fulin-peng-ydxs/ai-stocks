@@ -460,14 +460,14 @@ describe('页面注册表完整性', () => {
     }
   })
 
-  it('交易纪律工作台登记唯一成长页签、三个业务面板和受控历史配置', () => {
+  it('交易纪律工作台登记唯一成长页签、四个业务面板和受控历史配置', () => {
     const entry = getPageEntry('trade-discipline')!
     const slots = entry.layout.slots
     expect(slots.filter((slot) => slot.growMain).map((slot) => slot.id)).toEqual([
       'workspaceTabs',
     ])
     expect(slots.filter((slot) => slot.parentId === 'workspaceTabs').map((slot) => slot.id))
-      .toEqual(['checkinPanel', 'rulesPanel', 'stockConditions', 'history', 'historyFilters'])
+      .toEqual(['checkinPanel', 'rulesPanel', 'positionsPanel', 'stockConditions', 'history', 'historyFilters'])
     expect(applicableComponentFields(entry, 'history').map((field) => field.key)).toEqual([
       'border', 'pageSize', 'defaultSort', 'hiddenColumns',
     ])
@@ -475,15 +475,15 @@ describe('页面注册表完整性', () => {
       { key: 'trade_date', label: '交易日' },
     ])
     expect(entry.componentMeta?.history?.columns?.map((column) => column.key)).toEqual([
-      'trade_date', 'rule_name', 'assessment', 'operation_count',
-      'reason_name_snapshot', 'current_revision_no', 'updated_at',
+      'trade_date', 'assessment', 'operation_count', 'buy_amount',
+      'sell_amount', 'peak_positions', 'current_revision_no',
     ])
     expect(entry.componentMeta?.history?.tabs).toBeUndefined()
     expect(JSON.stringify(entry)).not.toContain('defaultActive')
 
     const view = sourceForPage('trade-discipline')
-    const history = readFileSync(join(VIEWS_DIR, 'trade-discipline/components/TradeDisciplineHistory.vue'), 'utf-8')
-    const drawer = readFileSync(join(VIEWS_DIR, 'trade-discipline/components/TradeCheckinRevisionDrawer.vue'), 'utf-8')
+    const history = readFileSync(join(VIEWS_DIR, 'trade-discipline/components/TradeLedgerWorkspace.vue'), 'utf-8')
+    const drawer = readFileSync(join(VIEWS_DIR, 'trade-discipline/components/TradeLedgerWorkspace.vue'), 'utf-8')
     expect(`${view}\n${history}\n${drawer}`).not.toMatch(/<el-(?:table|drawer)\b/i)
     expect(history).toContain('<AppDataTable')
     expect(drawer).toContain('<AppDetailDrawer')
@@ -501,11 +501,11 @@ describe('页面注册表完整性', () => {
       .toEqual(['basic', 'risk', 'technical', 'notes'])
     const view = sourceForPage('trade-discipline')
     expect(view).toContain("componentValueOf('stockConditions', 'defaultCollapsed')")
-    for (const name of ['TradeRuleEditor', 'TradeCheckinForm', 'TradeCheckinRevisionDrawer']) {
+    for (const name of ['TradeRuleEditor', 'TradeLedgerWorkspace']) {
       expect(view).toMatch(new RegExp(`<${name}\\b[^>]*:condition-panel-defaults="conditionPanelDefaults"`))
       const source = readFileSync(join(VIEWS_DIR, `trade-discipline/components/${name}.vue`), 'utf8')
       expect(source).toContain('conditionPanelDefaults?: StockConditionPanelDefaults')
-      expect(source).toContain(name === 'TradeCheckinForm'
+      expect(source).toContain(name === 'TradeLedgerWorkspace'
         ? ':condition-panel-defaults="conditionPanelDefaults"' : ':panel-defaults="conditionPanelDefaults"')
     }
     const operation = readFileSync(join(VIEWS_DIR, 'trade-discipline/components/TradeOperationEditor.vue'), 'utf8')
