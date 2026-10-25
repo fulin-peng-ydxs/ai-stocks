@@ -82,6 +82,23 @@ describe('AssetProfileSelect', () => {
     wrapper.unmount()
   })
 
+  it('图标搜索保留可访问名称、搜索事件和权限边界', async () => {
+    const { wrapper } = mountSelect({ searchButton: 'icon', viewPermission: 'screen-profile:view' }, ['screen-profile:view'])
+    await flush()
+    const search = wrapper.get('[data-testid="asset-profile-select-search"]')
+    expect(search.element.tagName).toBe('BUTTON')
+    expect(search.attributes('aria-label')).toBe('搜索筛选方案')
+    await search.trigger('click')
+    await flush()
+    expect(wrapper.findComponent(AssetSearchDrawer).props('modelValue')).toBe(true)
+    wrapper.unmount()
+
+    const denied = mountSelect({ searchButton: 'icon', viewPermission: 'screen-profile:view' }, [])
+    await flush()
+    expect(denied.wrapper.find('[data-testid="asset-profile-select-search"]').exists()).toBe(false)
+    denied.wrapper.unmount()
+  })
+
   it('横向模式固定为可压缩选择器加搜索按钮，避免窄宽度下按钮换行', async () => {
     const { wrapper } = mountSelect()
     await flush()

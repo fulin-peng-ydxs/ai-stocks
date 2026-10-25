@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -512,40 +513,45 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
     <template #main>
     <AppScrollArea class="cfg-body">
         <el-card shadow="never" class="cfg-card">
-          <div class="cfg-grid">
-            <div class="cfg-item">
-              <label>训练模式</label>
-              <PageSegmented
-                v-model="sessionConfig.mode"
-                tone="primary"
-                aria-label="训练模式"
-                :options="[
-                  { label: '单只随机', value: 'single' },
-                  { label: '多只一轮', value: 'multi' },
-                ]"
-              />
-            </div>
-            <div class="cfg-item wide">
-              <label>随机交易日范围</label>
-              <div class="range">
-                <TradeDatePicker v-model="sessionConfig.range_start" placeholder="开始日" clearable />
-                <span>至</span>
-                <TradeDatePicker v-model="sessionConfig.range_end" placeholder="结束日" clearable />
+          <AppForm label-position="top" class="cfg-form">
+            <AppControlRow class="cfg-grid" align="end">
+              <el-form-item class="cfg-mode" label="训练模式">
+                <PageSegmented
+                  v-model="sessionConfig.mode"
+                  tone="primary"
+                  aria-label="训练模式"
+                  :options="[
+                    { label: '单只随机', value: 'single' },
+                    { label: '多只一轮', value: 'multi' },
+                  ]"
+                />
+              </el-form-item>
+              <el-form-item class="cfg-dates" label="随机交易日范围">
+                <div class="cfg-date-range">
+                  <TradeDatePicker v-model="sessionConfig.range_start" aria-label="训练开始日期" placeholder="开始日" clearable />
+                  <span class="cfg-date-separator">—</span>
+                  <TradeDatePicker v-model="sessionConfig.range_end" aria-label="训练结束日期" placeholder="结束日" clearable />
+                </div>
+              </el-form-item>
+              <el-form-item class="cfg-boards" label="股票板块">
+                <AppFilterSelect v-model="sessionConfig.boards" :options="boardOptions"
+                                 :filterable="false" :visible-tag-count="2"
+                                 aria-label="训练股票板块"
+                                 placeholder="不限（全部板块）" />
+              </el-form-item>
+              <el-button v-permission="'training:start'" class="cfg-start" type="primary" :loading="loading" @click="start">开始训练</el-button>
+            </AppControlRow>
+            <div class="cfg-footer">
+              <AppFormHelp class="cfg-range-help">日期留空使用全部历史</AppFormHelp>
+              <div class="cfg-summary" role="group" aria-label="本次训练参数">
+                <span>本次：</span>
+                <span v-if="sessionConfig.mode === 'multi'">{{ settings.n_rounds }} 回合 ·</span>
+                <span>每回合 {{ settings.window_days }} 个交易日 ·</span>
+                <span>初始资金 {{ formatMoney(settings.initial_capital) }} 元</span>
+                <el-button link type="primary" @click="settingsOpen = true">调整参数</el-button>
               </div>
-              <AppFormHelp>留空 = 全部历史</AppFormHelp>
             </div>
-            <div class="cfg-item">
-              <label>板块</label>
-              <AppFilterSelect v-model="sessionConfig.boards" :options="boardOptions"
-                               :filterable="false" :visible-tag-count="2"
-                               placeholder="不限（全部板块）" />
-            </div>
-          </div>
-          <AppControlRow size="large" class="cfg-actions">
-            <el-button v-permission="'training:start'" type="primary" :loading="loading" @click="start">开始训练</el-button>
-            <AppFormHelp>回合数、连续交易日、初始资金等默认值可在右上角
-              <el-button class="hl" link type="primary" @click="settingsOpen = true">设置</el-button> 中调整</AppFormHelp>
-          </AppControlRow>
+          </AppForm>
         </el-card>
 
         <el-card v-if="growthLoading || growthData.length || growthError" shadow="never" class="growth-card">
@@ -949,7 +955,8 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
                            :filterable="false" :visible-tag-count="2"
                            placeholder="不限（全部板块）" />
         </PageSettingItem>
-        <PageSettingItem v-if="settings.mode === 'multi'" label="回合数（只）" layout="inline">
+        <!-- 本次切到多只时也要能调整回合数，不要求先改长期默认模式。 -->
+        <PageSettingItem v-if="settings.mode === 'multi' || (phase === 'config' && sessionConfig.mode === 'multi')" label="回合数（只）" layout="inline">
           <el-input-number v-model="settings.n_rounds" :min="1" :max="20" size="small" style="width:140px" />
         </PageSettingItem>
         <PageSettingItem label="每回合连续交易日" layout="inline">
@@ -1014,14 +1021,54 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 /* 配置：固定块 + 历史主表 → 混合成长区 */
 .cfg-body { flex: 1 1 auto; min-height: 0; --app-scroll-display: flex; --app-scroll-direction: column; --app-scroll-gap: var(--app-space-3); --app-scroll-padding-right: 2px; }
 .cfg-card, .growth-card { flex: 0 0 auto; }
-.cfg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--app-space-4); }
-.cfg-item { display: flex; flex-direction: column; gap: var(--app-space-control-gap); }
-.cfg-item.wide { grid-column: span 2; }
-.cfg-item label { font-size: var(--app-font-size-table); color: var(--el-text-color-secondary); }
-.cfg-item .lbl-tip { display: flex; align-items: center; }
-.cfg-item .range { display: flex; align-items: center; gap: var(--app-space-2); flex-wrap: wrap; }
-.cfg-actions { margin-top: 18px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: var(--app-space-2); }
-.cfg-actions .hl { cursor: pointer; }
+.cfg-form { display: grid; gap: var(--app-space-3); }
+.cfg-grid {
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) minmax(350px, 480px) minmax(200px, 320px) minmax(max-content, 1fr);
+  gap: var(--app-space-4);
+}
+.cfg-grid :deep(.el-form-item) { margin-bottom: 0; min-width: 0; }
+.cfg-grid :deep(.el-form-item__content) { min-width: 0; }
+.cfg-mode :deep(.page-segmented) { width: 100%; max-width: 240px; }
+.cfg-date-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--app-space-2);
+  width: 100%;
+  min-width: 0;
+}
+.cfg-date-range :deep(.el-date-editor) { width: 100%; min-width: 0; }
+.cfg-date-separator { color: var(--el-text-color-secondary); }
+.cfg-start { justify-self: end; align-self: end; }
+.cfg-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--app-space-2) var(--app-space-5);
+  padding-top: var(--app-space-3);
+  border-top: 1px solid var(--el-border-color);
+}
+.cfg-range-help { width: auto; margin-top: 0; }
+.cfg-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--app-space-1);
+  min-width: 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+}
+.cfg-summary > span { white-space: nowrap; }
+
+@container app-viewport (max-width: 1180px) {
+  .cfg-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr)); }
+}
+@container app-viewport (max-width: 640px) {
+  .cfg-date-range { grid-template-columns: minmax(0, 1fr); }
+  .cfg-date-separator { display: none; }
+  .cfg-summary > span { white-space: normal; }
+}
 .card-title { font-weight: var(--app-font-weight-section); }
 .card-sub { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-left: 8px; }
 .hist-card { min-height: 300px; }

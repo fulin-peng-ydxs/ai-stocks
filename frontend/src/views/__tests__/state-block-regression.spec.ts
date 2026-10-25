@@ -287,6 +287,7 @@ const stubs = {
 async function mountView(
   component: Component,
   authOptions: { role?: string; permissions?: string[] } = {},
+  extraStubs: Record<string, Component | boolean> = {},
 ) {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -301,7 +302,7 @@ async function mountView(
     attachTo: document.body,
     global: {
       plugins: [pinia, router, ElementPlus],
-      stubs,
+      stubs: { ...stubs, ...extraStubs },
       directives: { permission: {} },
     },
   })
@@ -1914,6 +1915,57 @@ describe('代表性页面四态回归', () => {
     expect(scoreSelector.find('[data-testid="backtest-score-select-select"]').exists()).toBe(false)
     expect(scoreSelector.find('.app-state-block__inline-error').exists()).toBe(true)
     expect(wrapper.text()).toContain('运行回测')
+  })
+
+  it('训练开局摘要跟随本次模式和默认参数，调整入口共用设置抽屉且提交口径一致', async () => {
+    const wrapper = await mountView(TrainingView, {}, {
+      PageSettingsDrawer: { template: '<div><slot name="business"/></div>' },
+    })
+    const vm = wrapper.vm as any
+    const summary = wrapper.get('[aria-label="本次训练参数"]')
+    const roundCountField = () => wrapper.findAllComponents({ name: 'PageSettingItem' })
+      .find(field => field.props('label') === '回合数（只）')
+    expect(roundCountField()).toBeUndefined()
+    expect(summary.text()).not.toContain('回合 ·')
+    expect(summary.text()).toContain('每回合 20 个交易日')
+    expect(summary.text()).toContain('初始资金 100,000.00 元')
+
+    vm.sessionConfig.mode = 'multi'
+    vm.sessionConfig.range_start = '2024-01-01'
+    vm.sessionConfig.range_end = '2024-12-31'
+    vm.sessionConfig.boards = ['主板', '创业板']
+    vm.settings.n_rounds = 7
+    vm.settings.window_days = 15
+    vm.settings.initial_capital = 250000.5
+    await flushPromises()
+    expect(summary.text()).toContain('7 回合')
+    expect(roundCountField()).toBeDefined()
+    expect(summary.text()).toContain('每回合 15 个交易日')
+    expect(summary.text()).toContain('初始资金 250,000.50 元')
+    expect(vm.settings.mode).toBe('single')
+    expect(vm.settings.boards).toEqual([])
+
+    await summary.find('button').trigger('click')
+    expect(vm.settingsOpen).toBe(true)
+    vm.settingsOpen = false
+    await flushPromises()
+    // 保留输入并覆盖失败态，避免测试开局响应把页面切走后无法检查摘要。
+    vi.mocked(trainingApi.startSession).mockRejectedValueOnce(new Error('test start failed'))
+    await wrapper.findAll('button').find(button => button.text() === '开始训练')!.trigger('click')
+    await flushPromises()
+    expect(trainingApi.startSession).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'multi', range_start: '2024-01-01', range_end: '2024-12-31',
+      n_rounds: 7, window_days: 15, initial_capital: 250000.5,
+      filters: { exclude_st: true, boards: ['主板', '创业板'] },
+    }))
+    expect(summary.text()).toContain('7 回合')
+    expect(vm.sessionConfig.range_start).toBe('2024-01-01')
+    vm.sessionConfig.mode = 'single'
+    await flushPromises()
+    expect(summary.text()).not.toContain('7 回合')
+    expect(roundCountField()).toBeUndefined()
+    expect(summary.text()).toContain('每回合 15 个交易日')
+    wrapper.unmount()
   })
 
   it('训练键盘与按钮共享权限、输入边界和异步互斥', async () => {

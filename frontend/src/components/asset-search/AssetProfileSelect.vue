@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppSelect from '@/components/AppSelect.vue'
+import AppIconButton from '@/components/AppIconButton.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 // 统一「资产方案选择器」（R3/R7）：下拉/侧栏双形态，列表只加载「我的」资产（纯 owner），
@@ -33,6 +34,8 @@ const props = withDefaults(defineProps<{
   modelValue: string
   /** select=下拉形态（筛选/榜单/个股详情/回测）；list=侧栏列表形态（配置页） */
   mode?: 'select' | 'list'
+  /** 下拉旁搜索入口的呈现方式；图标形态沿用统一命令按钮。 */
+  searchButton?: 'text' | 'icon'
   /** 资产中文名，例「筛选方案」 */
   assetLabel: string
   fetchMine: () => Promise<ProfileSummary[]>
@@ -54,6 +57,7 @@ const props = withDefaults(defineProps<{
   removableTemp?: boolean
 }>(), {
   mode: 'select',
+  searchButton: 'text',
   copyPermission: '',
   viewPermission: '',
   placeholder: '',
@@ -317,8 +321,15 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
             </div>
           </template>
         </AppSelect>
+        <AppIconButton
+          v-if="canBrowse && searchButton === 'icon'"
+          class="asset-profile-select__search"
+          :label="`搜索${assetLabel}`"
+          :data-testid="`${testId}-search`"
+          @click="openSearch()"
+        ><Search /></AppIconButton>
         <el-button
-          v-if="canBrowse"
+          v-else-if="canBrowse"
           class="asset-profile-select__search"
           :data-testid="`${testId}-search`"
           @click="openSearch()"

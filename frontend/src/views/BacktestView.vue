@@ -1848,230 +1848,238 @@ const menuPageTitle = useMenuPageTitle()
       shadow="never"
       class="form-card"
     >
-      <AppForm>
-      <AppControlRow class="form-row">
-        <AppControlItem label="区间">
-          <TradeDatePicker v-model="dateStart" placeholder="开始" style="width: 160px" />
-        </AppControlItem>
-        <AppControlItem label="~">
-          <TradeDatePicker v-model="dateEnd" placeholder="结束" style="width: 160px" />
-        </AppControlItem>
-        <AppControlItem>
-          <template #label>
-            评分方案
-            <HelpTip title="评分方案" :width="340">
-              <HelpTipItem question="方案用于什么">
-                <ul>
-                  <li>策略回测中用于在候选超过持仓数时按分排序截断；评分验证中用于分档检验高分组是否更易上涨。</li>
-                </ul>
-              </HelpTipItem>
-              <HelpTipItem question="在哪里定义">
-                <ul>
-                  <li>前往「配置管理 → 评分规则」定义。</li>
-                </ul>
-              </HelpTipItem>
-            </HelpTip>
-          </template>
-          <AssetProfileSelect
-            ref="scoreProfileSelectRef"
-            v-model="guardedScoreProfileId"
-            asset-label="评分方案"
-            :fetch-mine="fetchMineScoreProfiles"
-            :browse="browseScore"
-            :copy-item="copyAnyScoreProfile"
-            loaded-mode="external"
-            copy-permission="score-profile:save"
-            view-permission="score-profile:view"
-            placeholder="请选择评分方案（必选）"
-            test-id="backtest-score-select"
-            style="width: 300px"
-            @ready="onScoreReady"
-            @loaded="onScoreLoaded"
-            @copied-item="onScoreCopied"
-            @update:model-value="onScoreSelect"
-          />
-          <!-- 加载查看的临时只读项：选择器外展示（方案b，不破组件递归契约），显示名称非 opaque ref；本次运行口径（快照优先于 mine 选择器值） -->
-          <span
-            v-if="tempSelected.score || historyProfileUnavailable.score"
-            class="temp-readonly-chip"
-            :data-testid="`${'backtest-score-select'}-temp`"
-          >
-            <template v-if="tempSelected.score">
-              <span class="temp-readonly-chip-prefix">本次运行：</span>
-              <AssetProfileLabel
-                :name="tempSelected.score.name"
-                :version="tempSelected.score.version || null"
-                :source="tempSelected.score.is_preset ? 'preset' : tempSelected.score.source"
-                :is-preset="tempSelected.score.is_preset"
-                :owner-label="tempSelected.score.owner_label"
-                readonly
-              />
-            </template>
-            <span v-else class="temp-readonly-chip-prefix">历史评分方案已不可用，请重新选择</span>
-            <AppCloseButton label="清除临时只读方案" size="compact" @click="clearTemp('score')" />
-          </span>
-        </AppControlItem>
-        <template v-if="kind === 'strategy'">
-          <AppControlItem>
-            <template #label>
-              选股方案
-              <HelpTip title="选股方案 = 自定义策略入口" :width="360">
-                <HelpTipItem question="方案如何限制范围">
-                  <ul>
-                    <li>选择方案后，只在命中该方案的股票中按评分取前 N 只；不选择时不额外限制范围，但仍排除 ST，并继续执行评分和买入条件。</li>
-                  </ul>
-                </HelpTipItem>
-                <HelpTipItem question="如何自定义方案">
-                  <ul>
-                    <li>前往「策略筛选」页编写规则并保存，之后即可在此选择。</li>
-                  </ul>
-                </HelpTipItem>
-              </HelpTip>
-              <HelpHint v-if="profileDesc" :text="`方案说明：${profileDesc}`" />
-            </template>
-            <AssetProfileSelect
-              ref="screenProfileSelectRef"
-              v-model="guardedScreenProfileId"
-              asset-label="选股方案"
-              :fetch-mine="fetchMineScreenProfiles"
-              :browse="browseScreen"
-              :copy-item="copyAnyScreenProfile"
-              loaded-mode="external"
-              copy-permission="screen-profile:save"
-              view-permission="screen-profile:view"
-              placeholder="不使用选股方案（默认）"
-              test-id="backtest-screen-select"
-              style="width: 300px"
-              @ready="onScreenReady"
-              @loaded="onScreenLoaded"
-              @copied-item="onScreenCopied"
-              @update:model-value="onScreenSelect"
-            />
-            <!-- 加载查看的临时只读项：选择器外展示（方案b）；本次运行口径（快照优先于 mine 选择器值） -->
-            <span
-              v-if="tempSelected.screen || historyProfileUnavailable.screen"
-              class="temp-readonly-chip"
-              data-testid="backtest-screen-select-temp"
-            >
-              <template v-if="tempSelected.screen">
-                <span class="temp-readonly-chip-prefix">本次运行：</span>
-                <AssetProfileLabel
-                  :name="tempSelected.screen.name"
-                  :version="tempSelected.screen.version || null"
-                  :source="tempSelected.screen.is_preset ? 'preset' : tempSelected.screen.source"
-                  :is-preset="tempSelected.screen.is_preset"
-                  :owner-label="tempSelected.screen.owner_label"
-                  readonly
-                />
+      <AppForm label-position="top" class="backtest-params" :class="{ 'is-score-check': kind === 'score_check' }">
+        <div class="form-row parameter-grid">
+          <el-form-item class="date-field" label="回测区间">
+            <div class="date-range">
+              <TradeDatePicker v-model="dateStart" aria-label="回测开始日期" placeholder="开始日期" />
+              <span class="date-range-separator">—</span>
+              <TradeDatePicker v-model="dateEnd" aria-label="回测结束日期" placeholder="结束日期" />
+            </div>
+          </el-form-item>
+          <template v-if="kind === 'strategy'">
+            <el-form-item class="holding-field">
+              <template #label>
+                持仓数量
+                <HelpTip title="持仓数" :width="300">
+                  <HelpTipItem question="持仓数如何生效">
+                    <ul>
+                      <li>每个调仓日在候选中按综合分取前 N 只等权买入，并限制同时最多持有的股票数量。</li>
+                    </ul>
+                  </HelpTipItem>
+                </HelpTip>
               </template>
-              <span v-else class="temp-readonly-chip-prefix">历史选股方案已不可用，请重新选择或清除</span>
-              <AppCloseButton label="清除临时只读方案" size="compact" @click="clearTemp('screen')" />
-            </span>
-          </AppControlItem>
-          <AppControlItem>
+              <el-input-number v-model="topN" aria-label="持仓数量" :min="1" :max="50" controls-position="right" />
+            </el-form-item>
+            <el-form-item class="capital-field" label="初始本金（元）">
+              <el-input-number
+                v-model="initCap"
+                aria-label="初始本金（元）"
+                :min="100000"
+                :step="100000"
+                :formatter="formatMoneyInput"
+                :parser="parseMoneyInput"
+                controls-position="right"
+              />
+            </el-form-item>
+            <el-form-item class="industry-field" label="行业上限">
+              <div class="industry-controls">
+                <el-checkbox v-model="industryOn" aria-label="启用行业上限">启用</el-checkbox>
+                <el-input-number v-model="industryPct" aria-label="行业上限百分比" :disabled="!industryOn" :min="1" :max="100" controls-position="right" />
+                <span class="unit" :class="{ off: !industryOn }">%</span>
+              </div>
+            </el-form-item>
+          </template>
+        </div>
+        <AppControlRow class="scheme-grid" align="start">
+          <el-form-item class="scheme-field">
             <template #label>
-              持仓数
-              <HelpTip title="持仓数" :width="300">
-                <HelpTipItem question="持仓数如何生效">
+              评分方案 <span class="required-mark" aria-hidden="true">*</span>
+              <HelpTip title="评分方案" :width="340">
+                <HelpTipItem question="方案用于什么">
                   <ul>
-                    <li>每个调仓日在候选中按综合分取前 N 只等权买入，并限制同时最多持有的股票数量。</li>
-                  </ul>
-                </HelpTipItem>
-              </HelpTip>
-            </template>
-            <el-input-number v-model="topN" :min="1" :max="50" controls-position="right" style="width: 100px" />
-          </AppControlItem>
-          <AppControlItem label="本金">
-            <el-input-number
-              v-model="initCap"
-              :min="100000"
-              :step="100000"
-              :formatter="formatMoneyInput"
-              :parser="parseMoneyInput"
-              controls-position="right"
-              style="width: 140px"
-            />
-          </AppControlItem>
-          <AppControlItem>
-            <template #label>
-              买卖方案
-              <HelpTip title="买卖方案 = 买/卖/兜底" :width="380">
-                <HelpTipItem question="方案如何决定买卖">
-                  <ul>
-                    <li>买入必须同时满足筛选命中和买入条件；卖出执行方案的卖出条件以及止盈、止损、最大持有等兜底。</li>
+                    <li>策略回测中用于在候选超过持仓数时按分排序截断；评分验证中用于分档检验高分组是否更易上涨。</li>
                   </ul>
                 </HelpTipItem>
                 <HelpTipItem question="在哪里定义">
                   <ul>
-                    <li>前往「配置管理 → 买卖指标」定义。</li>
+                    <li>前往「配置管理 → 评分规则」定义。</li>
                   </ul>
                 </HelpTipItem>
               </HelpTip>
             </template>
             <AssetProfileSelect
-              ref="tradeProfileSelectRef"
-              v-model="guardedTradeProfileId"
-              asset-label="买卖方案"
-              :fetch-mine="fetchMineTradeProfiles"
-              :browse="browseTrade"
-              :copy-item="copyAnyTradeProfile"
+              ref="scoreProfileSelectRef"
+              v-model="guardedScoreProfileId"
+              asset-label="评分方案"
+              :fetch-mine="fetchMineScoreProfiles"
+              :browse="browseScore"
+              :copy-item="copyAnyScoreProfile"
               loaded-mode="external"
-              copy-permission="trade-profile:save"
-              view-permission="trade-profile:view"
-              placeholder="请选择买卖方案（必选）"
-              test-id="backtest-trade-select"
-              style="width: 300px"
-              @ready="onTradeReady"
-              @loaded="onTradeLoaded"
-              @copied-item="onTradeCopied"
-              @update:model-value="onTradeSelect"
+              copy-permission="score-profile:save"
+              view-permission="score-profile:view"
+              placeholder="请选择评分方案"
+              search-button="icon"
+              test-id="backtest-score-select"
+              @ready="onScoreReady"
+              @loaded="onScoreLoaded"
+              @copied-item="onScoreCopied"
+              @update:model-value="onScoreSelect"
             />
-            <!-- 加载查看的临时只读项：选择器外展示（方案b）；本次运行口径（快照优先于 mine 选择器值） -->
+            <!-- 加载查看的临时只读项：选择器外展示（方案b，不破组件递归契约），显示名称非 opaque ref；本次运行口径（快照优先于 mine 选择器值） -->
             <span
-              v-if="tempSelected.trade || historyProfileUnavailable.trade"
+              v-if="tempSelected.score || historyProfileUnavailable.score"
               class="temp-readonly-chip"
-              data-testid="backtest-trade-select-temp"
+              :data-testid="`${'backtest-score-select'}-temp`"
             >
-              <template v-if="tempSelected.trade">
+              <template v-if="tempSelected.score">
                 <span class="temp-readonly-chip-prefix">本次运行：</span>
                 <AssetProfileLabel
-                  :name="tempSelected.trade.name"
-                  :version="tempSelected.trade.version || null"
-                  :source="tempSelected.trade.is_preset ? 'preset' : tempSelected.trade.source"
-                  :is-preset="tempSelected.trade.is_preset"
-                  :owner-label="tempSelected.trade.owner_label"
+                  :name="tempSelected.score.name"
+                  :version="tempSelected.score.version || null"
+                  :source="tempSelected.score.is_preset ? 'preset' : tempSelected.score.source"
+                  :is-preset="tempSelected.score.is_preset"
+                  :owner-label="tempSelected.score.owner_label"
                   readonly
                 />
               </template>
-              <span v-else class="temp-readonly-chip-prefix">历史买卖方案已不可用，请重新选择</span>
-              <AppCloseButton label="清除临时只读方案" size="compact" @click="clearTemp('trade')" />
+              <span v-else class="temp-readonly-chip-prefix">历史评分方案已不可用，请重新选择</span>
+              <AppCloseButton label="清除临时只读方案" size="compact" @click="clearTemp('score')" />
             </span>
-          </AppControlItem>
-          <AppControlItem>
-            <el-checkbox v-model="industryOn">行业上限</el-checkbox>
-            <el-input-number v-model="industryPct" :disabled="!industryOn" :min="1" :max="100" controls-position="right" style="width: 92px" />
-            <span class="unit" :class="{ off: !industryOn }">%</span>
-          </AppControlItem>
-        </template>
-      </AppControlRow>
-
-      <!-- 运行按钮 + 紧贴其下的执行说明。dirty=蓝可点；出结果/载入历史后置灰；改参恢复 -->
-      <AppControlRow class="run-row">
-        <el-button v-permission="'backtest:run'" :type="dirty ? 'primary' : 'info'" :loading="loading || runningRun"
-                   :disabled="!dirty" @click="run">
-          {{ dirty ? '运行回测' : '已是最新结果' }}
-        </el-button>
-        <el-button
-
-          data-testid="backtest-reset-params"
-          :disabled="!hasResettableRunParams"
-          @click="resetRunParams"
-        >重置参数</el-button>
-      </AppControlRow>
-      <div class="tip-line">
-        本地同步执行，区间数月约 10 秒级；信号质量分析覆盖全市场（耗时稍长）。
-        <span v-if="dataMin">数据可用范围 {{ dataMin }} ~ {{ dataMax }}。</span>
-      </div>
+          </el-form-item>
+          <template v-if="kind === 'strategy'">
+            <el-form-item class="scheme-field">
+              <template #label>
+                选股方案
+                <HelpTip title="选股方案 = 自定义策略入口" :width="360">
+                  <HelpTipItem question="方案如何限制范围">
+                    <ul>
+                      <li>选择方案后，只在命中该方案的股票中按评分取前 N 只；不选择时不额外限制范围，但仍排除 ST，并继续执行评分和买入条件。</li>
+                    </ul>
+                  </HelpTipItem>
+                  <HelpTipItem question="如何自定义方案">
+                    <ul>
+                      <li>前往「策略筛选」页编写规则并保存，之后即可在此选择。</li>
+                    </ul>
+                  </HelpTipItem>
+                </HelpTip>
+                <HelpHint v-if="profileDesc" :text="`方案说明：${profileDesc}`" />
+              </template>
+              <AssetProfileSelect
+                ref="screenProfileSelectRef"
+                v-model="guardedScreenProfileId"
+                asset-label="选股方案"
+                :fetch-mine="fetchMineScreenProfiles"
+                :browse="browseScreen"
+                :copy-item="copyAnyScreenProfile"
+                loaded-mode="external"
+                copy-permission="screen-profile:save"
+                view-permission="screen-profile:view"
+                placeholder="不使用选股方案"
+                search-button="icon"
+                test-id="backtest-screen-select"
+                @ready="onScreenReady"
+                @loaded="onScreenLoaded"
+                @copied-item="onScreenCopied"
+                @update:model-value="onScreenSelect"
+              />
+              <!-- 加载查看的临时只读项：选择器外展示（方案b）；本次运行口径（快照优先于 mine 选择器值） -->
+              <span
+                v-if="tempSelected.screen || historyProfileUnavailable.screen"
+                class="temp-readonly-chip"
+                data-testid="backtest-screen-select-temp"
+              >
+                <template v-if="tempSelected.screen">
+                  <span class="temp-readonly-chip-prefix">本次运行：</span>
+                  <AssetProfileLabel
+                    :name="tempSelected.screen.name"
+                    :version="tempSelected.screen.version || null"
+                    :source="tempSelected.screen.is_preset ? 'preset' : tempSelected.screen.source"
+                    :is-preset="tempSelected.screen.is_preset"
+                    :owner-label="tempSelected.screen.owner_label"
+                    readonly
+                  />
+                </template>
+                <span v-else class="temp-readonly-chip-prefix">历史选股方案已不可用，请重新选择或清除</span>
+                <AppCloseButton label="清除临时只读方案" size="compact" @click="clearTemp('screen')" />
+              </span>
+            </el-form-item>
+            <el-form-item class="scheme-field">
+              <template #label>
+                买卖方案 <span class="required-mark" aria-hidden="true">*</span>
+                <HelpTip title="买卖方案 = 买/卖/兜底" :width="380">
+                  <HelpTipItem question="方案如何决定买卖">
+                    <ul>
+                      <li>买入必须同时满足筛选命中和买入条件；卖出执行方案的卖出条件以及止盈、止损、最大持有等兜底。</li>
+                    </ul>
+                  </HelpTipItem>
+                  <HelpTipItem question="在哪里定义">
+                    <ul>
+                      <li>前往「配置管理 → 买卖指标」定义。</li>
+                    </ul>
+                  </HelpTipItem>
+                </HelpTip>
+              </template>
+              <AssetProfileSelect
+                ref="tradeProfileSelectRef"
+                v-model="guardedTradeProfileId"
+                asset-label="买卖方案"
+                :fetch-mine="fetchMineTradeProfiles"
+                :browse="browseTrade"
+                :copy-item="copyAnyTradeProfile"
+                loaded-mode="external"
+                copy-permission="trade-profile:save"
+                view-permission="trade-profile:view"
+                placeholder="请选择买卖方案"
+                search-button="icon"
+                test-id="backtest-trade-select"
+                @ready="onTradeReady"
+                @loaded="onTradeLoaded"
+                @copied-item="onTradeCopied"
+                @update:model-value="onTradeSelect"
+              />
+              <!-- 加载查看的临时只读项：选择器外展示（方案b）；本次运行口径（快照优先于 mine 选择器值） -->
+              <span
+                v-if="tempSelected.trade || historyProfileUnavailable.trade"
+                class="temp-readonly-chip"
+                data-testid="backtest-trade-select-temp"
+              >
+                <template v-if="tempSelected.trade">
+                  <span class="temp-readonly-chip-prefix">本次运行：</span>
+                  <AssetProfileLabel
+                    :name="tempSelected.trade.name"
+                    :version="tempSelected.trade.version || null"
+                    :source="tempSelected.trade.is_preset ? 'preset' : tempSelected.trade.source"
+                    :is-preset="tempSelected.trade.is_preset"
+                    :owner-label="tempSelected.trade.owner_label"
+                    readonly
+                  />
+                </template>
+                <span v-else class="temp-readonly-chip-prefix">历史买卖方案已不可用，请重新选择</span>
+                <AppCloseButton label="清除临时只读方案" size="compact" @click="clearTemp('trade')" />
+              </span>
+            </el-form-item>
+          </template>
+        </AppControlRow>
+        <div class="parameter-footer">
+          <div class="parameter-status">
+            <span v-if="dataMin">可用数据：{{ dataMin }} ～ {{ dataMax }}</span>
+            <HelpHint :text="kind === 'strategy'
+              ? '本地同步执行，区间数月约 10 秒级。'
+              : '信号质量分析覆盖全市场，耗时稍长。'" />
+          </div>
+          <AppControlRow class="run-row">
+            <el-button
+              data-testid="backtest-reset-params"
+              :disabled="!hasResettableRunParams"
+              @click="resetRunParams"
+            >重置参数</el-button>
+            <el-button v-permission="'backtest:run'" :type="dirty ? 'primary' : 'info'" :loading="loading || runningRun"
+                       :disabled="!dirty" @click="run">
+              {{ dirty ? '运行回测' : '已是最新结果' }}
+            </el-button>
+          </AppControlRow>
+        </div>
       </AppForm>
     </el-card>
 
@@ -2569,8 +2577,9 @@ const menuPageTitle = useMenuPageTitle()
 .board-missing-notice { margin-bottom: var(--app-space-2); }
 .backtest-body {
   flex: 1 1 auto;          /* 填满 LayoutHost 的条件成长区 */
-  min-height: 0;
-  overflow: hidden;        /* 自身不滚：固定表单卡 + 内部 .results 区滚动 */
+  /* 固定参数与结果最低高度共同撑开主区，低高度交给 LayoutHost 滚动。 */
+  min-height: min-content;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -2585,12 +2594,90 @@ const menuPageTitle = useMenuPageTitle()
 }
 .sell-tag { margin: 1px 2px 1px 0; }
 .dlg-tbl-title { margin: 14px 0 6px; font-weight: var(--app-font-weight-section); font-size: var(--app-font-size-table); }
-.form-card { margin-bottom: 14px; flex: 0 0 auto; }  /* 操作区固定高，不被结果挤压（第一层级）*/
+.form-card { margin-bottom: var(--app-space-3); flex: 0 0 auto; }
+.backtest-params {
+  display: grid;
+  gap: var(--app-space-4);
+}
+.parameter-grid {
+  display: grid;
+  grid-template-columns: minmax(350px, 1.4fr) minmax(100px, 0.6fr) minmax(160px, 0.8fr) minmax(190px, 0.8fr);
+  gap: var(--app-space-4);
+}
+.scheme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: var(--app-space-4);
+}
+.backtest-params :deep(.el-form-item) {
+  margin-bottom: 0;
+  min-width: 0;
+}
+.backtest-params :deep(.el-form-item__label) {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-1);
+}
+.backtest-params :deep(.el-form-item__content) {
+  min-width: 0;
+  gap: var(--app-space-2);
+}
+.backtest-params :deep(.asset-profile-select),
+.backtest-params :deep(.el-input-number) {
+  width: 100%;
+}
+.date-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--app-space-2);
+  width: 100%;
+  min-width: 0;
+}
+.date-range :deep(.el-date-editor) { width: 100%; min-width: 0; }
+.date-range-separator { color: var(--el-text-color-secondary); }
+.industry-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
+  width: 100%;
+}
+.industry-controls :deep(.el-checkbox) { margin-right: 0; }
+.industry-controls :deep(.el-input-number) { flex: 1; min-width: 0; }
+.required-mark { color: var(--el-color-danger); }
+.parameter-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-3);
+  padding-top: var(--app-space-3);
+  border-top: 1px solid var(--el-border-color);
+}
+.parameter-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--app-space-1);
+  min-width: 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+}
+.backtest-params .temp-readonly-chip {
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+}
+.is-score-check { grid-template-columns: minmax(320px, 1fr) minmax(0, 1fr); }
+.is-score-check .parameter-grid,
+.is-score-check .scheme-grid { grid-template-columns: minmax(0, 1fr); }
+.is-score-check .parameter-footer { grid-column: 1 / -1; }
 .results {
-  flex: 1 1 auto;
+  flex: 1 1 240px;
   --app-scroll-display: flex;
   --app-scroll-direction: column;
-  min-height: 0;
+  min-height: 240px;
   /* 第二原则：各块最低高宽放不下时，整个结果区滚动兜底（够放时不出滚动条）*/
   --app-scroll-gap: var(--app-space-3);
   --app-scroll-padding-right: 2px;
@@ -2600,10 +2687,9 @@ const menuPageTitle = useMenuPageTitle()
 }
 .lbl { color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); margin-left: 6px; display: inline-flex; align-items: center; gap: var(--app-space-1); }
 .robust-row { margin-bottom: 10px; }
-.run-row { display: flex; align-items: center; gap: var(--app-space-2); margin-top: 14px; }
+.run-row { margin-left: auto; }
 .unit { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-right: 4px; }
 .unit.off { opacity: 0.4; }
-.tip-line { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-top: 8px; }
 .tip-inline { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .prof-desc {
   margin-top: 12px; padding: 8px 12px; border-radius: var(--layout-control-radius);
@@ -2657,7 +2743,14 @@ const menuPageTitle = useMenuPageTitle()
 .legend-line { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 8px; }
 .clickable :deep(.el-table__row) { cursor: pointer; }
 
+@container app-viewport (max-width: 1180px) {
+  .parameter-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr)); }
+}
+
 @container app-viewport (max-width: 720px) {
+  .scheme-grid,
+  .is-score-check { grid-template-columns: minmax(0, 1fr); }
+  .date-field { grid-column: 1 / -1; }
   .page-head {
     align-items: flex-start;
     flex-direction: column;
@@ -2685,15 +2778,14 @@ const menuPageTitle = useMenuPageTitle()
   .form-card :deep(.el-card__body) {
     padding: 12px;
   }
-  .form-row {
-    gap: var(--app-space-2) var(--app-space-control-gap);
-  }
-  .form-row .lbl {
-    margin-left: 0;
-  }
+  .parameter-grid,
+  .date-range { grid-template-columns: minmax(0, 1fr); }
+  .date-range-separator { display: none; }
+  .parameter-footer { align-items: flex-start; }
+  .parameter-status { width: 100%; }
 }
 
-/* 加载查看的临时只读项 chip（选择器外展示，方案b）：与选择器同行，弱化边框标示只读 */
+/* 方案只读预览保留在对应字段内，长名称可换行，关闭入口仍可达。 */
 .temp-readonly-chip {
   display: inline-flex;
   align-items: center;

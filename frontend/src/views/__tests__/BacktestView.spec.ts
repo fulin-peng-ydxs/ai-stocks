@@ -292,9 +292,9 @@ describe('BacktestView 三方案选择器（T5）', () => {
     expect(score.props('assetLabel')).toBe('评分方案')
     expect(screen.props('assetLabel')).toBe('选股方案')
     expect(trade.props('assetLabel')).toBe('买卖方案')
-    expect(score.props('placeholder')).toBe('请选择评分方案（必选）')
-    expect(screen.props('placeholder')).toBe('不使用选股方案（默认）')
-    expect(trade.props('placeholder')).toBe('请选择买卖方案（必选）')
+    expect(score.props('placeholder')).toBe('请选择评分方案')
+    expect(screen.props('placeholder')).toBe('不使用选股方案')
+    expect(trade.props('placeholder')).toBe('请选择买卖方案')
 
     for (const sel of [score, screen, trade]) {
       expect(typeof sel.props('fetchMine')).toBe('function')
