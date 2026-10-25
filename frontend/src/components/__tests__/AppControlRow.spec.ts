@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import postcss from 'postcss'
 import { defineComponent, nextTick, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
@@ -12,6 +15,37 @@ const components = { AppControlRow, AppForm, AppDialog, PageDrawer,
   ElForm, ElFormItem, ElConfigProvider, ElInput }
 
 describe('操作行共同尺寸', () => {
+  it('共享行消除库按钮相邻外距，行外与按钮组边界不受影响', () => {
+    const style = document.createElement('style')
+    const library = readFileSync(resolve('node_modules/element-plus/theme-chalk/el-button.css'), 'utf8')
+    const global = readFileSync(resolve('src/styles/global.css'), 'utf8')
+    const rules: string[] = []
+    for (const css of [library, global]) postcss.parse(css).walkRules(rule => {
+      if (['.el-button+.el-button', '.app-control-row-scope > .el-button + .el-button']
+        .includes(rule.selector)) rules.push(rule.toString())
+    })
+    style.textContent = rules.join('\n')
+    document.head.appendChild(style)
+    const wrapper = mount(defineComponent({
+      components: { AppControlRow },
+      template: `<section>
+        <AppControlRow><button class="el-button">一</button><button class="el-button" data-testid="direct">二</button>
+          <span><button class="el-button">一</button><button class="el-button" data-testid="nested">二</button></span>
+        </AppControlRow>
+        <div><button class="el-button">一</button><button class="el-button" data-testid="outside">二</button></div>
+      </section>`,
+    }), { attachTo: document.body })
+    try {
+      expect(getComputedStyle(wrapper.get('[data-testid="direct"]').element).marginLeft).toBe('0px')
+      for (const id of ['nested', 'outside']) {
+        expect(getComputedStyle(wrapper.get(`[data-testid="${id}"]`).element).marginLeft).toBe('12px')
+      }
+    } finally {
+      wrapper.unmount()
+      style.remove()
+    }
+  })
+
   it('关联字段可整组换行，切换换行策略不重建输入或丢失草稿', async () => {
     const wrapper = mount(AppControlRow, { slots: { default: '<input value="保留草稿" />' } })
     const input = wrapper.get('input').element

@@ -1278,6 +1278,8 @@ html.dark {
   --el-component-size-small: var(--app-control-row-height);
   --el-component-size-large: var(--app-control-row-height);
 }
+/* 共同操作行只由 gap 分配间距，消除库相邻按钮额外 12px 外距；按钮组内部仍由库承接。 */
+.app-control-row-scope > .el-button + .el-button { margin-left: 0; }
 /* CSS 与 Vue 上下文同时隔离：编辑区/浮层/表格不继承调用方的行尺寸。 */
 .app-control-row-boundary {
   --app-control-row-height: initial;

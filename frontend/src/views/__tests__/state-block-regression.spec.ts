@@ -1594,6 +1594,27 @@ describe('代表性页面四态回归', () => {
     wrapper.unmount()
   })
 
+  it('采集与结果维护入口共用页面密度操作行，并保留执行参数入口', async () => {
+    const wrapper = await mountView(IngestView, {}, {
+      AppControlRow: false,
+      LayoutHost: { template: '<main><slot name="body" /><slot name="overlays" /></main>' },
+    })
+    try {
+      const actions = wrapper.findAll('.act-actions')
+      expect(actions).toHaveLength(6)
+      for (const row of actions) {
+        expect(row.attributes('data-control-row')).toBe('default')
+        expect(row.find('.el-button--small').exists()).toBe(false)
+      }
+      await wrapper.get('[data-testid="manual-stock-board-correlation"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.findComponent(AppForm).props('size')).toBe('default')
+      expect(wrapper.text()).toContain('按以上参数执行')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('任务中心按失败和中断状态使用不同恢复动作', async () => {
     const wrapper = await mountView(IngestView)
     const failedActions = (wrapper.vm as any).taskRowActions({
