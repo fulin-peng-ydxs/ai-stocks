@@ -61,6 +61,7 @@ class RelatedBoardWinner(TypedDict):
     sample_60: int
     confidence: Literal["high", "medium", "low"]
     history: NotRequired[RelatedBoardHistory]
+    pct_chg: NotRequired[float | None]
 
 
 class RelatedBoardBenchmark(TypedDict):
@@ -823,31 +824,62 @@ class StockBoardCorrelationService:
             *membership.get("concepts", []),
         ]
         board_codes = sorted({str(item["board_code"]) for item in groups})
-        pct_by_code: dict[str, float | None] = {}
-        if business_date is not None and board_codes:
-            placeholders = ",".join("?" for _ in board_codes)
+        changes = self._board_market_changes({
+            (code, business_date) for code in board_codes if business_date is not None
+        })
+        for item in groups:
+            item["pct_chg"] = changes.get((str(item["board_code"]), business_date))
+        return membership
+
+    def _board_market_changes(
+        self, requests: set[tuple[str, date]]
+    ) -> dict[tuple[str, date], float | None]:
+        """详情与列表共用业务日行情；按板块/日期去重，不借用其它日或未来行情。"""
+        if not requests:
+            return {}
+        wanted = pd.DataFrame(sorted(requests), columns=["board_code", "trade_date"])
+        with self.c.temp_view(wanted, "related_board_market_dates") as view:
             rows = self.c.query_df(
-                "SELECT current.board_code, current.close, "
+                "SELECT current.board_code, current.trade_date, current.close, "
                 "       (SELECT previous.close FROM board_bar previous "
                 "        WHERE previous.board_code=current.board_code "
                 "          AND previous.trade_date<current.trade_date "
                 "        ORDER BY previous.trade_date DESC LIMIT 1) AS pre_close "
-                "FROM board_bar current "
-                f"WHERE current.trade_date=? AND current.board_code IN ({placeholders})",
-                [business_date, *board_codes],
+                f"FROM board_bar current JOIN {view} wanted "
+                "ON current.board_code=wanted.board_code "
+                "AND current.trade_date=wanted.trade_date"
             )
-            for row in rows.to_dict("records"):
-                close = row.get("close")
-                pre_close = row.get("pre_close")
-                pct_by_code[str(row["board_code"])] = (
-                    round((float(close) / float(pre_close) - 1) * 100, 2)
-                    if close is not None and pre_close is not None
-                    and not pd.isna(close) and not pd.isna(pre_close) and float(pre_close) > 0
-                    else None
-                )
-        for item in groups:
-            item["pct_chg"] = pct_by_code.get(str(item["board_code"]))
-        return membership
+        result = {}
+        for row in rows.to_dict("records"):
+            close, previous = row.get("close"), row.get("pre_close")
+            valid = (
+                close is not None and previous is not None
+                and math.isfinite(float(close)) and math.isfinite(float(previous))
+                and float(close) > 0 and float(previous) > 0
+            )
+            result[(str(row["board_code"]), pd.Timestamp(row["trade_date"]).date())] = (
+                round((float(close) / float(previous) - 1) * 100, 2) if valid else None
+            )
+        return result
+
+    def _attach_related_board_market(
+        self, summaries: dict[str, StockRelatedBoards | None]
+    ) -> None:
+        """历史冠军仅沿用身份与相关性；色块涨跌仍取页面业务日，与详情一致。"""
+        targets = []
+        for summary in summaries.values():
+            if not summary or summary.get("unavailable_reason") or not summary.get("as_of_date"):
+                continue
+            business_date = pd.Timestamp(summary["as_of_date"]).date()
+            for board_type in ("industry", "concept"):
+                winner = summary.get(board_type)
+                if winner:
+                    targets.append((winner, business_date))
+        changes = self._board_market_changes({
+            (winner["board_code"], business_date) for winner, business_date in targets
+        })
+        for winner, business_date in targets:
+            winner["pct_chg"] = changes.get((winner["board_code"], business_date))
 
     def get_memberships(
         self,
@@ -935,7 +967,7 @@ class StockBoardCorrelationService:
         *,
         schedule_missing: bool = True,
     ) -> dict[str, StockRelatedBoards | None]:
-        """一次查询返回多股各业务日期的冠军快照摘要。
+        """批量返回多股各业务日期的冠军快照及同日板块涨跌幅。
 
         业务日期匹配该日快照则返回该日冠军；仅样本不足时附加最近历史冠军及来源。
         该日无快照时只创建异步首次计算任务，
@@ -969,6 +1001,7 @@ class StockBoardCorrelationService:
             first_load_codes=first_load_codes,
         )
         self._apply_historical_fallback(summaries)
+        self._attach_related_board_market(summaries)
         return summaries
 
     def _apply_historical_fallback(

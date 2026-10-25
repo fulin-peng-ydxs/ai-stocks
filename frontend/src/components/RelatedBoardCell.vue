@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { getActivePinia } from 'pinia'
-import { RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { sectorDetailLocation } from '@/utils/sectorNavigation'
@@ -9,6 +8,7 @@ import type { RelatedBoardWinner, StockRelatedBoards } from '@/types/relatedBoar
 import RelatedBoardEmptyValue from '@/components/RelatedBoardEmptyValue.vue'
 import RelatedBoardHistoryHint from '@/components/RelatedBoardHistoryHint.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
+import MarketBoardTag from '@/components/MarketBoardTag.vue'
 
 const props = withDefaults(defineProps<{
   summary?: StockRelatedBoards | null
@@ -57,22 +57,16 @@ function formatCorrelation(value: number): string {
     :width="280"
   >
     <template #reference>
-      <span class="app-table-tag-shell related-board-cell__tag">
-        <el-tag size="small" effect="plain" :type="canNavigate ? 'primary' : 'info'">
-          <RouterLink
-            v-if="canNavigate"
-            class="related-board-cell__name app-table-field-link app-interaction-link app-interaction-link--primary"
-            :to="sectorLocation"
-            :data-testid="testId"
-            @click.stop
-          >{{ board.name }}</RouterLink>
-          <span
-            v-else
-            class="related-board-cell__name"
-            tabindex="0"
-            :data-testid="testId"
-          >{{ board.name }}</span>
-        </el-tag>
+      <span class="related-board-cell__tag">
+        <MarketBoardTag
+          variant="tag"
+          :name="board.name"
+          :pct-chg="board.pct_chg"
+          :to="canNavigate ? sectorLocation : undefined"
+          :tabindex="canNavigate ? undefined : 0"
+          :data-testid="testId"
+          @click.stop
+        />
         <RelatedBoardHistoryHint :history="board.history" :explain="false" />
       </span>
     </template>
@@ -118,13 +112,19 @@ function formatCorrelation(value: number): string {
 
 <style scoped>
 .related-board-cell__tag {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
   gap: var(--app-space-control-gap);
+  vertical-align: middle;
 }
-.related-board-cell__tag > .el-tag {
+
+.related-board-cell__tag > .market-board-tag {
+  flex-shrink: 1;
   min-width: 0;
 }
 
-.related-board-cell__name,
 .related-board-cell__empty {
   display: inline-block;
   max-width: 100%;
@@ -132,28 +132,7 @@ function formatCorrelation(value: number): string {
   text-overflow: ellipsis;
   vertical-align: middle;
   white-space: nowrap;
-}
-
-.related-board-cell__name:not(.app-table-field-link),
-.related-board-cell__empty {
   line-height: var(--app-line-height-table);
-}
-
-.related-board-cell__name:not(.app-interaction-link) {
-  color: var(--el-text-color-regular);
-}
-
-.related-board-cell__name:focus-visible {
-  border-radius: var(--el-border-radius-small);
-  outline: var(--app-focus-ring);
-  outline-offset: 2px;
-}
-
-.related-board-cell__tag {
-  min-width: 0;
-}
-
-.related-board-cell__empty {
   color: var(--app-placeholder-text);
 }
 

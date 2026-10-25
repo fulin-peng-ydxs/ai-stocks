@@ -94,6 +94,7 @@ def test_batch_summary_reads_per_day_snapshot(monkeypatch):
                 "sample_20": 20,
                 "sample_60": 58,
                 "confidence": "high",
+                "pct_chg": None,
             },
             "concept": None,
         }
@@ -522,7 +523,7 @@ def test_sample_shortage_reuses_each_types_nearest_valid_history_and_original_be
         service = StockBoardCorrelationService(counting)
         summary = service.get_related_boards(["000001.SZ"], date(2026, 8, 28))["000001.SZ"]
 
-        assert len(counting.queries) == 2
+        assert len(counting.queries) == 3
         assert summary["as_of_date"] == "2026-08-28"
         assert summary["industry"]["history"] == {
             "as_of_date": "2026-08-25",
@@ -567,7 +568,7 @@ def test_current_result_replaces_history_and_missing_snapshot_still_fails_closed
         assert missing["unavailable_reason"] == "as_of_mismatch"
 
 
-def test_history_fallback_scales_to_1024_stocks_with_90_snapshots_in_two_queries():
+def test_history_fallback_scales_to_1024_stocks_with_90_snapshots_in_three_queries():
     from backend.devtools.benchmark_stock_board_correlation_read import seed_read_fixture
 
     with DuckDBClient(db_path=":memory:") as market:
@@ -593,8 +594,73 @@ def test_history_fallback_scales_to_1024_stocks_with_90_snapshots_in_two_queries
         counting = _CountingClient(market)
         summaries = StockBoardCorrelationService(counting).get_related_boards(
             codes, date(2026, 8, 28))
-        assert len(counting.queries) == 2
+        assert len(counting.queries) == 3
         assert len(summaries) == 1024
         for summary in summaries.values():
             for kind in ("industry", "concept"):
                 assert summary[kind]["history"]["as_of_date"] == "2026-08-27"
+
+
+def test_summary_market_changes_use_each_business_date_and_keep_history_date():
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_summary(market)
+        _seed_history(market, date(2026, 8, 25), board_code="881001")
+        market.execute(
+            "INSERT INTO board_bar (board_code,trade_date,close) VALUES "
+            "('881001',DATE '2026-08-24',100),"
+            "('881001',DATE '2026-08-25',110),"
+            "('881001',DATE '2026-08-27',120),"
+            "('881001',DATE '2026-08-28',114),"
+            "('881001',DATE '2026-08-31',150)"
+        )
+        counting = _CountingClient(market)
+        summaries = StockBoardCorrelationService(counting).get_related_boards(
+            ["600000.SH", "000001.SZ"],
+            {"600000.SH": date(2026, 8, 28), "000001.SZ": date(2026, 8, 25)},
+            schedule_missing=False,
+        )
+        assert summaries["600000.SH"]["industry"]["pct_chg"] == -5.0
+        assert summaries["000001.SZ"]["industry"]["pct_chg"] == 10.0
+        assert len(counting.queries) == 2
+
+        history = StockBoardCorrelationService(market).get_related_boards(
+            ["000001.SZ"], date(2026, 8, 28), schedule_missing=False,
+        )["000001.SZ"]["industry"]
+        assert history["history"]["as_of_date"] == "2026-08-25"
+        assert history["pct_chg"] == -5.0
+
+
+@pytest.mark.parametrize("close,previous", [
+    (102, None), (102, 0), (102, float("nan")),
+    (float("inf"), 100), (0, 100), (float("nan"), 100),
+])
+def test_summary_market_change_missing_or_invalid_price_is_null(close, previous):
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_summary(market)
+        market.execute(
+            "INSERT INTO board_bar (board_code,trade_date,close) VALUES "
+            "('881001',DATE '2026-08-27',?),('881001',DATE '2026-08-28',?)",
+            [previous, close],
+        )
+        winner = StockBoardCorrelationService(market).get_related_boards(
+            ["600000.SH"], date(2026, 8, 28), schedule_missing=False,
+        )["600000.SH"]["industry"]
+        assert winner["pct_chg"] is None
+
+
+def test_summary_market_change_never_fills_missing_business_day_from_adjacent_prices():
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_summary(market)
+        market.execute(
+            "INSERT INTO board_bar (board_code,trade_date,close) VALUES "
+            "('881001',DATE '2026-08-26',100),"
+            "('881001',DATE '2026-08-27',102),"
+            "('881001',DATE '2026-08-31',110)"
+        )
+        winner = StockBoardCorrelationService(market).get_related_boards(
+            ["600000.SH"], date(2026, 8, 28), schedule_missing=False,
+        )["600000.SH"]["industry"]
+        assert winner["pct_chg"] is None

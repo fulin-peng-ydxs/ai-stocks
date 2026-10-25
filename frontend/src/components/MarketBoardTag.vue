@@ -5,11 +5,14 @@ import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
 
 const props = withDefaults(defineProps<{
   name: string
+  /** 表格同行显示名称与涨跌幅，沿用详情的行情方向配色。 */
+  variant?: 'card' | 'tag'
   pctChg?: number | null
   related?: boolean
   showRelatedLabel?: boolean
   to?: RouteLocationRaw
 }>(), {
+  variant: 'card',
   pctChg: null,
   related: false,
   showRelatedLabel: true,
@@ -18,6 +21,7 @@ const props = withDefaults(defineProps<{
 
 const pctText = computed(() => formatMarketPercent(props.pctChg))
 const tagClass = computed(() => ({
+  'market-board-tag--compact': props.variant === 'tag',
   'is-related': props.related,
   'is-link': !!props.to,
   'is-up': marketValueClass(props.pctChg) === 'up',
@@ -32,7 +36,7 @@ const tagClass = computed(() => ({
     :class="tagClass"
     :to="to"
   >
-    <span v-if="related && showRelatedLabel" class="market-board-tag__badge">走势最相关</span>
+    <span v-if="variant === 'card' && related && showRelatedLabel" class="market-board-tag__badge">走势最相关</span>
     <span class="market-board-tag__name">{{ name }}</span>
     <span class="market-board-tag__pct">{{ pctText }}</span>
   </component>
@@ -59,6 +63,31 @@ const tagClass = computed(() => ({
   color: var(--el-text-color-primary);
   text-align: center;
   text-decoration: none;
+}
+/* 夜间抬高中性底色并减弱色相，避免红绿混入近黑表面后显得浑浊。 */
+html.dark .market-board-tag {
+  background: color-mix(in srgb, var(--board-direction) 8%, var(--el-fill-color-light));
+}
+.market-board-tag--compact {
+  display: inline-flex;
+  flex-direction: row;
+  gap: var(--app-space-control-gap);
+  height: var(--app-control-height-xs);
+  min-height: var(--app-control-height-xs);
+  min-width: 0;
+  padding: 0 var(--app-space-1);
+  border-radius: var(--el-border-radius-small);
+}
+.market-board-tag--compact .market-board-tag__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.market-board-tag--compact .market-board-tag__pct {
+  flex: none;
+  white-space: nowrap;
 }
 .market-board-tag.is-up { --board-direction: var(--market-up-color); }
 .market-board-tag.is-down { --board-direction: var(--market-down-color); }

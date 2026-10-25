@@ -62,7 +62,7 @@ class ReadBenchmarkReport:
 
     @property
     def passed(self) -> bool:
-        return all(item.passed and item.sql_queries_per_round == 1 for item in self.results)
+        return all(item.passed and item.sql_queries_per_round == 2 for item in self.results)
 
 
 def _codes(stock_count: int) -> list[str]:
@@ -93,6 +93,13 @@ def seed_read_fixture(client: DuckDBClient, stock_count: int = DEFAULT_STOCKS) -
         "(?, ?, TIMESTAMP '2026-08-29 10:00:00', 'stock-board-correlation-v2', "
         "'000001.SH', false, true, true)",
         [(code, AS_OF_DATE) for code in codes],
+    )
+    client.execute(
+        "INSERT INTO board_bar (board_code,trade_date,close) VALUES "
+        "('BENCH_READ_I',DATE '2026-08-27',100),"
+        "('BENCH_READ_I',DATE '2026-08-28',102),"
+        "('BENCH_READ_C',DATE '2026-08-27',100),"
+        "('BENCH_READ_C',DATE '2026-08-28',99)"
     )
     champion_rows = []
     for code in codes:

@@ -34,19 +34,6 @@ const ElTooltipStub = defineComponent({
   },
 })
 
-const ElTagStub = defineComponent({
-  name: 'ElTag',
-  props: ['size', 'effect', 'type'],
-  setup(props, { slots }) {
-    return () => h('span', {
-      class: 'tag-stub',
-      'data-size': props.size,
-      'data-effect': props.effect,
-      'data-type': props.type,
-    }, slots.default?.())
-  },
-})
-
 const RouterLinkStub = defineComponent({
   name: 'RouterLink',
   props: ['to'],
@@ -117,7 +104,6 @@ function mountCell(
       stubs: {
         ElPopover: ElPopoverStub,
         ElTooltip: ElTooltipStub,
-        ElTag: ElTagStub,
         RouterLink: RouterLinkStub,
       },
     },
@@ -145,15 +131,29 @@ describe('RelatedBoardCell', () => {
     expect(wrapper.text()).not.toContain('有效样本指股票、板块与基准三方同日均有可计算收益')
     expect(wrapper.text()).toContain('数据截止日2026-08-28')
     expect(wrapper.text()).not.toContain('相关性较弱')
-    expect(wrapper.getComponent(ElTagStub).props()).toMatchObject({
-      size: 'small',
-      effect: 'plain',
-    })
     expect(wrapper.getComponent(ElPopoverStub).props('trigger')).toEqual(['hover', 'focus'])
-    const reference = wrapper.get('.related-board-cell__name')
+    const reference = wrapper.get('.market-board-tag')
     expect(reference.attributes('tabindex')).toBe('0')
     ;(reference.element as HTMLElement).focus()
     expect(document.activeElement).toBe(reference.element)
+  })
+
+  it.each([
+    [2.35, '+2.35%', 'is-up'],
+    [-1.28, '-1.28%', 'is-down'],
+    [0, '0.00%', null],
+    [null, '—', null],
+  ])('同行显示业务日涨跌并共用详情配色 %s', (pct, text, direction) => {
+    const wrapper = mountCell({ summary: summary('high', { pct_chg: pct }), boardType: 'industry' })
+    expect(wrapper.get('.market-board-tag__pct').text()).toBe(text)
+    expect(wrapper.get('.market-board-tag').classes()).toContain('market-board-tag--compact')
+    expect(wrapper.get('.market-board-tag__name').text()).toBe('银行')
+    expect(wrapper.find('.market-board-tag__badge').exists()).toBe(false)
+    if (direction) expect(wrapper.get('.market-board-tag').classes()).toContain(direction)
+    else {
+      expect(wrapper.get('.market-board-tag').classes()).not.toContain('is-up')
+      expect(wrapper.get('.market-board-tag').classes()).not.toContain('is-down')
+    }
   })
 
   it('低可信结果明确标记相关性较弱并安全处理非有限数', () => {
@@ -199,7 +199,6 @@ describe('RelatedBoardCell', () => {
       ['sectors:view'],
     )
     expect(allowed.get('a').attributes('href')).toBe('/sectors/%E6%A6%82%E5%BF%B5%2FAI')
-    expect(allowed.getComponent(ElTagStub).props('type')).toBe('primary')
 
     const system = mountCell({ summary: summary('medium'), boardType: 'industry' }, 'system')
     expect(system.find('a').exists()).toBe(true)
@@ -238,8 +237,7 @@ describe('RelatedBoardCell', () => {
     )
 
     expect(wrapper.find('a').exists()).toBe(false)
-    expect(wrapper.getComponent(ElTagStub).props('type')).toBe('info')
-    expect(wrapper.get('.related-board-cell__name').attributes('tabindex')).toBe('0')
+    expect(wrapper.get('.market-board-tag').attributes('tabindex')).toBe('0')
     expect(wrapper.text()).toContain('银行')
   })
 

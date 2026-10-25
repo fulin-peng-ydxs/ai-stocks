@@ -9,6 +9,8 @@ export interface RelatedBoardWinner {
   sample_20: number
   sample_60: number
   confidence: RelatedBoardConfidence
+  /** 页面业务日行情；历史冠军的相关性日期另见 history。 */
+  pct_chg?: number | null
   history?: RelatedBoardHistory
 }
 

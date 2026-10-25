@@ -97,10 +97,11 @@ describe('共享交互样式的消费者边界', () => {
     const violations = vueFiles(SRC_DIR).flatMap(file => unmarkedFieldLinks(readFileSync(file, 'utf8'))
       .map(line => `${file}:${line}`))
     expect(violations).toEqual([])
-    for (const file of ['components/StockAnalysisNameCell.vue', 'components/RelatedBoardCell.vue']) {
-      expect(parseSfc(readFileSync(join(SRC_DIR, file), 'utf8')).descriptor.template?.content)
-        .toContain('app-table-field-link')
-    }
+    expect(parseSfc(readFileSync(join(SRC_DIR, 'components/StockAnalysisNameCell.vue'), 'utf8')).descriptor.template?.content)
+      .toContain('app-table-field-link')
+    // 板块标签属于领域展示，字阶与颜色由详情/表格共享的组件维护。
+    expect(parseSfc(readFileSync(join(SRC_DIR, 'components/RelatedBoardCell.vue'), 'utf8')).descriptor.template?.content)
+      .toContain('<MarketBoardTag')
   })
 
   it('字段链接的字阶只有共享样式维护，消费页不得另配字重或字号', () => {
