@@ -390,7 +390,7 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
           <li
             v-for="p in options"
             :key="assetItemKey(p)"
-            class="app-interaction-list-item"
+            class="asset-profile-select__item app-interaction-list-item app-interaction-list-item--outlined"
             :aria-busy="loadingMine"
             :class="{ active: assetItemKey(p) === modelValue }"
           >
@@ -502,7 +502,7 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
   padding: 0;
   list-style: none;
 }
-.asset-profile-select__list li {
+.asset-profile-select__item {
   display: flex;
   align-items: center;
   gap: var(--app-space-1);

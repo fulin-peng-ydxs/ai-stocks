@@ -449,7 +449,7 @@ typography:
 | `AssetVisibilityTag` / `AssetProfileLabel` / `AssetVisibilityActions` | `frontend/src/components/AssetVisibilityTag.vue`、`frontend/src/components/AssetProfileLabel.vue`、`frontend/src/components/AssetVisibilityActions.vue` | 公开资产来源、可见范围、只读状态、方案名称+版本+归属标签、发布/收回、复制为我的方案和复用参数动作 | 无直接系统组件种类 | 评分、筛选、买卖、回测等公开资产页面必须复用；方案选择/列表入口统一用 `AssetProfileLabel`，消费页包括 `BoardView`、`ScreenView`、`StockDetailView`、`ConfigView` 评分 tab、`ConfigView` 买卖 tab、`BacktestView` |
 | `ScoreGradeTag` | `frontend/src/components/ScoreGradeTag.vue` | 统一综合评分评级标签：主升浪核心=`danger`、龙头候选=`warning`、观察=`success`、未知评级=`info` | 无直接系统组件种类 | 每日榜单、策略筛选、评分试算、回测交易及回测当日榜单统一复用；默认使用表格小号标签和统一垂直居中几何；训练模块的 S/A/B/C/D 属于另一套评级，不套用本组件 |
 | `SubScoreChips` | `frontend/src/components/SubScoreChips.vue` | 分项达标分的业务域复用单元格，统一评分等级、胶囊样式、末尾截断与完整内容提示 | 无直接系统组件种类；作为既有 `data-table` 业务列内容 | 每日榜单与评分试算共同消费；保留评分胶囊原有的紧凑自适应高度与间距，不为统一提示机制改变业务组件外观；超长内容在胶囊末尾使用原生省略号，不得叠加单元格公共省略遮罩或留下被截断的分数字符；省略原文提示由全局省略宿主自动承接 |
-| `AssetSearchDrawer` / `AssetProfileSelect` | `frontend/src/components/asset-search/AssetSearchDrawer.vue`、`frontend/src/components/asset-search/AssetProfileSelect.vue` | 统一跨来源资产搜索抽屉与“我的资产”选择器，支持 `select` / `list` 形态、服务端搜索分页、加载查看、复制或复用 | 无直接系统组件种类 | 公开资产页面统一消费；浏览、选择、只读预览与失败恢复见[弹窗与抽屉](#弹窗与抽屉)。 |
+| `AssetSearchDrawer` / `AssetProfileSelect` | `frontend/src/components/asset-search/AssetSearchDrawer.vue`、`frontend/src/components/asset-search/AssetProfileSelect.vue` | 统一跨来源资产搜索抽屉与“我的资产”选择器，支持 `select` / `list` 形态、服务端搜索分页、加载查看、复制或复用 | 无直接系统组件种类 | 公开资产页面统一消费；list 形态接入共享描边列表变体，状态契约见[紧凑对象列表](#compact-object-lists)；浏览、选择、只读预览与失败恢复见[弹窗与抽屉](#弹窗与抽屉)。 |
 | `ConfigGroupForm` | `frontend/src/components/config/ConfigGroupForm.vue` | 系统设置配置组表单 | 消费 `config-panel` 的折叠与说明展示配置 | 动态配置组字段渲染优先复用 |
 
 ### 股票图表工作区
@@ -523,7 +523,9 @@ typography:
 - 多个独立同级任务的主入口允许并列使用 `primary + plain`，不要求页面没有其它按钮；每个局部操作组仍需清楚区分主次。不得仅因页面出现多个主色轻量入口就统一降为中性，也不把普通次要命令一律升级为主色。行级和列表项的轻量文字操作继续按 `AppRowActions` 的首个高频动作规则处理。
 - 卡片或工具栏中的独立次要命令默认使用中性描边按钮，保持与主操作相同的尺寸层级；`text / link` 适用于行内操作、文本导航等已有上下文能明确表达操作边界的场景，不因“次要”就自动去掉边框。危险色只用于删除、退出、停用、终止、标记退市等破坏性动作，不能用来制造普通视觉重点。
 - **交互状态公共入口**：普通按钮、图标按钮、帮助入口及 disclosure 的键盘焦点使用 `--app-focus-ring`（2px 实色主色框），不得以低透明度光晕替代；外框用于独立按钮，内框用于列表、卡片及可能裁切的容器。导航的紧凑伪元素焦点面和输入框的原生焦点边界保留各自结构，不重复绘制焦点框。
-- 紧凑对象列表（角色、字典类型、资产方案）与图标候选共用 `.app-interaction-list-item`：普通悬停为中性 `surfaceHover`，选中使用共享6%主色浅底，不叠加常驻左边线；键盘焦点独立显示；悬停不覆盖选中，按下只强调边界，不浮起。导航型语义标签使用 `.app-interaction-link`，悬停/焦点增加下划线并保留原有状态色；选择型标签按自身选中语义表达，不套用链接下划线。禁止用 `filter: brightness()` 同时改变文字、边框和底色。无悬停设备不新增 hover 反馈。
+<a id="compact-object-lists"></a>
+
+- 紧凑对象列表（角色、字典类型、资产方案）与图标候选共用 `.app-interaction-list-item`，状态样式唯一入口为 `styles/global.css`：普通悬停为中性 `surfaceHover`，选中使用共享6%主色浅底；键盘焦点独立显示；悬停不覆盖选中，按下只强调边界，不浮起。基础形态不叠加常驻左边线。主从选择中需要明确条目边界和当前位置时，显式叠加通用 `.app-interaction-list-item--outlined`：普通态为中性边框，未选中悬停增强中性边界，选中为主色边框及 `--app-interaction-selected-marker` 内侧左线；选中标记与交互卡片共用该变量。当前由 `AssetProfileSelect` 的 list 形态统一承接筛选、评分、买卖方案列表；角色、字典及图标候选继续使用基础形态。消费组件只维护结构、尺寸及受控选择值，不得另写选中、悬停或按下状态的颜色、边框和阴影配方。导航型语义标签使用 `.app-interaction-link`，悬停/焦点增加下划线并保留原有状态色；选择型标签按自身选中语义表达，不套用链接下划线。禁止用 `filter: brightness()` 同时改变文字、边框和底色。无悬停设备不新增 hover 反馈。
 - 说明触发器 `HelpTip`、`HelpHint`、`DataMetricDetails` 复用 `.app-interaction-help` 的颜色：默认中性字和中性填充，精细指针悬浮或键盘聚焦时主色底和白字，聚焦独立显示共享焦点环；领域组件只维护内容和几何，不用于执行命令。
 - 设置和配置折叠标题仅在可折叠时接入 `.app-interaction-disclosure`，共享中性悬浮、按下和内焦点环；静态标题不响应状态。
 - 自定义入口与原生控件的按键、ARIA 状态、子控件事件和禁用行为统一遵循[键盘能力与适用边界](#键盘能力与适用边界)。

@@ -76,6 +76,23 @@ function unmarkedFieldLinks(source: string): number[] {
 }
 
 describe('共享交互样式的消费者边界', () => {
+  it('描边列表的颜色、边界和选中标记只由共享状态样式维护', () => {
+    const role = 'app-interaction-list-item--outlined'
+    const properties = ['background', 'background-color', 'border', 'border-color', 'box-shadow']
+    const template = `<template><div class="entry ${role}" :class="{ active: selected }" /></template>`
+    expect(linkStyleOverrides(`${template}<style scoped>.entry.active { box-shadow: inset 3px 0 blue; }</style>`, role, properties))
+      .toEqual(['.entry.active'])
+    expect(linkStyleOverrides(`${template}<style scoped>.entry:hover { border-color: blue; }</style>`, role, properties))
+      .toEqual(['.entry:hover'])
+    expect(linkStyleOverrides(`${template}<style scoped>.entry { padding: 8px; }</style>`, role, properties))
+      .toEqual([])
+
+    const violations = vueFiles(SRC_DIR).flatMap(file => linkStyleOverrides(
+      readFileSync(file, 'utf8'), role, properties,
+    ).map(selector => `${file}: ${selector}`))
+    expect(violations).toEqual([])
+  })
+
   it('能拦住蓝框灰字的局部覆盖，同时允许非链接名称保持中性', () => {
     const template = '<template><a class="name app-interaction-link app-interaction-link--primary">板块</a></template>'
     expect(linkStyleOverrides(`${template}<style scoped>.name { color: var(--el-text-color-regular); }</style>`)).toEqual(['.name'])

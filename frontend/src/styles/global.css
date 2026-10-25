@@ -15,6 +15,7 @@
   --app-focus-ring: 2px solid var(--el-color-primary);
   --app-interaction-lift: 2px;
   --app-interaction-selected-background: color-mix(in srgb, var(--el-color-primary) 6%, var(--el-bg-color));
+  --app-interaction-selected-marker: inset 3px 0 var(--el-color-primary);
   --app-interaction-shadow: 0 4px 12px rgb(0 0 0 / 12%);
   --app-interaction-nav-shadow: 0 2px 4px rgb(0 0 0 / 12%);
   --app-scroll-paint-gutter: var(--app-space-2);
@@ -34,6 +35,14 @@ html.dark {
 .app-interaction-list-item:is(.active, .on, [aria-pressed='true']) {
   background: var(--app-interaction-selected-background);
 }
+/* 主从选择需要明确的条目边界时显式接入；基础列表和图标网格不自动变体。 */
+.app-interaction-list-item.app-interaction-list-item--outlined {
+  border: 1px solid var(--el-border-color-light);
+}
+.app-interaction-list-item--outlined:is(.active, .on, [aria-pressed='true']) {
+  border-color: var(--el-color-primary);
+  box-shadow: var(--app-interaction-selected-marker);
+}
 .app-interaction-link { cursor: pointer; text-underline-offset: 3px; }
 html[data-layout-preset] .app-interaction-link--primary { color: var(--el-color-primary); text-decoration: none; }
 :is(.app-interaction-list-item, .app-interaction-link, .app-focus-ring):focus-visible,
@@ -51,6 +60,9 @@ html[data-layout-preset] .app-interaction-link:is(:disabled, [aria-disabled='tru
 @media (hover: hover) and (pointer: fine) {
   .app-interaction-list-item:not(.active, .on, [aria-pressed='true'], :disabled, [aria-disabled='true'], [aria-busy='true']):hover {
     background: var(--chrome-bg-soft-hover);
+  }
+  .app-interaction-list-item--outlined:not(.active, .on, [aria-pressed='true'], :disabled, [aria-disabled='true'], [aria-busy='true']):hover {
+    border-color: var(--chrome-border-strong);
   }
   .app-interaction-link:not(:disabled, [aria-disabled='true'], [aria-busy='true']):hover {
     text-decoration: underline;
@@ -187,7 +199,7 @@ html[data-layout-preset] .app-interaction-target.app-interaction-card {
   --app-interaction-card-background: var(--app-interaction-selected-background);
   --app-interaction-card-border: var(--el-color-primary);
   --app-interaction-card-hover-border: var(--el-color-primary);
-  --app-interaction-marker: inset 3px 0 var(--el-color-primary);
+  --app-interaction-marker: var(--app-interaction-selected-marker);
 }
 .app-interaction-target.app-interaction-card::before {
   inset: -1px;
