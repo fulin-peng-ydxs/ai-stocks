@@ -509,25 +509,25 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
       <template v-else>
         <template v-if="mode === 'positions'">
           <AppDataTable :data="positions" :border="tableBorder" embedded empty-text="当前为空仓">
-            <AppTableColumn prop="stock_code" label="代码" min-width="120">
+            <AppTableColumn prop="stock_code" label="代码">
               <template #default="{ row }">
                 <RouterLink v-if="canViewStockDetail && row.stock_code" :to="{ name: 'stock-detail', params: { code: row.stock_code } }" class="app-table-field-link app-interaction-link app-interaction-link--primary" @click.stop="rememberPositionStocks">{{ row.stock_code }}</RouterLink>
                 <span v-else>{{ row.stock_code }}</span>
               </template>
             </AppTableColumn>
-            <AppTableColumn prop="stock_name" label="股票" min-width="140">
+            <AppTableColumn prop="stock_name" label="股票">
               <template #default="{ row }">
                 <RouterLink v-if="canViewStockDetail && row.stock_code" :to="{ name: 'stock-detail', params: { code: row.stock_code } }" class="app-table-field-link app-interaction-link app-interaction-link--primary" @click.stop="rememberPositionStocks">{{ row.stock_name || row.stock_code }}</RouterLink>
                 <span v-else>{{ row.stock_name || row.stock_code }}</span>
               </template>
             </AppTableColumn>
-            <AppTableColumn prop="quantity" label="数量" min-width="110" />
-            <AppTableColumn prop="available_quantity" label="可卖数量" min-width="110" />
-            <AppTableColumn label="总成本（元）" min-width="130"><template #default="{ row }">{{ row.cost == null ? '未录入' : formatMoney(row.cost) }}</template></AppTableColumn>
-            <AppTableColumn label="市值（元）" min-width="130"><template #default="{ row }">{{ row.market_value == null ? '暂无行情' : formatMoney(row.market_value) }}</template></AppTableColumn>
-            <AppTableColumn label="浮动盈亏（元）" min-width="140"><template #default="{ row }"><span :class="marketValueClass(row.unrealized_pnl == null ? null : Number(row.unrealized_pnl))">{{ row.unrealized_pnl == null ? '数据不完整' : formatMoney(row.unrealized_pnl, { forceSign: true }) }}</span></template></AppTableColumn>
-            <AppTableColumn prop="quote_date" label="估值日期" min-width="120" />
-            <AppTableColumn label="所属规则" min-width="160"><template #default="{ row }">{{ ruleName(row.rule_id) }}</template></AppTableColumn>
+            <AppTableColumn prop="quantity" label="数量" />
+            <AppTableColumn prop="available_quantity" label="可卖数量" />
+            <AppTableColumn label="总成本（元）" role="number"><template #default="{ row }">{{ row.cost == null ? '未录入' : formatMoney(row.cost) }}</template></AppTableColumn>
+            <AppTableColumn label="市值（元）" role="number"><template #default="{ row }">{{ row.market_value == null ? '暂无行情' : formatMoney(row.market_value) }}</template></AppTableColumn>
+            <AppTableColumn label="浮动盈亏（元）" role="number"><template #default="{ row }"><span :class="marketValueClass(row.unrealized_pnl == null ? null : Number(row.unrealized_pnl))">{{ row.unrealized_pnl == null ? '数据不完整' : formatMoney(row.unrealized_pnl, { forceSign: true }) }}</span></template></AppTableColumn>
+            <AppTableColumn prop="quote_date" label="估值日期" />
+            <AppTableColumn label="所属规则" role="name"><template #default="{ row }">{{ ruleName(row.rule_id) }}</template></AppTableColumn>
           </AppDataTable>
           <p class="app-caption-text">最近日结：{{ context?.latest_trade_date || '尚未提交' }} · 现金：{{ context?.cash == null ? '未录入' : formatMoney(context.cash) }}</p>
           <el-button @click="emit('request-checkin', context?.latest_trade_date || tradeDate)">前往打卡记录成交或调整</el-button>
@@ -638,13 +638,13 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
       </el-card>
       <AppStateBlock v-if="historyError" state="error" title="历史加载失败" :description="historyError" retry @retry="loadHistory" />
       <AppDataTable v-else :data="history" :loading="historyBusy" :border="tableBorder" :default-sort="defaultSort" empty-text="尚无交易日记录" @sort-change="emit('sort-change', $event)">
-        <AppTableColumn v-if="columnVisible('trade_date')" prop="trade_date" label="交易日" min-width="130" sortable="custom"><template #default="{ row }"><el-button link type="primary" class="app-table-field-link" @click="openDetail(row)">{{ row.trade_date }}</el-button></template></AppTableColumn>
-        <AppTableColumn v-if="columnVisible('assessment')" label="履约结果" min-width="110"><template #default="{ row }">{{ row.withdrawn ? '已撤回' : label(row.snapshot.assessment) }}</template></AppTableColumn>
-        <AppTableColumn v-if="columnVisible('operation_count')" label="操作数" min-width="90"><template #default="{ row }">{{ row.snapshot.operation_count ?? row.snapshot.events.filter((e: LedgerEvent) => e.kind === 'trade').length }}</template></AppTableColumn>
-        <AppTableColumn v-if="columnVisible('buy_amount')" label="买入额" min-width="120"><template #default="{ row }">{{ formatMoney(row.snapshot.buy_amount) }}</template></AppTableColumn>
-        <AppTableColumn v-if="columnVisible('sell_amount')" label="卖出额" min-width="120"><template #default="{ row }">{{ formatMoney(row.snapshot.sell_amount) }}</template></AppTableColumn>
-        <AppTableColumn v-if="columnVisible('peak_positions')" label="持仓峰值" min-width="100"><template #default="{ row }">{{ row.snapshot.peak_positions }}</template></AppTableColumn>
-        <AppTableColumn v-if="columnVisible('current_revision_no')" prop="current_revision_no" label="修订" min-width="80" />
+        <AppTableColumn v-if="columnVisible('trade_date')" prop="trade_date" label="交易日" sortable="custom"><template #default="{ row }"><el-button link type="primary" class="app-table-field-link" @click="openDetail(row)">{{ row.trade_date }}</el-button></template></AppTableColumn>
+        <AppTableColumn v-if="columnVisible('assessment')" label="履约结果" role="status"><template #default="{ row }">{{ row.withdrawn ? '已撤回' : label(row.snapshot.assessment) }}</template></AppTableColumn>
+        <AppTableColumn v-if="columnVisible('operation_count')" label="操作数" role="number"><template #default="{ row }">{{ row.snapshot.operation_count ?? row.snapshot.events.filter((e: LedgerEvent) => e.kind === 'trade').length }}</template></AppTableColumn>
+        <AppTableColumn v-if="columnVisible('buy_amount')" label="买入额" role="number"><template #default="{ row }">{{ formatMoney(row.snapshot.buy_amount) }}</template></AppTableColumn>
+        <AppTableColumn v-if="columnVisible('sell_amount')" label="卖出额" role="number"><template #default="{ row }">{{ formatMoney(row.snapshot.sell_amount) }}</template></AppTableColumn>
+        <AppTableColumn v-if="columnVisible('peak_positions')" label="持仓峰值" role="number"><template #default="{ row }">{{ row.snapshot.peak_positions }}</template></AppTableColumn>
+        <AppTableColumn v-if="columnVisible('current_revision_no')" prop="current_revision_no" label="修订" role="number" />
       </AppDataTable>
 
     </template>
@@ -658,13 +658,13 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
       <AppStatusNotice v-if="detail?.withdrawn" tone="info" title="该日结已撤回，仅供追溯，不参与持仓及统计。" />
       <AppControlRow><span>{{ label(detailSnapshot?.assessment) }}</span><AppSelect v-model="revisionNo" class="app-control-width-short" @change="loadRevision"><el-option v-for="n in detail?.current_revision_no ?? 0" :key="n" :label="`r${n}`" :value="n" /></AppSelect><el-button v-if="canSubmit && !detail?.withdrawn && detail?.trade_date === context?.latest_trade_date && revisionNo === detail?.current_revision_no" @click="detailOpen = false; emit('request-checkin', detail!.trade_date)">前往修正最新记录</el-button></AppControlRow>
       <AppDataTable :data="detailSnapshot?.events ?? []" embedded>
-        <AppTableColumn label="实际时间" min-width="190"><template #default="{ row }">{{ formatDateTimeSeconds(row.operated_at) }}</template></AppTableColumn>
-        <AppTableColumn prop="stock_name_snapshot" label="股票" min-width="120" />
-        <AppTableColumn label="操作" min-width="100"><template #default="{ row }">{{ row.kind === 'cash' ? row.direction === 'in' ? '资金流入' : '资金流出' : `${row.kind === 'position' ? '持仓调整·' : ''}${row.side === 'buy' ? '买入' : '卖出'}` }}</template></AppTableColumn>
-        <AppTableColumn prop="quantity" label="数量" min-width="90" />
-        <AppTableColumn prop="amount" label="金额" min-width="100" />
-        <AppTableColumn prop="fee" label="费用" min-width="90" />
-        <AppTableColumn label="核对依据" min-width="220"><template #default="{ row }">{{ [...(row.issues ?? []), ...(row.warnings ?? [])].join('；') || '无偏差' }}</template></AppTableColumn>
+        <AppTableColumn label="实际时间"><template #default="{ row }">{{ formatDateTimeSeconds(row.operated_at) }}</template></AppTableColumn>
+        <AppTableColumn prop="stock_name_snapshot" label="股票" />
+        <AppTableColumn label="变动类型" role="status"><template #default="{ row }">{{ row.kind === 'cash' ? row.direction === 'in' ? '资金流入' : '资金流出' : `${row.kind === 'position' ? '持仓调整·' : ''}${row.side === 'buy' ? '买入' : '卖出'}` }}</template></AppTableColumn>
+        <AppTableColumn prop="quantity" label="数量" />
+        <AppTableColumn prop="amount" label="金额" />
+        <AppTableColumn prop="fee" label="费用" role="number" />
+        <AppTableColumn label="核对依据" role="description"><template #default="{ row }">{{ [...(row.issues ?? []), ...(row.warnings ?? [])].join('；') || '无偏差' }}</template></AppTableColumn>
       </AppDataTable>
       <p v-for="(item, index) in detailSnapshot?.omissions ?? []" :key="index">{{ item.kind === 'missed_buy' ? '应买未买' : '应卖未卖' }}：{{ item.stock_name || item.stock_code }}</p>
       <p>{{ detailSnapshot?.review_note }}</p>

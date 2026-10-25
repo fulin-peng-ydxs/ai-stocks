@@ -219,15 +219,24 @@ const emit = defineEmits<{
   width: 100%;
 }
 
-/* 保留组件库的列线及固定列布局，移除 border 模式额外生成的外围描边。 */
+/* 外沿由所属面板绘制；同时移除库伪元素与补线节点，避免贴边时叠成粗线。
+ * 补线仅参与外围绘制，不改变固定列布局和内部单元格列线。 */
 .app-data-table :deep(.app-data-table__table.el-table--border::before),
 .app-data-table :deep(.app-data-table__table.el-table--border::after),
-.app-data-table :deep(.app-data-table__table.el-table--border > .el-table__inner-wrapper::after) {
+.app-data-table :deep(.app-data-table__table > .el-table__inner-wrapper::before),
+.app-data-table :deep(.app-data-table__table.el-table--border > .el-table__inner-wrapper::after),
+.app-data-table :deep(.el-table__border-left-patch),
+.app-data-table :deep(.el-table__border-right-patch),
+.app-data-table :deep(.el-table__border-bottom-patch) {
   display: none;
 }
 
 .app-data-table :deep(.el-table--border tr > .el-table__cell:last-child) {
   border-right: none;
+}
+
+.app-data-table :deep(.el-table__body tr:last-child > .el-table__cell) {
+  border-bottom: none;
 }
 
 .app-data-table--fill .app-data-table__table {

@@ -1913,131 +1913,133 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               />
             </div>
 
-            <!-- 详情加载态/失败态（P1-2）：失败已回滚选中值，编辑器保留旧内容 -->
-            <AppStateBlock
-              v-if="profileDetailError"
-              state="error"
-              size="compact"
-              title="评分方案详情加载失败"
-              :description="profileDetailError"
-              retry
-              @retry="onScoreSelect(scoreDetailAttempt || curRef)"
-            />
-            <AppStateBlock
-              v-else-if="profileDetailLoading"
-              state="loading"
-              size="compact"
-              title="正在加载方案详情…"
-            />
+            <AppTableCard class="score-items-card">
+              <!-- 详情加载态/失败态（P1-2）：失败已回滚选中值，编辑器保留旧内容 -->
+              <AppStateBlock
+                v-if="profileDetailError"
+                state="error"
+                size="compact"
+                title="评分方案详情加载失败"
+                :description="profileDetailError"
+                retry
+                @retry="onScoreSelect(scoreDetailAttempt || curRef)"
+              />
+              <AppStateBlock
+                v-else-if="profileDetailLoading"
+                state="loading"
+                size="compact"
+                title="正在加载方案详情…"
+              />
 
-            <AppDataTable
-              :data="items"
-              size="small"
-              :border="tableBorder('scoreItems')"
-              class="item-table"
-              embedded
-            >
-              <AppTableColumn label="启用" role="switch">
-                <template #default="{ row }">
-                  <StrategyItemEnabledSwitch
-                    v-model="row.enabled"
-                    :disabled="profileReadonly"
-                    label="是否启用评分指标"
-                    @change="onScoreEnabledChange"
-                  />
-                </template>
-              </AppTableColumn>
-              <AppTableColumn label="指标" control-width="long">
-                <template #default="{ row }">
-                  <IndicatorSelect
-                    v-model="row.indicator"
-                    :definitions="registry"
-                    :disabled="profileReadonly"
-                    @change="onIndicatorChange(row)"
-                  />
-                  <!-- 动态参数（如 连续上涨N天 的 N）-->
-                  <div v-if="defOf(row.indicator)?.params?.length" class="param-row">
-                    <IndicatorParamFields
-                      v-model="row.params!"
-                      :params="defOf(row.indicator)!.params"
+              <AppDataTable
+                :data="items"
+                size="small"
+                :border="tableBorder('scoreItems')"
+                class="item-table"
+                embedded
+              >
+                <AppTableColumn label="启用" role="switch">
+                  <template #default="{ row }">
+                    <StrategyItemEnabledSwitch
+                      v-model="row.enabled"
                       :disabled="profileReadonly"
+                      label="是否启用评分指标"
+                      @change="onScoreEnabledChange"
                     />
-                  </div>
-                </template>
-              </AppTableColumn>
-
-              <AppTableColumn label="打分方式" control-width="wide">
-                <template #default="{ row }">
-                  <div class="scoring-cell">
-                    <el-radio-group
-                      :model-value="row.scoring.type"
-                      size="small"
-                      @change="(v: string) => onScoringTypeChange(row, v)"
-                    >
-                      <el-radio-button value="bool" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'number'">
-                        布尔
-                      </el-radio-button>
-                      <el-radio-button value="linear" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'bool'">
-                        线性
-                      </el-radio-button>
-                      <el-radio-button value="band" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'bool'">
-                        分段
-                      </el-radio-button>
-                    </el-radio-group>
-
-                    <!-- bool -->
-                    <span v-if="row.scoring.type === 'bool'" class="tip">满足=100 / 否=0</span>
-                    <!-- linear -->
-                    <div v-else-if="row.scoring.type === 'linear'" class="linear-row">
-                      <span>0分→</span>
-                      <el-input-number v-model="row.scoring.min" size="small" :controls="false" :disabled="profileReadonly" style="width: 78px" />
-                      <span>100分→</span>
-                      <el-input-number v-model="row.scoring.max" size="small" :controls="false" :disabled="profileReadonly" style="width: 78px" />
+                  </template>
+                </AppTableColumn>
+                <AppTableColumn label="指标" control-width="long">
+                  <template #default="{ row }">
+                    <IndicatorSelect
+                      v-model="row.indicator"
+                      :definitions="registry"
+                      :disabled="profileReadonly"
+                      @change="onIndicatorChange(row)"
+                    />
+                    <!-- 动态参数（如 连续上涨N天 的 N）-->
+                    <div v-if="defOf(row.indicator)?.params?.length" class="param-row">
+                      <IndicatorParamFields
+                        v-model="row.params!"
+                        :params="defOf(row.indicator)!.params"
+                        :disabled="profileReadonly"
+                      />
                     </div>
-                    <!-- band -->
-                    <div v-else class="band-box">
-                      <div v-for="(b, bi) in row.scoring.bands" :key="bi" class="band-row">
-                        <el-input-number v-model="b[0]" size="small" :controls="false" :disabled="profileReadonly" style="width: 64px" />
-                        <span>~</span>
-                        <el-input-number v-model="b[1]" size="small" :controls="false" :disabled="profileReadonly" style="width: 64px" />
-                        <span>→</span>
-                        <el-input-number v-model="b[2]" size="small" :controls="false" :disabled="profileReadonly" :min="0" :max="100" style="width: 64px" />
-                        <span>分</span>
-                        <AppIconButton label="删除分段" tooltip="删除分段" size="xs" tone="danger" :disabled="profileReadonly" @click="removeBand(row, bi)">
-                          <el-icon><Close /></el-icon>
-                        </AppIconButton>
+                  </template>
+                </AppTableColumn>
+
+                <AppTableColumn label="打分方式" control-width="wide">
+                  <template #default="{ row }">
+                    <div class="scoring-cell">
+                      <el-radio-group
+                        :model-value="row.scoring.type"
+                        size="small"
+                        @change="(v: string) => onScoringTypeChange(row, v)"
+                      >
+                        <el-radio-button value="bool" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'number'">
+                          布尔
+                        </el-radio-button>
+                        <el-radio-button value="linear" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'bool'">
+                          线性
+                        </el-radio-button>
+                        <el-radio-button value="band" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'bool'">
+                          分段
+                        </el-radio-button>
+                      </el-radio-group>
+
+                      <!-- bool -->
+                      <span v-if="row.scoring.type === 'bool'" class="tip">满足=100 / 否=0</span>
+                      <!-- linear -->
+                      <div v-else-if="row.scoring.type === 'linear'" class="linear-row">
+                        <span>0分→</span>
+                        <el-input-number v-model="row.scoring.min" size="small" :controls="false" :disabled="profileReadonly" style="width: 78px" />
+                        <span>100分→</span>
+                        <el-input-number v-model="row.scoring.max" size="small" :controls="false" :disabled="profileReadonly" style="width: 78px" />
                       </div>
-                      <el-button link type="primary" size="small" :disabled="profileReadonly" @click="addBand(row)">
-                        <template #icon><el-icon><Plus /></el-icon></template>
-                        段
-                      </el-button>
+                      <!-- band -->
+                      <div v-else class="band-box">
+                        <div v-for="(b, bi) in row.scoring.bands" :key="bi" class="band-row">
+                          <el-input-number v-model="b[0]" size="small" :controls="false" :disabled="profileReadonly" style="width: 64px" />
+                          <span>~</span>
+                          <el-input-number v-model="b[1]" size="small" :controls="false" :disabled="profileReadonly" style="width: 64px" />
+                          <span>→</span>
+                          <el-input-number v-model="b[2]" size="small" :controls="false" :disabled="profileReadonly" :min="0" :max="100" style="width: 64px" />
+                          <span>分</span>
+                          <AppIconButton label="删除分段" tooltip="删除分段" size="xs" tone="danger" :disabled="profileReadonly" @click="removeBand(row, bi)">
+                            <el-icon><Close /></el-icon>
+                          </AppIconButton>
+                        </div>
+                        <el-button link type="primary" size="small" :disabled="profileReadonly" @click="addBand(row)">
+                          <template #icon><el-icon><Plus /></el-icon></template>
+                          段
+                        </el-button>
+                      </div>
                     </div>
-                  </div>
-                </template>
-              </AppTableColumn>
+                  </template>
+                </AppTableColumn>
 
-              <AppTableColumn label="权重" control-width="medium">
-                <template #default="{ row, $index }">
-                  <div class="weight-cell">
-                    <el-slider
-                      :model-value="Math.round(row.weight * 100)"
-                      :min="0"
-                      :max="100"
-                      :disabled="profileReadonly || !itemEnabled(row)"
-                      @input="(v: number) => onWeightChange($index, v)"
-                    />
-                    <span class="wval">{{ Math.round(row.weight * 100) }}%</span>
-                  </div>
-                </template>
-              </AppTableColumn>
+                <AppTableColumn label="权重" control-width="medium">
+                  <template #default="{ row, $index }">
+                    <div class="weight-cell">
+                      <el-slider
+                        :model-value="Math.round(row.weight * 100)"
+                        :min="0"
+                        :max="100"
+                        :disabled="profileReadonly || !itemEnabled(row)"
+                        @input="(v: number) => onWeightChange($index, v)"
+                      />
+                      <span class="wval">{{ Math.round(row.weight * 100) }}%</span>
+                    </div>
+                  </template>
+                </AppTableColumn>
 
-              <!-- 操作列：单删除动作，用紧凑操作列 role；structural(48px) 会放不下「更多」按钮测量层造成横向滚动 -->
-              <AppTableColumn label="操作" role="action-compact">
-                <template #default="{ $index }">
-                  <AppRowActions :actions="scoreItemRowActions($index)" :inline-limit="1" />
-                </template>
-              </AppTableColumn>
-            </AppDataTable>
+                <!-- 操作列：单删除动作，用紧凑操作列 role；structural(48px) 会放不下「更多」按钮测量层造成横向滚动 -->
+                <AppTableColumn label="操作" role="action-compact">
+                  <template #default="{ $index }">
+                    <AppRowActions :actions="scoreItemRowActions($index)" :inline-limit="1" />
+                  </template>
+                </AppTableColumn>
+              </AppDataTable>
+            </AppTableCard>
 
             <el-button size="small" plain style="margin-top: 8px" :disabled="profileReadonly" @click="addItem">
               <template #icon><el-icon><Plus /></el-icon></template>
@@ -2879,6 +2881,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+/* 前置规则表保持内容高度，后方添加与试算入口继续随正文排列。 */
+.score-items-card {
+  flex: 0 0 auto;
 }
 .editor-score > .ed-head {
   margin-bottom: var(--app-space-3);

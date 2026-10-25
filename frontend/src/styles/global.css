@@ -1308,7 +1308,9 @@ html[data-layout-preset] .el-card {
   background-color: var(--el-bg-color);
   border-color: var(--chrome-border);
   color: var(--chrome-text);
-  /* 顶边与其余边共用主题边框，不以白色内阴影叠出第二条亮边。 */
+}
+/* 遵守 el-card 的 shadow 契约；never 不叠加实体外沿以外的阴影。 */
+html[data-layout-preset] .el-card:is(.is-always-shadow, .is-hover-shadow:hover, .is-hover-shadow:focus) {
   box-shadow: 0 8px 24px color-mix(in srgb, var(--shell-surface-shadow) 54%, transparent);
 }
 html[data-layout-preset] .el-card__body {

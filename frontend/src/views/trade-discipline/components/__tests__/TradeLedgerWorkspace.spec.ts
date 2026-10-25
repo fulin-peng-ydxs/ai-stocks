@@ -137,6 +137,9 @@ describe('账户日结简化填报', () => {
       expect(wrapper.get('.down').text()).toBe('-45.00')
       expect(wrapper.get('.muted').text()).toBe('数据不完整')
       expect(wrapper.findAll('.up, .down')).toHaveLength(2)
+      expect(wrapper.findAll('th.is-right').map(node => node.text())).toEqual([
+        '数量', '可卖数量', '总成本（元）', '市值（元）', '浮动盈亏（元）',
+      ])
     } finally { wrapper.unmount() }
   })
   it.each(['cancel', 'success', 'failure', 'stale'] as const)('撤回确认使用统一弹窗，%s 分支不遗留抽屉或丢失失败反馈', async outcome => {
@@ -415,6 +418,37 @@ describe('账户日结简化填报', () => {
     expect(api.history.mock.calls.at(-1)![2].include_withdrawn).toBe(false)
     wrapper.unmount()
   })
+  it('历史数字列与详情费用按数字对齐，变动类型作为可阅读的业务事实展示', async () => {
+    const row = { trade_date: '2026-10-23', current_revision_no: 1, withdrawn: false,
+      snapshot: { trade_date: '2026-10-23', rules: [], omissions: [], evaluations: [],
+        events: [
+          { kind: 'cash', direction: 'in', operated_at: '2026-10-23T09:00:00', amount: '10000', fee: '0' },
+          { kind: 'trade', side: 'buy', operated_at: '2026-10-23T10:00:00', stock_name_snapshot: '浦发银行', quantity: '100', amount: '1000', fee: '5' },
+          { kind: 'position', side: 'buy', operated_at: '2026-10-23T11:00:00', stock_name_snapshot: '浦发银行', quantity: '10', fee: '0' },
+        ], assessment: 'complied', operation_count: 1, buy_amount: '1000', sell_amount: '0', fee: '5', peak_positions: 1 } }
+    api.history.mockResolvedValue({ total: 1, list: [row] })
+    api.revision.mockResolvedValue(row)
+    const wrapper = mountWorkspace({ mode: 'history' })
+    try {
+      await flushPromises()
+      expect(wrapper.findAll('th.is-right').map(node => node.text())).toEqual([
+        '操作数', '买入额', '卖出额', '持仓峰值', '修订',
+      ])
+      expect(wrapper.find('.app-table-column--action').exists()).toBe(false)
+      await wrapper.findAll('button').find(node => node.text() === '2026-10-23')!.trigger('click')
+      await flushPromises()
+      const tables = wrapper.findAllComponents({ name: 'AppDataTable' })
+      const details = tables.find(table => table.props('embedded'))!
+      expect(details.findAll('th.is-right').map(node => node.text())).toEqual(['数量', '金额', '费用'])
+      const typeHeader = details.findAll('th').find(node => node.text() === '变动类型')!
+      expect(typeHeader.classes()).toContain('is-center')
+      expect(details.text()).toContain('资金流入')
+      expect(details.text()).toContain('持仓调整·买入')
+      expect(details.find('.app-table-column--action').exists()).toBe(false)
+      expect(api.submit).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+  })
+
   it('撤回历史可显式查看，详情说明不参与持仓统计且没有修正入口', async () => {
     const row = { trade_date: '2026-10-23', current_revision_no: 1, withdrawn: true,
       snapshot: { trade_date: '2026-10-23', events: [], rules: [], omissions: [], evaluations: [],

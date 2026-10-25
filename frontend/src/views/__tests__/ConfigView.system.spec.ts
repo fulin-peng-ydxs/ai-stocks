@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 import ConfigView from '@/views/ConfigView.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppTableCard from '@/components/AppTableCard.vue'
 import AppTabToolbar from '@/components/AppTabToolbar.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import HelpHint from '@/components/HelpHint.vue'
@@ -1130,6 +1131,29 @@ describe('ConfigView trade tab', () => {
 })
 
 describe('ConfigView score tab 加载查看', () => {
+  it('评分指标从空表添加再清空时保留同一个外框，关闭列线也不移除外框', async () => {
+    routeState.meta.configTab = 'score'
+    vi.mocked(scoreApi.listScoreProfiles).mockResolvedValue([])
+    const wrapper = await mountView('normal', ['score-profile:view', 'score-profile:save'])
+    const frame = wrapper.findComponent(AppTableCard)
+    const frameElement = frame.element
+    const table = frame.findComponent(AppDataTable)
+    expect(table.props('data')).toHaveLength(0)
+    expect(table.props('border')).toBe(false)
+
+    await wrapper.findAll('button').find((button) => button.text() === '添加指标')!.trigger('click')
+    expect(table.props('data')).toHaveLength(1)
+    expect(wrapper.findAllComponents(AppTableCard)).toHaveLength(1)
+    expect(frame.element).toBe(frameElement)
+
+    await flushPromises()
+    await frame.findAll('button').find((button) => button.text() === '删除')!.trigger('click')
+    expect(table.props('data')).toHaveLength(0)
+    expect(frame.element).toBe(frameElement)
+    expect(wrapper.findAll('button').find((button) => button.text() === '添加指标')!.exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('用紧凑的显式二选一配置 ST 评分范围', async () => {
     routeState.meta.configTab = 'score'
     ;(scoreApi.listScoreProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([])
