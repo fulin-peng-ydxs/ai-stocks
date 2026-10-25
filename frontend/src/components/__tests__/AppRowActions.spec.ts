@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
+import ElementPlus from 'element-plus'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cloneVNode, defineComponent, h, nextTick, ref } from 'vue'
@@ -173,6 +174,28 @@ describe('AppRowActions', () => {
     for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount()
     document.body.innerHTML = ''
     vi.clearAllMocks()
+  })
+
+  it('默认命令和显式导航分别呈现 text/link，测量副本与实际入口一致', async () => {
+    const wrapper = mount(AppRowActions, {
+      props: { actions: [
+        { key: 'retry', label: '重试' },
+        { key: 'detail', label: '详情', kind: 'navigation' },
+      ] },
+      global: { plugins: [ElementPlus, createPinia()] },
+    })
+    await flushPromises()
+    for (const el of wrapper.findAll('[data-button-kind="command"]')) {
+      expect(el.classes()).toContain('is-text')
+      expect(el.classes()).not.toContain('is-link')
+    }
+    for (const el of wrapper.findAll('[data-button-kind="navigation"]')) {
+      expect(el.classes()).toContain('is-link')
+      expect(el.classes()).not.toContain('is-text')
+    }
+    expect(wrapper.findAll('[data-button-kind="command"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-button-kind="navigation"]')).toHaveLength(2)
+    wrapper.unmount()
   })
 
   it('保持行内操作单行，并把溢出和指定动作收进更多菜单', async () => {

@@ -638,7 +638,7 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
       </el-card>
       <AppStateBlock v-if="historyError" state="error" title="历史加载失败" :description="historyError" retry @retry="loadHistory" />
       <AppDataTable v-else :data="history" :loading="historyBusy" :border="tableBorder" :default-sort="defaultSort" empty-text="尚无交易日记录" @sort-change="emit('sort-change', $event)">
-        <AppTableColumn v-if="columnVisible('trade_date')" prop="trade_date" label="交易日" sortable="custom"><template #default="{ row }"><el-button link type="primary" class="app-table-field-link" @click="openDetail(row)">{{ row.trade_date }}</el-button></template></AppTableColumn>
+        <AppTableColumn v-if="columnVisible('trade_date')" prop="trade_date" label="交易日" sortable="custom"><template #default="{ row }"><el-button data-button-kind="navigation" link type="primary" class="app-table-field-link" @click="openDetail(row)">{{ row.trade_date }}</el-button></template></AppTableColumn>
         <AppTableColumn v-if="columnVisible('assessment')" label="履约结果" role="status"><template #default="{ row }">{{ row.withdrawn ? '已撤回' : label(row.snapshot.assessment) }}</template></AppTableColumn>
         <AppTableColumn v-if="columnVisible('operation_count')" label="操作数" role="number"><template #default="{ row }">{{ row.snapshot.operation_count ?? row.snapshot.events.filter((e: LedgerEvent) => e.kind === 'trade').length }}</template></AppTableColumn>
         <AppTableColumn v-if="columnVisible('buy_amount')" label="买入额" role="number"><template #default="{ row }">{{ formatMoney(row.snapshot.buy_amount) }}</template></AppTableColumn>

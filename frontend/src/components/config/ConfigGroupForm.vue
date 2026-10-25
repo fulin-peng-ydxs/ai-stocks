@@ -218,7 +218,7 @@ function collapsed(key: string): boolean {
           </div>
 
           <el-button v-if="field.type === 'password' && field.secret_status && field.secret_status !== 'unset'"
-            v-permission="'data-settings:manage'" link type="danger" :disabled="disabled"
+            v-permission="'data-settings:manage'" text type="danger" :disabled="disabled"
             @click="emit('reset-field', field.path)">清除已存配置</el-button>
 
           <div v-if="isInvalid(field.path) || statusOf(field.path)" class="field-meta">

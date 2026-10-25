@@ -2278,7 +2278,7 @@ const menuPageTitle = useMenuPageTitle()
           <AppTableColumn label="代码" prop="code">
             <template #default="{ row }">
               <span class="app-inline-info app-inline-info--nowrap">
-                <el-button link type="primary" class="app-table-field-link" :aria-label="`查看 ${row.code} 交易回放`" @click.stop="openTradeChart(row)">{{ row.code }}</el-button>
+                <el-button data-button-kind="navigation" link type="primary" class="app-table-field-link" :aria-label="`查看 ${row.code} 交易回放`" @click.stop="openTradeChart(row)">{{ row.code }}</el-button>
                 <StockStatusTag
                   :is-st="row.entry_is_st"
                   :as-of-date="row.st_as_of_date || row.entry_date"
@@ -2360,7 +2360,7 @@ const menuPageTitle = useMenuPageTitle()
               全市场榜单 <b>#{{ dlgSummary.rank || '—' }}</b> ·
               <ScoreGradeTag v-if="dlgSummary.grade" :grade="dlgSummary.grade" />
               <span v-else>—</span>
-              <el-button link type="primary" size="small" @click="openDayBoard(dlgSummary.entry, dlgCode)">查看当日榜单</el-button>
+              <el-button data-button-kind="navigation" link type="primary" size="small" @click="openDayBoard(dlgSummary.entry, dlgCode)">查看当日榜单</el-button>
             </span>
           </div>
           <div class="ds-item ds-span"><span class="ds-k">{{ dlgSummary.entry }} 买 → {{ dlgSummary.exit }} 卖（{{ dlgSummary.reason }}）</span></div>

@@ -130,7 +130,7 @@ async function quickSubmit(): Promise<void> {
       description="可先建立规则，也可进入交易打卡设置真实持仓、记录实际成交。"
     >
       <template #extra>
-        <AppControlRow size="small"><el-button type="primary" plain @click="navigateToCheckin()">进入交易打卡</el-button><el-button link type="primary" @click="emit('navigate', { tab: 'rules' })">查看规则<el-icon class="el-icon--right"><ArrowRight /></el-icon></el-button></AppControlRow>
+        <AppControlRow size="small"><el-button type="primary" plain @click="navigateToCheckin()">进入交易打卡</el-button><el-button data-button-kind="navigation" link type="primary" @click="emit('navigate', { tab: 'rules' })">查看规则<el-icon class="el-icon--right"><ArrowRight /></el-icon></el-button></AppControlRow>
       </template>
     </AppStateBlock>
     <div v-else class="quick-rule-list">
@@ -155,7 +155,7 @@ async function quickSubmit(): Promise<void> {
           >
             今日无操作
           </el-button>
-          <el-button size="small" link type="primary" @click="navigateToCheckin(rule.rule_id)">
+          <el-button data-button-kind="navigation" size="small" link type="primary" @click="navigateToCheckin(rule.rule_id)">
             {{ rule.checkin_id ? '查看记录' : '去打卡' }}<el-icon class="el-icon--right"><ArrowRight /></el-icon>
           </el-button>
         </AppControlRow>

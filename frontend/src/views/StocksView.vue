@@ -1081,7 +1081,7 @@ const menuPageTitle = useMenuPageTitle()
             :popper-options="APP_BOTTOM_FLOATING_POPPER_OPTIONS"
             popper-class="app-option-popper stock-group-switch-popper"
           >
-            <el-button link type="primary" class="gb-name" data-testid="stocks-group-switcher">
+            <el-button text type="primary" class="gb-name" data-testid="stocks-group-switcher">
               <span class="color-dot" :style="{ backgroundColor: groupDetail.color }" />
               {{ groupDetail.name }}
               <el-icon><ArrowDown /></el-icon>
@@ -1205,7 +1205,7 @@ const menuPageTitle = useMenuPageTitle()
           </AppTableColumn>
           <AppTableColumn v-if="!groupColVisible('name')" label="操作" role="action-compact">
             <template #default="{ row }">
-              <AppRowActions :actions="[{ key: 'view', label: '查看走势', onClick: () => handleStockRowClick(row) }]" />
+              <AppRowActions :actions="[{ key: 'view', kind: 'navigation', label: '查看走势', onClick: () => handleStockRowClick(row) }]" />
             </template>
           </AppTableColumn>
           <AppTableColumn v-if="groupColVisible('name')" label="名称" prop="name" role="entity" :leading-controls="1" sortable="custom">
@@ -1289,7 +1289,7 @@ const menuPageTitle = useMenuPageTitle()
           </AppTableColumn>
           <AppTableColumn v-if="!colVisible('name')" label="操作" role="action-compact">
             <template #default="{ row }">
-              <AppRowActions :actions="[{ key: 'view', label: '查看走势', onClick: () => handleStockRowClick(row) }]" />
+              <AppRowActions :actions="[{ key: 'view', kind: 'navigation', label: '查看走势', onClick: () => handleStockRowClick(row) }]" />
             </template>
           </AppTableColumn>
           <AppTableColumn

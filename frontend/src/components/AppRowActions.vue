@@ -262,7 +262,9 @@ onBeforeUnmount(() => {
         <el-button
           class="app-row-actions__button"
           :class="actionClass(action, index)"
-          link
+          :link="action.kind === 'navigation'"
+          :text="action.kind !== 'navigation'"
+          :data-button-kind="action.kind ?? 'command'"
           size="small"
           :loading="action.loading"
           :disabled="action.disabled"
@@ -291,7 +293,7 @@ onBeforeUnmount(() => {
           <el-button
             class="app-row-actions__button app-row-actions__more"
             :class="{ 'is-open': menuOpen }"
-            link
+            text
             size="small"
             :aria-expanded="menuOpen"
             aria-haspopup="menu"
@@ -346,7 +348,9 @@ onBeforeUnmount(() => {
           :key="action.key"
           class="app-row-actions__button"
           :class="actionClass(action, index)"
-          link
+          :link="action.kind === 'navigation'"
+          :text="action.kind !== 'navigation'"
+          :data-button-kind="action.kind ?? 'command'"
           size="small"
           :loading="action.loading"
         >
@@ -356,7 +360,7 @@ onBeforeUnmount(() => {
           v-if="visibleActions.length"
           ref="moreMeasureBtn"
           class="app-row-actions__button app-row-actions__more"
-          link
+          text
           size="small"
         >
           {{ moreLabel }}

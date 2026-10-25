@@ -1104,8 +1104,8 @@ onBeforeUnmount(() => {
     <template #action>
     <div class="lh-action detail-action">
       <div class="detail-nav">
-        <el-button
-          text
+        <el-button data-button-kind="navigation"
+          link
           :aria-label="returnLabel"
           data-testid="stock-detail-back"
           @click="returnToCollection"

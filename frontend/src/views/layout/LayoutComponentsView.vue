@@ -239,7 +239,7 @@ function openDetail(row: ComponentRow) {
 
 function componentRowActions(row: ComponentRow): AppRowAction[] {
   return [
-    { key: 'preview', label: '预览', onClick: () => openDetail(row) },
+    { key: 'preview', kind: 'navigation', label: '预览', onClick: () => openDetail(row) },
   ]
 }
 

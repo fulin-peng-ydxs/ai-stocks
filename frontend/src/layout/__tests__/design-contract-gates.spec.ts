@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { auditComponentEntries, designContracts, designSources } from '../../../scripts/design-source.mjs'
 import {
-  auditColorSources, auditDesignContracts, auditDesignStateContract, auditSharedStyles,
+  auditButtonKinds, auditButtonStates, auditColorSources, auditDesignContracts, auditDesignStateContract, auditSharedStyles,
   renderDesignContract,
 } from '../../../scripts/check-design-contracts.mjs'
 
@@ -123,5 +123,37 @@ describe('源码与文档消费同一状态契约', () => {
   })
   it('全树真实消费方通过同一构建检查器', () => {
     expect(auditDesignContracts(designSources())).toEqual([])
+  })
+})
+
+
+describe('按钮导航与命令角色', () => {
+  it('命令不因追求无底外观误用链接，导航必须显式声明意图', () => {
+    expect(auditButtonKinds(sample('<template><el-button link @click="retry">重试</el-button></template>'))).toHaveLength(1)
+    expect(auditButtonKinds(sample('<template><ElButton link @click="retry">重试</ElButton></template>'))).toHaveLength(1)
+    expect(auditButtonKinds(sample('<template><el-button data-button-kind="navigation" text>返回</el-button></template>'))).toHaveLength(1)
+    expect(auditButtonKinds(sample('<template><el-button data-button-kind="navigation" link>返回</el-button><el-button text>重试</el-button></template>'))).toEqual([])
+  })
+  it('动态链接样式仅由共享行操作按显式动作角色渲染，近似路径不放行', () => {
+    const source = `<template><el-button :link="action.kind === 'navigation'"
+      :text="action.kind !== 'navigation'" :data-button-kind="action.kind ?? 'command'" /></template>`
+    expect(auditButtonKinds(sample(source, 'components/AppRowActions.vue'))).toEqual([])
+    expect(auditButtonKinds(sample(source, 'views/AppRowActions.vue'))).toHaveLength(1)
+    expect(auditButtonKinds(sample(source.replace(":text=\"action.kind !== 'navigation'\"", 'text'), 'components/AppRowActions.vue'))).toHaveLength(1)
+    expect(auditButtonKinds(sample(source.replace(":text=\"action.kind !== 'navigation'\"", ''), 'components/AppRowActions.vue'))).toHaveLength(1)
+    expect(auditButtonKinds(sample('<template><el-button data-button-kind="navigation" :link="enabled" /></template>'))).toHaveLength(1)
+  })
+})
+
+
+describe('透明命令与持久状态的边界', () => {
+  const css = readFileSync(resolve('src/styles/buttonStates.css'), 'utf8')
+  it('真实状态配方通过；文字底色、菜单隔离、图标反馈和持久状态退化会被拦截', () => {
+    expect(auditButtonStates(css)).toEqual([])
+    for (const broken of [
+      css.replace('is-text:not(.is-has-bg, .app-row-actions-menu__item,', 'is-text:not(.is-has-bg,'),
+      css.replace('--app-button-hover-bg: var(--app-icon-hover-bg)', '--app-button-hover-bg: transparent'),
+      css.replace('--app-button-rest-bg: var(--app-interaction-selected-background)', '--app-button-rest-bg: transparent'),
+    ]) expect(auditButtonStates(broken)).not.toEqual([])
   })
 })

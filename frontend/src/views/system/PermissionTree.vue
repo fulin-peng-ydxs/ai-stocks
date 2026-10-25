@@ -104,7 +104,7 @@ const resourceStats = computed(() => {
         v-if="childResources.length"
         :id="resourceToggleId"
         class="pt-resource-trigger"
-        link
+        text
         size="small"
         :aria-expanded="resourcesOpen"
         :aria-controls="resourceRegionId"

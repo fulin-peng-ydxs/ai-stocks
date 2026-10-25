@@ -424,7 +424,7 @@ async function openDetail(row: AuditLog) {
 
 function auditRowActions(row: AuditLog): AppRowAction[] {
   return [
-    { key: 'detail', label: '详情', onClick: () => openDetail(row) },
+    { key: 'detail', kind: 'navigation', label: '详情', onClick: () => openDetail(row) },
   ]
 }
 

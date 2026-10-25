@@ -1136,7 +1136,7 @@ const menuPageTitle = useMenuPageTitle()
           >
             <AppTableColumn v-if="!colVisible('name')" label="操作" role="action-compact">
               <template #default="{ row }">
-                <AppRowActions :actions="[{ key: 'view', label: '查看走势', disabled: row.available === false, onClick: () => selectRow(row) }]" />
+                <AppRowActions :actions="[{ key: 'view', kind: 'navigation', label: '查看走势', disabled: row.available === false, onClick: () => selectRow(row) }]" />
               </template>
             </AppTableColumn>
             <AppTableColumn
@@ -1173,7 +1173,7 @@ const menuPageTitle = useMenuPageTitle()
                     @toggle="togglePinned(row, !isPinned(row.board_code))"
                   />
                   <div class="sector-name-copy">
-                    <el-button
+                    <el-button data-button-kind="navigation"
                       link
                       type="primary"
                       class="sector-select app-table-field-link"

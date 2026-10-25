@@ -343,7 +343,7 @@ async function openDelist(row: QualityIssue) {
 
 function qualityRowActions(row: QualityIssue): AppRowAction[] {
   return [...qualityManagementActions(row), {
-    key: 'diagnostic', label: '查看诊断详情', permission: 'data-quality:view', placement: 'more',
+    key: 'diagnostic', kind: 'navigation', label: '查看诊断详情', permission: 'data-quality:view', placement: 'more',
     onClick: () => { diagnosticRow.value = row; diagnosticOpen.value = true },
   }]
 }

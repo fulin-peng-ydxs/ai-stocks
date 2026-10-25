@@ -459,7 +459,7 @@ function onSubmit() {
             </svg>
             <input v-model="form.emailCode" name="emailCode" placeholder=" " type="text" autocomplete="one-time-code"
                    @input="errors.emailCode = ''" @keydown="submitOnEnter($event, onSubmit)" />
-            <el-button class="send" link type="primary"
+            <el-button class="send" text type="primary"
                        :disabled="emailCountdown > 0" :loading="emailSending"
                        @click="onSendEmailCode">
               {{ emailSending ? '发送中…' : emailCountdown > 0 ? `${emailCountdown}s 后重发` : '发送验证码' }}
@@ -499,10 +499,10 @@ function onSubmit() {
 
         <div v-if="mode === 'login'" class="login-rowbetween">
           <span class="login-security"><i />安全加密连接</span>
-          <el-button class="login-link" link type="primary" @click="setMode('register')">创建账户</el-button>
+          <el-button data-button-kind="navigation" class="login-link" link type="primary" @click="setMode('register')">创建账户</el-button>
         </div>
         <div v-else class="login-rowbetween login-rowend">
-          <el-button class="login-link" link type="primary" @click="setMode('login')">已有账户，返回登录</el-button>
+          <el-button data-button-kind="navigation" class="login-link" link type="primary" @click="setMode('login')">已有账户，返回登录</el-button>
         </div>
 
         <div class="login-footnote">复盘啦 · EOD 趋势龙头研究系统</div>

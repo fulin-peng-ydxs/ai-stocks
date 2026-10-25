@@ -463,7 +463,7 @@ onMounted(async () => {
     <template #action>
       <div class="lh-action detail-action">
         <div class="detail-nav">
-          <el-button :icon="ArrowLeft" text data-testid="sector-detail-back" @click="returnToSource">
+          <el-button data-button-kind="navigation" :icon="ArrowLeft" link data-testid="sector-detail-back" @click="returnToSource">
             {{ returnLabel }}
           </el-button>
           <AppControlRow class="detail-actions">
@@ -701,7 +701,7 @@ onMounted(async () => {
                 </AppTableColumn>
                 <AppTableColumn v-if="canViewStocks" label="操作" role="action-compact">
                   <template #default="{ row }">
-                    <AppRowActions :aria-label="`${row.name || row.code} 行操作`" :actions="[{ key: 'view', label: '查看行情', onClick: () => openStock(row) }]" />
+                    <AppRowActions :aria-label="`${row.name || row.code} 行操作`" :actions="[{ key: 'view', kind: 'navigation', label: '查看行情', onClick: () => openStock(row) }]" />
                   </template>
                 </AppTableColumn>
                 <template #empty>

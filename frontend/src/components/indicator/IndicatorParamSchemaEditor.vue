@@ -51,7 +51,7 @@ function remove(index: number): void {
         <label class="indicator-param-schema__description"><span>参数说明</span><el-input :model-value="param.description" :disabled="disabled" placeholder="说明参数改变后会影响什么" @update:model-value="(v: string) => update(index, { description: v })" /></label>
       </div>
     </div>
-    <el-button link type="primary" size="small" :disabled="disabled" @click="add">
+    <el-button text type="primary" size="small" :disabled="disabled" @click="add">
       <template #icon><el-icon><Plus /></el-icon></template>
       新增一个参数
     </el-button>

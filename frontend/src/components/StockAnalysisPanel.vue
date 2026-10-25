@@ -585,7 +585,7 @@ onBeforeUnmount(() => {
       <span v-else>{{ adjustLabel }}行情；K线、量能和MACD按交易日联动。</span>
       <el-button
         v-if="mode === 'compare' && failedCount"
-        link
+        text
         type="primary"
         data-testid="stock-analysis-retry-partial"
         @click="retryFailedCompare"

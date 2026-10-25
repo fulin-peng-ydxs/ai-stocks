@@ -707,7 +707,7 @@ function taskRowActions(row: AsyncTask): AppRowAction[] {
       visible: canResumeTask(row),
       onClick: () => resume(row),
     },
-    { key: 'logs', label: '日志', type: 'primary', onClick: () => openLogs(row.id) },
+    { key: 'logs', kind: 'navigation', label: '日志', type: 'primary', onClick: () => openLogs(row.id) },
   ]
 }
 
@@ -1249,8 +1249,8 @@ const menuPageTitle = useMenuPageTitle()
       </div>
       <div v-if="logTaskFinished" class="log-followups">
         <span>任务结果可继续在数据页核验</span>
-        <el-button link type="primary" @click="goToDataResult('/data/overview')">查看数据概览</el-button>
-        <el-button link type="primary" @click="goToDataResult('/data/quality')">查看数据质量</el-button>
+        <el-button data-button-kind="navigation" link type="primary" @click="goToDataResult('/data/overview')">查看数据概览</el-button>
+        <el-button data-button-kind="navigation" link type="primary" @click="goToDataResult('/data/quality')">查看数据质量</el-button>
       </div>
       <div
         v-if="logTask?.capability?.request_runtime || correlationResult || ladderResult"

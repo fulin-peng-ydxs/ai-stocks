@@ -61,7 +61,7 @@ function toggle(): void {
       <template v-for="entry in entries" :key="entry.key">
         <slot v-if="entry.kind === 'context'" name="context" />
         <div v-else-if="entry.kind === 'commands'" class="app-advanced-search__commands">
-          <el-button v-if="enabled" link :icon="expanded ? ArrowUp : ArrowDown" :aria-expanded="expanded" data-search-toggle @click="toggle">
+          <el-button v-if="enabled" text :icon="expanded ? ArrowUp : ArrowDown" :aria-expanded="expanded" data-search-toggle @click="toggle">
             {{ expanded ? '收起高级搜索' : '高级搜索' }}{{ summaries.length ? `（${summaries.length}）` : '' }}
           </el-button>
           <slot name="commands" />
@@ -77,9 +77,9 @@ function toggle(): void {
     <div v-if="!expanded && summaries.length" class="app-advanced-search__summary" aria-label="生效的高级搜索条件">
       <span>高级条件：</span>
       <el-tag type="primary" effect="light" v-for="field in summaries.slice(0, 3)" :key="field.key" :closable="!!states[field.key].clear" @close="states[field.key].clear?.()">
-        <el-button link @click="focusField(field.key)">{{ field.label }}：{{ field.text }}</el-button>
+        <el-button text @click="focusField(field.key)">{{ field.label }}：{{ field.text }}</el-button>
       </el-tag>
-      <el-button v-if="summaries.length > 3" link @click="expanded = true">其余 {{ summaries.length - 3 }} 项</el-button>
+      <el-button v-if="summaries.length > 3" text @click="expanded = true">其余 {{ summaries.length - 3 }} 项</el-button>
     </div>
   </div>
 </template>

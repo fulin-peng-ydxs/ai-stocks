@@ -1072,7 +1072,7 @@ const menuPageTitle = useMenuPageTitle()
                   <AppTableColumn label="分时覆盖" role="text" control-width="medium">
                     <template #default="{ row }">
                       <div v-if="row.intraday" class="stock-intraday-cell">
-                        <el-button v-if="row.intraday.partial_days || row.intraday.missing_days" class="app-table-field-link" link type="primary" size="small"
+                        <el-button data-button-kind="navigation" v-if="row.intraday.partial_days || row.intraday.missing_days" class="app-table-field-link" link type="primary" size="small"
                           :aria-label="`${row.code} 分时${intradayCoverageText(row.intraday)}，查看台账`"
                           @click="gotoStockIntraday(row.code)">{{ intradayCoverageText(row.intraday) }} · 查看台账</el-button>
                         <span v-else>{{ intradayCoverageText(row.intraday) }}</span>
@@ -1094,7 +1094,7 @@ const menuPageTitle = useMenuPageTitle()
                     </template>
                     <template #default="{ row }">
                       <AppHoverInfo :content="layerCell(k, row.layers[k]).tip" placement="top">
-                        <el-button v-if="row.layers[k] && !row.layers[k].ok" class="app-table-field-link" link type="danger" size="small"
+                        <el-button data-button-kind="navigation" v-if="row.layers[k] && !row.layers[k].ok" class="app-table-field-link" link type="danger" size="small"
                           :aria-label="`${row.code} ${LAYER_CN[k]}：${layerCell(k, row.layers[k]).text}，查看质量台账`" @click="goLayer(k, row)">
                           {{ layerCell(k, row.layers[k]).text }} · 查看台账
                         </el-button>
@@ -1210,7 +1210,7 @@ const menuPageTitle = useMenuPageTitle()
                           <span class="issue-tag">{{ item.label }}</span>
                           <span class="issue-hint">{{ item.hint }}</span>
                         </span>
-                        <el-button v-if="ISSUE_TYPE_LABEL[item.key]" link type="primary" @click="gotoQuality(undefined, item.key)">查看 {{ item.count }} 项<el-icon class="el-icon--right"><ArrowRight /></el-icon></el-button>
+                        <el-button data-button-kind="navigation" v-if="ISSUE_TYPE_LABEL[item.key]" link type="primary" @click="gotoQuality(undefined, item.key)">查看 {{ item.count }} 项<el-icon class="el-icon--right"><ArrowRight /></el-icon></el-button>
                         <span v-else class="hint">{{ item.count }} 项</span>
                       </div>
                     </div>

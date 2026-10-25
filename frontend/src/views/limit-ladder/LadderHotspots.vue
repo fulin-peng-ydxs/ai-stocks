@@ -59,7 +59,7 @@ function visibleItems(kind: LimitLadderHotspotType): LimitLadderHotspot[] {
         <span v-if="!hotspots[kind].length" class="ladder-hotspots__empty">暂无</span>
         <ElButton
           v-else-if="hotspots[kind].length > visibleLimit"
-          class="ladder-hotspots__more" type="primary" link
+          class="ladder-hotspots__more" type="primary" text
           :aria-expanded="expanded[kind]"
           @click="expanded[kind] = !expanded[kind]"
         >{{ expanded[kind] ? '收起' : `展开其余 ${hotspots[kind].length - visibleLimit} 项` }}</ElButton>

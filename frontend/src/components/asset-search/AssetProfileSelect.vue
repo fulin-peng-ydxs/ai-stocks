@@ -310,7 +310,7 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
               <span>{{ emptyText }}</span>
               <el-button
                 v-if="canBrowse"
-                link
+                text
                 type="primary"
                 size="small"
                 :data-testid="`${testId}-empty-search`"
@@ -427,7 +427,7 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
           <span>{{ emptyText }}</span>
           <el-button
             v-if="canBrowse"
-            link
+            text
             type="primary"
             size="small"
             :data-testid="`${testId}-empty-search`"

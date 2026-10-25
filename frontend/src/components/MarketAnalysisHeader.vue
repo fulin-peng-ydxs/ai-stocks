@@ -32,7 +32,7 @@ const emit = defineEmits<{
         <div class="market-analysis-header__title-line">
           <h3 :data-testid="titleTestId || undefined">{{ title }}</h3>
           <span v-if="code">{{ code }}</span>
-          <el-button
+          <el-button data-button-kind="navigation"
             v-if="detailVisible"
             link
             type="primary"

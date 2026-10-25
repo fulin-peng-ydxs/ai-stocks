@@ -30,7 +30,7 @@ defineEmits<{ action: [] }>()
       {{ value }}<span v-if="unit" class="data-metric-unit">{{ unit }}</span>
     </div>
     <div v-if="summary" class="data-metric-summary">{{ summary }}</div>
-    <el-button v-if="actionLabel" link type="primary" class="data-metric-action" @click="$emit('action')">
+    <el-button data-button-kind="navigation" v-if="actionLabel" link type="primary" class="data-metric-action" @click="$emit('action')">
       {{ actionLabel }}<el-icon class="el-icon--right"><ArrowRight /></el-icon>
     </el-button>
   </el-card>

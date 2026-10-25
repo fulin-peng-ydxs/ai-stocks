@@ -75,7 +75,7 @@ function clear() {
       />
       <div class="ip-actions">
         <span class="ip-count">{{ filtered.length }} 个</span>
-        <el-button link size="small" :disabled="disabled" @click="clear">清除图标</el-button>
+        <el-button text size="small" :disabled="disabled" @click="clear">清除图标</el-button>
       </div>
       <AppScrollArea class="ip-grid">
         <div

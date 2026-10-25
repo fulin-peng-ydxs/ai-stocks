@@ -623,7 +623,7 @@ defineExpose({
         description="创建工作草稿后再修改，正式版本不会被覆盖"
       >
         <template #action>
-          <el-button v-permission="'trade-discipline:rule-manage'" link type="primary" size="small" :loading="command === 'open'" @click="beginEdit">编辑规则</el-button>
+          <el-button v-permission="'trade-discipline:rule-manage'" text type="primary" size="small" :loading="command === 'open'" @click="beginEdit">编辑规则</el-button>
         </template>
       </AppStatusNotice>
 

@@ -102,12 +102,16 @@ function measureActionWidth(action: AppRowActionMeasure): number {
 
 export type AppRowActionType = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info'
 
+export type AppRowActionKind = 'command' | 'navigation'
+
 export type AppRowActionPlacement = 'auto' | 'inline' | 'more'
 
 export interface AppRowAction {
   key: string
   label: string
   testId?: string
+  /** 默认命令；进入页面、详情或对象上下文时显式声明 navigation。 */
+  kind?: AppRowActionKind
   type?: AppRowActionType
   permission?: string | string[]
   visible?: boolean

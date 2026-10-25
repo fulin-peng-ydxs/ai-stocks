@@ -613,7 +613,7 @@ function setSort(slotId: string, field: string, order: string): void {
         </el-checkbox-group>
         <p class="ca-search-hint" role="status">{{ selectedCommonFields(s).length === 2 ? '已选 2 项；替换时先取消一项' : `已选 ${selectedCommonFields(s).length}/2 项，选满后自动保存` }}</p>
         <AppRowActions v-if="clearable && isOverridden(s.slotId, 'commonFields')" :actions="clearFieldActions(s.slotId, 'commonFields')" :inline-limit="1" />
-        <el-button v-if="applyFailed(s.slotId, 'commonFields')" link :disabled="selectedCommonFields(s).length !== 2" :loading="isApplying(s.slotId, 'commonFields')" @click="runApply(s.slotId, 'commonFields', () => {})">保存失败，重试</el-button>
+        <el-button v-if="applyFailed(s.slotId, 'commonFields')" text :disabled="selectedCommonFields(s).length !== 2" :loading="isApplying(s.slotId, 'commonFields')" @click="runApply(s.slotId, 'commonFields', () => {})">保存失败，重试</el-button>
       </PageSettingItem>
       <template v-if="s.fields.includes('klineRangePreferences')">
         <PageSettingItem label="K 线范围" :hint="fieldHelp(s, 'klineRangePreferences')">

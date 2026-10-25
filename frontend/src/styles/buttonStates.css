@@ -7,6 +7,8 @@
   --app-button-neutral-bg: var(--el-bg-color);
   --app-button-neutral-hover-bg: var(--chrome-bg-soft-hover);
   --app-button-neutral-pressed-bg: color-mix(in srgb, var(--el-text-color-primary) 8%, var(--chrome-bg-soft-hover));
+  --app-icon-hover-bg: color-mix(in srgb, var(--chrome-bg-soft-hover) 55%, var(--el-bg-color));
+  --app-icon-pressed-bg: var(--chrome-bg-soft-hover);
   --app-button-neutral-text: var(--el-text-color-regular);
   --app-button-neutral-strong-text: var(--el-text-color-primary);
   --app-button-disabled-text: var(--el-disabled-text-color);
@@ -102,8 +104,28 @@ html[data-layout-preset] .app-icon-button:not([data-close-size]) {
 }
 html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice).is-text.is-has-bg,
 html[data-layout-preset] .app-icon-button:not([data-close-size]).is-soft { --app-button-rest-bg: var(--app-button-neutral-hover-bg); }
+/* 普通图标仅用轻量中性底表达命中范围；选中项在后续规则保留持久状态。 */
+html[data-layout-preset] .app-icon-button:not([data-close-size]) {
+  --app-button-hover-bg: var(--app-icon-hover-bg);
+  --app-button-pressed-bg: var(--app-icon-pressed-bg);
+}
+/* 无底文字命令通过文字色区分悬浮/按下；菜单项、显式 bg 和展开状态另行承接。 */
+html[data-layout-preset] .el-button.is-text:where(.el-button--info, .is-tone-info):not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice) {
+  --app-button-tone: var(--el-color-primary);
+}
+html[data-layout-preset] .el-button.is-text:not(.is-has-bg, .app-row-actions-menu__item, .app-interaction-target, .app-interaction-trigger, .app-interaction-choice) {
+  --app-button-hover-bg: transparent;
+  --app-button-pressed-bg: transparent;
+  --app-button-hover-text: color-mix(in srgb, var(--app-button-tone) 85%, var(--el-text-color-primary));
+  --app-button-pressed-text: color-mix(in srgb, var(--app-button-tone) 65%, var(--el-text-color-primary));
+}
+html[data-layout-preset] .el-button.is-text:is(.is-open, [aria-expanded='true']):not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice) {
+  --app-button-rest-bg: var(--app-icon-hover-bg);
+  --app-button-hover-bg: var(--app-icon-hover-bg);
+  --app-button-pressed-bg: var(--app-icon-pressed-bg);
+}
 /* 图标选择表达持久状态；hover 不抹去选中，loading 保留选中角色色。 */
-html[data-layout-preset] .app-icon-button[aria-pressed='true']:not([data-close-size]) {
+html[data-layout-preset] .app-icon-button:is([aria-pressed='true'], [aria-expanded='true'], .is-open):not([data-close-size]) {
   --app-button-rest-text: var(--el-color-primary);
   --app-button-rest-bg: var(--app-interaction-selected-background);
   --app-button-hover-text: var(--el-color-primary);
@@ -115,7 +137,7 @@ html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interactio
   --app-button-hover-bg: transparent;
   --app-button-pressed-bg: transparent;
 }
-/* 菜单行仍是文字按钮，只有内联行操作采用 link；不再维护私有颜色配方。 */
+/* 菜单行保留指向反馈，导航与命令在菜单内共同消费菜单角色。 */
 html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice).app-row-actions-menu__item { --app-button-rest-bg: transparent; }
 
 /* 显式绘制覆盖库中 text / link / has-bg 的硬编码状态分支。 */
@@ -138,7 +160,7 @@ html[data-layout-preset] :is(.el-button:not(.app-interaction-target, .app-intera
   background-color: var(--app-button-pressed-bg);
   border-color: var(--app-button-pressed-border);
 }
-html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice).is-link:active:not(:disabled, .is-disabled, .is-loading) { text-decoration: underline; text-decoration-thickness: 2px; }
+html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice).is-link:is(:active, .is-active):not(:disabled, .is-disabled, .is-loading) { text-decoration: underline; text-decoration-thickness: 2px; }
 html[data-layout-preset] :is(.el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice), .app-icon-button:not([data-close-size])):focus-visible { outline: var(--app-focus-ring); outline-offset: 1px; }
 html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice).is-link:is(:focus-visible, .is-open) { text-decoration: underline; text-underline-offset: 3px; }
 @media (hover: none), (pointer: coarse) {

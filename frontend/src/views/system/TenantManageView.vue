@@ -204,7 +204,7 @@ function tenantRowActions(row: Tenant): AppRowAction[] {
   const hasUsers = (row.user_count ?? 0) > 0
   return [
     { key: 'edit', label: '编辑', permission: 'tenant:update', onClick: () => openEdit(row) },
-    { key: 'users', label: '查看用户', onClick: () => viewUsers(row) },
+    { key: 'users', kind: 'navigation', label: '查看用户', onClick: () => viewUsers(row) },
     {
       key: 'disable',
       label: '停用',

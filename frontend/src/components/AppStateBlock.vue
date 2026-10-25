@@ -114,7 +114,7 @@ const defaultDescription = computed(() => {
       </div>
       <div v-if="retry || $slots.extra" class="app-state-block__actions">
         <slot name="extra">
-          <el-button link type="primary" size="small" @click="emit('retry')">{{ retryText }}</el-button>
+          <el-button text type="primary" size="small" @click="emit('retry')">{{ retryText }}</el-button>
         </slot>
       </div>
     </div>

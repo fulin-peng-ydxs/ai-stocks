@@ -2012,7 +2012,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                               <el-icon><Close /></el-icon>
                             </AppIconButton>
                           </div>
-                          <el-button link type="primary" size="small" :disabled="profileReadonly" @click="addBand(row)">
+                          <el-button text type="primary" size="small" :disabled="profileReadonly" @click="addBand(row)">
                             <template #icon><el-icon><Plus /></el-icon></template>
                             段
                           </el-button>
@@ -2974,7 +2974,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   flex-direction: column;
   gap: var(--app-space-1);
 }
-.band-box > .el-button.is-link {
+.band-box > .el-button {
   align-self: flex-start;
   width: fit-content;
 }

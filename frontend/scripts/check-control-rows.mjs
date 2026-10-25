@@ -22,7 +22,7 @@ const shared = new Set(['components/AppControlRow.vue', 'components/AppTabToolba
   'components/AppAdvancedSearch.vue', 'components/AppSelect.vue', 'components/AppFilterSelect.vue',
   'components/PageSegmented.vue', 'components/AppIconButton.vue', 'components/IconPicker.vue'])
 // 基础适配器仅透传自身尺寸 API；业务消费方仍须通过所属表单/操作组声明层级。
-const sizeAdapters = new Set([...shared, 'components/AppSearchInput.vue',
+const sizeAdapters = new Set([...shared, 'components/AppRowActions.vue', 'components/AppSearchInput.vue',
   'components/indicator/IndicatorParamFields.vue'])
 const compactRoles = new Set(['AppDataTable', 'AppTableColumn', 'el-table', 'el-table-column',
   'AppRowActions', 'AppStateBlock', 'AppStatusNotice'])

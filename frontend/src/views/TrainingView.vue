@@ -548,7 +548,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
                 <span v-if="sessionConfig.mode === 'multi'">{{ settings.n_rounds }} 回合 ·</span>
                 <span>每回合 {{ settings.window_days }} 个交易日 ·</span>
                 <span>初始资金 {{ formatMoney(settings.initial_capital) }} 元</span>
-                <el-button link type="primary" @click="settingsOpen = true">调整参数</el-button>
+                <el-button text type="primary" @click="settingsOpen = true">调整参数</el-button>
               </div>
             </div>
           </AppForm>
@@ -724,7 +724,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 
           <div v-if="round.pending" class="pending">
             <span>待成交（次日开盘）：<b :class="round.pending.side === 'buy' ? 'up' : 'down'">{{ round.pending.side === 'buy' ? '买入' : '卖出' }} {{ round.pending.hands }} 手</b></span>
-            <el-button link type="info" size="small" @click="doCancel">撤单</el-button>
+            <el-button text type="info" size="small" @click="doCancel">撤单</el-button>
           </div>
 
           <template v-if="!isLast">
@@ -744,12 +744,12 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               <span class="hint" v-if="!isAmount">
                 约需 ¥{{ formatMoney(estCost, { digits: 0, empty: '--' }) }} · 最多可买
                 <AppHoverInfo content="点击填入全仓">
-                  <el-button class="hl" link @click="fillBuyMax">{{ maxBuyHands }}</el-button>
+                  <el-button class="hl" text @click="fillBuyMax">{{ maxBuyHands }}</el-button>
                 </AppHoverInfo> 手
               </span>
               <span class="hint" v-else>
                 可用资金 <AppHoverInfo content="点击全额填入">
-                       <el-button class="hl" link @click="fillBuyMax">{{ `¥${formatMoney(cash, { digits: 0, empty: '--' })}` }}</el-button>
+                       <el-button class="hl" text @click="fillBuyMax">{{ `¥${formatMoney(cash, { digits: 0, empty: '--' })}` }}</el-button>
                      </AppHoverInfo> · 本单 ≈ {{ orderHands }} 手
               </span>
             </div>

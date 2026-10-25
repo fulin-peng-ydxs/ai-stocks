@@ -87,7 +87,7 @@ function leadingControlsOf(column: RankedStockColumn): number {
     <slot name="leading-columns" />
     <AppTableColumn v-if="!columns.some(column => column.key === 'name')" label="操作" role="action-compact">
       <template #default="{ row }">
-        <AppRowActions :actions="[{ key: 'view', label: '查看走势', onClick: () => emit('rowClick', row) }]" />
+        <AppRowActions :actions="[{ key: 'view', kind: 'navigation', label: '查看走势', onClick: () => emit('rowClick', row) }]" />
       </template>
     </AppTableColumn>
     <AppTableColumn
@@ -123,7 +123,7 @@ function leadingControlsOf(column: RankedStockColumn): number {
         </StockAnalysisNameCell>
         <span v-else-if="column.key === 'name'" class="app-inline-info app-inline-info--nowrap">
           <slot name="name-leading" :row="row" />
-          <el-button link type="primary" class="app-table-field-link" @click.stop="emit('rowClick', row)">{{ row.name || row.code }}</el-button>
+          <el-button data-button-kind="navigation" link type="primary" class="app-table-field-link" @click.stop="emit('rowClick', row)">{{ row.name || row.code }}</el-button>
           <StockStatusTag :is-st="row.is_st" :as-of-date="row.st_as_of_date || stAsOfDate" />
         </span>
         <template v-else-if="column.key === 'board'">{{ row.board || '—' }}</template>

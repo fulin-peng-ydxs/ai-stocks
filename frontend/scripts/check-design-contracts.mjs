@@ -275,9 +275,63 @@ export function auditDesignStateContract(css, design) {
   return violations
 }
 
+/** 无底文字命令与图标、菜单状态各由共享入口维护，防止透明化误伤状态反馈。 */
+export function auditButtonStates(css) {
+  const rules = []
+  postcss.parse(css).walkRules(rule => { rules.push(rule) })
+  const violations = []
+  const declarations = rule => Object.fromEntries((rule?.nodes ?? [])
+    .filter(node => node.type === 'decl').map(node => [node.prop, node.value]))
+  const text = rules.filter(rule => rule.selector.includes('.el-button.is-text:not(.is-has-bg, .app-row-actions-menu__item,'))
+  if (text.length !== 1 || ['--app-button-hover-bg', '--app-button-pressed-bg']
+    .some(key => declarations(text[0])[key] !== 'transparent')) {
+    violations.push('buttonStates.css: 普通无底文字命令悬浮/按下必须透明，并隔离显式 bg 和菜单项')
+  }
+  const icon = rules.filter(rule => rule.selector === 'html[data-layout-preset] .app-icon-button:not([data-close-size])')
+  if (icon.length !== 1 || declarations(icon[0])['--app-button-hover-bg'] !== 'var(--app-icon-hover-bg)'
+    || declarations(icon[0])['--app-button-pressed-bg'] !== 'var(--app-icon-pressed-bg)') {
+    violations.push('buttonStates.css: 图标悬浮/按下须消费共享轻量反馈，关闭角色独立')
+  }
+  const selected = rules.find(rule => rule.selector.includes(".app-icon-button:is([aria-pressed='true'], [aria-expanded='true'], .is-open)"))
+  if (declarations(selected)['--app-button-rest-bg'] !== 'var(--app-interaction-selected-background)') {
+    violations.push('buttonStates.css: 图标选中/展开必须保留状态底色')
+  }
+  return violations
+}
+
+/** link 必须声明导航意图，避免只为透明外观把执行命令写成链接。 */
+export function auditButtonKinds(sources) {
+  const violations = []
+  for (const { file, source } of sources) {
+    const { template } = sourceParts(file, source)
+    if (!template) continue
+    walkTemplate(template, node => {
+      if (!['el-button', 'ElButton'].includes(node.tag)) return
+      const links = attributes(node, 'link')
+      const texts = attributes(node, 'text')
+      const kind = attributes(node, 'data-button-kind')
+      const navigation = kind.some(prop => prop.type === 6 && attributeText(prop) === 'navigation')
+      const rowAdapter = file === 'components/AppRowActions.vue'
+        && links.length === 1 && texts.length === 1
+        && links.every(prop => prop.type === 7 && attributeText(prop) === "action.kind === 'navigation'")
+        && texts.every(prop => prop.type === 7 && attributeText(prop) === "action.kind !== 'navigation'")
+        && kind.some(prop => prop.type === 7 && attributeText(prop) === "action.kind ?? 'command'")
+      if (links.length && (links.some(prop => prop.type === 7) ? !rowAdapter : !navigation)) {
+        violations.push(`${file}:${node.loc.start.line} link 必须显式声明 data-button-kind="navigation"；普通命令使用 text`)
+      }
+      if (navigation && (!links.length || texts.length)) {
+        violations.push(`${file}:${node.loc.start.line} 导航角色须使用 link，不能混用 text`)
+      }
+    })
+  }
+  return violations
+}
+
 export function auditDesignContracts(sources = designSources(), design = readFileSync(join(frontendRoot, '../DESIGN.md'), 'utf8')) {
   return [
     ...auditComponentEntries(sources), ...auditSharedStyles(sources), ...auditColorSources(sources),
+    ...auditButtonKinds(sources),
+    ...auditButtonStates(sources.find(item => item.file === 'styles/buttonStates.css')?.source ?? ''),
     ...auditDesignStateContract(sources.find(item => item.file === 'styles/global.css')?.source ?? '', design),
   ]
 }

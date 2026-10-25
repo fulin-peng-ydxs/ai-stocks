@@ -59,7 +59,7 @@ const live = computed(() => props.tone === 'error' ? 'assertive' : 'polite')
     <div v-if="actionText || $slots.action" class="app-status-notice__actions">
       <slot name="action">
         <el-button
-          link
+          text
           type="primary"
           size="small"
           :loading="actionLoading"

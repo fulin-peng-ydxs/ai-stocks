@@ -516,8 +516,8 @@ async function onLogout() {
             </div>
 
             <AppControlRow class="topbar-panel-actions" justify="end">
-              <el-button plain @click="goTo('/data/overview')">数据概览</el-button>
-              <el-button plain @click="goTo('/data/quality')">质量检查</el-button>
+              <el-button data-button-kind="navigation" link @click="goTo('/data/overview')">数据概览</el-button>
+              <el-button data-button-kind="navigation" link @click="goTo('/data/quality')">质量检查</el-button>
             </AppControlRow>
           </div>
         </el-popover>
@@ -594,8 +594,8 @@ async function onLogout() {
             <div v-else class="topbar-empty">暂无任务记录</div>
 
             <AppControlRow class="topbar-panel-actions" justify="end">
-              <el-button plain @click="goTo('/data/ingest')">查看任务</el-button>
-              <el-button plain @click="goTo('/data/schedule')">任务调度</el-button>
+              <el-button data-button-kind="navigation" link @click="goTo('/data/ingest')">查看任务</el-button>
+              <el-button data-button-kind="navigation" link @click="goTo('/data/schedule')">任务调度</el-button>
             </AppControlRow>
           </div>
         </el-popover>
@@ -733,7 +733,7 @@ async function onLogout() {
           </div>
           <div class="display-scale-foot">
             <span>{{ displayScaleMode === 'auto' ? `已按当前屏幕自动调整为 ${displayScalePercent}%` : '已使用自定义比例' }}</span>
-            <el-button link type="primary" @click="resetDisplayScale">恢复100%</el-button>
+            <el-button text type="primary" @click="resetDisplayScale">恢复100%</el-button>
           </div>
         </SettingsGroup>
 

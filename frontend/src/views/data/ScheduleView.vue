@@ -528,7 +528,7 @@ function scheduleRowActions(row: ScheduledJob): AppRowAction[] {
       onClick: () => { downstreamJob.value = row; downstreamDrawer.value = true },
     },
     {
-      key: 'events', label: '触发记录', permission: 'data-schedule:manage', placement: 'more',
+      key: 'events', kind: 'navigation', label: '触发记录', permission: 'data-schedule:manage', placement: 'more',
       onClick: () => openTriggerEvents(row),
     },
     {

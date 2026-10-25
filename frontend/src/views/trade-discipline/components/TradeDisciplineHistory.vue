@@ -236,7 +236,7 @@ defineExpose({ reload: load })
         <AppTableColumn v-if="colVisible('trade_date')" prop="trade_date" label="交易日" role="date" sortable="custom" :sort-orders="['descending', 'ascending']" />
         <AppTableColumn v-if="colVisible('rule_name')" label="规则" role="name">
           <template #default="{ row }">
-            <el-button
+            <el-button data-button-kind="navigation"
               link
               type="primary"
               size="small"

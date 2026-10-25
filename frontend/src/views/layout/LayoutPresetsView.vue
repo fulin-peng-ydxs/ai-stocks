@@ -220,6 +220,7 @@ function presetRowActions(row: LayoutPresetRecord): AppRowAction[] {
     {
       key: 'edit',
       label: row.is_builtin ? '查看' : '编辑',
+      kind: row.is_builtin ? 'navigation' : 'command',
       onClick: () => openEditPreset(row),
     },
     {
