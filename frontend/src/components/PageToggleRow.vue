@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import HelpHint from '@/components/HelpHint.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 withDefaults(defineProps<{
   label: string
   modelValue: boolean
@@ -15,11 +15,14 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="page-toggle-row" :class="`is-${size}`" :data-testid="testId">
-    <div class="ptr-left">
-      <span class="ptr-label">{{ label }}</span>
-      <HelpHint v-if="tip" :text="tip" />
-    </div>
+  <PageSettingItem
+    class="page-toggle-row"
+    :class="`is-${size}`"
+    :data-testid="testId"
+    :label="label"
+    :hint="tip"
+    layout="inline"
+  >
     <el-switch
       :model-value="modelValue"
       class="ptr-switch"
@@ -29,34 +32,12 @@ defineEmits<{
       :active-action-icon="undefined"
       @update:model-value="(value: boolean) => $emit('update:modelValue', value)"
     />
-  </div>
+  </PageSettingItem>
 </template>
 
 <style scoped>
-.page-toggle-row {
-  min-height: var(--app-density-control-height);
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--app-space-3);
-}
 .page-toggle-row.is-sm {
   min-height: var(--app-control-height-sm);
-}
-.ptr-left {
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--app-space-2);
-}
-.ptr-label {
-  font-size: var(--app-font-size-table);
-  font-weight: var(--app-font-weight-medium);
-  color: var(--page-settings-text-subtle);
-}
-.page-toggle-row.is-sm .ptr-label {
-  font-size: var(--app-font-size-table);
 }
 :global(.ptr-switch.el-switch) {
   --el-switch-off-color: var(--page-settings-switch-off);

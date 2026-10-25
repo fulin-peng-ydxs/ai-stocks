@@ -2296,7 +2296,7 @@ const menuPageTitle = useMenuPageTitle()
               <span :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct, 2) }}</span>
             </template>
           </AppTableColumn>
-          <AppTableColumn v-if="tradeColVisible('hold')" label="持有(日)" prop="hold_days" sortable :sort-by="(r:any)=>r.hold_days" />
+          <AppTableColumn v-if="tradeColVisible('hold')" label="持有" header-meta="日" prop="hold_days" sortable :sort-by="(r:any)=>r.hold_days" />
           <AppTableColumn v-if="tradeColVisible('reason')" label="卖出原因">
             <template #default="{ row }">
               <template v-if="sellTags(row).length">
@@ -2400,7 +2400,7 @@ const menuPageTitle = useMenuPageTitle()
               <span :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct, 2) }}</span>
             </template>
           </AppTableColumn>
-          <AppTableColumn label="持有(日)" prop="hold_days" />
+          <AppTableColumn label="持有" header-meta="日" prop="hold_days" />
           <AppTableColumn label="卖出原因">
             <template #default="{ row }">
               <template v-if="sellTags(row).length">

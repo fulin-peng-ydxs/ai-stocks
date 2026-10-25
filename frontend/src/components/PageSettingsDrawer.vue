@@ -134,8 +134,11 @@ const regularComponentSlotIds = computed(() => {
   const entry = props.pageKey ? getPageEntry(props.pageKey) : undefined
   if (!entry) return []
   return entry.layout.slots
+    // 页面阶段/权限白名单只过滤业务组件，公共抽屉自身必须始终可配置。
+    // 是否允许用户调整字段仍由后续 allowed-layers 策略守卫。
+    .filter((slot) => slot.component === 'settings-drawer'
+      || !props.componentSlotIds || props.componentSlotIds.includes(slot.id))
     .map((slot) => slot.id)
-    .filter((slotId) => !props.componentSlotIds || props.componentSlotIds.includes(slotId))
 })
 
 function hasUserComponentConfig(slotIds: string[]): boolean {

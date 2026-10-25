@@ -6,12 +6,15 @@ import { ElCollapseTransition } from 'element-plus'
  * 标题字号按语义角色稳定分档；紧凑抽屉可通过共享上下文降低一级分组字号，
  * 嵌套层级仍主要由卡片、缩进和结构线表达。
  */
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, ref, watch, type ComponentPublicInstance } from 'vue'
 import { Expand, Fold } from '@element-plus/icons-vue'
 import { useSettingsFoldTree } from '../composables/useSettingsFoldTree'
 import AppIconButton from './AppIconButton.vue'
 import HelpHint from './HelpHint.vue'
 import { SETTINGS_FOLD_PREFERENCES } from '@/composables/settingsFoldPreferences'
+import { createSettingItemLayoutGroup, SETTING_ITEM_LAYOUT_GROUP, type SettingItemLayoutElement } from '@/composables/settingItemLayout'
+
+const itemLayoutGroup = createSettingItemLayoutGroup()
 
 const props = withDefaults(
   defineProps<{
@@ -64,6 +67,11 @@ const {
   setRootElement,
   toggleChildGroups,
 } = useSettingsFoldTree(openState, setOpen)
+// 与折叠树使用同一真实 DOM 边界，避免插槽的 Vue 归属跨过视觉兄弟层级。
+function setGroupRootElement(element: Element | ComponentPublicInstance | null) {
+  setRootElement(element)
+  if (element instanceof HTMLElement) (element as SettingItemLayoutElement)[SETTING_ITEM_LAYOUT_GROUP] = itemLayoutGroup
+}
 const childToggleLabel = computed(() => (
   `${props.title || '当前分组'}：${allChildGroupsClosed.value ? '展开' : '收起'}下级分组`
 ))
@@ -72,7 +80,7 @@ const childToggleLabel = computed(() => (
 
 <template>
   <section
-    :ref="setRootElement"
+    :ref="setGroupRootElement"
     class="sg"
     :class="[
       `sg-l${level}`,

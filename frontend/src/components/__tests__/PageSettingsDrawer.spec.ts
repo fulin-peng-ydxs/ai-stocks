@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import { PAGE_REGISTRY } from '@/layout/pageRegistry'
 import PageSettingsDrawer, { type DrawerConfig } from '@/components/PageSettingsDrawer.vue'
 import { clearAuth, writeAuth } from '@/api/authToken'
 import { resetDrawerPreferencesForTests } from '@/composables/useDrawerPreferences'
@@ -207,9 +208,32 @@ describe('PageSettingsDrawer', () => {
     })
 
     const autoSettings = wrapper.findComponent({ name: 'ComponentAutoSettings' })
-    expect(autoSettings.props('slotIds')).toEqual(['table'])
+    expect(autoSettings.props('slotIds')).toEqual(['table', 'settings'])
     expect(autoSettings.props('componentMetaOverrides')).toEqual(overrides)
   })
+
+  it('所有开放设置的页面在空业务白名单下仍保留公共抽屉配置', async () => {
+    for (const entry of PAGE_REGISTRY.filter(page => page.supportsPageSettings !== false)) {
+      const { wrapper } = mountDrawer()
+      await wrapper.setProps({ pageKey: entry.pageKey, componentSlotIds: [] })
+      const settingsIds = entry.layout.slots.filter(slot => slot.component === 'settings-drawer').map(slot => slot.id)
+      expect(settingsIds.length, entry.pageKey).toBeGreaterThan(0)
+      expect(wrapper.findComponent({ name: 'ComponentAutoSettings' }).props('slotIds'), entry.pageKey).toEqual(settingsIds)
+      wrapper.unmount()
+    }
+  })
+
+  it.each([['training', ['history']], ['training', ['chart']], ['stocks', ['filter', 'table', 'chart']]])(
+    '%s 的阶段或权限白名单保留公共尺寸字段', async (pageKey, componentSlotIds) => {
+      const { wrapper } = mountDrawer()
+      await wrapper.setProps({ pageKey, componentSlotIds })
+      expect(wrapper.findComponent({ name: 'ComponentAutoSettings' }).props('slotIds')).toContain('settings')
+      await wrapper.get('.set-drawer-size').trigger('click')
+      await nextTick()
+      expect(wrapper.get('.drawer').attributes('data-size')).toBe('lg')
+      wrapper.unmount()
+    },
+  )
 
   it('当前策略关闭全部个人组件字段时不渲染空组件段', async () => {
     const { wrapper } = mountDrawer()

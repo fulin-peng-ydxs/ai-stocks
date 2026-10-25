@@ -384,7 +384,7 @@ const menuPageTitle = useMenuPageTitle()
                   <span class="caps">{{ row.configCapabilities.join('、') || '—' }}</span>
                 </template>
               </AppTableColumn>
-              <AppTableColumn label="已开放 Web 配置（可覆盖范围）">
+              <AppTableColumn label="已开放 Web 配置" header-meta="可覆盖范围">
                 <template #default="{ row }">
                   <div v-if="row.configurableFields.length" class="field-chips">
                     <el-tag type="info" v-for="f in row.configurableFields" :key="f.key" size="small" effect="plain">

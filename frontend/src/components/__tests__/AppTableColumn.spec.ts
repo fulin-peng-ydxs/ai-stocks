@@ -41,6 +41,19 @@ const ElTableColumnStub = defineComponent({
 })
 
 describe('自适应表格列', () => {
+  it('动态表头括注转为元信息，更新与可访问列名均不含括号', async () => {
+    const wrapper = mount(AppTableColumn, {
+      props: { label: '市值（元）', headerMeta: '截止日(最新)' },
+      global: { stubs: { ElTableColumn: ElTableColumnStub } },
+    })
+    expect(wrapper.get('.app-table-column-header__label').text()).toBe('市值')
+    expect(wrapper.get('.app-table-column-header__meta').text()).toBe('元 · 截止日 最新')
+    expect(wrapper.findComponent(ElTableColumnStub).props('label')).toBe('市值')
+    await wrapper.setProps({ label: '持有(日)', headerMeta: '' })
+    expect(wrapper.get('.app-table-column-header').text()).toBe('持有日')
+    wrapper.unmount()
+  })
+
   it('根据字段语义选择统一最小宽度并保留默认插槽', () => {
     const wrapper = mount(AppTableColumn, {
       props: { label: '更新时间', prop: 'updated_at' },

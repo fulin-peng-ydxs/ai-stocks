@@ -22,6 +22,7 @@ import {
   ACTION_COLUMN_CLASS,
   OVERFLOW_AWARE_COLUMN_CLASS,
 } from '@/components/table/cellVisualOverflow'
+import { resolveTableHeader } from '@/components/table/tableHeader'
 
 defineOptions({ inheritAttrs: false })
 
@@ -46,6 +47,7 @@ const props = defineProps<{
 
 const attrs = useAttrs()
 const slots = useSlots()
+const header = computed(() => resolveTableHeader(props.label, props.headerMeta))
 const actionWidthRequests = reactive(new Map<symbol, number>())
 const forwardedAttrs = computed(() => {
   const {
@@ -66,6 +68,7 @@ const forwardedAttrs = computed(() => {
 const forwardedSlotNames = computed(() => Object.keys(slots).filter((name) => name !== 'header'))
 const sizing = computed(() => resolveAdaptiveColumnWidth({
   ...props,
+  ...header.value,
   sortable: attrs.sortable !== undefined && attrs.sortable !== false,
   filterable: attrs.filters !== undefined || attrs['filter-method'] !== undefined,
   customHeader: Boolean(slots.header),
@@ -127,7 +130,7 @@ const headerStyle = computed(() => ({
   <el-table-column
     v-bind="forwardedAttrs"
     :type="type"
-    :label="label"
+    :label="header.label"
     :prop="prop"
     :width="resolvedWidth"
     :min-width="sizing.minWidth"
@@ -138,13 +141,13 @@ const headerStyle = computed(() => ({
     <template v-if="$slots.header" #header="scope">
       <slot name="header" v-bind="scope ?? {}" />
     </template>
-    <template v-else-if="label || headerMeta" #header>
+    <template v-else-if="header.label || header.headerMeta" #header>
       <span
         class="app-table-column-header"
         :style="headerStyle"
       >
-        <span v-if="label" class="app-table-column-header__label">{{ label }}</span>
-        <span v-if="headerMeta" class="app-table-column-header__meta">{{ headerMeta }}</span>
+        <span v-if="header.label" class="app-table-column-header__label">{{ header.label }}</span>
+        <span v-if="header.headerMeta" class="app-table-column-header__meta">{{ header.headerMeta }}</span>
       </span>
     </template>
     <template
