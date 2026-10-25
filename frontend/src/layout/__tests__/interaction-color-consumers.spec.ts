@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { parse as parseSfc } from '@vue/compiler-sfc'
 import { parse as parseTemplate, NodeTypes, type ElementNode, type RootNode, type TemplateChildNode } from '@vue/compiler-dom'
 import postcss from 'postcss'
+import { auditSharedStyles } from '../../../scripts/check-design-contracts.mjs'
 import { describe, expect, it } from 'vitest'
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -15,32 +16,9 @@ function vueFiles(dir: string): string[] {
   })
 }
 
-/** 检查共享主色链接自身的局部声明；祖先/子节点和实际级联另由浏览器复核。 */
+/** 测试与构建消费同一检查器，避免测试独立维护缩水版规则。 */
 function linkStyleOverrides(source: string, role = 'app-interaction-link--primary', properties = ['color']): string[] {
-  const { descriptor } = parseSfc(source)
-  const violations: string[] = []
-  const template = descriptor.template?.content ?? ''
-  for (const match of template.matchAll(/<[\w-]+\b(?:"[^"]*"|'[^']*'|[^'">])*>/g)) {
-    if (!match[0].includes(role)) continue
-    const link = document.createElement('a')
-    link.className = Array.from(match[0].matchAll(/\bclass="([^"]*)"/g))
-      .flatMap((entry) => entry[1].match(/[A-Za-z_][\w-]*/g) ?? []).join(' ')
-    for (const style of descriptor.styles) {
-      postcss.parse(style.content).walkRules((rule) => {
-        for (const selector of rule.selectors) {
-          const ownSelector = selector.replace(/:(?:hover|active|focus-visible|focus)\b/g, '')
-          if (/[>\s]/.test(ownSelector.trim())) continue
-          let matches = false
-          try { matches = link.matches(ownSelector) } catch { continue }
-          if (!matches) continue
-          rule.walkDecls(declaration => {
-            if (properties.includes(declaration.prop)) violations.push(selector)
-          })
-        }
-      })
-    }
-  }
-  return violations
+  return auditSharedStyles([{ file: 'sample.vue', source }], [{ className: role, properties, descendants: true }])
 }
 
 /** 字段值链接与行操作分开识别；常量“编辑/删除/添加”等命令不属于阅读字段。 */
@@ -81,9 +59,9 @@ describe('共享交互样式的消费者边界', () => {
     const properties = ['background', 'background-color', 'border', 'border-color', 'box-shadow']
     const template = `<template><div class="entry ${role}" :class="{ active: selected }" /></template>`
     expect(linkStyleOverrides(`${template}<style scoped>.entry.active { box-shadow: inset 3px 0 blue; }</style>`, role, properties))
-      .toEqual(['.entry.active'])
+      .toHaveLength(1)
     expect(linkStyleOverrides(`${template}<style scoped>.entry:hover { border-color: blue; }</style>`, role, properties))
-      .toEqual(['.entry:hover'])
+      .toHaveLength(1)
     expect(linkStyleOverrides(`${template}<style scoped>.entry { padding: 8px; }</style>`, role, properties))
       .toEqual([])
 
@@ -95,7 +73,7 @@ describe('共享交互样式的消费者边界', () => {
 
   it('能拦住蓝框灰字的局部覆盖，同时允许非链接名称保持中性', () => {
     const template = '<template><a class="name app-interaction-link app-interaction-link--primary">板块</a></template>'
-    expect(linkStyleOverrides(`${template}<style scoped>.name { color: var(--el-text-color-regular); }</style>`)).toEqual(['.name'])
+    expect(linkStyleOverrides(`${template}<style scoped>.name { color: var(--el-text-color-regular); }</style>`)).toHaveLength(1)
     expect(linkStyleOverrides(`${template}<style scoped>.name:not(.app-interaction-link) { color: var(--el-text-color-regular); }</style>`)).toEqual([])
   })
 
@@ -124,7 +102,7 @@ describe('共享交互样式的消费者边界', () => {
   it('字段链接的字阶只有共享样式维护，消费页不得另配字重或字号', () => {
     const properties = ['font', 'font-family', 'font-size', 'font-weight', 'line-height']
     const template = '<template><el-button class="name app-table-field-link">名称</el-button></template>'
-    expect(linkStyleOverrides(`${template}<style>.name { font-weight:var(--app-font-weight-section) }</style>`, 'app-table-field-link', properties)).toEqual(['.name'])
+    expect(linkStyleOverrides(`${template}<style>.name { font-weight:var(--app-font-weight-section) }</style>`, 'app-table-field-link', properties)).toHaveLength(1)
     const violations = vueFiles(SRC_DIR).flatMap(file => linkStyleOverrides(
       readFileSync(file, 'utf8'), 'app-table-field-link', properties,
     ).map(selector => `${file}: ${selector}`))

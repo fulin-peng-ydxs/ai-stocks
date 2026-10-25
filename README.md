@@ -384,8 +384,11 @@ Web 与 CLI 共用同一采集服务和行情口径。Web 是常用运维入口�
 ### 5.7 测试
 
 ```bash
+cd frontend && npm run check && cd ..   # 前端静态规范、布局契约测试与类型检查，不连接后端
 python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB 的服务）
 ```
+
+前端构建与普通 `npm test` 共用 `check:design` 静态入口；组件行为可运行 `cd frontend && npm test -- <测试文件>`。GitHub 工作流 `Frontend contracts` 在提交和 PR 时执行 `npm run check`，不以路径过滤跳过整条必过检查；远端仓库需将该检查设为分支规则中的必过项，工作流文件本身不会设置分支保护。完整浏览器验收仍按 [E2E 准入规范](agent-works/e2e-automation/guide.md) 单独执行。
 
 ### 5.8 常见问题
 

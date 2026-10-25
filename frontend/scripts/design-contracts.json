@@ -1,0 +1,346 @@
+{
+  "entryPoints": {
+    "ElTable": {
+      "owner": "components/AppDataTable.vue",
+      "replacement": "AppDataTable"
+    },
+    "ElTableColumn": {
+      "owner": "components/AppTableColumn.vue",
+      "replacement": "AppTableColumn"
+    },
+    "ElSelect": {
+      "owner": "components/AppSelect.vue",
+      "replacement": "AppSelect"
+    },
+    "ElDialog": {
+      "owner": "components/AppDialog.vue",
+      "replacement": "AppDialog"
+    },
+    "ElDrawer": {
+      "owner": "components/PageDrawer.vue",
+      "replacement": "PageDrawer / AppDetailDrawer"
+    },
+    "ElPagination": {
+      "owner": "components/AppPagination.vue",
+      "replacement": "AppPagination"
+    },
+    "ElScrollbar": {
+      "owner": "components/AppScrollArea.vue",
+      "replacement": "AppScrollArea"
+    },
+    "ElDescriptions": {
+      "owner": null,
+      "replacement": "AppDetailFields / AppDetailField"
+    },
+    "ElDescriptionsItem": {
+      "owner": null,
+      "replacement": "AppDetailField"
+    }
+  },
+  "styleRoles": [
+    {
+      "className": "app-interaction-list-item--outlined",
+      "properties": [
+        "background",
+        "background-color",
+        "border",
+        "border-color",
+        "border-top",
+        "border-right",
+        "border-bottom",
+        "border-left",
+        "box-shadow",
+        "color",
+        "--app-interaction-selected-background",
+        "--app-interaction-selected-marker",
+        "--el-color-primary"
+      ],
+      "descendants": true
+    },
+    {
+      "className": "app-interaction-link--primary",
+      "properties": [
+        "color",
+        "--app-interaction-selected-background",
+        "--app-interaction-selected-marker",
+        "--el-color-primary"
+      ],
+      "descendants": true
+    },
+    {
+      "className": "app-table-field-link",
+      "properties": [
+        "font",
+        "font-family",
+        "font-size",
+        "font-weight",
+        "line-height",
+        "--app-interaction-selected-background",
+        "--app-interaction-selected-marker",
+        "--el-color-primary"
+      ],
+      "descendants": true
+    }
+  ],
+  "listStates": [
+    {
+      "name": "基础列表选中",
+      "selector": ".app-interaction-list-item:is(.active, .on, [aria-pressed='true'])",
+      "declarations": {
+        "background": "var(--app-interaction-selected-background)"
+      },
+      "forbidden": [
+        "box-shadow",
+        "border-left"
+      ]
+    },
+    {
+      "name": "描边列表普通",
+      "selector": ".app-interaction-list-item.app-interaction-list-item--outlined",
+      "declarations": {
+        "border": "1px solid var(--el-border-color-light)"
+      }
+    },
+    {
+      "name": "描边列表选中",
+      "selector": ".app-interaction-list-item--outlined:is(.active, .on, [aria-pressed='true'])",
+      "declarations": {
+        "border-color": "var(--el-color-primary)",
+        "box-shadow": "var(--app-interaction-selected-marker)"
+      }
+    },
+    {
+      "name": "列表按下",
+      "selector": ".app-interaction-list-item:not(:disabled, [aria-disabled='true'], [aria-busy='true']):active",
+      "declarations": {
+        "border-color": "var(--el-color-primary)"
+      },
+      "forbidden": [
+        "background",
+        "background-color"
+      ]
+    },
+    {
+      "name": "基础列表悬停",
+      "selector": ".app-interaction-list-item:not(.active, .on, [aria-pressed='true'], :disabled, [aria-disabled='true'], [aria-busy='true']):hover",
+      "declarations": {
+        "background": "var(--chrome-bg-soft-hover)"
+      },
+      "media": "(hover: hover) and (pointer: fine)"
+    },
+    {
+      "name": "描边列表悬停",
+      "selector": ".app-interaction-list-item--outlined:not(.active, .on, [aria-pressed='true'], :disabled, [aria-disabled='true'], [aria-busy='true']):hover",
+      "declarations": {
+        "border-color": "var(--chrome-border-strong)"
+      },
+      "media": "(hover: hover) and (pointer: fine)"
+    }
+  ],
+  "colorExceptions": [
+    {
+      "file": "utils/dictColor.ts",
+      "selector": "<script:DICT_COLOR_PRESETS>",
+      "property": "color",
+      "values": [
+        "#F56C6C",
+        "#E6A23C",
+        "#409EFF",
+        "#67C23A",
+        "#909399",
+        "#B882FF"
+      ],
+      "reason": "用户可编辑字典的配色候选，非平台状态语义色"
+    },
+    {
+      "file": "utils/stockGroupPresentation.ts",
+      "selector": "<script:DEFAULT_STOCK_GROUP_COLOR>",
+      "property": "color",
+      "values": [
+        "#73757d"
+      ],
+      "reason": "用户分组的默认分类色"
+    },
+    {
+      "file": "utils/stockGroupPresentation.ts",
+      "selector": "<script:STOCK_GROUP_COLOR_PRESETS>",
+      "property": "color",
+      "values": [
+        "#f66055",
+        "#f58a07",
+        "#1677ff",
+        "#0ea968",
+        "#b882ff"
+      ],
+      "reason": "用户分组的自定义配色候选"
+    },
+    {
+      "file": "components/stock-chart/chartUtils.ts",
+      "selector": "<script:trainingChartSeriesPalette>",
+      "property": "color",
+      "values": [
+        "#e28a35",
+        "#418af5",
+        "#c53c92",
+        "#9f3793",
+        "#56c3df",
+        "#e56023"
+      ],
+      "reason": "DESIGN 指定的指标序列身份色唯一来源"
+    },
+    {
+      "file": "components/stock-chart/chartUtils.ts",
+      "selector": "<script:stockChartTheme>",
+      "property": "color",
+      "values": [
+        "#ffffff"
+      ],
+      "reason": "DESIGN 指定暗色分时平盘量柱为白色"
+    },
+    {
+      "file": "layout/components/BorderStatePreview.vue",
+      "selector": "<script:color>",
+      "property": "color",
+      "values": [
+        "#1677ff"
+      ],
+      "reason": "真实颜色选择器样板的可编辑初始输入"
+    },
+    {
+      "file": "layout/useLayoutPreset.ts",
+      "selector": "<script:applyElementColorScale>",
+      "property": "color",
+      "values": [
+        "#000000",
+        "#ffffff"
+      ],
+      "reason": "主题派生色运算的中性端点"
+    },
+    {
+      "file": "layout/useLayoutPreset.ts",
+      "selector": "<script:applyPreset>",
+      "property": "color",
+      "values": [
+        "#f7fbfc",
+        "#ffffff",
+        "#000000",
+        "#f58a07",
+        "#f04438",
+        "#0ea968"
+      ],
+      "reason": "预设适配器的中性端点及与内置 token 同值的防御兜底"
+    },
+    {
+      "file": "App.vue",
+      "selector": ".mode-orb--light",
+      "property": "background",
+      "values": [
+        "radial-gradient(circle at 38% 35%, #ffffff 0 20%, #9ec5ff 22% 48%, #3b82f6 51% 100%)"
+      ],
+      "reason": "外观选择器用于区分白天模式的具名装饰图形"
+    },
+    {
+      "file": "App.vue",
+      "selector": ".mode-orb--dark",
+      "property": "background",
+      "values": [
+        "radial-gradient(circle at 60% 38%, #dbeafe 0 16%, #4b7bbd 18% 40%, #172554 43% 100%)"
+      ],
+      "reason": "外观选择器用于区分夜间模式的具名装饰图形"
+    },
+    {
+      "file": "App.vue",
+      "selector": ".mode-orb--system",
+      "property": "background",
+      "values": [
+        "linear-gradient(115deg, #3b82f6 0 50%, #172554 50% 100%)"
+      ],
+      "reason": "外观选择器用于区分跟随系统的具名装饰图形"
+    },
+    {
+      "file": "App.vue",
+      "selector": ":global(.topbar-popover)",
+      "property": "box-shadow",
+      "values": [
+        "0 14px 34px color-mix(in srgb, #000 18%, transparent)"
+      ],
+      "reason": "应用顶栏视口浮层的中性阴影"
+    },
+    {
+      "file": "components/BrandMark.vue",
+      "selector": ".brand-mark",
+      "property": "--brand-panel-start",
+      "values": [
+        "rgba(255, 255, 255, 0.72)"
+      ],
+      "reason": "品牌矢量图形的透明高光表面"
+    },
+    {
+      "file": "components/BrandMark.vue",
+      "selector": ".brand-mark",
+      "property": "--brand-panel-end",
+      "values": [
+        "rgba(255, 255, 255, 0.74)"
+      ],
+      "reason": "品牌矢量图形的透明高光表面"
+    },
+    {
+      "file": "components/BrandMark.vue",
+      "selector": ".brand-mark--dark",
+      "property": "--brand-panel-start",
+      "values": [
+        "rgba(255, 255, 255, 0.08)"
+      ],
+      "reason": "品牌矢量图形的暗色透明高光"
+    },
+    {
+      "file": "components/PageDrawerSurface.vue",
+      "selector": ".el-overlay.app-drawer-surface-modal",
+      "property": "background-color",
+      "values": [
+        "rgba(0, 0, 0, 0.32)"
+      ],
+      "reason": "页面抽屉共享遮罩唯一配方"
+    },
+    {
+      "file": "components/PageSegmented.vue",
+      "selector": ".seg-btn.active",
+      "property": "box-shadow",
+      "values": [
+        "0 1px 2px rgba(31, 45, 70, 0.1)"
+      ],
+      "reason": "分段控件共享活动项中性投影"
+    },
+    {
+      "file": "styles/global.css",
+      "selector": "html[data-layout-mode='dark'] .el-checkbox__inner,\nhtml[data-layout-mode='dark'] .el-radio__inner",
+      "property": "box-shadow",
+      "values": [
+        "inset 0 0 0 1px color-mix(in srgb, white 8%, transparent)"
+      ],
+      "reason": "暗色表单共享中性内侧细边"
+    },
+    {
+      "file": "views/LoginView.vue",
+      "selector": ".login-tabs",
+      "property": "background",
+      "values": [
+        "rgba(112, 132, 142, 0.08)"
+      ],
+      "reason": "登录方式分段的中性透明底托"
+    },
+    {
+      "file": "views/LoginView.vue",
+      "selector": ".login-tab.active",
+      "property": "box-shadow",
+      "values": [
+        "0 3px 12px rgba(32, 50, 60, 0.08)"
+      ],
+      "reason": "登录方式分段的中性活动项投影"
+    }
+  ],
+  "listTokens": {
+    "--app-interaction-selected-background": "color-mix(in srgb, var(--el-color-primary) 6%, var(--el-bg-color))",
+    "--app-interaction-selected-marker": "inset 3px 0 var(--el-color-primary)"
+  }
+}

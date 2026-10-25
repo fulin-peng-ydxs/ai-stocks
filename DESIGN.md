@@ -14,6 +14,7 @@ typography:
 关键事实源：
 
 - 全局样式与主题变量：`frontend/src/styles/global.css`
+- 组件持有者、受保护样式、列表状态及精确颜色例外：`frontend/scripts/design-contracts.json`；解析和校验统一由 `design-source.mjs` / `check-design-contracts.mjs` 执行
 - 应用外壳：`frontend/src/App.vue`
 - 页面注册：`frontend/src/layout/pageRegistry.ts`
 - 原型：`frontend/src/layout/archetypes.ts`
@@ -525,7 +526,25 @@ typography:
 - **交互状态公共入口**：普通按钮、图标按钮、帮助入口及 disclosure 的键盘焦点使用 `--app-focus-ring`（2px 实色主色框），不得以低透明度光晕替代；外框用于独立按钮，内框用于列表、卡片及可能裁切的容器。导航的紧凑伪元素焦点面和输入框的原生焦点边界保留各自结构，不重复绘制焦点框。
 <a id="compact-object-lists"></a>
 
-- 紧凑对象列表（角色、字典类型、资产方案）与图标候选共用 `.app-interaction-list-item`，状态样式唯一入口为 `styles/global.css`：普通悬停为中性 `surfaceHover`，选中使用共享6%主色浅底；键盘焦点独立显示；悬停不覆盖选中，按下只强调边界，不浮起。基础形态不叠加常驻左边线。主从选择中需要明确条目边界和当前位置时，显式叠加通用 `.app-interaction-list-item--outlined`：普通态为中性边框，未选中悬停增强中性边界，选中为主色边框及 `--app-interaction-selected-marker` 内侧左线；选中标记与交互卡片共用该变量。当前由 `AssetProfileSelect` 的 list 形态统一承接筛选、评分、买卖方案列表；角色、字典及图标候选继续使用基础形态。消费组件只维护结构、尺寸及受控选择值，不得另写选中、悬停或按下状态的颜色、边框和阴影配方。导航型语义标签使用 `.app-interaction-link`，悬停/焦点增加下划线并保留原有状态色；选择型标签按自身选中语义表达，不套用链接下划线。禁止用 `filter: brightness()` 同时改变文字、边框和底色。无悬停设备不新增 hover 反馈。
+<!-- design-contracts:start -->
+状态与组件入口的机器事实源为 `frontend/scripts/design-contracts.json`；本段由 `npm run check:contracts:docs` 核对，禁止在段外重复定义这些列表状态。
+基础列表使用 `.app-interaction-list-item`，需要明确条目边界时显式叠加 `.app-interaction-list-item--outlined`；样式唯一入口为 `styles/global.css`。
+共享变量 `--app-interaction-selected-background` = `color-mix(in srgb, var(--el-color-primary) 6%, var(--el-bg-color))`。
+共享变量 `--app-interaction-selected-marker` = `inset 3px 0 var(--el-color-primary)`。
+
+| 状态 | 共享声明 |
+|---|---|
+| 基础列表选中 | `background: var(--app-interaction-selected-background)`；不得覆盖 `box-shadow`、`border-left` |
+| 描边列表普通 | `border: 1px solid var(--el-border-color-light)` |
+| 描边列表选中 | `border-color: var(--el-color-primary)`；`box-shadow: var(--app-interaction-selected-marker)` |
+| 列表按下 | `border-color: var(--el-color-primary)`；不得覆盖 `background`、`background-color` |
+| 基础列表悬停 | `background: var(--chrome-bg-soft-hover)` |
+| 描边列表悬停 | `border-color: var(--chrome-border-strong)` |
+
+基础与描边列表共同消费选中浅底、键盘焦点、禁用/加载守卫及减少动画偏好，不浮起。描边变体仅显式接入时启用，当前由方案选择器承接筛选、评分、买卖方案；角色、字典和图标候选保留基础形态。消费方通过共享扩展点表达差异，不得私写状态配方。
+<!-- design-contracts:end -->
+
+- 导航型语义标签使用 `.app-interaction-link`，悬停/焦点增加下划线并保留原有状态色；选择型标签按自身选中语义表达，不套用链接下划线。禁止用 `filter: brightness()` 同时改变文字、边框和底色；无悬停设备不新增 hover 反馈。
 - 说明触发器 `HelpTip`、`HelpHint`、`DataMetricDetails` 复用 `.app-interaction-help` 的颜色：默认中性字和中性填充，精细指针悬浮或键盘聚焦时主色底和白字，聚焦独立显示共享焦点环；领域组件只维护内容和几何，不用于执行命令。
 - 设置和配置折叠标题仅在可折叠时接入 `.app-interaction-disclosure`，共享中性悬浮、按下和内焦点环；静态标题不响应状态。
 - 自定义入口与原生控件的按键、ARIA 状态、子控件事件和禁用行为统一遵循[键盘能力与适用边界](#键盘能力与适用边界)。
@@ -1102,6 +1121,10 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 ## 7. 使用规范与禁用事项
 
 ### 7.1 必须遵守
+
+前端统一快检为 `npm run check`：先执行共享静态检查，再执行布局契约测试和类型检查，不依赖后端、PG、Redis 或浏览器。构建与普通测试复用 `check:design`；CI 运行同一快检入口，不默认启动完整 E2E。`check:contracts` 解析真实组件来源、选择器与后代、模板绑定、CSS / TS 色值以及列表状态契约；受控库组件仅允许由契约指定的共享包装器持有，改名、深路径导入和动态组件不能形成第二入口。颜色例外必须精确到文件、选择器或符号、属性和值集合并注明业务依据，未命中的过期例外直接失败，禁止整文件豁免普通消费方。
+
+静态门禁只覆盖可解析的源码和已登记角色，不能证明任意业务实现是否语义重复、任意自然语言规则是否矛盾，或实际视觉和交互是否通过；这些仍按复用审查及浏览器验收执行。新增稳定角色须同步其共享入口、契约和违规反例，不能只补组件清单。
 
 - 所有 registry 业务页面必须走 `<LayoutHost>`。
 - 新页面必须使用脚手架或 `pageRegistry.ts` 中的 `PageLayout` 单一事实源。

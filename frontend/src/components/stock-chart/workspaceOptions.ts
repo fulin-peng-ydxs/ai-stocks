@@ -1,4 +1,5 @@
 import type { Bar, IndicatorRow } from '@/api/stocks'
+import { rgbaFromHex } from '@/layout/themeSurfaces'
 import type { ChartType } from '@/composables/useStockChartPreferences'
 import { elementVisualScale } from '@/utils/displayScaleGeometry'
 import { formatMarketPercent } from '@/utils/marketValue'
@@ -544,7 +545,7 @@ function commonAxes(context: OptionContext, showPointerDate: boolean) {
             start: context.zoomStart,
             end: context.zoomEnd,
             borderColor: context.theme.axis,
-            fillerColor: 'rgba(64,158,255,0.18)',
+            fillerColor: rgbaFromHex(context.theme.focus, 0.18),
             textStyle: { color: context.theme.label },
           }]
         : []),

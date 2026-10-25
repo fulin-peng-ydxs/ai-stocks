@@ -137,9 +137,11 @@ describe('账户日结简化填报', () => {
       expect(wrapper.get('.down').text()).toBe('-45.00')
       expect(wrapper.get('.muted').text()).toBe('数据不完整')
       expect(wrapper.findAll('.up, .down')).toHaveLength(2)
-      expect(wrapper.findAll('th.is-right').map(node => node.text())).toEqual([
-        '数量', '可卖数量', '总成本（元）', '市值（元）', '浮动盈亏（元）',
+      const headers = wrapper.findAll('th.is-right')
+      expect(headers.map(node => node.find('.app-table-column-header__label').text())).toEqual([
+        '数量', '可卖数量', '总成本', '市值', '浮动盈亏',
       ])
+      expect(headers.slice(2).map(node => node.find('.app-table-column-header__meta').text())).toEqual(['元', '元', '元'])
     } finally { wrapper.unmount() }
   })
   it.each(['cancel', 'success', 'failure', 'stale'] as const)('撤回确认使用统一弹窗，%s 分支不遗留抽屉或丢失失败反馈', async outcome => {
@@ -295,7 +297,7 @@ describe('账户日结简化填报', () => {
     const rows = wrapper.findAllComponents(AppControlRow).filter(row => row.attributes('data-testid')?.startsWith('ledger-'))
     expect(rows).toHaveLength(3)
     for (const row of rows) {
-      expect(row.attributes('data-control-row')).toBe('large')
+      expect(row.attributes('data-control-row')).toBe('default')
       expect(row.props('align')).toBe('start')
     }
     expect(wrapper.find('[aria-label="删除调整 1"]').exists()).toBe(true)
@@ -417,6 +419,22 @@ describe('账户日结简化填报', () => {
     await flushPromises()
     expect(api.history.mock.calls.at(-1)![2].include_withdrawn).toBe(false)
     wrapper.unmount()
+  })
+  it('空条件禁用重置筛选，有高级条件时可重置并恢复禁用', async () => {
+    const wrapper = mountWorkspace({ mode: 'history' })
+    try {
+      await flushPromises()
+      const reset = wrapper.findAll('button').find(node => node.text() === '重置筛选')!
+      expect(reset.attributes('disabled')).toBeDefined()
+      await wrapper.get('[data-search-toggle]').trigger('click')
+      await wrapper.get('[data-search-field="withdrawn"]').findComponent({ name: 'ElCheckbox' }).setValue(true)
+      await flushPromises()
+      expect(reset.attributes('disabled')).toBeUndefined()
+      await reset.trigger('click')
+      await flushPromises()
+      expect(api.history.mock.calls.at(-1)![2].include_withdrawn).toBe(false)
+      expect(reset.attributes('disabled')).toBeDefined()
+    } finally { wrapper.unmount() }
   })
   it('历史数字列与详情费用按数字对齐，变动类型作为可阅读的业务事实展示', async () => {
     const row = { trade_date: '2026-10-23', current_revision_no: 1, withdrawn: false,

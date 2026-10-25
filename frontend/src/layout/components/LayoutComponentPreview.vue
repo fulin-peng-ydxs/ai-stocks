@@ -209,7 +209,7 @@ span {
   align-items: center;
   border-radius: var(--layout-control-radius);
   background: var(--el-color-primary);
-  color: #fff;
+  color: var(--el-color-white);
   font-size: var(--app-font-size-caption);
 }
 .cp-btn.ghost {

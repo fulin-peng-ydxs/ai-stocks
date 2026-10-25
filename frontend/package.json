@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run check:typography && npm run check:table-headers && npm run check:close-controls && npm run check:tooltips && npm run check:scrollbars && npm run check:borders && npm run check:control-rows && vue-tsc -b && vite build",
+    "build": "npm run check:design && vue-tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -24,7 +24,13 @@
     "check:tooltips": "node scripts/check-tooltip-contract.mjs",
     "check:scrollbars": "node scripts/check-scrollbars.mjs",
     "check:borders": "node scripts/check-borders.mjs",
-    "check:control-rows": "node scripts/check-control-rows.mjs"
+    "check:control-rows": "node scripts/check-control-rows.mjs",
+    "check:design": "node scripts/check-design.mjs",
+    "check:contracts": "node scripts/check-design-contracts.mjs",
+    "check:contracts:docs": "node scripts/check-design-contracts.mjs --docs",
+    "test:contracts": "vitest run src/layout/__tests__",
+    "check": "npm run check:design && npm run test:contracts && vue-tsc -b",
+    "pretest": "npm run check:design"
   },
   "dependencies": {
     "@popperjs/core": "npm:@sxzz/popperjs-es@2.11.8",

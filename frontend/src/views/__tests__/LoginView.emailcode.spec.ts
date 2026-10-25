@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { ref, type Component } from 'vue'
+import ElementPlus from 'element-plus'
 import LoginView from '@/views/LoginView.vue'
 
 const replace = vi.fn()
@@ -38,7 +39,7 @@ async function mountRegister(): Promise<VueWrapper> {
     login_captcha_enabled: false,
     captcha_after_fails: 3,
   })
-  const wrapper = mount(LoginView as Component)
+  const wrapper = mount(LoginView as Component, { global: { plugins: [ElementPlus] } })
   await flushPromises()
   // 切到注册标签，验证码字段随之出现
   const tabs = wrapper.findAll('.login-tab')
@@ -71,7 +72,9 @@ describe('LoginView 邮箱验证码发送', () => {
     // 进入倒计时：按钮文案变为「Ns 后重发」，且置灰禁用
     const send = wrapper.find('.login-emailcode .send')
     expect(send.text()).toMatch(/\d+s 后重发/)
-    expect(send.classes()).toContain('disabled')
+    expect(send.attributes('disabled')).toBeDefined()
+    await send.trigger('click')
+    expect(authApi.sendEmailCode).toHaveBeenCalledTimes(1)
     // 无字段错误
     expect(wrapper.find('.field-error').exists()).toBe(false)
     wrapper.unmount()

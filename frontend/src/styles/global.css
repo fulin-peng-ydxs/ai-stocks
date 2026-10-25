@@ -919,8 +919,8 @@ b, strong, h1, h2, h3, h4, h5, h6 {
 }
 /* 夜间：高亮块底色加深一点以保证对比 */
 html[data-layout-mode='dark'] .trade-cal .el-date-table td.available:not(.current):not(.today) .el-date-table-cell__text {
-  background: rgba(64, 158, 255, 0.18);
-  color: #79bbff;
+  background: color-mix(in srgb, var(--el-color-primary) 18%, transparent);
+  color: var(--el-color-primary);
 }
 
 /* html.dark 只负责主题初始化阶段的全局兜底；预设应用完成后的组件级夜间规则统一读取

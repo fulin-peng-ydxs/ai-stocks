@@ -1072,7 +1072,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 .card-sub { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-left: 8px; }
 .hist-card { min-height: 300px; }
 .hist-table { cursor: pointer; flex: 1; }
-.grade-chip { color: #fff; padding: 1px 8px; border-radius: var(--app-radius-pill); font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-caption); }
+.grade-chip { color: var(--el-color-white); padding: 1px 8px; border-radius: var(--app-radius-pill); font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-caption); }
 
 /* 训练中：固定块（图+面板）+ 主表 → 混合成长区 */
 .run-body { flex: 1 1 auto; min-height: 0; --app-scroll-display: flex; --app-scroll-direction: column; --app-scroll-gap: var(--app-space-2); --app-scroll-padding-right: 2px; }

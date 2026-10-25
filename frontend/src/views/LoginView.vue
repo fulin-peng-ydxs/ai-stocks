@@ -514,12 +514,12 @@ function onSubmit() {
 <style scoped>
 .login-shell {
   /* 仅作首帧兜底；运行时基础色由 themeSurfaces.ts 注入，确保登录页与工作台同源。 */
-  --login-page-bg: #ffffff;
-  --login-panel-bg: #fcfcfc;
-  --login-panel-deep: #fcfcfc;
+  --login-page-bg: var(--el-bg-color);
+  --login-panel-bg: var(--chrome-bg);
+  --login-panel-deep: var(--chrome-bg);
   --login-grid: color-mix(in srgb, var(--login-accent) 7%, transparent);
-  --login-card-bg: #ffffff;
-  --login-card-opaque-bg: #ffffff;
+  --login-card-bg: var(--el-bg-color);
+  --login-card-opaque-bg: var(--el-bg-color);
   --login-card-edge: var(--app-border-default);
   --login-border: var(--app-border-default);
   --login-border-focus: var(--el-color-primary);
@@ -530,7 +530,7 @@ function onSubmit() {
   --login-text-muted: var(--el-text-color-secondary, #6e7078);
   --login-accent: var(--el-color-primary);
   --login-accent-strong: var(--el-color-primary-dark-2, #1264d9);
-  --login-accent-text: #ffffff;
+  --login-accent-text: var(--el-color-white);
   --login-captcha-bg: var(--app-section-bg, #f3f3f3);
   --login-divider: var(--app-border-default);
   --login-shadow: var(--shell-surface-shadow, rgba(20, 24, 32, 0.1));
@@ -1108,8 +1108,8 @@ function onSubmit() {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #43a47a;
-  box-shadow: 0 0 0 3px rgba(67, 164, 122, 0.1);
+  background: var(--login-success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--login-success) 10%, transparent);
 }
 .login-footnote {
   margin-top: 27px;

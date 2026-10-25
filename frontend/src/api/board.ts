@@ -76,14 +76,13 @@ export function runBoardProfile(body: {
   return http.post('/board/run', body)
 }
 
-// 评分维度展示配置：key 对应 sub_scores 字段，max=该维度满分（=权重），color=分段条颜色
-// 颜色取中等饱和度，浅色/暗色背景都不刺眼
-export const SCORE_DIMS: { key: keyof SubScores; label: string; short: string; max: number; color: string }[] = [
-  { key: 'position', label: '位置', short: '位', max: 30, color: '#5b8ff9' },
-  { key: 'trend', label: '趋势', short: '趋', max: 20, color: '#61c08f' },
-  { key: 'volume', label: '成交量', short: '量', max: 20, color: '#9270ca' },
-  { key: 'turnover', label: '换手', short: '换', max: 10, color: '#e8a33d' },
-  { key: 'rs', label: 'RS', short: 'RS', max: 10, color: '#d97c7c' },
+// 评分维度元信息；热力颜色由 SubScoreBars 的共享语义色板计算。
+export const SCORE_DIMS: { key: keyof SubScores; label: string; short: string; max: number }[] = [
+  { key: 'position', label: '位置', short: '位', max: 30 },
+  { key: 'trend', label: '趋势', short: '趋', max: 20 },
+  { key: 'volume', label: '成交量', short: '量', max: 20 },
+  { key: 'turnover', label: '换手', short: '换', max: 10 },
+  { key: 'rs', label: 'RS', short: 'RS', max: 10 },
 ]
 
 // 分项分满分合计（=各维度权重和），分段条按此为满格

@@ -285,6 +285,16 @@ describe('workspaceOptions', () => {
     })
   })
 
+  it('缩放滑块填充跟随当前主题主色，不固定为组件库默认蓝', () => {
+    for (const [focus, expected] of [['#123456', 'rgba(18, 52, 86, 0.18)'], ['#abcdef', 'rgba(171, 205, 239, 0.18)']]) {
+      const option = buildVolumeOption({
+        rows: alignStockChartRows([bar('2026-07-21')], []), warmupBars: [],
+        theme: { ...theme, focus }, isBottom: true, zoomStart: 0, zoomEnd: 100,
+      })
+      expect(option.dataZoom[1].fillerColor).toBe(expected)
+    }
+  })
+
   it('底部画布不足时统一隐藏可视滑动条并保留日期轴空间', () => {
     const option = buildVolumeOption({
       rows: alignStockChartRows([bar('2026-07-21')], []),

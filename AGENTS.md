@@ -53,7 +53,8 @@
 python -m pytest backend/tests/ -q
 python -m pytest backend/tests/test_xxx.py::test_name -q
 
-cd frontend && npm run build && cd ..
+cd frontend && npm run check && cd ..  # 静态规范、布局契约测试及类型检查，无后端/数据库依赖
+cd frontend && npm run build && cd ..  # 仅在下述构建准入条件触发时运行
 
 python -m backend.cli backfill
 python -m backend.cli delisted --enrich

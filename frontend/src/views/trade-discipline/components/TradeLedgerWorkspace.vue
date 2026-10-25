@@ -633,7 +633,7 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
           <template #assessment><AppFilterSelect :model-value="historyAssessment" class="app-control-width-short" :options="assessmentOptions" :multiple="false" placeholder="全部结果" @change="historyAssessment = String($event || '')" /></template>
           <template #stock><StockOptionSelect v-model="historyStock" class="app-control-width-long" clearable /></template>
           <template #withdrawn><el-checkbox v-model="includeWithdrawn">显示已撤回</el-checkbox></template>
-          <template #commands><el-button @click="historyAssessment = ''; historyStock = null; historyRule = ''; historyDates = null; includeWithdrawn = false">重置</el-button></template>
+          <template #commands><el-button :disabled="!historyAssessment && !historyStock && !historyRule && !historyDates && !includeWithdrawn" @click="historyAssessment = ''; historyStock = null; historyRule = ''; historyDates = null; includeWithdrawn = false">重置筛选</el-button></template>
         </AppAdvancedSearch>
       </el-card>
       <AppStateBlock v-if="historyError" state="error" title="历史加载失败" :description="historyError" retry @retry="loadHistory" />
