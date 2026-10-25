@@ -10,6 +10,27 @@ afterEach(() => {
 })
 
 describe('Element Plus Popper 缩放容器', () => {
+  it('应用抽屉内的浮层优先继承抽屉显式密度，并随其更新', async () => {
+    document.body.innerHTML = `<div id="app">
+      <main class="v-page" style="--app-density-overlay-padding:12px">
+        <div class="el-drawer lh-density-comfortable" style="--app-density-overlay-padding:24px">
+          <section class="page-drawer-surface"><button id="drawer-trigger">help</button></section>
+        </div>
+      </main>
+    </div>`
+    const root = document.querySelector<HTMLElement>('#app')!
+    cleanups.push(installElementPlusPopperContainer(root))
+    root.querySelector('#drawer-trigger')!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    const popper = document.createElement('div')
+    popper.className = 'el-popper'
+    root.append(popper)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(popper.style.getPropertyValue('--app-density-overlay-padding')).toBe('24px')
+    root.querySelector<HTMLElement>('.el-drawer')!.style.setProperty('--app-density-overlay-padding', '16px')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(popper.style.getPropertyValue('--app-density-overlay-padding')).toBe('16px')
+  })
+
   it('把已存在的共享容器移入应用根', () => {
     document.body.innerHTML = `
       <div id="app"></div>

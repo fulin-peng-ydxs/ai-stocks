@@ -164,6 +164,19 @@ describe('PageDrawer 页面边界', () => {
 
     wrapper.unmount()
   })
+
+  it('应用抽屉可通过共享密度类统一放大正文、控件和内距', async () => {
+    const wrapper = mount(PageDrawer, {
+      attachTo: document.body,
+      props: { modelValue: true, title: '视觉环境', boundary: 'app' },
+      attrs: { class: 'lh-density-comfortable' },
+      global: { plugins: [ElementPlus] },
+    })
+    await flushPromises()
+    expect(document.querySelector('.el-drawer.lh-density-comfortable .page-drawer-surface'))
+      .not.toBeNull()
+    wrapper.unmount()
+  })
   it('头部关闭经过 before-close，拒绝时保留抽屉，允许时再关闭', async () => {
     let done: (() => void) | undefined
     const beforeClose = vi.fn((allow: () => void) => { done = allow })

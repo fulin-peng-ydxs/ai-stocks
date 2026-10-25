@@ -1,5 +1,6 @@
 const ELEMENT_PLUS_POPPER_CONTAINER_SELECTOR = "[id^='el-popper-container-']"
 const PAGE_OVERLAY_SELECTOR = '.el-popper, .el-overlay'
+const DENSITY_SCOPE_SELECTOR = '.v-page, .lh-density-compact, .lh-density-standard, .lh-density-comfortable'
 const DENSITY_VARIABLES = [
   '--app-density-page-gap',
   '--app-density-section-gap',
@@ -33,8 +34,8 @@ function copyPageDensity(target: HTMLElement, source: HTMLElement | null): void 
 
 function densitySource(lastInteractionTarget: Element | null): HTMLElement | null {
   const focused = document.activeElement instanceof Element ? document.activeElement : null
-  return focused?.closest<HTMLElement>('.v-page')
-    ?? lastInteractionTarget?.closest<HTMLElement>('.v-page')
+  return focused?.closest<HTMLElement>(DENSITY_SCOPE_SELECTOR)
+    ?? lastInteractionTarget?.closest<HTMLElement>(DENSITY_SCOPE_SELECTOR)
     ?? null
 }
 
@@ -79,7 +80,7 @@ export function installElementPlusPopperContainer(appRoot: HTMLElement): () => v
     }
     for (const source of sources) {
       if (sourceObservers.has(source)) continue
-      // 只观察真实触发页，避免订阅整棵应用树的样式动画、图表和悬停变化。
+      // 只观察触发页或显式密度宿主，避免订阅整棵应用树的样式动画和图表变化。
       const observer = new MutationObserver(() => {
         for (const [overlay, page] of densitySources) {
           if (page === source) copyPageDensity(overlay, page)

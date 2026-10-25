@@ -684,6 +684,7 @@ async function onLogout() {
       title="视觉环境"
       subtitle="调整界面比例、页面密度、阅读光线与导航方式"
       boundary="app"
+      class="lh-density-comfortable"
       close-label="关闭视觉环境"
     >
         <SettingsGroup
