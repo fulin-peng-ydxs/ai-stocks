@@ -150,6 +150,8 @@ const props = withDefaults(defineProps<{
   zoomEnd?: number
   minHeight?: number
   fitAvailableHeight?: boolean
+  /** 宿主已承接外框时只保留内部面板分隔，不依赖宿主与图表之间的 DOM 层数。 */
+  embedded?: boolean
   ariaLabel?: string
   enableIntradayDrilldown?: boolean
   showKlineTooltip?: boolean
@@ -175,6 +177,7 @@ const props = withDefaults(defineProps<{
   zoomStart: 0,
   zoomEnd: 100,
   fitAvailableHeight: false,
+  embedded: false,
   ariaLabel: '行情多图联动工作区',
   enableIntradayDrilldown: false,
   showKlineTooltip: true,
@@ -1253,6 +1256,7 @@ onBeforeUnmount(() => {
   <section
     ref="workspaceEl"
     class="stock-chart-workspace app-stock-chart-frame"
+    :class="{ 'app-stock-chart-frame--embedded': embedded }"
     :style="{ minHeight: `${effectiveMinHeight}px` }"
     :data-min-height="effectiveMinHeight"
     :data-zoom-start="zoomRange.start"

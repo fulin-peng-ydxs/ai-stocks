@@ -130,8 +130,4 @@ const slots = useSlots()
   overflow: hidden;
 }
 
-.app-workspace-pane__body > :deep(.app-stock-chart-frame) {
-  border: 0;
-  border-radius: 0;
-}
 </style>

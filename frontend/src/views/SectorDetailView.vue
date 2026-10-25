@@ -597,6 +597,7 @@ onMounted(async () => {
                 @retry="loadChart"
               >
                 <StockChartWorkspace
+                  embedded
                   class="sector-chart-workspace"
                   :bars="bars"
                   :warmup-bars="warmupBars"
@@ -816,8 +817,6 @@ onMounted(async () => {
   flex: 1 1 auto;
   width: 100%;
   min-height: 0;
-  border: 0;
-  border-radius: 0;
 }
 .permission-hint {
   color: var(--el-text-color-secondary);

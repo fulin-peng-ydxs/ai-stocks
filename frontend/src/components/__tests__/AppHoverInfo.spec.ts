@@ -30,6 +30,45 @@ const ElPopoverStub = defineComponent({
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('AppHoverInfo', () => {
+  it('真实库虚拟提示只管理描述关系，不清除按钮独立的展开与控制关系', async () => {
+    vi.useFakeTimers()
+    const first = document.createElement('button')
+    const second = document.createElement('button')
+    for (const [index, element] of [first, second].entries()) {
+      element.setAttribute('aria-controls', `operations-${index}`)
+      element.setAttribute('aria-expanded', index === 0 ? 'false' : 'true')
+    }
+    document.body.append(first, second)
+    const wrapper = mount(AppHoverInfo, {
+      props: { reference: first }, attrs: { content: '图表操作', transition: '' },
+      global: { plugins: [ElementPlus] },
+    })
+    try {
+      await nextTick()
+      const ownership = (element: HTMLElement) => [
+        element.getAttribute('aria-controls'), element.getAttribute('aria-expanded'),
+      ]
+      expect(ownership(first)).toEqual(['operations-0', 'false'])
+      first.dispatchEvent(new MouseEvent('mouseenter'))
+      await vi.advanceTimersByTimeAsync(300)
+      expect(first.getAttribute('aria-describedby')).toBeTruthy()
+      expect(ownership(first)).toEqual(['operations-0', 'false'])
+      window.dispatchEvent(new Event('resize'))
+      await nextTick()
+      expect(first.getAttribute('aria-describedby')).toBeNull()
+      expect(ownership(first)).toEqual(['operations-0', 'false'])
+      await wrapper.setProps({ reference: second })
+      expect(ownership(first)).toEqual(['operations-0', 'false'])
+      expect(ownership(second)).toEqual(['operations-1', 'true'])
+      wrapper.unmount()
+      expect(ownership(second)).toEqual(['operations-1', 'true'])
+    } finally {
+      if (wrapper.exists()) wrapper.unmount()
+      first.remove()
+      second.remove()
+    }
+  })
+
   it.each(['tooltip', 'popover'] as const)('%s 保留消费方浮层类并带上明确边界角色', (kind) => {
     const wrapper = mount(AppHoverInfo, {
       props: { kind },

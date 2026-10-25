@@ -1332,7 +1332,7 @@ const menuPageTitle = useMenuPageTitle()
 
         <template #analysis>
         <section
-          class="chart-panel"
+          class="chart-panel app-surface"
           aria-label="板块走势分析"
           data-testid="sectors-chart"
         >
@@ -1434,6 +1434,7 @@ const menuPageTitle = useMenuPageTitle()
             />
             <StockChartWorkspace
               v-else
+              embedded
               class="sector-kline-workspace"
               :bars="klineBars"
               :warmup-bars="klineWarmupBars"
@@ -1548,9 +1549,6 @@ const menuPageTitle = useMenuPageTitle()
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
 }
 .chart-panel {
   display: flex;

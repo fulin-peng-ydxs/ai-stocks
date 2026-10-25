@@ -1078,6 +1078,12 @@ html.dark {
   background: var(--el-bg-color);
 }
 
+/* 嵌入已有表面的画布由宿主拥有外沿；异步状态容器不改变这项职责。 */
+.app-stock-chart-frame--embedded {
+  border: 0;
+  border-radius: var(--app-radius-canvas);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .stock-chart-kline-tooltip {
     transition: none !important;

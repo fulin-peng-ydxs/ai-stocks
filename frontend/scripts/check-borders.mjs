@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from '@vue/compiler-sfc'
-import { inspectBorderStyles } from './border-contract.mjs'
+import { inspectBorderStyles, inspectStockChartBoundaries } from './border-contract.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../src')
 function files(dir) {
@@ -17,7 +17,13 @@ for (const file of files(root)) {
   if (!file.endsWith('.vue') && !file.endsWith('.css')) continue
   const name = relative(root, file)
   const source = readFileSync(file, 'utf8')
-  const styles = file.endsWith('.vue') ? parse(source).descriptor.styles
+  const descriptor = file.endsWith('.vue') ? parse(source).descriptor : undefined
+  if (descriptor?.template) {
+    for (const finding of inspectStockChartBoundaries(descriptor.template.content)) {
+      findings.push(`${name}:${descriptor.template.loc.start.line + finding.line - 1} ${finding.message}`)
+    }
+  }
+  const styles = descriptor ? descriptor.styles
     : file.endsWith('.css') ? [{ content: source, loc: { start: { line: 1 } } }] : []
   // 共享角色常量是唯一可以定义普通形态值的位置。
   for (const style of styles) {

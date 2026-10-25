@@ -706,7 +706,7 @@ typography:
 
 - 原生 HTML `title` 不再用作提示文案或触发信号；`nativeTitle` 接口已移除。组件的 `title` 标题属性、标题插槽、路由/业务标题及 iframe 可访问名称保留，不按字符串批量删除。
 - `AppHoverInfo` 与截断宿主复用 `tooltipTiming.ts` 的停留门槛；鼠标停止后才显示，持续移动重置等待，离开/点击/Escape 关闭，键盘聚焦立即显示，鼠标点击及其引起的焦点归还不锁定提示；输入来源由 `useTooltipInputModality` 在显式说明和截断宿主间共享，不接管控件焦点。富内容 popover 允许移入阅读；点击菜单及图表读数不等待这个门槛。窗口失焦、页面转入后台或窗口尺寸变化时统一清除已显示提示、待显示计时及触发区域瞬态状态；界面比例与切屏适配复用 `useDisplayScale` 已有的 resize 通知，显式提示和截断提示共用一份监听。尺寸变化后按最后一次鼠标位置重新核对真实命中：仍命中且页面可见时重新计算停留门槛，保留切屏分阶段通知期间已经建立的静止鼠标意图；移走、遮挡、移除或已不再截断的目标不恢复。原位置再次移动或重新 Tab 聚焦也可恢复，无需离开再进入、点击或刷新；窗口恢复焦点不能视为新的键盘阅读意图，不自动重弹，后续鼠标停留或 Tab 聚焦仍按原规则显示。页面不得新增私有计时器或第二套监听。
-- `AppHoverInfo` 的 `reference` 只用于稳定的虚拟锚点；图标按钮保留真实 button 根节点及原有权限、点击和加载语义。监听随锚点更换与销毁清理，缓存页面停用时清理瞬态显示。提示文案为空或不适用时不生成空触发层。
+- `AppHoverInfo` 的 `reference` 只用于稳定的虚拟锚点；图标按钮保留真实 button 根节点及原有权限、点击和加载语义。Tooltip 只管理 `aria-describedby`，不得覆盖按钮自身的 `aria-controls` / `aria-expanded` / `aria-haspopup`；Element Plus 锁版本补丁在更新与清理锚点时共同守卫，由 `AppHoverInfo.spec.ts` 的真实库回归覆盖。监听随锚点更换与销毁清理，缓存页面停用时清理瞬态显示。提示文案为空或不适用时不生成空触发层。
 - 禁用原因通过 `AppActionHint` 的外壳悬停或键盘阅读；禁用按钮仍不执行，外壳不代理点击。`AppIconButton` 在禁用或加载时暂停自身提示；需要说明原因时由外壳承接，并显式关闭按钮提示。无权命令连同说明入口一起隐藏，权限过滤先于提示；加载状态不改成可执行状态。相同信息只出现一个提示，有用途说明的图标目标不再叠加截断气泡。
 - 提示复用 `app-wrapping-popper` 的主题、排版和空间边界；共享 AppHoverInfo 允许在原方向空间不足时四向回退，并以双轴边界约束保持正文在视口内；简短说明与结构化帮助保留各自组件角色，不在消费页面私设颜色、字号或动效。
 - `npm run check:tooltips` 按 Vue/TS AST 检查原生/透传 title、旧自动接口、图标名称及直接包裹的重复提示，已接入生产构建；组件标题、插槽和 iframe 名称不误报。定向测试覆盖图标默认提示、文案覆盖与动态更新、显式豁免、关闭例外、真实截断、禁用原因、焦点/鼠标区分、点击关闭及监听清理；内置浏览器复核实际主题、位置和消失行为。
@@ -1088,12 +1088,12 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | 浮层内分组 | `--app-radius-floating-section`，12px | SettingsGroup、用户中心卡、交易纪律快捷卡；不外推到主内容区普通面板 |
 | 软提示/状态强调 | `--app-border-notice-{info,primary,success,warning,danger}` / `--app-border-{success,warning,danger}` | 软提示沿用主题light-7；状态强调框与常规边框混色，保留强调程度差异；字段错误直接消费danger，不借用软提示框 |
 | 详情结构网格 | AppDetailFields拥有card外沿，gap1px；AppDetailField向间隙投影1px接缝 | 父裁切外侧投影，覆盖单列、跨列和不完整行；不在末行/末列叠加inset外沿，空缺位置保留内容面 |
-| 图表画布 | 嵌入图表用 `--app-radius-canvas`（0），独立股票画布用 `.app-stock-chart-frame` | EquityChart/SectorCompareChart/StockCompareChart所有当前消费者已有宿主外框，不再额外套卡；AppWorkspacePane内股票画布去重外框；后续独立使用须由宿主承接表面 |
+| 图表画布 | 嵌入图表用 `--app-radius-canvas`（0），独立股票画布用 `.app-stock-chart-frame` | EquityChart/SectorCompareChart/StockCompareChart所有当前消费者已有宿主外框，不再额外套卡；贴边嵌入 `AppWorkspacePane` / `.app-surface` 的 `StockChartWorkspace` 显式传 `embedded`，由共享 `.app-stock-chart-frame--embedded` 去重外框与圆角，不依赖中间异步层的 DOM 深度，不在页面补覆盖；有内距的独立图区继续保留自身外框 |
 | 图形/身份 | 圆、胶囊、`--app-radius-mark`及具名图形 | 登录品牌、预览缩略图、评分热力格、图例、拖拽提示保留图形语义；金融涨跌、来源和字典身份沿用领域helper，不映射成系统告警 |
 
 输入优先级为 **disabled > error+focus > error > focus > hover > default**：焦点匹配真实 `.is-focus`、`.is-focused`、range的`.is-active`及textarea`:focus`；错误焦点保留danger内沿与同色光晕。命令按钮继续复用 `buttonStates.css` 和共享焦点轮廓，loading保留角色原色。选中与焦点独立承接；区域loading/empty/error替换内容时保留宿主外框。各组件仅声明和消费真实支持的状态，不因库支持就虚构包装组件的loading/readonly能力。
 
-`npm run check:borders` 检查全量Vue/CSS中的普通游离圆角、边框直写颜色和页面私改输入边界，并纳入构建；登录品牌与具名缩略图例外由 `scripts/border-contract.mjs` 登记。该静态门禁不证明全部视觉状态通过。系统组件详情中的 `BorderStatePreview` 直接渲染真实控件，供本地核对组合态、详情1/2/3列及结果三态，不请求或保存业务数据；原型预览仍只证明其规范样板。
+`npm run check:borders` 检查全量Vue/CSS中的普通游离圆角、边框直写颜色和页面私改输入边界，并纳入构建；同时追踪 `AppWorkspacePane` / `.app-surface` 模板宿主中的股票画布，穿透异步与插槽层检查显式 `embedded`，独立弹层重置宿主作用域。`borderContract.spec.ts` 扫描真实消费者并用删除声明的变异验证漏接必失败，`StockChartWorkspace.spec.ts` 使用真实宿主、异步层、画布和生产边框样式验证嵌入/独立外沿及模式切换。登录品牌与具名缩略图例外由 `scripts/border-contract.mjs` 登记。该静态门禁不证明全部视觉状态通过。系统组件详情中的 `BorderStatePreview` 直接渲染真实控件，供本地核对组合态、详情1/2/3列及结果三态，不请求或保存业务数据；原型预览仍只证明其规范样板。
 
 
 ## 7. 使用规范与禁用事项

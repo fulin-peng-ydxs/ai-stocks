@@ -229,7 +229,7 @@
 | 滚动条与滚动容器 | DESIGN「滚动条显隐」、`AppScrollArea`、公共策略/Element Plus 适配层和 `scrollbar.css`；迁移时同步真实 viewport 引用、位置恢复、主从测高、成长布局及已有断言；内部实现组件不登记假 slot | `check:scrollbars`、显隐/清理/消费者定向测试、全局变更 build；内置浏览器核对悬停、键盘、滚动、拖出与低高度，禁止新增局部显隐 E2E |
 | 全局界面比例 | `useDisplayScale`、`displayScaleProfiles`、`sizeProfileMatching`、`useLayoutViewport`、`displayScaleGeometry`、根画布与独立遮罩、视觉环境入口和 DESIGN；偏好复用 `useGlobalPreferenceSync`；自动缩放指数由系统外观配置 `ui.display.auto_scale_exponent`、后端校验、登录公开白名单和运行时缓存共同承接，默认 0.10；自定义比例按显示器可用 CSS 宽高保存个人尺寸档案，并与主从工作台复用尺寸匹配容差及距离工具；尺寸断点使用 `app-viewport`，第三方坐标补丁随安装校验 | composable/尺寸档案/坐标换算和真实组件交互单测、尺寸断点契约、build、分隔条/图表/滚动恢复与 Teleport 浮层视觉验收 |
 | 共享交互状态 | `global.css` 的焦点、紧凑列表和语义链接配方、实际消费者与 DESIGN「按钮与输入」；同角色不得页面私配高亮亮度 | 键盘/选择/嵌套操作/禁用定向测试、build、明暗主题焦点及悬停临时复核 |
-| 共享边框 | `themeSurfaces.ts::themeBorderVariables()`、`useLayoutPreset.ts`、实际消费者与 DESIGN §6 | `useLayoutPreset.spec.ts`、相关组件测试、build、明暗模式普通/禁用/选中态临时复核 |
+| 共享边框 | `themeSurfaces.ts::themeBorderVariables()`、`useLayoutPreset.ts`、实际消费者与 DESIGN §6；股票画布的嵌入外沿统一由共享 `embedded` 模式承接 | `useLayoutPreset.spec.ts`、`borderContract.spec.ts` 的消费者扫描与删除声明变异、`StockChartWorkspace.spec.ts` 的真实宿主/异步层组合、相关组件测试、build、受影响页面明暗模式临时复核 |
 | 品牌字标 / 主题强调色 | `BrandMark.vue`、`useLayoutPreset.ts`、登录页与应用外壳消费点、DESIGN 品牌规则；不得新增场景变体或消费侧颜色覆盖 | `BrandMark.spec.ts`、`useLayoutPreset.spec.ts`、build、登录页与工作台同模式同预设视觉验收 |
 | 页面浮层 | `#overlays`、`AppDialog` / `AppDetailDrawer` / 专用 `PageDrawer` / `PageSettingsDrawer`、唯一浮层类；新增公共能力时同步 DESIGN 组件清单 | 统一组件测试、`layout-contract.spec.ts`、页面与顶部栏边界、正文内滚、关闭行为 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」；不追加存储实现类徽标 | 业务行为验证、必要时 build |

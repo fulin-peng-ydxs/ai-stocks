@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { parse as parseVue } from '@vue/compiler-sfc'
+import postcss from 'postcss'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
+import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import {
   KLINE_MA_DEFINITIONS,
   VOLUME_MA_DEFINITIONS,
@@ -197,6 +203,66 @@ function pointerEvent(type: string, pointerId: number, clientY: number): Event {
 }
 
 describe('StockChartWorkspace', () => {
+  it('真实宿主与异步层组合去重外框，独立画布保留边框且模式可切换', async () => {
+    // jsdom 不解析 CSS 变量边框 shorthand；仅替换测试 token，选择器和声明直接来自生产样式。
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/global.css'), 'utf8')
+      + parseVue(readFileSync(resolve(process.cwd(), 'src/components/AppWorkspacePane.vue'), 'utf8'))
+        .descriptor.styles.map(style => style.content).join('\n')
+      + readFileSync(resolve(process.cwd(), 'src/styles/borders.css'), 'utf8')
+    const tokens: Record<string, string> = {
+      '--el-border-color-lighter': '#454545', '--el-border-color': '#454545',
+      '--app-border-default': '#454545', '--layout-card-radius': '10px',
+      '--app-radius-canvas': '0px', '--el-bg-color': '#171717',
+    }
+    const style = document.createElement('style')
+    const selectors = new Set(['.app-stock-chart-frame', '.app-stock-chart-frame--embedded',
+      '.app-workspace-pane', '.app-surface'])
+    postcss.parse(css).walkRules(rule => {
+      if (selectors.has(rule.selector)) {
+        style.textContent += rule.toString().replace(/var\((--[\w-]+)\)/g,
+          (match, name: string) => tokens[name] ?? match)
+      }
+    })
+    document.head.append(style)
+    const embedded = ref(true)
+    const wrapper = mount(defineComponent({
+      setup: () => () => h('div', [
+        h(AppWorkspacePane, { title: '行情走势' }, {
+          default: () => h(AppAsyncRegion, { loading: false, hasContent: true }, {
+            default: () => h(StockChartWorkspace, { bars: [], embedded: embedded.value }),
+          }),
+        }),
+        h('section', { class: 'app-surface' }, [
+          h(AppAsyncRegion, { loading: false, hasContent: true }, {
+            default: () => h(StockChartWorkspace, { bars: [], embedded: true }),
+          }),
+        ]),
+        h(StockChartWorkspace, { bars: [] }),
+      ]),
+    }), { attachTo: document.body, global: { directives: { loading: {}, reveal: {} } } })
+    try {
+      await nextTick()
+      const frames = wrapper.findAll('.app-stock-chart-frame')
+      const border = (element: Element) => {
+        const computed = getComputedStyle(element)
+        return [computed.borderLeftWidth, computed.borderTopWidth, computed.borderRadius]
+      }
+      expect(border(wrapper.get('.app-workspace-pane').element)).toEqual(['1px', '1px', '10px'])
+      expect(border(wrapper.get('.app-surface').element)).toEqual(['1px', '1px', '10px'])
+      expect(border(frames[0].element)).toEqual(['0px', '0px', '0px'])
+      expect(border(frames[1].element)).toEqual(['0px', '0px', '0px'])
+      expect(border(frames[2].element)).toEqual(['1px', '1px', '10px'])
+      expect(frames[0].find('.stock-chart-panel__header').exists()).toBe(true)
+      expect(frames[0].findAll('.stock-chart-panel')).toHaveLength(3)
+      embedded.value = false
+      await nextTick()
+      expect(border(frames[0].element)).toEqual(['1px', '1px', '10px'])
+    } finally {
+      wrapper.unmount()
+      style.remove()
+    }
+  })
+
   it('训练相对日的三图、均线和买卖标记沿用交易顺序，推进一天后仍对齐', async () => {
     const baseBar = bars()[0]!
     const source = Array.from({ length: 250 }, (_, index) => ({

@@ -1,4 +1,5 @@
 import postcss from 'postcss'
+import { baseParse } from '@vue/compiler-dom'
 
 // 仅登记真正的品牌/图形例外；普通面板不能因位于某文件而整文件豁免。
 const graphicShapes = {
@@ -30,5 +31,37 @@ export function inspectBorderStyles(css, file) {
       findings.push({ line: decl.source.start.line, message: '页面不得覆盖共享输入边框状态，请在 borders.css 适配真实控件变体。' })
     }
   })
+  return findings
+}
+
+/** 跟踪模板中的表面所有者，穿透状态层；独立弹层开始新的边界作用域。 */
+export function inspectStockChartBoundaries(template) {
+  const findings = []
+  // 普通卡片可包含有间距的独立图区，不把任意祖先边框当作贴边宿主。
+  const hosts = new Set(['AppWorkspacePane'])
+  const overlays = new Set(['AppDialog', 'PageDrawer', 'AppDetailDrawer'])
+  function inspect(node, host = false) {
+    if (node.type !== 1) return
+    if (overlays.has(node.tag)) host = false
+    const classes = node.props.find(p => p.type === 6 && p.name === 'class')
+      ?.value?.content.split(/\s+/) ?? []
+    host ||= hosts.has(node.tag) || classes.includes('app-surface')
+    if (node.tag === 'StockChartWorkspace') {
+      const embedded = node.props.find(p => p.type === 6 && p.name === 'embedded')
+      const bound = node.props.find(p => p.type === 7 && p.name === 'bind' && p.arg?.content === 'embedded')
+      const spread = node.props.some(p => p.type === 7 && p.name === 'bind' && !p.arg)
+      const isEmbedded = !(embedded && bound) && !spread && (
+        !!embedded && (!embedded.value || embedded.value.content === '')
+        || bound?.exp?.content.trim() === 'true'
+      )
+      if (host && !isEmbedded || !host && (embedded || bound && bound.exp?.content.trim() !== 'false')) {
+        findings.push({ line: node.loc.start.line, message: host
+          ? '已有宿主外框的股票画布必须显式声明 embedded，由共享配方去重外框。'
+          : '独立股票画布必须保留外框，不得声明 embedded 或使用动态边界。' })
+      }
+    }
+    node.children.forEach(child => inspect(child, host))
+  }
+  baseParse(template).children.forEach(node => inspect(node))
   return findings
 }

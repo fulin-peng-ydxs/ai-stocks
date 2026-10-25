@@ -430,7 +430,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="stock-analysis-panel" aria-label="股票走势分析" data-testid="stock-analysis-panel">
+  <section class="stock-analysis-panel app-surface" aria-label="股票走势分析" data-testid="stock-analysis-panel">
     <MarketAnalysisHeader
       :title="active?.name || '等待选择股票'"
       :code="active?.code"
@@ -539,6 +539,7 @@ onBeforeUnmount(() => {
       />
       <StockChartWorkspace
         v-else
+        embedded
         class="stock-kline-workspace"
         :bars="klineBars"
         :warmup-bars="klineWarmupBars"
@@ -612,9 +613,6 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
 }
 .stock-benchmark-control {
   display: flex;

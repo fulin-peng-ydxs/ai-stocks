@@ -1334,6 +1334,7 @@ onBeforeUnmount(() => {
               empty-description="当前股票在所选范围内没有可用行情"
             >
               <StockChartWorkspace
+                embedded
                 class="detail-chart-workspace"
                 :bars="displayBars"
                 :warmup-bars="warmupBars"
