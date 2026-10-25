@@ -10,12 +10,13 @@ describe('trustedDetailReturnPath', () => {
     '/sectors/881001?return_to=%2Fstocks',
     '/board?date=2026-09-02',
     '/screen',
+    '/trade-discipline?tab=positions&trade_date=2026-10-23',
     '/system/config/score',
   ])('保留已知业务返回地址：%s', (path) => {
     expect(trustedDetailReturnPath(path)).toBe(path)
   })
 
-  it.each(['/admin', '//evil.example/steal', 'https://evil.example/steal', '/stocks-archive'])
+  it.each(['/admin', '//evil.example/steal', 'https://evil.example/steal', '/stocks-archive', '/trade-discipline-other', '/trade-discipline/unknown'])
     ('拒绝非业务返回地址：%s', (path) => {
       expect(trustedDetailReturnPath(path)).toBeUndefined()
     })
@@ -30,6 +31,7 @@ describe('detailReturnLabel', () => {
     ['/sectors/881001?return_to=%2Fstocks', '返回板块详情'],
     ['/board?date=2026-09-02', '返回每日榜单'],
     ['/screen', '返回策略筛选'],
+    ['/trade-discipline?tab=positions&trade_date=2026-10-23', '返回交易纪律'],
     ['/system/config/score', '返回评分规则'],
   ])('将已解析的业务地址 %s 映射为返回目标', (path, label) => {
     expect(detailReturnLabel(path, '返回默认页')).toBe(label)

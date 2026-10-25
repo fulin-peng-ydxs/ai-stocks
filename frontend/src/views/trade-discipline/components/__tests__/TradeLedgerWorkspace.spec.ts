@@ -2,12 +2,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import ElementPlus, { ElMessageBox } from 'element-plus'
 import TradeLedgerWorkspace from '../TradeLedgerWorkspace.vue'
 import TradeOperationEditor from '../TradeOperationEditor.vue'
 import FixedDecimalInput from '../FixedDecimalInput.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import { ledgerEventPayload, type LedgerContext } from '@/api/tradeLedger'
+import { useAuthStore } from '@/stores/auth'
+import { useStockSet } from '@/stores/stockSet'
 
 const api = vi.hoisted(() => ({ context: vi.fn(), initialize: vi.fn(), submit: vi.fn(), preview: vi.fn(), history: vi.fn(), revision: vi.fn(), withdraw: vi.fn() }))
 vi.mock('@/api/tradeLedger', async (original) => ({
@@ -23,9 +26,18 @@ function context(extra: Partial<LedgerContext> = {}): LedgerContext {
     can_edit: true, latest_trade_date: null, current_revision_no: 0, snapshot: null,
     rules: [version], opening_positions: [], opening_cash: null, positions: [], cash: null, ...extra }
 }
-function mountWorkspace(props = {}, editorStub = true) {
+function mountWorkspace(props = {}, editorStub = true, navigation = { role: 'normal', permissions: [] as string[] }) {
+  const pinia = createPinia()
+  const auth = useAuthStore(pinia)
+  auth.role = navigation.role
+  auth.permissions = navigation.permissions
+  const router = createRouter({ history: createMemoryHistory(), routes: [
+    { path: '/', component: { template: '<div />' } },
+    { path: '/trade-discipline', component: { template: '<div />' } },
+    { path: '/stocks/:code', name: 'stock-detail', component: { template: '<div />' } },
+  ] })
   return mount(TradeLedgerWorkspace, { props: { mode: 'checkin', tradeDate: '2026-10-23', canSubmit: true, ...props },
-    global: { plugins: [createPinia(), ElementPlus], directives: { permission: {} },
+    global: { plugins: [pinia, ElementPlus, router], directives: { permission: {} },
       stubs: { StockOptionSelect: true, TradeOperationEditor: editorStub, AppDatePicker: true, TradeDatePicker: true } } })
 }
 beforeEach(() => {
@@ -36,6 +48,56 @@ beforeEach(() => {
   api.submit.mockResolvedValue({})
 })
 describe('账户日结简化填报', () => {
+  it.each(['代码', '股票名称'])('持仓%s跳转个股详情，集合去重且保留持仓日期的返回入口', async column => {
+    const position = { stock_code: '600873.SH', stock_name: '梅花生物', quantity: '400',
+      available_quantity: '400', cost: '4000', market_value: '4000', unrealized_pnl: '0',
+      quote_date: '2026-10-23', rule_id: 'r', stock_rule_id: 's' }
+    api.context.mockResolvedValue(context({ positions: [position,
+      { ...position, stock_rule_id: 'another-group' },
+      { ...position, stock_code: '600356.SH', stock_name: '恒丰纸业' },
+    ] }))
+    const wrapper = mountWorkspace({ mode: 'positions' }, true, { role: 'normal', permissions: ['stocks:view'] })
+    try {
+      await flushPromises()
+      const links = wrapper.findAll('a[href="/stocks/600356.SH"]')
+      expect(links.map(link => link.text())).toEqual(['600356.SH', '恒丰纸业'])
+      await links[column === '代码' ? 0 : 1]!.trigger('click')
+      await flushPromises()
+      expect(wrapper.vm.$router.currentRoute.value.path).toBe('/stocks/600356.SH')
+      const collection = useStockSet(wrapper.vm.$pinia)
+      expect(collection.items).toEqual([
+        { code: '600873.SH', name: '梅花生物' }, { code: '600356.SH', name: '恒丰纸业' },
+      ])
+      expect(collection.returnPath).toBe('/trade-discipline?tab=positions&trade_date=2026-10-23')
+      expect(collection.label).toBe('交易纪律持仓')
+      expect(api.submit).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+  })
+
+  it('没有个股查看权限时保持普通文字，授权变化即时更新链接', async () => {
+    api.context.mockResolvedValue(context({ positions: [{ stock_code: '600873.SH', stock_name: '梅花生物',
+      quantity: '400', available_quantity: '400', cost: null, market_value: null, unrealized_pnl: null,
+      quote_date: null, rule_id: 'r', stock_rule_id: 's' }] }))
+    const wrapper = mountWorkspace({ mode: 'positions' })
+    try {
+      await flushPromises()
+      expect(wrapper.findAll('a[href^="/stocks/"]')).toHaveLength(0)
+      expect(wrapper.text()).toContain('600873.SH')
+      expect(wrapper.text()).toContain('梅花生物')
+      const auth = useAuthStore(wrapper.vm.$pinia)
+      auth.permissions = ['stocks:view']
+      await flushPromises()
+      expect(wrapper.findAll('a[href="/stocks/600873.SH"]')).toHaveLength(2)
+      auth.permissions = []
+      auth.role = 'system'
+      await flushPromises()
+      expect(wrapper.findAll('a[href="/stocks/600873.SH"]')).toHaveLength(2)
+      auth.role = 'normal'
+      await flushPromises()
+      expect(wrapper.findAll('a[href^="/stocks/"]')).toHaveLength(0)
+    } finally { wrapper.unmount() }
+  })
+
   it('移除手动核对按钮后，完整成交仍自动预览且可直接提交', async () => {
     vi.useFakeTimers()
     const wrapper = mountWorkspace()

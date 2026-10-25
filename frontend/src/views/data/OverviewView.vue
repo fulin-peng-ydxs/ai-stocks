@@ -1072,7 +1072,7 @@ const menuPageTitle = useMenuPageTitle()
                   <AppTableColumn label="分时覆盖" role="text" control-width="medium">
                     <template #default="{ row }">
                       <div v-if="row.intraday" class="stock-intraday-cell">
-                        <el-button v-if="row.intraday.partial_days || row.intraday.missing_days" link type="primary" size="small"
+                        <el-button v-if="row.intraday.partial_days || row.intraday.missing_days" class="app-table-field-link" link type="primary" size="small"
                           :aria-label="`${row.code} 分时${intradayCoverageText(row.intraday)}，查看台账`"
                           @click="gotoStockIntraday(row.code)">{{ intradayCoverageText(row.intraday) }} · 查看台账</el-button>
                         <span v-else>{{ intradayCoverageText(row.intraday) }}</span>
@@ -1094,7 +1094,7 @@ const menuPageTitle = useMenuPageTitle()
                     </template>
                     <template #default="{ row }">
                       <AppHoverInfo :content="layerCell(k, row.layers[k]).tip" placement="top">
-                        <el-button v-if="row.layers[k] && !row.layers[k].ok" link type="danger" size="small"
+                        <el-button v-if="row.layers[k] && !row.layers[k].ok" class="app-table-field-link" link type="danger" size="small"
                           :aria-label="`${row.code} ${LAYER_CN[k]}：${layerCell(k, row.layers[k]).text}，查看质量台账`" @click="goLayer(k, row)">
                           {{ layerCell(k, row.layers[k]).text }} · 查看台账
                         </el-button>

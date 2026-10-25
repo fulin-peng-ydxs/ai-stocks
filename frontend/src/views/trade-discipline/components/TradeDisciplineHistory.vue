@@ -240,6 +240,7 @@ defineExpose({ reload: load })
               link
               type="primary"
               size="small"
+              class="app-table-field-link"
               :data-testid="`history-detail-${row.id}`"
               :aria-label="`查看${row.rule_name}详情`"
               @click="openDetail(row)"

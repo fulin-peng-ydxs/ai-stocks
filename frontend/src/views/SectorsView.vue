@@ -1182,7 +1182,7 @@ const menuPageTitle = useMenuPageTitle()
                     <el-button
                       link
                       type="primary"
-                      class="sector-select"
+                      class="sector-select app-table-field-link"
                       :disabled="row.available === false"
                       :data-testid="row?.board_code ? `sectors-name-${row.board_code}` : undefined"
                       @click.stop="selectRow(row)"
@@ -1583,7 +1583,6 @@ const menuPageTitle = useMenuPageTitle()
   padding: 0;
   height: auto;
   min-height: 0;
-  font-weight: var(--app-font-weight-section);
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;

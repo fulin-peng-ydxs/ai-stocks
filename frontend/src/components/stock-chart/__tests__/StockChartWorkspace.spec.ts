@@ -197,6 +197,53 @@ function pointerEvent(type: string, pointerId: number, clientY: number): Event {
 }
 
 describe('StockChartWorkspace', () => {
+  it('训练相对日的三图、均线和买卖标记沿用交易顺序，推进一天后仍对齐', async () => {
+    const baseBar = bars()[0]!
+    const source = Array.from({ length: 250 }, (_, index) => ({
+      ...baseBar,
+      date: index === 249 ? 'D+0' : `D${index - 249}`,
+      open: 10.05 + index / 100,
+      high: 10.1 + index / 100,
+      low: 9.9 + index / 100,
+      close: 10 + index / 100,
+      volume: 100_000 + index * 1_000,
+    }))
+    const warmup = Array.from({ length: 60 }, (_, index) => ({
+      ...source[0]!, date: `D${index - 309}`,
+      open: 9, high: 9.1, low: 8.9, close: 9, volume: 50_000,
+    }))
+    const wrapper = await mountWorkspace({
+      bars: source,
+      warmupBars: warmup,
+      indicators: indicators(source).reverse(),
+      markers: [{ date: 'D-239', kind: 'buy', label: '买入' }],
+    })
+    const options = echartsMock.instances.map((instance) => instance.setOption.mock.calls.at(-1)![0])
+    for (const option of options) {
+      expect(option.xAxis.data).toEqual(source.map((item) => item.date))
+    }
+    expect(options[0].series[0].data[10]).toEqual([
+      source[10]!.open, source[10]!.close, source[10]!.low, source[10]!.high,
+    ])
+    // 首根可见 MA/VMA 必须向历史暖机区回看，不能把近期相对日插入历史。
+    expect(options[0].series.find((series: { name: string }) => series.name === 'MA5').data[0])
+      .toBe(9.2)
+    expect(options[1].series.find((series: { name: string }) => series.name === 'VMA5').data[0])
+      .toBe(60_000)
+    expect(options[2].series[0].data[10].value).toBe(10 / 80)
+    expect(options[0].series[0].markPoint.data.find((point: { kind?: string }) => point.kind === 'buy').coord[0])
+      .toBe(10)
+
+    const advanced = [...source, { ...source.at(-1)!, date: 'D+1', close: 12.5 }]
+    await wrapper.setProps({ bars: advanced, indicators: indicators(advanced) })
+    await nextTick()
+    for (const instance of echartsMock.instances) {
+      expect(instance.setOption.mock.calls.at(-1)![0].xAxis.data)
+        .toEqual(advanced.map((item) => item.date))
+    }
+    wrapper.unmount()
+  })
+
   it('紧凑双图高度仍保留 K 线和量能，并对过小请求执行安全下限', async () => {
     mockClientHeight = 480
     const compact = await mountWorkspace({

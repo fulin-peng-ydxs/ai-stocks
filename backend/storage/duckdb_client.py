@@ -370,6 +370,11 @@ class DuckDBReadClient:
         self._local = threading.local()
 
     @property
+    def read_only(self) -> bool:
+        """门面始终逻辑只读，不随池连接为兼容写连接而使用的物理模式变化。"""
+        return True
+
+    @property
     def db_path(self) -> Path:
         return self._fallback.db_path
 

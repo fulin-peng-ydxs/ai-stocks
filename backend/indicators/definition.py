@@ -164,6 +164,9 @@ def _parse(r: dict) -> dict:
 class IndicatorDefRepo:
     def __init__(self, client=None):
         self.c = client or get_client()
+        # 查询链路复用启动时已初始化的指标表，不能通过读门面触发建表或补列。
+        if self.c.read_only:
+            return
         from backend.storage.ddl import init_db
         init_db(self.c)
         # 兼容旧库：补 categories 列（幂等）

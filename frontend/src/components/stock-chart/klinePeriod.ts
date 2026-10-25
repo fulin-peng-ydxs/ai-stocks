@@ -102,7 +102,12 @@ export function aggregateKlineBars(
   period: KlinePeriod,
 ): PeriodBar[] {
   if (!bars.length) return []
-  const sorted = [...bars].sort((left, right) => left.date.localeCompare(right.date))
+  const sorted = [...bars]
+  // 盲测的 D-249…D+0 是展示标签，时间顺序已由接口保证，不能按字符串重排。
+  // 只有真实日历日期可按 ISO 格式排序；可见区与暖机区共用此规则。
+  if (sorted.every((bar) => dateParts(bar.date) !== null)) {
+    sorted.sort((left, right) => left.date.localeCompare(right.date))
+  }
   if (period === 'day') {
     return sorted.map((bar) => ({
       ...bar,

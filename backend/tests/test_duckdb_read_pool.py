@@ -37,6 +37,30 @@ def test_read_pool_reads_committed_data_and_reports_stats(tmp_path):
         writer.close()
 
 
+@pytest.mark.parametrize("size", [0, 1])
+def test_indicator_definitions_can_use_logical_reader_without_ddl(tmp_path, monkeypatch, size):
+    from backend.indicators.definition import IndicatorDefRepo
+    from backend.storage.ddl import init_db
+
+    writer, pool, reader = _clients(tmp_path, size=size)
+    try:
+        IndicatorDefRepo(writer).seed_builtins()
+        assert not writer.read_only
+        assert reader.read_only
+        assert init_db(reader) == []
+        monkeypatch.setattr(
+            "backend.storage.ddl.init_db",
+            lambda *_: pytest.fail("指标只读查询不能触发数据库初始化"),
+        )
+        repo = IndicatorDefRepo(reader)
+        assert repo.get("consec_up")["kind"] == "expr"
+        assert repo.list(include_disabled=False)
+        assert not hasattr(reader, "execute")
+    finally:
+        pool.close()
+        writer.close()
+
+
 @pytest.mark.parametrize(
     "sql",
     [

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import type { TableSortChange } from '@/composables/useTableSort'
@@ -26,6 +27,9 @@ import { formatMoney } from '@/utils/money'
 import { marketValueClass } from '@/utils/marketValue'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
 import { getErrorMessage } from '@/utils/error'
+import { hasPermission } from '@/utils/permission'
+import { useAuthStore } from '@/stores/auth'
+import { useStockSet } from '@/stores/stockSet'
 import { checkinAssessmentLabel, checkinAssessmentTagType } from '@/utils/tradeDisciplineAssessment'
 import { decimalToMinorUnits, formatMinorUnits, multiplyToMinorUnits } from '@/utils/fixedDecimal'
 import { manualConditionDefaults, checklistDefaults } from '@/utils/tradeDisciplineConditions'
@@ -119,6 +123,18 @@ const showEntryControls = computed(() => props.mode === 'checkin' && !loading.va
 const shown = computed(() => preview.value ?? context.value?.snapshot ?? null)
 const positions = computed(() => props.mode === 'positions' ? context.value?.positions ?? [] : shown.value?.positions ?? context.value?.opening_positions ?? [])
 const positionCount = computed(() => new Set(positions.value.map(p => p.stock_code)).size)
+const auth = useAuthStore()
+const stockSet = useStockSet()
+const canViewStockDetail = computed(() => hasPermission(auth.role, auth.permissions, 'stocks:view'))
+function rememberPositionStocks() {
+  if (!canViewStockDetail.value) return
+  // 同股可能分属多套规则，详情集合按股票去重，并保留持仓查看日期作为返回上下文。
+  const stocks = new Map(positions.value.filter(item => item.stock_code).map(item => [
+    item.stock_code, { code: item.stock_code, name: item.stock_name },
+  ]))
+  stockSet.setResultSet([...stocks.values()], '交易纪律持仓',
+    `/trade-discipline?tab=positions&trade_date=${encodeURIComponent(props.tradeDate)}`)
+}
 const trades = computed(() => events.value.filter(e => e.kind === 'trade'))
 const adjustments = computed(() => events.value.filter(e => e.kind !== 'trade'))
 const rules = computed(() => context.value?.rules ?? [])
@@ -493,8 +509,18 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
       <template v-else>
         <template v-if="mode === 'positions'">
           <AppDataTable :data="positions" :border="tableBorder" embedded empty-text="当前为空仓">
-            <AppTableColumn prop="stock_code" label="代码" min-width="120" />
-            <AppTableColumn prop="stock_name" label="股票" min-width="140" />
+            <AppTableColumn prop="stock_code" label="代码" min-width="120">
+              <template #default="{ row }">
+                <RouterLink v-if="canViewStockDetail && row.stock_code" :to="{ name: 'stock-detail', params: { code: row.stock_code } }" class="app-table-field-link app-interaction-link app-interaction-link--primary" @click.stop="rememberPositionStocks">{{ row.stock_code }}</RouterLink>
+                <span v-else>{{ row.stock_code }}</span>
+              </template>
+            </AppTableColumn>
+            <AppTableColumn prop="stock_name" label="股票" min-width="140">
+              <template #default="{ row }">
+                <RouterLink v-if="canViewStockDetail && row.stock_code" :to="{ name: 'stock-detail', params: { code: row.stock_code } }" class="app-table-field-link app-interaction-link app-interaction-link--primary" @click.stop="rememberPositionStocks">{{ row.stock_name || row.stock_code }}</RouterLink>
+                <span v-else>{{ row.stock_name || row.stock_code }}</span>
+              </template>
+            </AppTableColumn>
             <AppTableColumn prop="quantity" label="数量" min-width="110" />
             <AppTableColumn prop="available_quantity" label="可卖数量" min-width="110" />
             <AppTableColumn label="总成本（元）" min-width="130"><template #default="{ row }">{{ row.cost == null ? '未录入' : formatMoney(row.cost) }}</template></AppTableColumn>
@@ -612,7 +638,7 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
       </el-card>
       <AppStateBlock v-if="historyError" state="error" title="历史加载失败" :description="historyError" retry @retry="loadHistory" />
       <AppDataTable v-else :data="history" :loading="historyBusy" :border="tableBorder" :default-sort="defaultSort" empty-text="尚无交易日记录" @sort-change="emit('sort-change', $event)">
-        <AppTableColumn v-if="columnVisible('trade_date')" prop="trade_date" label="交易日" min-width="130" sortable="custom"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">{{ row.trade_date }}</el-button></template></AppTableColumn>
+        <AppTableColumn v-if="columnVisible('trade_date')" prop="trade_date" label="交易日" min-width="130" sortable="custom"><template #default="{ row }"><el-button link type="primary" class="app-table-field-link" @click="openDetail(row)">{{ row.trade_date }}</el-button></template></AppTableColumn>
         <AppTableColumn v-if="columnVisible('assessment')" label="履约结果" min-width="110"><template #default="{ row }">{{ row.withdrawn ? '已撤回' : label(row.snapshot.assessment) }}</template></AppTableColumn>
         <AppTableColumn v-if="columnVisible('operation_count')" label="操作数" min-width="90"><template #default="{ row }">{{ row.snapshot.operation_count ?? row.snapshot.events.filter((e: LedgerEvent) => e.kind === 'trade').length }}</template></AppTableColumn>
         <AppTableColumn v-if="columnVisible('buy_amount')" label="买入额" min-width="120"><template #default="{ row }">{{ formatMoney(row.snapshot.buy_amount) }}</template></AppTableColumn>

@@ -23,6 +23,40 @@ function bar(date: string, close: number, overrides: Partial<Bar> = {}): Bar {
 }
 
 describe('klinePeriod', () => {
+  it('训练相对日跨越负数位数和零点时，保留可见区与暖机区的时间顺序', () => {
+    const source = Array.from({ length: 262 }, (_, index) => {
+      const day = index - 249
+      return bar(`D${day >= 0 ? '+' : ''}${day}`, 10 + index / 100)
+    })
+    const warmup = Array.from({ length: 60 }, (_, index) => bar(`D${index - 309}`, 9))
+    const series = buildKlinePeriodSeries(source, warmup, [], 'day')
+
+    expect(series.bars.map((item) => item.date)).toEqual(source.map((item) => item.date))
+    expect(series.warmupBars.map((item) => item.date)).toEqual(warmup.map((item) => item.date))
+    expect(series.bars.findIndex((item) => item.date === 'D-239')).toBe(10)
+    expect(series.bars[249]?.date).toBe('D+0')
+    expect(series.bars.at(-1)?.date).toBe('D+12')
+    expect(series.bars).toEqual(source.map((item) => ({
+      ...item,
+      periodStartDate: item.date,
+      periodEndDate: item.date,
+      tradingDayCount: 1,
+    })))
+    expect(source[0]?.date).toBe('D-249')
+    expect(warmup[0]?.date).toBe('D-309')
+  })
+
+  it.each(['day', 'week', 'month', 'year'] as const)(
+    '%s 仍按真实日历日期排序，不修改输入数组', (period) => {
+      const source = [bar('2026-02-02', 13), bar('2025-12-31', 10), bar('2026-01-02', 11)]
+      const ordered = [source[1]!, source[2]!, source[0]!]
+
+      expect(aggregateKlineBars(source, period)).toEqual(aggregateKlineBars(ordered, period))
+      expect(source.map((item) => item.date))
+        .toEqual(['2026-02-02', '2025-12-31', '2026-01-02'])
+    },
+  )
+
   it('按 ISO 自然周处理跨年边界', () => {
     expect(klinePeriodKey('2025-12-29', 'week')).toBe('2026-W01')
     expect(klinePeriodKey('2026-01-02', 'week')).toBe('2026-W01')

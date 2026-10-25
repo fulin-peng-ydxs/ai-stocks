@@ -70,7 +70,7 @@ function toggle(key: string) {
               <AppTableColumn v-for="column in detail.columns" :key="column.key"
                 :prop="`values.${column.key}`" :label="column.label" :role="column.role">
                 <template #default="{ row }">
-                  <ElLink v-if="column.key === 'object' && row.issue" type="primary" underline="never"
+                  <ElLink v-if="column.key === 'object' && row.issue" class="app-table-field-link" type="primary" underline="never"
                     :href="`/data/quality?code=${encodeURIComponent(row.issue.code)}&issue_type=${encodeURIComponent(row.issue.issue_type)}`"
                     @click.prevent="emit('locate', row.issue)">
                     {{ row.values[column.key] }}
