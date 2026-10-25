@@ -58,6 +58,7 @@ import AppOverflowTooltipHost from '@/components/AppOverflowTooltipHost.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
 import SettingsGroup from '@/components/SettingsGroup.vue'
+import PageDensitySyncSettings from '@/components/PageDensitySyncSettings.vue'
 import TradeDisciplineQuickCard from '@/components/trade-discipline/TradeDisciplineQuickCard.vue'
 import { formatDateTimeMinutes } from '@/utils/dateTime'
 import { findMenuTrail } from '@/utils/permission'
@@ -681,7 +682,7 @@ async function onLogout() {
       direction="rtl"
       size="lg"
       title="视觉环境"
-      subtitle="调整界面比例、阅读光线与导航方式"
+      subtitle="调整界面比例、页面密度、阅读光线与导航方式"
       boundary="app"
       close-label="关闭视觉环境"
     >
@@ -736,6 +737,8 @@ async function onLogout() {
             <el-button text type="primary" @click="resetDisplayScale">恢复100%</el-button>
           </div>
         </SettingsGroup>
+
+        <PageDensitySyncSettings v-permission="'layout:user-config'" />
 
         <SettingsGroup
           title="明暗模式"

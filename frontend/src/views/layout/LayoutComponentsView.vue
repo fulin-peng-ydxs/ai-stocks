@@ -21,6 +21,7 @@ import AppDetailSection from '@/components/AppDetailSection.vue'
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import LayoutComponentPreview from '@/layout/components/LayoutComponentPreview.vue'
 import BorderStatePreview from '@/layout/components/BorderStatePreview.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
@@ -49,7 +50,8 @@ import {
 import { getErrorMessage } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
 
-const componentsLayout = getPageLayout('layout-components')
+// 仅接收基础密度同步，不增加个人设置抽屉或组件配置。
+const { effective: componentsLayout } = useRemoteLayoutConfig(getPageLayout('layout-components'))
 
 const CATEGORY_LABELS: Record<ComponentCategory, string> = {
   structure: '页面结构',

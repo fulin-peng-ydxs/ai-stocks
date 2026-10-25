@@ -119,6 +119,14 @@ export function saveLayoutUserConfig(pageKey: string, payload: SaveUserConfigPay
   )
 }
 
+/** 单事务密度补丁，保留其它用户布局值。 */
+export function syncLayoutUserDensity(payload: {
+  density: 'compact' | 'standard' | 'comfortable'
+  pageKeys: string[]
+}): Promise<{ density: 'compact' | 'standard' | 'comfortable'; pageKeys: string[] }> {
+  return http.post('/layout/user-density', payload, { skipGlobalError: true } as AppRequestConfig)
+}
+
 export function validateLayoutConfig(payload: ValidateLayoutPayload): Promise<LayoutValidateResult> {
   return http.post('/layout/validate', payload)
 }

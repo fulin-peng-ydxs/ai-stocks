@@ -38,7 +38,11 @@ function densitySource(lastInteractionTarget: Element | null): HTMLElement | nul
     ?? null
 }
 
-function syncAddedOverlay(node: Node, lastInteractionTarget: Element | null): void {
+function syncAddedOverlay(
+  node: Node,
+  lastInteractionTarget: Element | null,
+  sources: Map<HTMLElement, HTMLElement>,
+): void {
   if (!(node instanceof HTMLElement)) return
   const source = densitySource(lastInteractionTarget)
   const overlays = [
@@ -47,7 +51,11 @@ function syncAddedOverlay(node: Node, lastInteractionTarget: Element | null): vo
   ]
   for (const overlay of overlays) {
     // PageDrawer 本就挂在 LayoutHost 内，保留它自然继承的页面密度。
-    if (!overlay.closest('.v-page')) copyPageDensity(overlay, source)
+    if (!overlay.closest('.v-page')) {
+      copyPageDensity(overlay, source)
+      if (source) sources.set(overlay, source)
+      else sources.delete(overlay)
+    } else sources.delete(overlay)
   }
 }
 
@@ -56,6 +64,31 @@ function syncAddedOverlay(node: Node, lastInteractionTarget: Element | null): vo
  * 让触发器与浮层共同继承根画布的 zoom、页面密度和布局坐标系。
  */
 export function installElementPlusPopperContainer(appRoot: HTMLElement): () => void {
+  const densitySources = new Map<HTMLElement, HTMLElement>()
+  const sourceObservers = new Map<HTMLElement, MutationObserver>()
+  function syncDensityObservers() {
+    for (const [overlay, source] of densitySources) {
+      if (!overlay.isConnected || !source.isConnected) densitySources.delete(overlay)
+    }
+    const sources = new Set(densitySources.values())
+    for (const [source, observer] of sourceObservers) {
+      if (!sources.has(source)) {
+        observer.disconnect()
+        sourceObservers.delete(source)
+      }
+    }
+    for (const source of sources) {
+      if (sourceObservers.has(source)) continue
+      // 只观察真实触发页，避免订阅整棵应用树的样式动画、图表和悬停变化。
+      const observer = new MutationObserver(() => {
+        for (const [overlay, page] of densitySources) {
+          if (page === source) copyPageDensity(overlay, page)
+        }
+      })
+      observer.observe(source, { attributes: true, attributeFilter: ['class', 'style'] })
+      sourceObservers.set(source, observer)
+    }
+  }
   let lastInteractionTarget: Element | null = null
   const rememberInteractionTarget = (event: Event) => {
     lastInteractionTarget = event.target instanceof Element ? event.target : null
@@ -66,16 +99,18 @@ export function installElementPlusPopperContainer(appRoot: HTMLElement): () => v
 
   const bodyObserver = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) syncAddedOverlay(node, lastInteractionTarget)
+      for (const node of mutation.addedNodes) syncAddedOverlay(node, lastInteractionTarget, densitySources)
     }
     moveElementPlusPopperContainers(appRoot)
+    syncDensityObservers()
   })
   // body 只关心直接 Teleport 节点和新建的共享 Popper 容器，避免扫描应用整棵 DOM。
   bodyObserver.observe(document.body, { childList: true })
   const appObserver = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) syncAddedOverlay(node, lastInteractionTarget)
+      for (const node of mutation.addedNodes) syncAddedOverlay(node, lastInteractionTarget, densitySources)
     }
+    syncDensityObservers()
   })
   // 共享 Popper 容器已在 #app 内，监听其后续追加内容；按新增节点增量处理。
   appObserver.observe(appRoot, { childList: true, subtree: true })
@@ -83,6 +118,9 @@ export function installElementPlusPopperContainer(appRoot: HTMLElement): () => v
   return () => {
     bodyObserver.disconnect()
     appObserver.disconnect()
+    densitySources.clear()
+    for (const observer of sourceObservers.values()) observer.disconnect()
+    sourceObservers.clear()
     appRoot.removeEventListener('pointerdown', rememberInteractionTarget, true)
     appRoot.removeEventListener('focusin', rememberInteractionTarget, true)
   }

@@ -120,7 +120,7 @@
 
 - 新增或复用的语义类 / token：
 - 可导航页面标题是否通过 `useMenuPageTitle()` 消费当前菜单名称；阶段状态是否使用 `suffix` 拼接且未复制基础菜单标题：
-- 页面密度：紧凑/标准/宽松是否由 `LayoutHost` 唯一提供，卡片、控件行、表单、表格和页面浮层是否共同消费 `--app-density-*`，且未改变字号或显式 small/large 层级：
+- 页面密度：视觉环境的一键统一是否只批量更新用户层 density、仍允许后续逐页修改；紧凑/标准/宽松是否由 `LayoutHost` 唯一提供，卡片、控件行、表单、表格和页面浮层是否共同消费 `--app-density-*`，且未改变字号或显式 small/large 层级：
 - 页面布局工作台预览：结构与配置是否左右分工；无响应式列数差异时是否隐藏预览宽度切换；配置诊断是否默认折叠：
 - 行内信息单元：非连续内容是否按 DESIGN §3.2 使用 ` · `、`.app-inline-info` 或 Teleport 浮层唯一 `popper-class`，且未用手工空格、`&nbsp;`、私有 `margin-left/right` 修补：
 - 排版或间距特例：
@@ -232,6 +232,7 @@
 | 提示 / 截断机制 | DESIGN 提示契约、AppHoverInfo / useHoverIntent、AppIconButton / AppActionHint、AppOverflowTooltipHost；涉及原文时同步专用内容来源，不恢复原生 title 自动提示 | `check:tooltips`、提示/消费者定向测试、build、实际停留/移动/点击/键盘与主题验收 |
 | 字体 / 间距体系 | `global.css` typography/spacing token、DESIGN 排版与节奏规范；新增语义层级时同步 token、文档和消费点 | 相关样式契约测试、build、关键页面视觉验收 |
 | 滚动条与滚动容器 | DESIGN「滚动条显隐」、`AppScrollArea`、公共策略/Element Plus 适配层和 `scrollbar.css`；迁移时同步真实 viewport 引用、位置恢复、主从测高、成长布局及已有断言；内部实现组件不登记假 slot | `check:scrollbars`、显隐/清理/消费者定向测试、全局变更 build；内置浏览器核对悬停、键盘、滚动、拖出与低高度，禁止新增局部显隐 E2E |
+| 基础密度与一键统一 | `LayoutHost`、`useRemoteLayoutConfig`、`pageDensitySync`、视觉环境的 `PageDensitySyncSettings`、registry 和 `layout/user-density`；复用既有个人布局权限与存储，仅补丁 density，不建立全局覆盖层；平台管理页不新增个人设置入口 | 配置保留、事务回滚、账号/租户隔离、缓存/在途请求/后续逐页编辑定向测试；代表性页面、三档密度和浮层浏览器复核 |
 | 全局界面比例 | `useDisplayScale`、`displayScaleProfiles`、`sizeProfileMatching`、`useLayoutViewport`、`displayScaleGeometry`、根画布与独立遮罩、视觉环境入口和 DESIGN；偏好复用 `useGlobalPreferenceSync`；自动缩放指数由系统外观配置 `ui.display.auto_scale_exponent`、后端校验、登录公开白名单和运行时缓存共同承接，默认 0.10；自定义比例按显示器可用 CSS 宽高保存个人尺寸档案，并与主从工作台复用尺寸匹配容差及距离工具；尺寸断点使用 `app-viewport`，第三方坐标补丁随安装校验 | composable/尺寸档案/坐标换算和真实组件交互单测、尺寸断点契约、build、分隔条/图表/滚动恢复与 Teleport 浮层视觉验收 |
 | 共享交互状态 | `global.css` 配方、`scripts/design-contracts.json` 已登记的状态/变量和受保护角色、消费者与 DESIGN 对应契约；差异经共享扩展点表达 | `check:contracts`、键盘/选择/嵌套操作/禁用定向测试、明暗主题焦点及悬停临时复核 |
 | 规范规则 / 检查器变更或漏检修复 | 先判断既有检查器能否覆盖；必要时扩展对应机器契约和共享检查器、合法及违规样例，并接入 `check:design` / `check` 或适用的领域门禁；文档只维护该规则的权威定义 | 定向正反例、真实消费者扫描、统一入口及按风险选定的行为/页面验证；既有漏检用最小夹具复现并确认修复后被拒绝 |

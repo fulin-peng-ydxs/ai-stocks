@@ -94,4 +94,25 @@ describe('Element Plus Popper 缩放容器', () => {
 
     expect(overlay.style.getPropertyValue('--app-density-overlay-padding')).toBe('12px')
   })
+
+  it('已打开浮层跟随其触发页密度更新，应用级浮层保持标准继承', async () => {
+    document.body.innerHTML = '<div id="app"><main class="v-page" style="--app-density-overlay-padding:24px"><button>open</button></main></div>'
+    const root = document.querySelector<HTMLElement>('#app')!
+    cleanups.push(installElementPlusPopperContainer(root))
+    const page = root.querySelector<HTMLElement>('.v-page')!
+    page.querySelector('button')!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    const overlay = document.createElement('div')
+    overlay.className = 'el-overlay'
+    document.body.append(overlay)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    page.style.setProperty('--app-density-overlay-padding', '12px')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(overlay.style.getPropertyValue('--app-density-overlay-padding')).toBe('12px')
+    root.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    const appOverlay = document.createElement('div')
+    appOverlay.className = 'el-overlay'
+    root.append(appOverlay)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(appOverlay.style.getPropertyValue('--app-density-overlay-padding')).toBe('')
+  })
 })

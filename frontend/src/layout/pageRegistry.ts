@@ -1147,7 +1147,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'table', component: 'data-table', region: 'main', growMain: true, minH: 360, label: '预设列表', order: 1, config: { pagination: false } },
       ],
-      editable: [],
+      editable: [densityKnob()],
     },
   },
   {
@@ -1168,7 +1168,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'content', component: 'tabs', region: 'main', growMain: true, minH: 360, label: '页面布局工作台', order: 1 },
       ],
-      editable: [],
+      editable: [densityKnob()],
     },
   },
   {
@@ -1189,7 +1189,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'content', component: 'section', region: 'main', scroll: 'region', minH: 360, label: '系统组件内容', order: 1 },
       ],
-      editable: [],
+      editable: [densityKnob()],
     },
   },
   {

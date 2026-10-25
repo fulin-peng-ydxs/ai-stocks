@@ -8,11 +8,13 @@
  *   - 用户层：PG 为权威；localStorage 仅作为离线 fallback 和迁移源。
  * 后端不可达或 403 时静默回落本地默认/缓存，页面照常渲染，不阻塞首屏。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onScopeDispose, ref, watch } from 'vue'
 import { componentMetaForSlot, getPageEntry, useLayoutConfig, type PageLayout } from '@/layout'
 import { getEffectiveLayoutConfig, saveLayoutUserConfig } from '@/api/layout'
+import { layoutPreferenceIdentity, pageDensitySaveBarrier, registerPageDensityConsumer } from './pageDensitySync'
 
 export function useRemoteLayoutConfig(base: PageLayout) {
+  const ownerIdentity = layoutPreferenceIdentity()
   const registryEntry = getPageEntry(base.pageKey)
   const componentMetaBySlot = registryEntry
     ? Object.fromEntries(registryEntry.layout.slots.map((slot) => [slot.id, componentMetaForSlot(registryEntry, slot)]))
@@ -29,9 +31,11 @@ export function useRemoteLayoutConfig(base: PageLayout) {
   let saveTimer: number | undefined
   let saveQueue: Promise<unknown> = Promise.resolve()
   let pendingSaveCount = 0
+  let applyingDensity = false
+  let densityEditedDuringSync = false
 
   function saveNow(): Promise<boolean> {
-    if (!remoteHydrated.value) return Promise.resolve(false)
+    if (!remoteHydrated.value || layoutPreferenceIdentity() !== ownerIdentity) return Promise.resolve(false)
     // 显式保存接管当前写入，取消 watcher 已排队的同值请求，避免重复 POST。
     if (saveTimer) {
       window.clearTimeout(saveTimer)
@@ -39,8 +43,11 @@ export function useRemoteLayoutConfig(base: PageLayout) {
     }
     pendingSaveCount += 1
     saving.value = true
+    const densityBarrier = pageDensitySaveBarrier()
     const task = saveQueue.then(async (): Promise<boolean> => {
+      if (densityBarrier) await densityBarrier
       try {
+        if (layoutPreferenceIdentity() !== ownerIdentity) throw new Error('登录账号已变化')
         // 在真正轮到本次写入时读取最新配置，串行保证后发值最终落库。
         const userConfig = config.exportUserConfig()
         await saveLayoutUserConfig(base.pageKey, {
@@ -96,10 +103,55 @@ export function useRemoteLayoutConfig(base: PageLayout) {
     if (shouldFlushDirty) void saveNow()
   })
 
-  watch(config.userConfigValues, () => scheduleSave(), { deep: true })
+  // 批量补丁已落库，无需将整份配置再写一次；普通编辑仍照常防抖保存。
+  watch(config.userConfigValues, () => {
+    if (!applyingDensity) scheduleSave()
+  }, { deep: true, flush: 'sync' })
+  function markDensityEdit(path = 'density') {
+    if (path === 'density' && pageDensitySaveBarrier()) densityEditedDuringSync = true
+  }
+
+  const unregisterDensity = registerPageDensityConsumer(base.pageKey, {
+    prepare() {
+      densityEditedDuringSync = false
+      const pending = saveTimer ? saveNow() : saveQueue
+      return Promise.all([remoteHydratedPromise, pending])
+    },
+    apply(density) {
+      // 批量期间用户新做的逐页选择应在事务之后保存，不被批量响应反向覆盖。
+      if (densityEditedDuringSync) return config.valueOf('density') as PageLayout['density']
+      applyingDensity = true
+      try {
+        config.setKnob('density', density)
+      } finally {
+        applyingDensity = false
+      }
+    },
+  })
+  onScopeDispose(() => {
+    unregisterDensity()
+    // 关闭标签也要保存防抖窗口内的编辑，不能因移除密度订阅而丢失原有持久化。
+    if (saveTimer) void saveNow()
+  })
 
   return {
     ...config,
+    setKnob(path: string, value: unknown) {
+      config.setKnob(path, value)
+      markDensityEdit(path)
+    },
+    resetKnob(path: string) {
+      config.resetKnob(path)
+      markDensityEdit(path)
+    },
+    resetAll() {
+      config.resetAll()
+      markDensityEdit()
+    },
+    resetLayer(layer: Parameters<typeof config.resetLayer>[0]) {
+      config.resetLayer(layer)
+      if (layer === 'user') markDensityEdit()
+    },
     remoteHydrated: computed(() => remoteHydrated.value),
     whenRemoteHydrated: () => remoteHydratedPromise,
     remoteError: computed(() => remoteError.value),

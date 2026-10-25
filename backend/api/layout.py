@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_owner
 from backend.auth.deps import require_perm, require_system, require_system_perm
+from backend.common.exceptions import ValidationError
 from backend.storage.layout_config import (
     DEFAULT_USER_ID,
     LAYOUT_CONFIG_SCHEMA_VERSION,
@@ -46,6 +47,11 @@ class UserConfigBody(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     schemaVersion: int | None = None
     layout: dict[str, Any] | None = None
+
+
+class UserDensityBody(BaseModel):
+    density: Literal["compact", "standard", "comfortable"]
+    pageKeys: list[str] = Field(min_length=1, max_length=100)
 
 
 class ValidateBody(BaseModel):
@@ -141,6 +147,19 @@ def get_user_config(page_key: str) -> ApiResponse:
         return ok(LayoutConfigRepo().get_user_config(page_key, user_id))
     except LayoutConfigValidationError as e:
         return err(400, str(e))
+
+
+@router.post("/user-density", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("layout:user-config"))])
+def sync_user_density(body: UserDensityBody) -> ApiResponse:
+    """一次性同步当前用户的页面密度，复用个人布局权限，不修改页面模板。"""
+    try:
+        data = LayoutConfigRepo().sync_user_density(
+            body.pageKeys, body.density, user_id=get_current_owner()[1],
+        )
+    except (LayoutConfigValidationError, ValidationError) as e:
+        return err(400, str(e))
+    return ok(data, msg="页面密度已统一")
 
 
 @router.post("/users/{page_key}", response_model=ApiResponse,

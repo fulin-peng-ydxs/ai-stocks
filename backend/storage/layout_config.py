@@ -14,17 +14,18 @@ import threading
 from datetime import datetime
 from typing import Any, Literal
 
+from backend.auth.context import get_current_owner
+from backend.common.exceptions import ValidationError
 from backend.common.logging import get_logger
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.pg_client import get_pg_client
-from backend.auth.context import get_current_owner
 from backend.storage.pg_ddl import (
-    DEFAULT_OWNER_USER_ID,
     DDL_APP_CONFIG,
     DDL_LAYOUT_FIELD_POLICY,
     DDL_LAYOUT_PAGE_CONFIG,
     DDL_LAYOUT_PRESET,
     DDL_LAYOUT_USER_CONFIG,
+    DEFAULT_OWNER_USER_ID,
 )
 
 log = get_logger("storage.layout_config")
@@ -1197,6 +1198,38 @@ class LayoutConfigRepo:
              cfg["schemaVersion"], datetime.now()],
         )
         return self.get_user_config(page_key, user_id)
+
+    def sync_user_density(
+        self, page_keys: list[str], density: str, *, user_id: str,
+    ) -> dict[str, Any]:
+        """原子补丁只改 density；SQL 内合并，避免读取后整份回写覆盖并发配置。"""
+        if density not in DENSITIES or not user_id:
+            raise LayoutConfigValidationError("非法密度或用户身份")
+        if not page_keys or len(page_keys) > 100:
+            raise LayoutConfigValidationError("同步页面数量须为 1 到 100")
+        keys = sorted(set(page_keys))
+        for key in keys:
+            _validate_key("page_key", key)
+        # 所有行一次提交。旧 schema 或异常结构不擅自迁移；任何一行未写入则整批回滚。
+        with self.pg.transaction() as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO layout_user_config AS target "
+                "(user_id, tenant_id, owner_user_id, page_key, config, schema_version, updated_at) "
+                "SELECT %s, %s, %s, page_key, %s, %s, CURRENT_TIMESTAMP "
+                "FROM unnest(%s::text[]) AS pages(page_key) "
+                "ON CONFLICT (user_id, page_key) DO UPDATE SET "
+                "config=(target.config::jsonb || EXCLUDED.config::jsonb)::text, "
+                "updated_at=EXCLUDED.updated_at "
+                "WHERE target.tenant_id=EXCLUDED.tenant_id "
+                "AND target.owner_user_id=EXCLUDED.owner_user_id "
+                "AND target.schema_version=EXCLUDED.schema_version "
+                "AND jsonb_typeof(target.config::jsonb)='object'",
+                [user_id, self.tenant_id, user_id, _json_dump({"density": density}),
+                 LAYOUT_CONFIG_SCHEMA_VERSION, keys],
+            )
+            if cur.rowcount != len(keys):
+                raise ValidationError("页面配置归属、版本或结构异常，未应用密度，请刷新后重试")
+        return {"pageKeys": keys, "density": density}
 
     # ── 字段开放策略（P10：元配置，不参与运行时值合并）────────────────────
     def get_field_policy_map(self) -> dict[tuple[str, str], set[str]]:

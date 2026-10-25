@@ -190,6 +190,8 @@ typography:
 
 矩阵由 `LayoutHost` 的有效 `density` 写入 `--app-density-*`，`--app-space-*` 始终是固定基础刻度。页面主体、页面设置抽屉与由页面触发的 Drawer/Dialog/Popover 共享密度；全局导航、消息通知和外观设置保持标准密度。页面不得编写私有 `.lh-density-*` 或表格密度规则。
 
+视觉环境 → 基础密度提供三档选择与“统一应用”，以“基础密度”直接作为分组标题，不再嵌套“布局”和重复事项标签。选择本身不改变页面，点击后一次性更新当前账号全部已登记页面的用户层 `density`，保留其它布局和组件值；不建立全局覆盖层、不锁定后续逐页调整。页面布局、视觉预设、系统组件三个管理页也接收密度同步，但仍不提供个人设置抽屉和用户组件配置。已打开及缓存页面立即更新，未打开页面从 PG 读取；已打开的页面 Teleport 浮层跟随其触发页更新。应用采用单事务补丁，失败整批回滚，保留选择并提供重试；字号、显式尺寸及应用外壳密度沿用原契约。
+
 间距规则：
 
 - 页面新增 `gap`、`padding`、`margin` 时优先使用 spacing token 或语义类；不得随手新增 5px、7px、9px、11px、13px、15px 这类游离节奏。
@@ -351,7 +353,7 @@ typography:
 |---|---|---|---|---|
 | `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；`size` 及内部折叠偏好由 PG `user_preference` 承接，`bodyScroll` 只允许 page 层；分组固定可折叠，首次全部展开，记忆边界见本节“设置抽屉” | registry 页面的页面设置统一复用；分组、偏好与默认值规则见[设置抽屉](#设置抽屉)。 |
 | `AppStatusDot` | `frontend/src/components/AppStatusDot.vue` | 依附主体的黄色辅助状态点 | 无直接系统组件种类 | 头像待打卡、走势历史提示、天梯热点共用；统一 warning 色、圆点几何和可访问名称，简短说明复用 AppHoverInfo；圆形入口用 top-right 角标模式及宿主定位容器，文本用 inline，不用常驻文字扩宽主体 |
-| `PageSettingsTrigger` | `frontend/src/components/PageSettingsTrigger.vue` | 页面设置统一入口 | 触发 registry 页面中的 `settings-drawer` | 仅 `pageRegistry.supportsPageSettings !== false` 的真实消费页面显示；平台布局管理页不开放个人设置，不登记假入口 |
+| `PageSettingsTrigger` | `frontend/src/components/PageSettingsTrigger.vue` | 页面设置统一入口 | 触发 registry 页面中的 `settings-drawer` | 仅 `pageRegistry.supportsPageSettings !== false` 的真实消费页面显示；平台布局管理页仅接收基础密度同步，不开放个人设置入口，不登记假入口 |
 | `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 全站抽屉唯一外壳与边界组件 | 无直接系统组件种类；内部唯一消费 `el-drawer` 和 `PageDrawerSurface` | 仅供页面设置、实时日志、资产搜索、主从窄屏回退和应用级专用抽屉直接消费；普通详情使用 AppDetailDrawer，边界与宽度见[弹窗与抽屉](#弹窗与抽屉)。 |
 | `PageDrawerSurface` | `frontend/src/components/PageDrawerSurface.vue` | 全站抽屉统一内容面板 | 无直接系统组件种类；仅由 `PageDrawer` 内部消费 | 仅由 PageDrawer 内部消费；外壳差异经语义属性和插槽表达，禁止页面复制面板外观。 |
 | `BorderStatePreview` | `frontend/src/layout/components/BorderStatePreview.vue` | 系统组件详情内的真实边界状态样板 | 无独立kind、slot或配置字段 | 仅本地展示；覆盖输入错误/禁用、无框命令主色反馈及危险/关闭例外、命令加载/选中禁用、网格列数/跨列与结果三态；不替代业务入口验收。 |
@@ -1002,6 +1004,8 @@ typography:
 | `page` | 单页面默认布局旋钮与组件默认值 | 系统管理 → 布局配置 → 页面布局 |
 | `user` | 当前登录用户的布局、组件和业务偏好 | 页面设置抽屉；PG `layout_user_config`、PG `user_preference` |
 
+用户层的批量密度同步由 `PageDensitySyncSettings` → `pageDensitySync` → `POST /api/layout/user-density` 承接，复用 `layout:user-config` 和既有 `sys_resource`，不新增权限或覆盖默认授权。服务端只合并 `density`，归属取请求上下文；前端通过 `useRemoteLayoutConfig` 排空在途保存并同步缓存实例，后续编辑仍写原页面。
+
 用户层以 PostgreSQL 为权威：页面布局和组件字段写入真实 pageKey 的 `layout_user_config`，页面业务偏好、主题、导航模式、界面比例、K 线偏好和跨页面设置抽屉偏好写入 `user_preference`。回测日期、方案选择和当次运行参数只属于会话态，不得写入用户偏好。localStorage 只允许作为未登录/离线 fallback、旧偏好迁移源和登录前主题读取，不得作为登录用户配置权威，也不得保存页面查询现场。列表进入详情再返回所需的现场统一使用按租户和用户隔离的 sessionStorage：刷新可恢复，返回页消费一次，关闭 Tab、退出登录或切换身份后清理。
 
 页面状态生命周期统一按语义选择入口：抽屉默认值投影到当前 Vue 实例时使用 `useDefaultedSessionValue`，由 KeepAlive 保留的只是该实例内存，刷新或实例重建后重新应用默认；需要分享、前进后退或刷新复现的查询状态写入 URL；确需跨路由返回且不适合暴露在 URL 的一次性现场使用 `utils/pageSessionStorage.ts`，页面不得直接调用 localStorage/sessionStorage。`pageSessionStorage` 统一负责 page namespace、租户/用户隔离、旧键迁移和退出/身份切换清理，业务 Store 只负责状态结构及消费时机。
@@ -1321,16 +1325,16 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `role-manage` | `RoleManageView`（角色管理） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` |
 | `menu-manage` | `MenuResourceView`（菜单与功能） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / nested:`wide-table` |
 | `tenant-manage` | `TenantManageView`（租户管理） | `list` | `density` | action:`filter-bar` / main:`data-table` |
-| `layout-presets` | `LayoutPresetsView`（视觉预设） | `list` | 暂无 | action:`toolbar` / main:`data-table(growMain)` |
-| `layout-pages` | `LayoutPagesView`（页面布局） | `workbench` | 暂无 | action:`toolbar` / main:`tabs(growMain)` |
-| `layout-components` | `LayoutComponentsView`（系统组件） | `detail` | 暂无 | action:`toolbar` / main:`section` |
+| `layout-presets` | `LayoutPresetsView`（视觉预设） | `list` | `density`（统一应用） | action:`toolbar` / main:`data-table(growMain)` |
+| `layout-pages` | `LayoutPagesView`（页面布局） | `workbench` | `density`（统一应用） | action:`toolbar` / main:`tabs(growMain)` |
+| `layout-components` | `LayoutComponentsView`（系统组件） | `detail` | `density`（统一应用） | action:`toolbar` / main:`section` |
 | `audit-log` | `AuditLogView`（审计日志） | `list` | `density` | action:`toolbar` / main:`kpi-grid` / main:`filter-bar` / main:`wide-table` / overlay:`detail` |
 | `data-dictionary` | `DataDictionaryView`（数据字典） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / nested:`simple-list` / nested:`data-table` / overlay:`form` / overlay:`form` / overlay:`dialog` |
 | `sectors` | `SectorsView`（板块行情） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / nested:`wide-table` / nested:`chart` |
 | `sectors-detail` | `SectorDetailView`（板块详情） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / nested:`section` / nested:`chart` / nested:`data-table` |
 <!-- page-registry:end -->
 
-除 `supportsPageSettings=false` 的视觉预设、页面布局、系统组件三个平台管理页外，registry 页面必须有 `settings-drawer` overlay slot。三个管理页只管理系统配置，不开放或持久化个人页面设置。组件字段、slot 结构、候选项和明确例外的事实源在 `COMPONENT_FIELD_DEFS`、slot `config` 和 `componentMeta`，不要在本表重复维护。
+除 `supportsPageSettings=false` 的视觉预设、页面布局、系统组件三个平台管理页外，registry 页面必须有 `settings-drawer` overlay slot。三个管理页只管理系统配置，不开放个人设置入口或个人组件配置；仅通过视觉环境接收基础密度同步，并按真实 pageKey 保存和读取该密度。组件字段、slot 结构、候选项和明确例外的事实源在 `COMPONENT_FIELD_DEFS`、slot `config` 和 `componentMeta`，不要在本表重复维护。
 
 ## 10. 适用范围与例外
 

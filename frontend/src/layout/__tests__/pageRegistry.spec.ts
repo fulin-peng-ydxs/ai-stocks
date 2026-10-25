@@ -765,7 +765,8 @@ describe('页面注册表完整性', () => {
         const source = sourceForPage(entry.pageKey)
         expect(source).not.toContain('PageSettingsTrigger')
         expect(source).not.toContain('PageSettingsDrawer')
-        expect(source).not.toContain('useRemoteLayoutConfig')
+        expect(source).toContain('useRemoteLayoutConfig')
+        expect(entry.layout.editable.map((knob) => knob.path)).toEqual(['density'])
         continue
       }
       expect(slot, `${entry.pageKey} 缺少 settings overlay slot`).toBeTruthy()

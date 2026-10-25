@@ -23,6 +23,7 @@ import {
   type LayoutPresetRecord,
 } from '@/api/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import LayoutConfigTransferPanel from '@/layout/components/LayoutConfigTransferPanel.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -55,7 +56,8 @@ const SHAPE_KEYS: { key: keyof StyleTokenConfig; label: string; max: number }[] 
 ]
 const VISUAL_PRESET_PATH = /^tokens\.(?:light|dark)\.(?:primary|success|warning|danger|marketUp|marketDown|border|borderStrong|shadow)$|^tokens\.shared\.(?:cardRadius|controlRadius)$/
 
-const presetsLayout = getPageLayout('layout-presets')
+// 仅接收基础密度同步，不增加个人设置抽屉或组件配置。
+const { effective: presetsLayout } = useRemoteLayoutConfig(getPageLayout('layout-presets'))
 // 平台布局管理页不开放用户级组件配置；表格仍显式消费统一边框契约。
 const tableBorder = (_slotId: string) => false
 

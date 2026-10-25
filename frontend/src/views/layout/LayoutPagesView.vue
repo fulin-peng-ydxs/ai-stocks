@@ -38,6 +38,7 @@ import {
   type LayoutPageConfig,
 } from '@/api/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import ComponentAutoSettings from '@/components/ComponentAutoSettings.vue'
 import HelpHint from '@/components/HelpHint.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
@@ -67,7 +68,8 @@ import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 type TabKey = 'workbench' | 'import' | 'report'
 type ExportScope = 'page' | 'user' | 'effective'
 
-const pagesLayout = getPageLayout('layout-pages')
+// 仅接收基础密度同步，不增加个人设置抽屉或组件配置。
+const { effective: pagesLayout } = useRemoteLayoutConfig(getPageLayout('layout-pages'))
 
 const managedPages = listManagedPages()
 

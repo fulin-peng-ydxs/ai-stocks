@@ -4,7 +4,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import LayoutPresetsView from '../layout/LayoutPresetsView.vue'
 
-const api = vi.hoisted(() => ({ listLayoutPresets: vi.fn(), saveLayoutPreset: vi.fn(), deleteLayoutPreset: vi.fn() }))
+const api = vi.hoisted(() => ({
+  listLayoutPresets: vi.fn(), saveLayoutPreset: vi.fn(), deleteLayoutPreset: vi.fn(),
+  getEffectiveLayoutConfig: vi.fn().mockResolvedValue({ layers: [], componentFieldPolicies: [] }),
+}))
 vi.mock('@/api/layout', async (importOriginal) => ({
   ...await importOriginal<object>(), ...api,
 }))
