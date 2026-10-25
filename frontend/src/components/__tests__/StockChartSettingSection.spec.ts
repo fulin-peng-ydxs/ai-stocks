@@ -101,6 +101,7 @@ describe('StockChartSettingSection', () => {
     })
 
     expect(wrapper.text()).toContain('K线 100%（单图无需配置）')
+    expect(wrapper.find('[data-settings-fold-node]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="chart-test-save-default-ratios"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="chart-test-save-current-ratios"]').exists()).toBe(false)
   })

@@ -21,6 +21,46 @@ function group(wrapper: ReturnType<typeof mount>, title: string) {
 }
 
 describe('SettingsGroup 递归分组控制', () => {
+  it('按真实插槽父级计算层级，忽略子节点手工层级，固定组仍保持缩进', async () => {
+    const wrapper = mount(defineComponent({
+      components: { SettingsGroup },
+      template: `<SettingsGroup title="根">
+        <div><SettingsGroup title="固定子组" :level="9" :collapsible="false">
+          <SettingsGroup title="孙组" :level="1">内容</SettingsGroup>
+        </SettingsGroup></div>
+      </SettingsGroup>`,
+    }), { global: { stubs: { ElIcon: true } } })
+    await nextTick()
+    expect(group(wrapper, '根').attributes('data-settings-group-level')).toBe('1')
+    expect(group(wrapper, '固定子组').attributes('data-settings-group-level')).toBe('2')
+    expect(group(wrapper, '固定子组').classes()).toContain('sg-nested')
+    expect(group(wrapper, '固定子组').get('.sg-head').attributes('role')).toBeUndefined()
+    expect(group(wrapper, '孙组').attributes('data-settings-group-level')).toBe('3')
+    // 批量操作越过不可折叠包装器，仅改变最近可折叠子组。
+    await wrapper.get('button[aria-label="根：收起下级分组"]').trigger('click')
+    expect(group(wrapper, '孙组').attributes('data-settings-group-open')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('无标题包装器不占可见层级或缩进，动态子组移除后取消批量入口', async () => {
+    const wrapper = mount(defineComponent({
+      components: { SettingsGroup },
+      setup: () => ({ visible: ref(true) }),
+      template: `<SettingsGroup title="根">
+        <SettingsGroup :level="9"><SettingsGroup v-if="visible" title="子组">内容</SettingsGroup></SettingsGroup>
+      </SettingsGroup>`,
+    }), { global: { stubs: { ElIcon: true } } })
+    await nextTick()
+    expect(wrapper.get('.sg-transparent').classes()).not.toContain('sg-nested')
+    expect(group(wrapper, '子组').attributes('data-settings-group-level')).toBe('2')
+    await wrapper.get('button[aria-label="根：收起下级分组"]').trigger('click')
+    expect(group(wrapper, '子组').attributes('data-settings-group-open')).toBe('false')
+    wrapper.vm.visible = false
+    await nextTick()
+    expect(wrapper.find('button[aria-label^="根："]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('每个存在下级的父节点都有自己的批量收起与展开入口', async () => {
     const wrapper = mount(TreeFixture, { global: { stubs: { ElIcon: true } } })
     await nextTick()

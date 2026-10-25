@@ -281,7 +281,7 @@ function mountConfigPanelDemo(layer: 'page' | 'user' = 'user', preferences?: Set
   return { wrapper, setComponentKnob, state }
 }
 
-function mountChartDemo(withRuntime = false) {
+function mountChartDemo(withRuntime = false, preferences?: SettingsFoldPreferences) {
   const setComponentKnob = vi.fn()
   const wrapper = mount(ComponentAutoSettings as Component, {
     props: {
@@ -332,12 +332,14 @@ function mountChartDemo(withRuntime = false) {
       },
     },
     global: {
+      provide: preferences ? { [SETTINGS_FOLD_PREFERENCES as symbol]: preferences } : {},
       stubs: {
-        SettingsGroup: {
+        SettingsGroup: preferences ? false : {
           props: ['title'],
           template: '<section><h3 v-if="title">{{ title }}</h3><slot /></section>',
         },
         SourceTag: true,
+        ElIcon: true,
         AppRowActions: true,
         ElInputNumber: {
           props: ['modelValue', 'min', 'max'],
@@ -352,7 +354,7 @@ function mountChartDemo(withRuntime = false) {
         ElCheckboxGroup: true,
         ElCheckbox: true,
         ElEmpty: true,
-        StockChartSettingSection: {
+        StockChartSettingSection: preferences ? false : {
           props: ['slot2', 'slot3', 'defaultRatios', 'currentRatios', 'canApplyCurrentRatios', 'currentRatiosChanged', 'disableCurrentRatios'],
           emits: ['change', 'saveDefaultRatios', 'applyCurrentRatios'],
           template: '<div><button class="stock-chart-stub" :data-current-ratios="currentRatios.join(\'|\')" @click="$emit(\'change\', \'slot2\', \'macd\')">chart</button><button class="stock-chart-current-stub" @click="$emit(\'change\', \'slot2\', \'volume\')">current</button><button class="stock-chart-ratio-stub" @click="$emit(\'saveDefaultRatios\', [0.52, 0.28, 0.2])">ratio</button><button class="stock-chart-apply-stub" :disabled="!canApplyCurrentRatios || !currentRatiosChanged || disableCurrentRatios" @click="$emit(\'applyCurrentRatios\')">apply</button></div>',
@@ -422,6 +424,38 @@ function mountMasterDemo(runtimeRatio?: number, save?: () => Promise<boolean | v
 }
 
 describe('ComponentAutoSettings', () => {
+  it('复合图表字段逐级折叠、缩进并记忆，关闭父级不改孙级或卸载控件', async () => {
+    const closed = reactive(new Set<string>())
+    const preferences: SettingsFoldPreferences = {
+      enabled: () => true,
+      isOpen: key => !closed.has(key),
+      setOpen: (key, open) => { if (open) closed.delete(key); else closed.add(key) },
+    }
+    const { wrapper, setComponentKnob } = mountChartDemo(false, preferences)
+    await flushPromises()
+    const group = (title: string) => wrapper.get(`[data-settings-group-title="${title}"]`)
+    expect(group('K 线范围').attributes('data-settings-group-level')).toBe('3')
+    expect(group('图表组合与内部比例').attributes('data-settings-group-level')).toBe('3')
+    expect(group('默认高度比例').attributes('data-settings-group-level')).toBe('4')
+    const input = group('默认高度比例').get('.number-stub').element
+    await group('默认高度比例').get('.sg-head').trigger('click')
+    await wrapper.get('button[aria-label="板块指数：收起下级分组"]').trigger('click')
+    expect(group('K 线范围').attributes('data-settings-group-open')).toBe('false')
+    await wrapper.get('button[aria-label="板块指数：展开下级分组"]').trigger('click')
+    expect(group('默认高度比例').attributes('data-settings-group-open')).toBe('false')
+    expect(group('默认高度比例').get('.number-stub').element).toBe(input)
+    expect(closed.has('component:chart:stockChart:heightRatios')).toBe(true)
+    expect(setComponentKnob).not.toHaveBeenCalled()
+    wrapper.unmount()
+    const restored = mountChartDemo(false, preferences).wrapper
+    await flushPromises()
+    expect(restored.get('[data-settings-group-title="默认高度比例"]').attributes('data-settings-group-open')).toBe('false')
+    await restored.setProps({ showSlotTitle: false, collapsibleSlot: false })
+    expect(restored.get('.sg-transparent').classes()).not.toContain('sg-nested')
+    expect(restored.get('[data-settings-group-title="K 线范围"]').attributes('data-settings-group-level')).toBe('2')
+    restored.unmount()
+  })
+
   it('settings-drawer 折叠策略不进入组件设置', () => {
     const wrapper = mountAuto(false)
     expect(wrapper.text()).not.toContain('默认折叠段')

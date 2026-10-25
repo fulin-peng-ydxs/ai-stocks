@@ -8,7 +8,7 @@ import AppSelect from '@/components/AppSelect.vue'
  * 写值统一经组件配置层（config.setComponentKnob），与配置中心/后端校验同源。
  *
  * 折叠规则（统一）：slot 是一个可折叠组；多行清单类特性（列显隐、默认折叠候选）作为可折叠子组；
- * 单字段为叶子不折叠。页面布局编辑器一次只聚焦一个 slot，slot 头作锚点不折叠（collapsibleSlot=false）。
+ * 复合字段均为非叶子子组，单设置及其控件选项为叶子不折叠。页面布局编辑器一次只聚焦一个 slot，slot 头作锚点不折叠（collapsibleSlot=false）。
  */
 import { computed, inject, nextTick, ref, watch } from 'vue'
 import { SEARCH_RUNTIME_META } from '@/layout/searchContext'
@@ -90,7 +90,7 @@ const props = withDefaults(
     collapsibleSlot?: boolean
     /**
      * 是否渲染 slot 名作为分组标题。抽屉(多 slot)需要区分故为 true；页面布局编辑器聚焦单 slot、
-     * 且外层已有 slot 卡片，置 false 去掉重复标题（此时内部「列显隐」升为 level 2）。
+     * 且外层已有 slot 卡片，置 false 去掉重复标题；匿名包装器不额外占可见层级。
      */
     showSlotTitle?: boolean
     /** 可选：高亮并滚动到该 slot 组（页面布局「点击预览即配置」用）。 */
@@ -615,36 +615,42 @@ function setSort(slotId: string, field: string, order: string): void {
         <AppRowActions v-if="clearable && isOverridden(s.slotId, 'commonFields')" :actions="clearFieldActions(s.slotId, 'commonFields')" :inline-limit="1" />
         <el-button v-if="applyFailed(s.slotId, 'commonFields')" text :disabled="selectedCommonFields(s).length !== 2" :loading="isApplying(s.slotId, 'commonFields')" @click="runApply(s.slotId, 'commonFields', () => {})">保存失败，重试</el-button>
       </PageSettingItem>
-      <template v-if="s.fields.includes('klineRangePreferences')">
-        <PageSettingItem label="K 线范围" :hint="fieldHelp(s, 'klineRangePreferences')">
-          <template #actions>
-            <SourceTag
-              v-if="srcOf(s.slotId, 'klineRangePreferences')"
-              :source="srcOf(s.slotId, 'klineRangePreferences')!"
-              :values="srcValuesOf(s.slotId, 'klineRangePreferences')"
-            />
-          </template>
-        </PageSettingItem>
+      <SettingsGroup
+        v-if="s.fields.includes('klineRangePreferences')"
+        title="K 线范围"
+        :fold-key="`component:${s.slotId}:klineRangePreferences`"
+        :hint="fieldHelp(s, 'klineRangePreferences')"
+      >
+        <template #actions>
+          <SourceTag
+            v-if="srcOf(s.slotId, 'klineRangePreferences')"
+            :source="srcOf(s.slotId, 'klineRangePreferences')!"
+            :values="srcValuesOf(s.slotId, 'klineRangePreferences')"
+          />
+        </template>
         <KlineSettingSection />
-      </template>
+      </SettingsGroup>
 
-      <template v-if="s.fields.includes('stockAnalysis')">
-        <PageSettingItem label="走势分析默认项" :hint="fieldHelp(s, 'stockAnalysis')">
-          <template #actions>
-            <span class="ca-actions">
-              <SourceTag
-                v-if="srcOf(s.slotId, 'stockAnalysis')"
-                :source="srcOf(s.slotId, 'stockAnalysis')!"
-                :values="srcValuesOf(s.slotId, 'stockAnalysis')"
-              />
-              <AppRowActions
-                v-if="clearable && isOverridden(s.slotId, 'stockAnalysis')"
-                :actions="clearFieldActions(s.slotId, 'stockAnalysis')"
-                :inline-limit="1"
-              />
-            </span>
-          </template>
-        </PageSettingItem>
+      <SettingsGroup
+        v-if="s.fields.includes('stockAnalysis')"
+        title="走势分析默认项"
+        :fold-key="`component:${s.slotId}:stockAnalysis`"
+        :hint="fieldHelp(s, 'stockAnalysis')"
+      >
+        <template #actions>
+          <span class="ca-actions">
+            <SourceTag
+              v-if="srcOf(s.slotId, 'stockAnalysis')"
+              :source="srcOf(s.slotId, 'stockAnalysis')!"
+              :values="srcValuesOf(s.slotId, 'stockAnalysis')"
+            />
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, 'stockAnalysis')"
+              :actions="clearFieldActions(s.slotId, 'stockAnalysis')"
+              :inline-limit="1"
+            />
+          </span>
+        </template>
         <StockAnalysisDefaultFields
           :default-chart-mode="stockAnalysisValue(s.slotId).defaultChartMode"
           :compare-range="stockAnalysisValue(s.slotId).compareRange"
@@ -659,25 +665,28 @@ function setSort(slotId: string, field: string, order: string): void {
           @update:default-compare-metric="(value) => setStockAnalysisField(s.slotId, 'defaultCompareMetric', value)"
           @update:show-analysis-panel="(value) => setStockAnalysisField(s.slotId, 'showAnalysisPanel', value)"
         />
-      </template>
+      </SettingsGroup>
 
-      <template v-if="s.fields.includes('sectorAnalysis')">
-        <PageSettingItem label="板块走势默认项" :hint="fieldHelp(s, 'sectorAnalysis')">
-          <template #actions>
-            <span class="ca-actions">
-              <SourceTag
-                v-if="srcOf(s.slotId, 'sectorAnalysis')"
-                :source="srcOf(s.slotId, 'sectorAnalysis')!"
-                :values="srcValuesOf(s.slotId, 'sectorAnalysis')"
-              />
-              <AppRowActions
-                v-if="clearable && isOverridden(s.slotId, 'sectorAnalysis')"
-                :actions="clearFieldActions(s.slotId, 'sectorAnalysis')"
-                :inline-limit="1"
-              />
-            </span>
-          </template>
-        </PageSettingItem>
+      <SettingsGroup
+        v-if="s.fields.includes('sectorAnalysis')"
+        title="板块走势默认项"
+        :fold-key="`component:${s.slotId}:sectorAnalysis`"
+        :hint="fieldHelp(s, 'sectorAnalysis')"
+      >
+        <template #actions>
+          <span class="ca-actions">
+            <SourceTag
+              v-if="srcOf(s.slotId, 'sectorAnalysis')"
+              :source="srcOf(s.slotId, 'sectorAnalysis')!"
+              :values="srcValuesOf(s.slotId, 'sectorAnalysis')"
+            />
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, 'sectorAnalysis')"
+              :actions="clearFieldActions(s.slotId, 'sectorAnalysis')"
+              :inline-limit="1"
+            />
+          </span>
+        </template>
         <SectorAnalysisDefaultFields
           :default-chart-mode="sectorAnalysisValue(s.slotId).defaultChartMode"
           :benchmark-code="sectorAnalysisValue(s.slotId).benchmarkCode"
@@ -692,11 +701,12 @@ function setSort(slotId: string, field: string, order: string): void {
           @update:default-compare-metric="(value) => setSectorAnalysisField(s.slotId, 'defaultCompareMetric', value)"
           @update:compare-window="(value) => setSectorAnalysisField(s.slotId, 'compareWindow', value)"
         />
-      </template>
+      </SettingsGroup>
 
-      <PageSettingItem
+      <SettingsGroup
         v-if="s.fields.includes('stockChart')"
-        label="图表组合与内部比例"
+        title="图表组合与内部比例"
+        :fold-key="`component:${s.slotId}:stockChart`"
         :hint="fieldHelp(s, 'stockChart')"
       >
         <template #actions>
@@ -714,6 +724,7 @@ function setSort(slotId: string, field: string, order: string): void {
           </span>
         </template>
         <StockChartSettingSection
+          :fold-key-prefix="`component:${s.slotId}:stockChart`"
           :slot2="stockChartValue(s.slotId).slot2"
           :slot3="stockChartValue(s.slotId).slot3"
           :chart-types="stockChartTypes(s.slotId)"
@@ -728,13 +739,17 @@ function setSort(slotId: string, field: string, order: string): void {
           @save-default-ratios="(ratios) => setStockChartRatios(s.slotId, ratios)"
           @apply-current-ratios="saveStockChartCurrentRatios(s.slotId)"
         />
-      </PageSettingItem>
+      </SettingsGroup>
 
       <template v-if="s.fields.includes('defaultSort') && s.meta.sortFields?.length">
         <!-- field:order 模式：字段 + 方向 -->
-        <template v-if="s.meta.sortHasDirection !== false">
-          <PageSettingItem label="默认排序字段" :hint="fieldHelp(s, 'defaultSort')">
-            <template #actions>
+        <SettingsGroup
+          v-if="s.meta.sortHasDirection !== false"
+          title="默认排序"
+          :hint="fieldHelp(s, 'defaultSort')"
+          :fold-key="`component:${s.slotId}:defaultSort`"
+        >
+          <template #actions>
             <span class="ca-actions">
               <SourceTag
                 v-if="srcOf(s.slotId, 'defaultSort')"
@@ -747,38 +762,39 @@ function setSort(slotId: string, field: string, order: string): void {
                 :inline-limit="1"
               />
             </span>
-            </template>
-          <PageSegmented
-            v-if="s.meta.sortFields.length <= SEGMENTED_OPTION_LIMIT"
-            :model-value="sortField(s.slotId)"
-            :options="s.meta.sortFields.map((f) => ({ label: f.label, value: f.key }))"
-            :aria-label="`${s.label}：默认排序字段`"
-            @update:model-value="(v) => setSort(s.slotId, String(v), sortOrder(s.slotId))"
-          />
-          <AppSelect
-            v-else
-            :model-value="sortField(s.slotId)"
-            class="ca-select"
-            filterable
-            @update:model-value="(v: string) => setSort(s.slotId, String(v), sortOrder(s.slotId))"
-          >
-            <el-option
-              v-for="field in s.meta.sortFields"
-              :key="field.key"
-              :label="field.label"
-              :value="field.key"
+          </template>
+          <PageSettingItem label="默认排序字段">
+            <PageSegmented
+              v-if="s.meta.sortFields.length <= SEGMENTED_OPTION_LIMIT"
+              :model-value="sortField(s.slotId)"
+              :options="s.meta.sortFields.map((f) => ({ label: f.label, value: f.key }))"
+              :aria-label="`${s.label}：默认排序字段`"
+              @update:model-value="(v) => setSort(s.slotId, String(v), sortOrder(s.slotId))"
             />
-          </AppSelect>
+            <AppSelect
+              v-else
+              :model-value="sortField(s.slotId)"
+              class="ca-select"
+              filterable
+              @update:model-value="(v: string) => setSort(s.slotId, String(v), sortOrder(s.slotId))"
+            >
+              <el-option
+                v-for="field in s.meta.sortFields"
+                :key="field.key"
+                :label="field.label"
+                :value="field.key"
+              />
+            </AppSelect>
           </PageSettingItem>
           <PageSettingItem label="默认排序方向">
-          <PageSegmented
-            :model-value="sortOrder(s.slotId)"
-            :options="ORDER_OPTIONS"
-            :aria-label="`${s.label}：默认排序方向`"
-            @update:model-value="(v) => setSort(s.slotId, sortField(s.slotId), String(v))"
-          />
+            <PageSegmented
+              :model-value="sortOrder(s.slotId)"
+              :options="ORDER_OPTIONS"
+              :aria-label="`${s.label}：默认排序方向`"
+              @update:model-value="(v) => setSort(s.slotId, sortField(s.slotId), String(v))"
+            />
           </PageSettingItem>
-        </template>
+        </SettingsGroup>
         <!-- 枚举模式：排序模式直接存 key（无方向，如 board 的 score/rank） -->
         <PageSettingItem v-else label="默认排序" :hint="fieldHelp(s, 'defaultSort')">
           <template #actions>
@@ -1039,7 +1055,6 @@ function setSort(slotId: string, field: string, order: string): void {
         title="列显隐"
         :fold-key="`component:${s.slotId}:hiddenColumns`"
         :hint="fieldHelp(s, 'hiddenColumns')"
-        :level="showSlotTitle ? 3 : 2"
       >
         <template #actions>
           <span class="ca-actions">
@@ -1070,7 +1085,6 @@ function setSort(slotId: string, field: string, order: string): void {
         v-if="s.fields.includes('defaultCollapsed')"
         :title="s.kind === 'config-panel' ? '默认折叠分区' : '默认折叠段'"
         :fold-key="`component:${s.slotId}:defaultCollapsed`"
-        :level="showSlotTitle ? 3 : 2"
         :hint="fieldHelp(s, 'defaultCollapsed')"
       >
         <template #actions>
@@ -1101,7 +1115,6 @@ function setSort(slotId: string, field: string, order: string): void {
               v-if="group.children.length"
               :title="group.label"
               :fold-key="`component:${s.slotId}:defaultCollapsed:${group.value}`"
-              :level="showSlotTitle ? 4 : 3"
             >
               <template #title>
                 <!-- 标题内的选值控件不能触发分组展开或键盘激活。 -->

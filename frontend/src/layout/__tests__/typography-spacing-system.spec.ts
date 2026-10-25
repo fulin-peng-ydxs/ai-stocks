@@ -303,7 +303,7 @@ describe('字体与间距设计契约', () => {
     expect(detailDrawer).not.toMatch(/\.app-detail-drawer__heading h2\s*\{/)
     expect(appShell).toContain('title="视觉环境"')
     expect(appShell).toContain('subtitle="调整界面比例、阅读光线与导航方式"')
-    expect(group).toContain("'sg-nested': level > 1")
+    expect(group).toContain("'sg-nested': !transparent() && effectiveLevel > 1")
     expect(group).toMatch(/\.sg-l1 > \.sg-head \.sg-title\s*\{[\s\S]*?--app-settings-group-level-one-font-size[\s\S]*?var\(--app-font-size-section-title\)[\s\S]*?font-weight: var\(--app-font-weight-section\)/)
     expect(group).toContain('border-left: 1px solid var(--page-settings-section-border)')
     expect(group).toContain('font-size: var(--app-font-size-body)')

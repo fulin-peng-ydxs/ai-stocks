@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsApplyButton from '@/components/PageSettingsApplyButton.vue'
+import SettingsGroup from '@/components/SettingsGroup.vue'
+import AppControlRow from '@/components/AppControlRow.vue'
 import type {
   AuxiliaryChartSlot,
   AuxiliaryChartType,
@@ -20,6 +22,8 @@ const props = withDefaults(defineProps<{
   disableCurrentRatios?: boolean
   savingCurrentRatios?: boolean
   testIdPrefix?: string
+  /** 折叠偏好的稳定业务路径，与标题和图表数量无关。 */
+  foldKeyPrefix?: string
 }>(), {
   canApplyCurrentRatios: true,
   currentRatiosChanged: true,
@@ -143,39 +147,41 @@ watch(
         @update:model-value="emit('change', 'slot3', $event)"
       />
     </PageSettingItem>
-    <div class="ratio-setting">
-      <div class="ratio-label">{{ canApplyCurrentRatios === false ? '默认高度比例' : '已配置高度比例' }}</div>
+    <PageSettingItem v-if="chartTypes.length === 1" :label="canApplyCurrentRatios === false ? '默认高度比例' : '已配置高度比例'">
+      <div class="fixed-chart-value">K线 100%（单图无需配置）</div>
+    </PageSettingItem>
+    <SettingsGroup
+      v-else
+      :title="canApplyCurrentRatios === false ? '默认高度比例' : '已配置高度比例'"
+      :fold-key="foldKeyPrefix ? `${foldKeyPrefix}:heightRatios` : undefined"
+    >
       <div class="ratio-composition">当前组合：{{ chartTypes.map((type) => chartTypeLabels[type]).join(' / ') }}</div>
-      <div v-if="chartTypes.length === 1" class="fixed-chart-value">K线 100%（单图无需配置）</div>
-      <template v-else>
-        <div class="ratio-inputs">
-          <label v-for="(type, index) in chartTypes" :key="type" class="ratio-input">
-            <span>{{ chartTypeLabels[type] }}</span>
-            <el-input-number
-              :model-value="ratioDraft[index]"
-              :min="1"
-              :max="100 - (chartTypes.length - 1)"
-              :step="1"
-              :precision="0"
-              controls-position="right"
-              :aria-label="`${chartTypeLabels[type]}${canApplyCurrentRatios === false ? '默认' : '已配置'}高度百分比`"
-              @update:model-value="updateRatio(index, $event)"
-            />
-            <span>%</span>
-          </label>
-        </div>
-        <div class="ratio-summary">合计 {{ ratioTotal }}%</div>
-        <div class="ratio-actions">
-          <PageSettingsApplyButton
-            label="使用页面当前比例"
-            :disabled="canApplyCurrentRatios === false || currentRatiosChanged === false || disableCurrentRatios"
-            :loading="savingCurrentRatios"
-            :test-id="`${testIdPrefix || 'chart'}-save-current-ratios`"
-            @click="useCurrentRatios"
+      <PageSettingItem v-for="(type, index) in chartTypes" :key="type" :label="chartTypeLabels[type]" layout="inline">
+        <AppControlRow>
+          <el-input-number
+            :model-value="ratioDraft[index]"
+            :min="1"
+            :max="100 - (chartTypes.length - 1)"
+            :step="1"
+            :precision="0"
+            controls-position="right"
+            :aria-label="`${chartTypeLabels[type]}${canApplyCurrentRatios === false ? '默认' : '已配置'}高度百分比`"
+            @update:model-value="updateRatio(index, $event)"
           />
-        </div>
-      </template>
-    </div>
+          <span>%</span>
+        </AppControlRow>
+      </PageSettingItem>
+      <div class="ratio-summary">合计 {{ ratioTotal }}%</div>
+      <div class="ratio-actions">
+        <PageSettingsApplyButton
+          label="使用页面当前比例"
+          :disabled="canApplyCurrentRatios === false || currentRatiosChanged === false || disableCurrentRatios"
+          :loading="savingCurrentRatios"
+          :test-id="`${testIdPrefix || 'chart'}-save-current-ratios`"
+          @click="useCurrentRatios"
+        />
+      </div>
+    </SettingsGroup>
   </div>
 </template>
 
@@ -190,11 +196,6 @@ watch(
   font-size: var(--app-font-size-table);
   line-height: var(--app-line-height-comfy);
 }
-.ratio-label {
-  color: var(--page-settings-text-subtle);
-  font-size: var(--app-font-size-table);
-  font-weight: var(--app-font-weight-medium);
-}
 .fixed-chart-value {
   min-height: 38px;
   display: flex;
@@ -207,28 +208,9 @@ watch(
   font-size: var(--app-font-size-table);
   font-weight: var(--app-font-weight-section);
 }
-.ratio-setting {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-2);
-  padding-top: var(--app-space-2);
-  border-top: 1px solid var(--page-settings-seg-active-border);
-}
 .ratio-composition,
 .ratio-summary {
   color: var(--page-settings-text-subtle);
-  font-size: var(--app-font-size-table);
-}
-.ratio-inputs {
-  display: grid;
-  gap: var(--app-space-2);
-}
-.ratio-input {
-  display: grid;
-  grid-template-columns: minmax(52px, 1fr) 116px 14px;
-  align-items: center;
-  gap: var(--app-space-2);
-  color: var(--page-settings-text);
   font-size: var(--app-font-size-table);
 }
 .ratio-actions {

@@ -21,6 +21,7 @@ const props = withDefaults(
     title?: string
     hint?: string
     badge?: string
+    /** 仅无视觉父组时的宿主起始层级；内部层级由共享树自动计算。 */
     level?: number
     collapsible?: boolean
     defaultOpen?: boolean
@@ -43,6 +44,7 @@ watch(
   },
 )
 const foldable = () => props.collapsible && !!props.title
+const transparent = () => !props.title && !props.badge
 const preferences = inject(SETTINGS_FOLD_PREFERENCES, undefined)
 const remembered = computed(() => props.foldKey && foldable() && preferences?.enabled() ? preferences : undefined)
 const openState = computed(() => props.modelValue
@@ -64,9 +66,10 @@ function toggle(): void {
 const {
   allChildGroupsClosed,
   hasChildGroups,
+  level: effectiveLevel,
   setRootElement,
   toggleChildGroups,
-} = useSettingsFoldTree(openState, setOpen)
+} = useSettingsFoldTree(openState, setOpen, { rootLevel: () => props.level, transparent, foldable })
 // 与折叠树使用同一真实 DOM 边界，避免插槽的 Vue 归属跨过视觉兄弟层级。
 function setGroupRootElement(element: Element | ComponentPublicInstance | null) {
   setRootElement(element)
@@ -83,20 +86,22 @@ const childToggleLabel = computed(() => (
     :ref="setGroupRootElement"
     class="sg"
     :class="[
-      `sg-l${level}`,
+      !transparent() && `sg-l${effectiveLevel}`,
       {
-        'sg-nested': level > 1,
+        'sg-nested': !transparent() && effectiveLevel > 1,
+        'sg-transparent': transparent(),
         'sg-open': openState || !foldable(),
       },
     ]"
     data-settings-fold-node
+    :data-settings-group-level="transparent() ? undefined : effectiveLevel"
     :data-settings-group-title="title"
     :data-settings-group-open="openState"
   >
     <div
       v-if="title || badge"
       class="sg-head"
-      :class="{ 'sg-foldable': foldable(), 'app-interaction-disclosure': foldable(), 'sg-top': level === 1 }"
+      :class="{ 'sg-foldable': foldable(), 'app-interaction-disclosure': foldable(), 'sg-top': effectiveLevel === 1 }"
       :aria-expanded="foldable() ? openState : undefined"
       :role="foldable() ? 'button' : undefined"
       :tabindex="foldable() ? 0 : undefined"
@@ -170,7 +175,7 @@ const childToggleLabel = computed(() => (
   font-weight: var(--app-font-weight-section);
   color: var(--page-settings-text);
 }
-.sg-l3 > .sg-head .sg-title {
+.sg-nested:not(.sg-l2) > .sg-head .sg-title {
   font-size: var(--app-font-size-body);
   font-weight: var(--app-font-weight-medium);
   color: var(--page-settings-text-subtle);
@@ -221,6 +226,7 @@ const childToggleLabel = computed(() => (
 }
 .sg-tail {
   margin-left: auto;
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: var(--app-space-2);
