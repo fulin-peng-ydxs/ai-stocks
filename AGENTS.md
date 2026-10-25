@@ -6,6 +6,7 @@
 - `CLAUDE.md` 只作为 Claude Code 薄入口，避免复制本文件内容；仓库事实以代码、`README.md`、`DESIGN.md` 和 `agent-works/architecture/` 为准。
 - 功能需求、计划、开发留痕、业务核查和 SQL 归档放入 `agent-works/{feature-slug}/`；同一功能复用同一目录。
 - 前端页面规范以 `DESIGN.md` 和 `agent-works/configurable-layout-system/page-template.md` 为入口，不在本文件重复细则。
+- 本文件不承载完整业务架构、视觉配方或阶段验收记录；稳定执行约束变更更新本文件，领域实现变更更新对应事实文档，测试结果留在当次交付中。
 
 ## 项目概览
 
@@ -116,12 +117,9 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 - 新增布局、校验、配置合并或权限消费逻辑时，同步补充 Vitest。
 - 涉及页面、组件、样式、表格、弹窗、抽屉时，计划必须说明是否触发页面设计闭环和组件/布局维护矩阵。新页面和布局改造必须完成 `page-template.md`「响应式设计」与关键视口复核，遵守 `DESIGN.md` §8 信息降级与交付门禁；不得以响应式画像登记代替实现和验收。
 - 页面改动按风险选择定向 Vitest、必要的构建或内置浏览器临时复核；Playwright 的新增、更新和执行统一遵守 `agent-works/e2e-automation/guide.md`，不因已有 E2E 覆盖就自动运行整组回归。
-- `./start.sh e2e-backtest-run seed|cleanup` 是回测 Playwright E2E 的可清理公开回测夹具（`backend/devtools/e2e_backtest_runs.py`，经 `frontend/e2e/helpers/backtestRuns.ts` 调用）：以固定调试账号显式归属真实跑一条跨 owner 公开策略回测（`e2e_bt_` 前缀 + opaque run_ref）或按前缀精确清理（含 backtest_run_reuse 审计）。同 `dev-users` 受 `AI_STOCKS_ENV=dev|test|local` + `AI_STOCKS_E2E_WRITE=1` 双重门控，并经 `/api/health/e2e` 的 PG 指纹校验防误写他库。因 DuckDB 单文件写锁互斥，夹具进程独占写锁时被测后端必须以 `AI_STOCKS_DUCKDB_READ_ONLY=1` 只读启动；该 spec 与需 DuckDB 写的其余 E2E 须分开运行（读写模式跑全量排除此 spec，只读模式单跑此 spec）。
-- `./start.sh e2e-board-data seed|cleanup` 是板块工作台的确定性 DuckDB 夹具，仅写 `E2E9*` 板块、`9999*.SZ` 股票和 2099 年固定行情；同样受本地环境 + `AI_STOCKS_E2E_WRITE=1` 双重门控。只有满足 E2E 准入条件时才使用 `npm run test:e2e:sectors`；普通聚焦回归必须向脚本透传 `--project`、spec 或 `--grep`，不得默认执行三视口整组。脚本负责停服、夹具生命周期和恢复原后端状态。
-- `./start.sh e2e-stock-board-correlation seed|cleanup --expected-pg-fingerprint <64位十六进制>` 是个股走势关联板块的确定性 PG + DuckDB 夹具：PG 写 `default/debug_system` 归属下固定 `e2e_sbc_*` 评分/筛选方案、快照和任务运行态，DuckDB 只写 `9977*.SZ`、`E2ECORR_*`、`E2E相关-*` 与 2097 年固定行情/当前冠军；同样受本地环境、`AI_STOCKS_E2E_WRITE=1` 与被测后端 PG 指纹三重门控。聚焦回归统一使用 `cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:stock-board-correlation`，脚本负责账号校准、运行态/停止态停服分支、夹具生命周期、PG/DuckDB 零残留检查和原后端运行档案恢复。
-- `./start.sh e2e-trade-discipline seed|cleanup --expected-pg-fingerprint <64位十六进制>` 是交易纪律的确定性 PG + DuckDB 夹具，仅写 `debug_tenant` 固定调试账号归属下 `e2e_td_`/`E2E纪律-`/`E2E类型-` 前缀数据和 DuckDB 的 `9988*.SZ`、2098 年固定交易日；两个动作均要求本地环境、`AI_STOCKS_E2E_WRITE=1`、后端 `/api/health/e2e` 指纹与夹具直连 PG 一致，并须在后端停服时执行。聚焦回归只使用 `cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:trade-discipline`，脚本负责指纹、账号校准、服务切换、夹具清理，并按 `start.sh` 生成的不含密钥运行档案恢复原模式、环境文件、安全开关和 PG 目标；档案只保存额外项目环境变量的不可逆摘要，恢复前还须核对环境文件与这些摘要。原服务运行但档案缺失或不匹配时必须在停服前 fail-closed。
-- 跑**全量 Playwright**（多 spec 三视口并行）时，被测后端还须额外 `AI_STOCKS_E2E_LOGIN_BYPASS=1`：三视口为独立 worker 进程，各自密集 `POST /auth/login`（同源 127.0.0.1），不豁免会撞 `login_rate_per_min`（默认 10/min）单 IP 限流导致大面积登录失败。该豁免三重门控（环境白名单 + `AI_STOCKS_E2E_WRITE=1` + 本变量），仅放开 login 的 IP 限流，回归结束后重启后端移除。
-- 完整设计验收统一执行 `cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:design`；其 Playwright 阶段由 `scripts/run-design-e2e.sh` 按普通读写、板块夹具、关联板块夹具、交易纪律夹具、公开回测只读五组串行编排，禁止把不同固定日期夹具同时 seed 后跑单轮全量。入口负责快照和恢复原后端参数，任何一组失败均执行精确清理。
+- 物理 E2E 夹具只允许在明确的本地/测试环境运行；PG 写入须核对被测后端实时指纹，DuckDB seed/cleanup 须独占文件锁。禁止混用不同固定日期夹具、猜测清理目标或默认覆盖真实数据。
+- 板块、关联板块、交易纪律及公开回测的命令、数据前缀、读写模式、账号和清理/恢复流程统一见 [E2E 执行指南](agent-works/e2e-automation/guide.md#运行入口与生命周期)；按场景使用专用 runner，不手动拼接全量回归。测试后恢复原后端运行/停止状态与可信运行参数，不遗留夹具或 E2E 安全开关。
+- 完整设计验收使用 `cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:design`；安全前检不要求后端预先启动，后续由 runner 管理后端、分组夹具和恢复。完整验收准入及五组编排以 E2E 指南为准。
 
 ## 协作与提交
 

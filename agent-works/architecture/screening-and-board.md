@@ -1,5 +1,11 @@
 # 选股与榜单
 
+## 文档边界
+
+本文维护条件树求值、评分排序、榜单物化、缓存与资产可见性的当前消费链路。指标公式与分类见 [技术指标架构](technical-indicators.md)，方案配置结构见 [配置定义](config-definitions.md)，ST 事实见 [ST 架构](st-status.md)；本文不另设原子指标或历史市场规则。
+
+筛选、评分接口或物化失效规则变化时同步本文和对应测试；权限基座由 [RBAC 架构](system-rbac-tenant.md) 维护，界面契约由 [DESIGN.md](../../DESIGN.md) 维护，研究参数与阶段测试结果不在本文固化。
+
 > 用条件树筛选全市场点时命中，再按评分方案打 0~100 综合分并惰性物化成每日榜单。
 
 <span style="color:#2563eb">●</span> 条件筛选　<span style="color:#7c3aed">●</span> 评分排序　<span style="color:#16a34a">●</span> 快照缓存　<span style="color:#dc2626">●</span> 口径风险

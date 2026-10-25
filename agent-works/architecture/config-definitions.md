@@ -1,5 +1,11 @@
 # 配置定义（统一基座）
 
+## 文档边界
+
+本文维护指标定义被买卖、评分与筛选方案引用时的配置结构、版本、校验和生效链路。指标分类、公式及计算契约以 [技术指标架构](technical-indicators.md) 为准，环境与系统配置覆盖层以 [环境配置架构](environment-configuration.md) 为准；本文只保留方案消费所需说明，不另定义指标或配置加载顺序。
+
+方案字段、版本或引用协议变更时同步本文及对应测试；各业务执行算法更新对应模块架构，界面规范更新 [DESIGN.md](../../DESIGN.md)，不在本文累计功能计划或验证记录。
+
 > 技术指标是系统唯一的原子定义，买卖方案、评分方案、筛选条件都引用指标 key 组合；指标值按请求日期从行情动态计算（无指标值表），已保存评分方案的榜单结果按“日期+方案+版本”惰性物化并复用。
 
 ---
@@ -10,23 +16,15 @@
 
 ### 1. 指标注册表与定义仓库
 
-- **静态注册表** `backend/indicators/registry.py`：用 `@dataclass(frozen=True)` 的 `IndicatorDef`（registry.py:28-40）描述每个指标的元数据——`key`（英文标识）、`name_cn`（中文名）、`dtype`（`number`/`bool`）、`category`、`direction`、`params`（`Param` 列表）、`kind`（`builtin`/`expr`）、`expression`（含 `{param}` 占位的 DSL 模板）、`is_builtin`、`enabled`。`REGISTRY`（registry.py:44-175）是全部内置指标的列表，`PRESET_CATEGORIES`（registry.py:181-194）给每个指标打多分类标签。
-- **两类指标计算路径**：
-  - `kind="builtin"`：映射到 `compute.py` 预先算好的宽表列（如 `ma5`/`is_bull_arrange`/`rs_pct`），通过 `wide_snapshot` 一次产出。
-  - `kind="expr"`：表达式型，`expression` 是 `MA(C,{n}) > REF(MA(C,{n}),{k})` 这类模板，使用时由 `render_expression`（definition.py:22-37）把 `{param}` 用方案传入的参数渲染为可执行字符串，再走 `backend/screening/expression.py` 的白名单 DSL 沙箱（`ALLOWED_FUNCS` 仅 `MA/HHV/LLV/REF/COUNT/SUM/ABS`，expression.py:34-38）逐股求值。
-- **动态参数**：`Param`（name/label/type/default/min/max）声明指标可调参数 schema，前端据此渲染参数表单；同一指标（如 `consec_up` 连续上涨 N 天）每次引用可传不同 N，无需新建指标。
-- **运行态全局参数**：指标、评分、回测、股票池等运行期默认值从生效配置读取；环境变量、变量文件、YAML 基线与 `app_config` 覆盖层的优先级见 [environment-configuration.md](environment-configuration.md)。
-- **定义仓库** `backend/indicators/definition.py`：`IndicatorDefRepo` 把内置指标 seed 进 `indicator_def` 表（`seed_builtins` 幂等、保留用户改过的 `enabled` 与 `categories`，definition.py:139-151），并管理用户自定义表达式指标（`save_custom` 校验 key 合法/不与内置冲突/表达式白名单通过，definition.py:102-123）。内置指标不可删、仅可启停。
-- **启动校准**：FastAPI 存储自检在 DuckDB schema 就绪后调用 `seed_builtins()`，每次启动对齐整套 `REGISTRY`，不是只补本次新增 key。全新库会持久化全部 builtin；存量库会刷新代码管理的名称、类型、表达式、参数和描述，保留管理员明确设置的 `enabled/categories`，旧库 `NULL` 则回退注册表默认值；元数据未变化时跳过 UPDATE，避免启动写放大和无意义刷新 `updated_at`。
-- **MACD 五原子**：`macd_diff`、`macd_dea`、`macd_hist` 为 `number`，`macd_golden_cross`、`macd_dead_cross` 为可空 `bool`；固定参数 12/26/9，主分类“趋势”，预设分类“趋势/动量”，默认启用且不可删除。日/周/月/年只是输入行情粒度上下文，不形成新的指标 key；各周期先按自然边界生成收盘序列，再复用同一严格后向 EMA/交叉定义。单股图表的 MACD 输入固定为前复权，板块使用连续指数原值；筛选、评分、买卖和回测继续使用日 K 上下文，未来开放其它周期时应扩展方案的周期上下文而不是复制指标。五列进入 `_IND_COLS` 后由下游通用求值链直接复用，不建立 MACD 专属分支；历史不足或输入缺失时返回空值，不用短窗口或其它周期结果代填。
-- **计算上下文契约**：指标目录接口在定义列表之外返回统一 `calculation_context`。`default_period` 是当前默认输入粒度，`supported_periods` 是方案引擎实际可用粒度；现阶段两者均只包含 `day`。周期属于一次方案计算的上下文，不进入单个指标的参数 schema，也不因图表切换而改变。目录项另返回只读 `calculation_period`：K 线序列指标为 `day`，快照和事件字段为 `null`。管理页以紧凑标签只读展示指标的适用周期，自定义指标编辑器不提供引擎尚未支持的周期选项；下游不得根据指标名称或说明文字猜测周期能力。
+方案通过 `IndicatorDefRepo` 读取已持久化的指标目录，保存稳定 key 和本次引用的参数，不复制指标定义。注册表、内置 seed、元数据分类、参数 schema、MACD 与计算周期的完整契约统一见 [技术指标架构](technical-indicators.md)。
+
+指标候选的可用性与既有方案能否继续执行遵守指标治理契约；禁用指标不等于改写历史方案。运行期默认参数从生效配置读取，加载层次见 [环境配置架构](environment-configuration.md)。
 
 ### 2. 指标指纹与分层内存缓存
 
-- `build_params` 从 `settings.indicators` 抽取参与计算的全局参数（MA/HHV 周期、RS 窗口、放量倍数、平台窗口、换手健康区间等），`param_hash` 对其规范化 JSON 生成参数版本指纹；任一计算参数变化都会形成新指纹。
-- `IndicatorEngine.range_frame` 先查实例内 LRU，再查进程内共享小结果 LRU。共享层仅保存不超过 10 万行的文件库结果，`:memory:` 测试库不共享；缓存键包含数据库路径、`daily_bar/daily_metrics` 最近成功或部分成功的数据更新修订号、查询范围与参数指纹。因此正常采集或补数写入更新日志后，新请求不会复用旧行情结果。
-- 单次筛选、评分、买卖预览和回测会复用同一个 `IndicatorEngine`；表达式型指标先按 `key+params` 去重，再一次批量读取所需历史序列。缓存返回副本，避免调用方修改共享对象。
-- 全市场算指标用 `_bulk_qfq_bars`（engine.py:79-104）一条窗口 SQL 取每股末段 lookback 行（替代逐股 5000+ 次查询），按各股末日因子前复权（`COALESCE(adj_factor_clean, adj_factor)`）；RS 通过 `_cross_sectional_rs`（engine.py:115-124）按 `trade_date` 对 W 日收益做横截面百分位排名。
+单次筛选、评分、买卖预览和回测复用同一个 `IndicatorEngine`，表达式引用按 key 与有效参数去重后批量补列；同一指标的不同参数实例不得互相覆盖。调用方只读消费缓存结果，需要修改时先复制；缓存隔离机制见下方指标架构入口。
+
+缓存层级、容量、点时行情批量加载与指纹失效由 [技术指标架构「计算与失效」](technical-indicators.md#计算与失效) 维护。方案层只消费统一引擎与结果版本，不另建页面或业务服务私有缓存，也不复制指标 SQL 或公式。
 
 ### 3. 方案的版本化存储
 

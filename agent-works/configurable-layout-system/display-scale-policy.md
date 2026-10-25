@@ -1,5 +1,13 @@
 # 界面比例与自动缩放策略
 
+## 文档边界
+
+本文维护自动比例公式、尺寸档案匹配、用户偏好同步及配置验证契约。共享布局与视觉约束见 [DESIGN.md](../../DESIGN.md)，环境变量和配置覆盖层见 [环境配置架构](../architecture/environment-configuration.md)；本文不定义页面响应式断点，也不记录各页面实测结果。
+
+策略变更须同步 `frontend/src/layout/displayScalePolicy.ts`、`displayScaleProfiles.ts`、`frontend/src/composables/useDisplayScale.ts`、配置消费方及对应前后端测试；页面与组件适配证据分别更新 [页面检查](responsive-pages.md) 和 [组件清单](responsive-components.md)，不得用缩放策略代替响应式实现。
+
+## 自动比例
+
 自动缩放指数是系统外观配置 `ui.display.auto_scale_exponent`，默认 `0.10`，范围 `0～1`。它不属于视觉预设，切换颜色或圆角预设不得改变界面比例策略。
 
 计算为 `round(100 × (屏幕可用 CSS 面积 / (2560 × 1440)) ^ 指数)`，结果限制在 90%～110%。指数为零时自动比例保持 100%。1920×1080 可用面积在默认指数下为 94%，2560×1440 为 100%，3360×1890 为 106%。

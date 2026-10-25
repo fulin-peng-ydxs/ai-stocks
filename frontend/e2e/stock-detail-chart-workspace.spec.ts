@@ -265,6 +265,33 @@ async function installVisualChartEndpoints(page: Page, code: string) {
       }),
     })
   })
+  // 常驻读数必须与图表夹具同源；不能用开发库最新报价断言历史视觉样本。
+  await page.route('**/api/stocks/*/quote-summary', async (route) => {
+    const latestBar = bars[bars.length - 1]!
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 0,
+        msg: 'ok',
+        data: {
+          ...latestBar,
+          code,
+          name: 'E2E 视觉样本',
+          trade_date: latestBar.date,
+          board: '主板',
+          industry: null,
+          is_st: false,
+          volume_ratio: null,
+          total_mv: null,
+          float_mv: null,
+          total_share: null,
+          float_share: null,
+          pe_ttm: null,
+        },
+      }),
+    })
+  })
   await page.route('**/api/data/trade-dates', async (route) => {
     await route.fulfill({
       status: 200,
@@ -281,7 +308,11 @@ async function installVisualChartEndpoints(page: Page, code: string) {
       }),
     })
   })
-  return { latestTradeDate: dates[dates.length - 1], goldenSignal }
+  return {
+    latestTradeDate: dates[dates.length - 1],
+    closesByDate: Object.fromEntries(bars.map((bar) => [bar.date, bar.close.toFixed(2)])),
+    goldenSignal,
+  }
 }
 
 async function loadStockSamples(
@@ -1133,7 +1164,7 @@ test.describe('个股详情三图工作区', () => {
       window.localStorage.setItem('ai-stocks:layout-preset', 'balanced')
     })
     const { code } = await loadStocksOnlyContext(page, request)
-    const { latestTradeDate, goldenSignal } = await installVisualChartEndpoints(page, code)
+    const { latestTradeDate, closesByDate, goldenSignal } = await installVisualChartEndpoints(page, code)
     await installPreferenceEndpoint(page, [{
       scope: 'page',
       pageKey: 'stock-detail',
@@ -1180,6 +1211,10 @@ test.describe('个股详情三图工作区', () => {
     expect(geometry.noHorizontalOverflow).toBe(true)
 
     const panelDates = workspace.locator('.stock-chart-panel__date')
+    const headerQuote = page.getByTestId('stock-latest-quote')
+    const headerPrice = headerQuote.locator('.stock-quote-summary__hero dd')
+    await expect(headerQuote).toBeVisible()
+    await expect(headerPrice).toHaveText(closesByDate[latestTradeDate])
     await expect(panelDates).toHaveCount(1)
     const latestPanelDates = await panelDates.allTextContents()
     expect(latestPanelDates.map((value) => value.trim())).toEqual([latestTradeDate])
@@ -1199,22 +1234,17 @@ test.describe('个股详情三图工作区', () => {
       const values = (await panelDates.allTextContents()).map((value) => value.trim())
       return values.length === 1 && values[0] !== latestTradeDate
     }).toBe(true)
-    const klineTooltip = workspace.locator('.stock-chart-kline-tooltip')
-    await expect(klineTooltip).toHaveCount(1)
-    await expect(klineTooltip).toBeVisible()
-    const klinePanelBox = await workspace.locator('[data-panel-key="kline"]').boundingBox()
-    const klineTooltipBox = await klineTooltip.boundingBox()
-    expect(klinePanelBox).not.toBeNull()
-    expect(klineTooltipBox).not.toBeNull()
-    expect(klineTooltipBox!.x - klinePanelBox!.x).toBeLessThanOrEqual(24)
-    expect(klineTooltipBox!.y - klinePanelBox!.y).toBeLessThanOrEqual(60)
-    await testInfo.attach('stock-detail-kline-tooltip', {
-      body: await workspace.screenshot(),
+    const hoveredDate = (await panelDates.first().innerText()).trim()
+    expect(closesByDate[hoveredDate], '光标日期须对应确定性行情夹具').toBeDefined()
+    await expect(headerPrice).toHaveText(closesByDate[hoveredDate])
+    await expect(workspace.locator('.stock-chart-kline-tooltip')).toHaveCount(0)
+    await testInfo.attach('stock-detail-linked-header-quote', {
+      body: await page.screenshot(),
       contentType: 'image/png',
     })
     await page.mouse.move(1, 1)
-    await expect(klineTooltip).not.toBeVisible()
     await expect(panelDates.first()).toHaveText(latestTradeDate)
+    await expect(headerPrice).toHaveText(closesByDate[latestTradeDate])
 
     const lightBackground = await workspace.evaluate(
       (element) => getComputedStyle(element).backgroundColor,

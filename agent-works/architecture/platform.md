@@ -1,5 +1,11 @@
 # 平台与基础设施
 
+## 文档边界
+
+本文维护跨模块的服务装配、持久层分工、点时数据访问、异步任务、调度和前端配置基础设施。环境与配置细节由 [环境配置架构](environment-configuration.md) 维护，鉴权与租户隔离由 [RBAC 架构](system-rbac-tenant.md) 维护，前端设计契约由 [DESIGN.md](../../DESIGN.md) 维护；本文只保留平台协同所需摘要，不代替各业务模块架构。
+
+平台入口或公共执行机制变化时同步本文及受影响模块与测试；服务操作命令由 [README](../../README.md) 维护，AI 执行红线由 [AGENTS](../../AGENTS.md) 维护，临时排查和阶段验收不在本文累计。
+
 > 横切所有业务模块的地基：FastAPI 全栈、混合持久层、点时安全仓库总闸门、异步任务底座、定时调度、配置入口与前端布局/交互标准。环境变量、变量文件和数据库配置覆盖层见 [environment-configuration.md](environment-configuration.md)。
 
 > 当前持久层边界：行情/参考数据留 DuckDB（单写连接 + 同进程逻辑只读池），用户资产、系统菜单、角色权限、平台配置以及任务/调度运行态落 PostgreSQL，Redis 承载 token 黑名单、权限缓存、验证码和限流等短状态。系统菜单、权限和多租户技术架构见 [system-rbac-tenant.md](system-rbac-tenant.md)。

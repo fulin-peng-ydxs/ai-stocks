@@ -1,5 +1,11 @@
 # 回测
 
+## 文档边界
+
+本文维护回测输入、事件驱动撮合、记账、结果复用与评分验证的当前实现及业务口径；原子指标定义见 [技术指标架构](technical-indicators.md)，点时 ST 与历史限幅规则见 [ST 架构](st-status.md)。本文只说明回测如何消费这些事实，不另设指标公式或市场规则。
+
+引擎、接口或记账契约变化时同步本文和对应测试；界面规则由 [DESIGN.md](../../DESIGN.md) 维护，运行与夹具操作由 [E2E 指南](../e2e-automation/guide.md) 维护，当次测试结果不在本文累计。
+
 > 用历史数据验证「选股+买卖」策略与「评分」预测力的事件驱动回测引擎：在杜绝未来函数、撮合不失真、复权一致的前提下，产出净值曲线/绩效/逐笔成交，并以「分层命中率减全市场 base rate」量化评分的真实超额能力。
 
 <span style="color:#2563eb">●</span> 输入方案　<span style="color:#7c3aed">●</span> 历史验证　<span style="color:#16a34a">●</span> 结果复盘　<span style="color:#dc2626">●</span> 风险约束
@@ -9,7 +15,7 @@
 **事件驱动引擎（逐日先卖后买）**。`backend/backtest/engine.py:223` `BacktestEngine.run` 按交易日逐日循环：执行日 `D` 成交的是信号日 `D-1` 做出的决策——`engine.py:315` `sig = days[i-1]`，`T` 日选股/卖出判定、`T+1` 开盘成交。每日四步：①评估并执行卖出（`engine.py:319`）②选股+买入（`engine.py:377`）③估值（`engine.py:428`）④记账资金曲线。卖出在买入之前，先释放仓位再填新仓。
 
 **撮合 Broker 与成本模型**。`backend/backtest/broker.py` 是防撮合失真的核心：
-- 可成交性按传入的 `pct` 判定。`limit_prices`（`broker.py:20`）用 `Decimal(..., ROUND_HALF_UP)` 按 `pre_close×(1±pct)` 取到分算涨跌停价；`can_buy_at_open`（`broker.py:27`）要求开盘价严格低于涨停价（开盘即封涨停买不到），`can_sell_at_open`（`broker.py:33`）要求开盘价严格高于跌停价（封死跌停卖不出）。`pct` 在 `engine._load_prices` 中按交易日生成：ST 身份只取 `stock_st_status_daily` 的准确点时事实；普通票取 `stock_basic.price_limit_pct`（主板 0.10 / 科创创业 0.20），主板 ST 在 2026-07-06 前取 0.05、当日起取 0.10，创业板/科创板 ST 仍取 0.20。区间存在缺失、非权威事实或未发布刷新批次时回测直接失败，不按当前名称或默认非 ST 继续运行。回测签名中的 ST 数据版本保留事实更新时间的微秒精度并包含刷新发布状态，源端短时间内连续纠错后不会错误复用旧运行。
+- 可成交性按传入的 `pct` 判定。`limit_prices`（`broker.py:20`）用 `Decimal(..., ROUND_HALF_UP)` 按 `pre_close×(1±pct)` 取到分算涨跌停价；`can_buy_at_open`（`broker.py:27`）要求开盘价严格低于涨停价（开盘即封涨停买不到），`can_sell_at_open`（`broker.py:33`）要求开盘价严格高于跌停价（封死跌停卖不出）。`pct` 在 `engine._load_prices` 中通过共享 `backend.market_rules.price_limit_pct_for` 按代码、交易日、板块与准确点时 ST 事实生成；历史限幅与规则生效日统一见 [ST 架构](st-status.md)，不得把当前板块比例投影至全部历史。区间存在缺失、非权威事实或未发布刷新批次时回测直接失败，不按当前名称或默认非 ST 继续运行。回测签名中的 ST 数据版本保留事实更新时间的微秒精度并包含刷新发布状态，源端短时间内连续纠错后不会错误复用旧运行。
 - 停牌（执行日无 bar）不可成交，触发卖出但封死/停牌 → 加入 `pending_sells` 顺延到下一可交易日（`engine.py:354-356`）。
 - 整手取整：买入按 100 股整手 floor，现金不足时逐步缩减 `lot_size`（`broker.py:99-109`）。
 - 方向性滑点：买入价上浮 `×(1+slippage)`、卖出价下浮 `×(1-slippage)`（`broker.py:95`/`broker.py:134`）。

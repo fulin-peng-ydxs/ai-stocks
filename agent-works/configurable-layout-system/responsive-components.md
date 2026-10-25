@@ -1,6 +1,8 @@
 # 响应式组件触发清单
 
-范围：`frontend/src/**/*.vue` 全部 184 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。响应式规则以 [DESIGN.md](../../DESIGN.md) §8 为准；全站字体角色及例外统一引用该文档 §3、§3.5；应用导航尺寸引用 §3.4，本清单只登记消费与适配行为，不另行定义字阶。
+## 文档边界
+
+范围：`frontend/src/**/*.vue` 生产 Vue 文件（含页面私有片段、布局宿主及应用外壳），每个文件一行；文件集合以源码及下述双向检查为准。页面消费与实测结论见 [页面检查](responsive-pages.md)。响应式规则以 [DESIGN.md](../../DESIGN.md) §8 为准；全站字体角色及例外统一引用该文档 §3、§3.5；应用导航尺寸引用 §3.4，本清单只登记消费与适配行为，不另行定义字阶。
 
 字体实现维护：所有行均消费 `global.css` 的 token/语义类；MarketCompareMetricStrip、行情和数据概览等普通数据强调使用完整 data 角色，交易纪律分区复用 app-section-title；ECharts 消费 chartTheme 的 typography 快照并经 echartsRenderer 统一基础字体，日 K 与分时的 HTML 行情浮层消费共享 stockQuoteSummaryHtml 和缩放外壳，压缩表格行距与内距；截止测算在底行完整展示，避免旁列撑宽。源码守卫、构建门禁及例外登记入口见 DESIGN §3.5。
 

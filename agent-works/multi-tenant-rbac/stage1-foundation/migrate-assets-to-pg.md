@@ -1,7 +1,10 @@
 # 存量资产迁移：DuckDB → PostgreSQL（stage1·T3）
 
-> 跨库迁移（DuckDB 读 + PG 写），无法用纯 SQL 表达，实现为 Python 迁移器 + CLI 命令。
-> 本文档履行 CLAUDE.md「DDL/迁移变更说明」：文件路径、用途、执行时机、影响范围、回滚方式、不可逆原因。
+## 文档边界
+
+本文维护旧版 DuckDB 私有资产迁入 PostgreSQL 的一次性升级操作、归属映射、校验与回滚限制；不适用于已有线上 PG 资产的日常同步或重建。当前双库与权限架构以 [平台架构](../../architecture/platform.md) 和 [RBAC 架构](../../architecture/system-rbac-tenant.md) 为准，环境与连接配置以 [环境配置架构](../../architecture/environment-configuration.md) 为准，迁移器行为以本文下方源码入口核对。
+
+迁移器的表集合、覆盖语义或校验变化时同步本文及对应测试；执行前必须确认备份与目标库，因为 `--apply` 会删除目标表中 `default` 租户资产后重载。末节执行结果仅记录 2026-06-28 开发环境快照，不代表当前目标库已验证，也不构成再次执行授权。
 
 ## 文件
 - 迁移器：[backend/services/migrate_rbac.py](../../../backend/services/migrate_rbac.py)

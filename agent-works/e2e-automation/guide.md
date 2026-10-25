@@ -1,8 +1,8 @@
 # E2E 自动化验证规范
 
-## 目标
+## 文档边界
 
-约束 Playwright 只承担少量、稳定、浏览器独有的关键链路回归。E2E 验证的是前端装配后的用户路径，不负责证明计算规则、数据口径、任务状态机或后端异常恢复正确；AI 内置浏览器用于临时复核和探索性排查。
+本文维护 Playwright 的准入、执行入口、夹具与服务生命周期、选择器及 helper 使用规则，约束其只承担少量、稳定、浏览器独有的关键链路回归。E2E 验证的是前端装配后的用户路径，不负责证明计算规则、数据口径、任务状态机或后端异常恢复正确；AI 内置浏览器用于临时复核和探索性排查。设计契约、环境配置与账号事实由下列对应入口维护，本文只保留执行所需约束，不保存当次运行通过率或替代模块验收报告。
 
 ## 文档入口与关联
 
@@ -52,73 +52,51 @@
 
 交互式复核默认使用 AI 内置浏览器。只有用户明确指定，或任务必须使用其已登录会话且用户同意时，才能连接个人 Chrome、Edge 或其他外部浏览器。Playwright 仅用于满足准入条件的长期自动回归，不作为内置浏览器的默认替代。
 
-## 固定命令
+## 运行入口与生命周期
+
+本节维护 E2E 的命令、物理夹具边界和服务恢复规则；环境身份、变量文件、密码来源和运行档案字段以 [环境配置架构](../architecture/environment-configuration.md#环境身份与运行模式) 为准，固定账号与权限场景以 [测试用户](../multi-tenant-rbac/test-users.md) 为准。
+
+### 按范围选入口
+
+| 目的 | 在 `frontend/` 下执行 | 执行范围 |
+|---|---|---|
+| 日常前端快检 | `npm run check` | 静态规范、布局契约和类型；不连接后端或浏览器 |
+| 定向组件/逻辑回归 | `npm test -- <测试文件>` | 先复用静态检查，再运行指定 Vitest；不替代类型检查 |
+| 首次安装浏览器 | `npm run test:e2e:install` | 仅浏览器缺失时执行 |
+| 普通关键浏览器路径 | `npm run test:e2e -- <spec> --project=chromium-standard --grep='<用例名>'` | 仅满足准入的最小路径；需已准备好被测后端和对应测试账号 |
+| 板块路径 | `npm run test:e2e:sectors -- --project=chromium-standard --grep='<用例名>'` | 专用 runner 管理板块夹具；无需过滤参数的三 spec / 三视口整组只用于发布或明确要求 |
+| 关联板块路径 | `npm run test:e2e:stock-board-correlation` | 专用 PG + DuckDB 夹具回归；可透传 spec、project 或 grep 缩小范围 |
+| 交易纪律路径 | `npm run test:e2e:trade-discipline` | 专用 PG + DuckDB 夹具回归；可透传筛选参数 |
+| 完整设计验收 | `npm run test:design` | 安全前检、全量 Vitest、构建，再执行五组 E2E；只在完整验收准入时使用 |
+
+E2E 命令须显式带 `AI_STOCKS_ENV=dev|test|local AI_STOCKS_E2E_WRITE=1`，例如：
 
 ```bash
-AI_STOCKS_ENV=dev ./start.sh dev-users
-(cd frontend && npm run test:e2e:install)   # 首次或浏览器缺失时
-# 板块发布链路聚焦回归：覆盖数据管理、质量恢复、工作台；脚本负责 seed/cleanup 与恢复服务
-(cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:sectors)
-# 普通板块改动若确需 E2E，必须缩到单项目和单路径
-(cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:sectors -- --project=chromium-standard --grep='精确用例名')
-# 交易纪律聚焦回归：脚本取得/锁定 PG 指纹，管理 PG + DuckDB 夹具并恢复服务
-(cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:trade-discipline)
-# 个股走势关联板块聚焦回归：脚本取得/锁定 PG 指纹，管理 PG + DuckDB 夹具并恢复服务
-(cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:stock-board-correlation)
-# 普通全量回归前先在后端停服状态准备板块确定性数据
-./start.sh stop
-AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 ./start.sh e2e-board-data cleanup
-AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 ./start.sh e2e-board-data seed
-AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 AI_STOCKS_E2E_LOGIN_BYPASS=1 ./start.sh
-(cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e -- --grep-invert '回测页浏览公开回测')
-# 普通回归后停服并精确清理板块夹具
-./start.sh stop
-AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 ./start.sh e2e-board-data cleanup
-# 单独跑公开回测前，将后端按下文切换为 DuckDB 只读：
-AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 AI_STOCKS_E2E_LOGIN_BYPASS=1 AI_STOCKS_DUCKDB_READ_ONLY=1 ./start.sh
-(cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e -- e2e/backtest-public-runs.spec.ts --workers=1)
-# 回归结束后恢复日常后端，不保留 E2E 物理写开关：
-AI_STOCKS_ENV=dev ./start.sh restart
+cd frontend
+AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:sectors -- --project=chromium-standard --grep='<用例名>'
+AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:design
 ```
 
-Playwright 固定使用前端 `5181`，避免抢占日常开发端口 `5173`；后端使用 `127.0.0.1:8000`，由 `./start.sh` 管理。
-全量多视口回归必须给后端启用 `AI_STOCKS_E2E_LOGIN_BYPASS=1`，仅单文件聚焦回归可不启用。
-`backtest-public-runs.spec.ts` 必须与其余用例拆分：先用读写后端跑其余用例；再停止后端，以
-`AI_STOCKS_DUCKDB_READ_ONLY=1`、`AI_STOCKS_E2E_WRITE=1` 和登录限流豁免启动只读后端，单独执行该 spec。
-回归结束后始终按上方命令恢复日常后端，不能遗留只读、物理写或限流豁免开关。
-三个板块聚焦 spec 均不读取开发者本地真实板块数据；`e2e_board_data.py` 只写入
-`E2E9*` 板块、`9999*.SZ` 股票及 2099 年固定行情，并在后端停服时 seed/cleanup。
-板块 E2E 入口使用 `npm run test:e2e:sectors`，并把后续参数透传给 Playwright。普通改动必须通过 `--project`、spec 或 `--grep` 缩小范围；不带筛选地执行三个 spec 和三视口只用于发布门禁或用户明确要求。退出 trap 会精确清理并恢复测试前后端状态；共享固定调试账号、板块自选和页面偏好时保持 `--workers=1`，禁止并行改写状态。
-交易纪律聚焦运行统一使用 `npm run test:e2e:trade-discipline`。入口只在进程变量中保存
-`/api/health/e2e` 返回的 PG 指纹，停服后把同一值显式传给 cleanup/seed；夹具仅写
-`debug_tenant + debug_normal/debug_trade_discipline_view/debug_trade_discipline_submit/debug_tenant_admin`
-归属下的 `e2e_td_`/`E2E纪律-`/`E2E类型-` 数据，以及 DuckDB 的 `9988*.SZ` 和 2098 年固定交易日。
-被测后端以登录限流豁免和正常 DuckDB 读写模式启动，重启后必须复核指纹未变化；三视口
-固定 `--workers=1`。无论通过、失败或中断，EXIT trap 都先停服、按可信指纹精确清理，
-再恢复测试前后端运行/停止状态；未取得指纹时禁止尝试物理清理。账号校准必须把同一指纹
-传给 `dev-users --expected-pg-fingerprint`，在 DDL 和账号写入前完成比对。若测试前后端正在运行，
-入口先快照 `start.sh` 启动时生成的不含密钥运行档案；档案记录环境文件和其余项目环境变量的
-不可逆摘要，退出时先核对摘要，再恢复原启动模式、Python 命令、环境文件、E2E/登录/DuckDB
-安全开关，并复核恢复后的 PG 指纹；档案缺失、PID 不匹配或内容非法时在停服前拒绝执行，
-不能猜测恢复为普通 dev。
-`npm run test:e2e` 和 `npm run test:e2e:ui` 均通过 `scripts/run-playwright.sh` 启动，
-并复用 `scripts/load-local-env.sh` 加载仓库根目录 `.env.local`；因此登录密码和 PG/E2E
-环境与后端使用相同的 `KEY=value` / `export KEY=value` 语义，不在 TypeScript helper 中二次解析变量文件。
-涉及临时 PG 用户的用例会先读取后端 `/api/health/e2e` 的不可逆 PG 指纹，再通过
-`./start.sh e2e-user` 创建/销毁用户；该入口与后端复用 `.env.local` 加载，且后端、Playwright
-和夹具必须同时处于明确 dev/test/local 环境并启用 `AI_STOCKS_E2E_WRITE=1`。任一条件缺失、
-PG 指纹不一致或后端运行中切换数据库时均 fail-closed，不执行物理清理。
-完整设计验收入口 `npm run test:design` 会在 Vitest、构建和 Playwright 之前请求同一
-`/api/health/e2e` 契约；后端不可访问、业务码非 `0` 或 PG 指纹非法时立即停止，并提示使用
-相同 `AI_STOCKS_ENV` 与 `AI_STOCKS_E2E_WRITE=1` 重启后端。单独运行前置检查或普通 Playwright
-时可统一设置 `E2E_API_URL`；完整设计 E2E 会管理本机后端和物理夹具，为防止远端/本地目标
-错配，仅允许默认 `http://127.0.0.1:8000/api`。Playwright 阶段由 `scripts/run-design-e2e.sh` 分组编排：
-普通无物理夹具 spec 先共享读写后端串行执行；板块、关联板块、交易纪律分别复用各自专用
-runner，在每组之间完成精确 seed/cleanup；公开回测最后切换 DuckDB 只读后端单独执行。
-总入口会快照并恢复测试前后端运行参数，失败、中断和成功退出都不保留 E2E 安全开关或夹具。
-`frontend/playwright-report/` 是本地忽略的可打开验收产物；用例通过 `testInfo.attach()` 附加的截图会进入该报告。需要对外归档时由 CI 或发布流程保存整个报告目录，不在业务提交中追踪哈希附件。
+`test:design` 的前置检查只校验调用方环境、写开关和本机目标地址，不请求在线后端；原后端运行或停止均可。后续 `scripts/run-design-e2e.sh` 负责启动与健康/PG 指纹核对，按普通读写用例 → 板块 → 关联板块 → 交易纪律 → 公开回测只读五组串行运行。禁止自行 seed 多种固定日期夹具再把全部 spec 放进一轮回归。
 
-控制台问题统一通过 `frontend/e2e/helpers/console.ts::collectConsoleIssues()` 收集，默认同时阻断 `error` 和 `warning`。路由注入形成的预期 HTTP 失败必须通过 `allowedHttpStatuses` 显式声明；不得在用例内复制监听器、只检查 `error` 或私自放宽 warning 口径。
+`test:e2e` / `test:e2e:ui` 只经 `scripts/run-playwright.sh` 加载 `.env.local` 并透传 Playwright 参数，不管理物理夹具或后端恢复；不能用其无筛选全量运行代替总入口。完整验收只允许默认 `http://127.0.0.1:8000/api`，防止本机夹具与远端 API 错配；普通不涉及物理夹具的聚焦验证可按实际目标设置 `E2E_API_URL`。
+
+### 夹具与服务保护
+
+| 场景 / CLI 夹具 | 唯一可写范围 | 运行约束 |
+|---|---|---|
+| 板块 `./start.sh e2e-board-data seed\|cleanup` | `E2E9*` 板块、`9999*.SZ` 股票、2099 年行情 | 后端停服时独占 DuckDB，复用 `scripts/run-sector-e2e.sh` |
+| 关联板块 `./start.sh e2e-stock-board-correlation seed\|cleanup --expected-pg-fingerprint <指纹>` | PG `default/debug_system` 下 `e2e_sbc_*` 方案/快照/任务；DuckDB `9977*.SZ`、`E2ECORR_*`、`E2E相关-*`、2097 年行情/冠军 | PG 目标与在线后端指纹一致，后端停服时 seed/cleanup；runner 校准账号、检查两库零残留 |
+| 交易纪律 `./start.sh e2e-trade-discipline seed\|cleanup --expected-pg-fingerprint <指纹>` | PG `debug_tenant` 下 `debug_normal`、只读、独立提交及租户管理员账号的 `e2e_td_` / `E2E纪律-` / `E2E类型-`；DuckDB `9988*.SZ`、2098 年交易日 | 后端指纹、直连 PG 和调用方环境一致；停服执行，复用 `scripts/run-trade-discipline-e2e.sh` |
+| 公开回测 `./start.sh e2e-backtest-run seed\|cleanup --expected-pg-fingerprint <指纹>` | 固定调试账号归属的 `e2e_bt_` 公开回测、opaque run_ref 及对应复用审计 | 夹具独占 DuckDB 写锁，被测后端须 `AI_STOCKS_DUCKDB_READ_ONLY=1`；由完整验收总入口单独编排 |
+
+以上表格说明物理边界，不是日常手动 seed 的替代流程。PG 写夹具和临时用户须在 DDL/账号写入前比对后端实时 PG 指纹；不得使用空值、未知环境、生产/共享目标或未确认归属进行清理。账号校准沿用 `./start.sh dev-users`，需要保留密码时使用 `--keep-password`；自动写账号须传同一可信指纹。
+
+- Playwright 固定前端 `5181`，后端由 `./start.sh` 管理。板块、关联板块和交易纪律 runner，以及完整设计总入口，在后端原本运行时先校验空闲并保存可信运行档案；档案缺失或 PID 不匹配时须在停服前拒绝执行。
+- 成功、失败或中断后精确清理本组夹具；原本运行则通过 `restore-runtime` 恢复原模式、变量文件、安全开关及 PG 目标，原本停止则保持停止。清理或恢复失败必须返回失败，不得固定重启为普通 dev；板块 runner 停服或恢复失败时保留原运行档案并报告路径，供后续恢复。
+- 多视口密集登录使用 `AI_STOCKS_E2E_LOGIN_BYPASS=1`，仅在本地环境及物理写开关同时成立时放开 login 的 IP 限流；专用 runner 自动管理。回归后恢复原安全开关，禁止遗留豁免。共享固定账号、板块自选和偏好时使用 `--workers=1`。
+- `frontend/playwright-report/` 为 Git 忽略的本地产物，截图经 `testInfo.attach()` 进入报告；对外归档由 CI 或发布流程保存整个目录，不提交哈希附件。
+- 控制台统一由 `frontend/e2e/helpers/console.ts::collectConsoleIssues()` 收集并阻断 error 与 warning；预期 HTTP 失败使用 `allowedHttpStatuses` 精确声明，不复制监听器或私自放宽口径。
 
 ## 选择器规则
 
@@ -151,4 +129,4 @@ runner，在每组之间完成精确 seed/cleanup；公开回测最后切换 Duc
 - `frontend/e2e/page-settings-drawer.spec.ts`：验证每日榜单页面设置抽屉「恢复默认」会清除 `user_preference(global/settings-drawer)` 中的抽屉自身偏好，并回到默认尺寸。
 - `frontend/e2e/sectors-workbench.spec.ts`：板块行情与详情长期回归。三视口覆盖首屏排行、指数基准、周期缩放、自选、对比、K 线、量能、详情高度与分隔条、跨菜单状态保持、成分股跳转及返回；标准视口额外覆盖搜索、排序、分页、列显隐/恢复默认和 `debug_sectors_only` 最小权限 fail-closed。
 - `frontend/e2e/sector-quality-recovery.spec.ts`：标准视口以确定性接口夹具覆盖数据质量主动刷新失败后由错误态接管且不残留旧记录，以及 `board_member_incomplete`「重采成分」提交、任务成功轮询和问题列表收敛。
-- `frontend/e2e/stock-detail-chart-workspace.spec.ts`：个股行情分析与详情三图长期回归。标准视口先覆盖个股查询远端业务默认值水合、抽屉默认值单向驱动主区、主区切换不反写长期默认、展开分析区时行点击切换当前股票及收起后恢复详情跳转，并覆盖每日榜单走势对比/K线模式切换和显式详情入口；详情页继续串行覆盖默认 K线/量能/MACD、图名、最小权限与路由守卫、MACD 局部失败/重试、辅助图交换/隐藏、指标快照模块显隐与图表自适应填满、pointer 与键盘调高、切股/刷新/重置恢复、偏好 403 本地 fallback，以及每次运行创建并销毁两名 UUID 化普通临时用户的真实 PG 隔离；三项目共同覆盖 1100×620、1366×768、1440×900 的布局、主题、reduced-motion、状态图层和截图附件，并断言柱宽按 K线、量能、MACD 递减、底部日期不被缩放滑块遮挡、标题颜色与折线一致、MA/VMA/MACD 折线消费盘感训练共享色相且在实际明暗背景可辨、任一图缩放后三图窗口同步、光标轴交易日气泡只在 K线显示一次、只有 K线显示固定左上角且具备涨跌色的行情 tooltip，以及真实画布悬停金叉/死叉标签时显示信号类型和完整交易日期。涉及临时用户的场景必须使用上文双重环境授权与 PG 指纹守卫，结束后确认 `e2e_%` 用户残留为 0。
+- `frontend/e2e/stock-detail-chart-workspace.spec.ts`：个股行情分析与详情三图长期回归。标准视口先覆盖个股查询远端业务默认值水合、抽屉默认值单向驱动主区、主区切换不反写长期默认、展开分析区时行点击切换当前股票及收起后恢复详情跳转，并覆盖每日榜单走势对比/K线模式切换和显式详情入口；详情页继续串行覆盖默认 K线/量能/MACD、图名、最小权限与路由守卫、MACD 局部失败/重试、辅助图交换/隐藏、指标快照模块显隐与图表自适应填满、pointer 与键盘调高、切股/刷新/重置恢复、偏好 403 本地 fallback，以及每次运行创建并销毁两名 UUID 化普通临时用户的真实 PG 隔离；三项目共同覆盖 1100×620、1366×768、1440×900 的布局、主题、reduced-motion、状态图层和截图附件，并断言柱宽按 K线、量能、MACD 递减、底部日期不被缩放滑块遮挡、标题颜色与折线一致、MA/VMA/MACD 折线消费盘感训练共享色相且在实际明暗背景可辨、任一图缩放后三图窗口同步、光标轴交易日气泡只在 K线显示一次、个股详情常驻行情摘要随 K 线光标更新并在移出后恢复最新读数，详情图内不重复显示行情 tooltip，以及真实画布悬停金叉/死叉标签时显示信号类型和完整交易日期。涉及临时用户的场景必须使用上文双重环境授权与 PG 指纹守卫，结束后确认 `e2e_%` 用户残留为 0。

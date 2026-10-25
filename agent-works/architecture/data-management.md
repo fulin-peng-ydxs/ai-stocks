@@ -1,5 +1,11 @@
 # 数据管理
 
+## 文档边界
+
+本文维护数据管理的采集编排、质量台账、修复复检、表目录接入与运维入口，负责说明各专属数据链路如何接入统一管理。个股、板块、ST 与分时的源协议和详细口径分别由 [个股采集](stock-collection.md)、[板块采集](board-collection.md)、[ST 架构](st-status.md) 和 [分时架构](stock-intraday.md) 维护；本文只保留编排与治理所需摘要。
+
+表目录、质量策略或修复闭环变化时同步本文及对应测试，配置加载变化更新 [环境配置架构](environment-configuration.md)；界面规则和阶段验证不在本文平行维护。
+
 > 把"公开免费数据源"转成"可解释、可回测、防未来"的本地数据底座：采集入库 → 清洗复权 → 个股四层与指数/板块独立质检 → 修复闭环 → 调度运维，全在「数据管理」页内闭环。
 
 <span style="color:#2563eb">●</span> 采集　<span style="color:#7c3aed">●</span> 质检　<span style="color:#16a34a">●</span> 修复　<span style="color:#dc2626">●</span> 高风险

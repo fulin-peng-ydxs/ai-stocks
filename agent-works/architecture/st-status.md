@@ -4,6 +4,8 @@
 
 本文说明「复盘啦」中 ST 点时事实从采集、存储、发布、质检到业务消费的当前实现，面向开发、数据运维和需要判断结果是否可信的产品使用者。代码范围主要包括 `backend/datasource/baostock_source.py`、`backend/services/ingest.py`、`backend/services/stock_st_status.py`、数据管理任务入口及榜单、回测、天梯等消费者；不把行情价格采集、评分算法或天梯算法本身展开为本文职责。
 
+本文维护系统采用的点时 ST 与历史限幅规则，源事实或中央市场规则变化时同步本文、消费链路与对应测试；个股行情采集由 [个股采集架构](stock-collection.md) 维护，界面契约由 [DESIGN.md](../../DESIGN.md) 维护，实际测试结果留在当次交付，不能以本文测试入口代替执行证据。
+
 当前架构结论如下：
 
 - Baostock `query_history_k_data_plus` 的逐股逐日 `isST` 是本系统唯一结构化 ST 事实源；它是统一的可执行口径，不等同于交易所法律文件。

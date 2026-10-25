@@ -1,6 +1,10 @@
 # RBAC 测试用户维护清单
 
-> 仅用于本地开发/测试库的浏览器调试与权限验收。生产或共享公网环境禁止创建这些账号。
+## 文档边界
+
+本文维护本地开发/测试库的固定调试租户、账号、角色与权限场景及校准命令；生产或共享公网环境禁止创建这些账号。密码来源、变量文件与环境守卫由 [环境配置架构](../architecture/environment-configuration.md) 维护，权限模型由 [RBAC 架构](../architecture/system-rbac-tenant.md) 维护，E2E 夹具生命周期由 [执行指南](../e2e-automation/guide.md) 维护。
+
+调试账号或权限场景变化时同步本文、`backend/devtools/rbac_test_users.py` 及相关测试；不在本文保存真实密码、运行凭据、测试结果，也不将固定账号变成 pytest 的外部依赖。
 
 ## AI 使用指引
 
@@ -16,8 +20,6 @@
 | --- | --- | --- | --- |
 | 平台系统管理员 | `admin` | [environment-configuration.md](../architecture/environment-configuration.md) | 初始化、系统级运维、最高权限验收 |
 | RBAC 调试用户 | `debug_*` | [environment-configuration.md](../architecture/environment-configuration.md) | 页面和接口权限验收 |
-
-本文件只维护固定测试账号、角色和权限边界；变量文件、环境变量、生产禁用和密码生效规则统一维护在环境配置文档。
 
 ## 维护命令
 

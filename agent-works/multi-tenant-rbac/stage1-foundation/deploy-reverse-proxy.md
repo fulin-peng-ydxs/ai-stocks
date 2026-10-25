@@ -1,8 +1,14 @@
 # 反向代理 + TLS 终结部署（stage1·R1·T1.5）
 
-公网 SaaS 形态下，后端 `uvicorn` **不直接对公网裸 HTTP**：前置反向代理做 **HTTPS/TLS 终结 + 限流 + 安全响应头 + 静态/`/api` 路由**，后端只绑 `127.0.0.1`。下面给两套可直接套用的模板（择一），上线时替换域名/证书路径即可。
+## 文档边界
 
-> 现状说明：本机开发为 HTTP localhost，无需反代；本文件是 R1「反代接入 + HTTPS 生效」的**部署交付模板**，在有域名的服务器上应用后即满足 R1 验收。应用层限流/会话仍由 Redis 承载（阶段二）。
+本文提供反向代理、TLS、限流与安全响应头的部署模板及检查项，不代表已在目标服务器部署或通过验收。实际启动参数与环境配置以 [环境配置架构](../../architecture/environment-configuration.md) 和 `start.sh` 为准，认证、会话和应用层限流以 [RBAC 架构](../../architecture/system-rbac-tenant.md) 为准；本文不重复维护这些实现，也不保存证书、连接密钥或服务器运行结果。
+
+代理拓扑、后端监听或可信转发头策略变化时同步本文；应用模板前核对目标软件版本、已安装模块、证书与域名，并在目标环境验证。下方文件名是待部署的配置示例，不表示仓库已有相应文件。
+
+## 部署目标
+
+公网访问通过反向代理完成 **HTTPS/TLS 终结 + 限流 + 安全响应头 + 静态/`/api` 路由**，后端 8000 只允许可信代理访问。本机开发使用 HTTP localhost；选择下方模板后仍须完成目标环境配置与实测。
 
 ## 方案 A：Caddy（推荐，自动签发 + 自动续期 Let's Encrypt）
 
@@ -56,7 +62,7 @@ server {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
     location / {
@@ -68,11 +74,14 @@ server {
 ```
 
 ## 后端配合
-- `start.sh prod` 启动后端托管 `frontend/dist`；**公网部署改绑 `127.0.0.1`**（`config/settings.yaml::server.host`），只让反代访问，不直接暴露 8000。
-- 后端读取 `X-Forwarded-For`/`X-Forwarded-Proto` 识别真实客户端 IP（应用层限流/审计用，阶段二接入）。
+- `./start.sh prod` 托管 `frontend/dist`，当前显式传入 `--host 0.0.0.0`，只改 YAML 的 `server.host` 不会使其绑定回环地址。部署时必须用主机防火墙或容器网络隔离确保 8000 仅代理可达；需要改为回环监听时先修改受控启动入口并验证，不能按本模板假定已生效。
+- 应用层限流与审计默认使用连接地址；仅在可信代理覆盖客户端传入的 `X-Forwarded-For`、且后端禁止绕过代理直连时，才可设置 `server.trust_forwarded_for=true`。上方 Nginx 示例按单层可信代理覆盖 XFF；多层代理须单独核查信任链，完整口径见环境配置架构。
 - PG/Redis 仅监听 `127.0.0.1` 或内网，不对公网开放；PG 走密码认证（`AI_STOCKS_PG_PASSWORD`）。
 
 ## R1 验收对照
-- ✅ 反代接入：Caddy/Nginx 任一模板转发 `/api` 与静态到 `127.0.0.1:8000`。
-- ✅ HTTPS 生效：Caddy 自动签发 / Nginx 挂证书，80→443 强制跳转 + HSTS。
-- ✅ 粗粒度限流 + 安全响应头在反代层；细粒度限流/验证码/token 在应用层（Redis，阶段二）。
+
+以下为待执行检查项，不能仅凭复制模板标记通过：
+
+- 代理配置校验通过，`/api` 与静态资源可达，外部无法直连后端 8000。
+- 实际域名 HTTPS、证书链、80→443 跳转与 HSTS 生效。
+- 代理限流与安全响应头生效，应用层 Redis 会话、验证码与限流仍正常；伪造 XFF 不能绕过限流或污染审计来源。
