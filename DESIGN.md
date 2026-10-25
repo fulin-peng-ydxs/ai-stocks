@@ -349,7 +349,7 @@ typography:
 | `PageSettingsTrigger` | `frontend/src/components/PageSettingsTrigger.vue` | 页面设置统一入口 | 触发 registry 页面中的 `settings-drawer` | 仅 `pageRegistry.supportsPageSettings !== false` 的真实消费页面显示；平台布局管理页不开放个人设置，不登记假入口 |
 | `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 全站抽屉唯一外壳与边界组件 | 无直接系统组件种类；内部唯一消费 `el-drawer` 和 `PageDrawerSurface` | 仅供页面设置、实时日志、资产搜索、主从窄屏回退和应用级专用抽屉直接消费；普通详情使用 AppDetailDrawer，边界与宽度见[弹窗与抽屉](#弹窗与抽屉)。 |
 | `PageDrawerSurface` | `frontend/src/components/PageDrawerSurface.vue` | 全站抽屉统一内容面板 | 无直接系统组件种类；仅由 `PageDrawer` 内部消费 | 仅由 PageDrawer 内部消费；外壳差异经语义属性和插槽表达，禁止页面复制面板外观。 |
-| `BorderStatePreview` | `frontend/src/layout/components/BorderStatePreview.vue` | 系统组件详情内的真实边界状态样板 | 无独立kind、slot或配置字段 | 仅本地展示；覆盖输入错误/禁用、选中禁用、网格列数/跨列与结果三态；不替代业务入口验收。 |
+| `BorderStatePreview` | `frontend/src/layout/components/BorderStatePreview.vue` | 系统组件详情内的真实边界状态样板 | 无独立kind、slot或配置字段 | 仅本地展示；覆盖输入错误/禁用、无框命令主色反馈及危险/关闭例外、命令加载/选中禁用、网格列数/跨列与结果三态；不替代业务入口验收。 |
 | `AppDialog` | `frontend/src/components/AppDialog.vue` | 页面短表单、单组编辑和轻量查看的统一弹窗外壳 | 无直接系统组件种类；内部消费 `el-dialog` | 短表单与轻量查看统一消费；语义宽度、挂载边界及正文滚动见[弹窗与抽屉](#弹窗与抽屉)。 |
 | `AppDetailDrawer` | `frontend/src/components/AppDetailDrawer.vue` | 完整详情、长编辑、历史版本和审计上下文的统一抽屉结构 | 无直接系统组件种类；内部消费 `PageDrawer` 的统一外壳，默认 `bodyLayout=flow`；单表可声明 `bodyLayout=fill`、`bodyScroll=false` 将剩余高度交给表体内滚 | 普通对象详情、长编辑和审计上下文统一消费；外壳委托 PageDrawer，详情分区见[弹窗与抽屉](#弹窗与抽屉)。 |
 | `AppDetailSection` / `AppDetailFields` / `AppDetailField` | `frontend/src/components/AppDetailSection.vue`、`frontend/src/components/AppDetailFields.vue`、`frontend/src/components/AppDetailField.vue` | 详情分区和规则型键值展示 | 无直接系统组件种类；作为详情抽屉或页面详情的内容结构 | 详情分区和键值展示统一消费，禁止私建详情网格；布局及空值规则见[弹窗与抽屉](#弹窗与抽屉)。 |
@@ -570,13 +570,14 @@ typography:
 
 | 角色及接入方式 | 默认 | 悬浮 | 按下 | 键盘聚焦 | 禁用 | 加载 | 选中／展开 |
 |---|---|---|---|---|---|---|---|
-| 次要命令：默认或 info `el-button`，含 plain/dashed | 中性正文、基础面、普通边框 | 强正文、中性悬浮、强边框 | 强正文、中性按下、强边框 | 共享焦点环 | 禁用文字／背景／边框 | 保留默认角色色＋旋转标识 | 无业务选中语义；is-active 仅持续按下外观 |
+| 次要命令：默认 `el-button`，含 plain/dashed | 中性正文、基础面、普通边框 | 主色文字、主色 8% 浅面、主色边框 | 主色文字、主色按下面、主色边框 | 共享焦点环 | 禁用文字／背景／边框 | 保留默认角色色＋旋转标识 | 无业务选中语义；is-active 仅持续按下外观 |
+| 显式中性命令：info `el-button`，含 plain/dashed | 中性正文、基础面、普通边框 | 强正文、中性悬浮、强边框 | 强正文、中性按下、强边框 | 共享焦点环 | 禁用文字／背景／边框 | 保留默认角色色＋旋转标识 | 同上 |
 | 主要／语义实色：primary、success、warning、danger | 白字、主题原色边框和背景 | 实色悬浮 | 实色按下 | 共享焦点环 | 统一中性禁用态 | 保留默认角色色＋旋转标识 | 同上 |
 | 语义轻量：primary/success/warning/danger 的 plain/dashed | 主题语义原色文字、语义浅面、40% 语义边框 | 语义悬浮面、实色语义边框 | 语义按下面、实色语义边框 | 共享焦点环 | 统一中性禁用态 | 保留默认角色色＋旋转标识 | 同上 |
-| 文字命令：text | 中性或 type 语义文字、透明面／边框 | 中性或语义悬浮面 | 中性或语义按下面 | 共享焦点环 | 禁用文字、透明面 | 保留默认文字＋旋转标识 | 不以悬浮表示已选中 |
-| 带底色文字命令：text + bg | 中性悬浮底、对应文字色 | 中性按下底 | 更深一档中性底（14% 强正文混入） | 共享焦点环 | 禁用文字、透明面 | 保留默认角色色＋旋转标识 | 不适用 |
-| 链接式命令：link；表格内联操作 | 中性或语义文字、透明面／边框 | 保留文字语义、下划线 | 保留语义、加粗下划线 | 共享焦点环＋下划线 | 禁用文字、无下划线 | 保留文字＋旋转标识 | 更多菜单展开保留下划线 |
-| 图标命令：AppIconButton ghost / soft | ghost 透明面，soft 中性底；default 中性文字，primary/danger 对应语义 | 对应中性／语义悬浮面；已选项保留选中底 | 对应中性／语义按下面 | 共享焦点环 | 禁用文字；ghost 透明，soft 禁用底 | 保留当前角色色，旋转图标替换原图标 | 展开用 aria-expanded；可切换项用 aria-pressed，选中为主色字和共享浅底，禁用仍呈禁用态 |
+| 文字命令：text | 中性或 type 语义文字、透明面／边框 | 普通及 info 使用主色文字与 8% 主色浅面；显式语义使用对应悬浮面；保持无框 | 主色或对应语义文字、按下面；保持无框 | 共享焦点环 | 禁用文字、透明面 | 保留默认文字＋旋转标识 | 不以悬浮表示已选中 |
+| 带底色文字命令：text + bg | 中性悬浮底、对应文字色 | 同 text 的主色／语义反馈 | 同 text 的主色／语义按下反馈 | 共享焦点环 | 禁用文字、透明面 | 保留默认角色色＋旋转标识 | 不适用 |
+| 链接式命令：link；表格内联操作 | 中性或语义文字、透明面／边框 | 普通及 info 变主色，显式语义保留对应色；显示下划线，背景透明 | 保持主色或对应语义色，加粗下划线，背景透明 | 共享焦点环＋下划线 | 禁用文字、无下划线 | 保留文字＋旋转标识 | 更多菜单展开保留下划线 |
+| 图标命令：AppIconButton ghost / soft | ghost 透明面，soft 中性底；default 中性文字，primary/danger 对应语义 | default 使用主色图标与 8% 主色浅面，显式语义使用对应悬浮面；已选项保留选中底；保持无框 | 主色或对应语义图标、按下面；保持无框 | 共享焦点环 | 禁用文字；ghost 透明，soft 禁用底 | 保留当前角色色，旋转图标替换原图标 | 展开用 aria-expanded；可切换项用 aria-pressed，选中为主色字和共享浅底，禁用仍呈禁用态 |
 | 表格更多菜单行：AppRowActions | text 角色；info 使用中性正文 | 对应悬浮面 | 对应按下面 | 共享焦点环 | 同 text | 同 text | 菜单容器管理展开，不自建颜色配方 |
 | 说明触发器：app-interaction-help | 中性文字、填充和边框 | 主色底、白字 | 保持说明语义，不模拟命令执行 | 主色底、白字及共享焦点环 | 不提供禁用态；无说明则不渲染入口 | 不提供加载态 | 浮层按焦点／悬浮生命周期展示，不表示业务选中 |
 | 关闭／清除：AppCloseButton 及已登记库内入口 | 次要文字、透明面 | 强文字、中性悬浮面 | 强文字、中性按下面 | 共享焦点环 | 45% 可用性弱化，禁止操作 | 支持 loading 的关闭按钮保留原色＋旋转图标 | 不适用 |
@@ -598,7 +599,7 @@ typography:
 | 删除、停用、终止等破坏性命令 | danger | 买入／卖出使用命令主色，交易方向由文字及邻近金融色标识表达 |
 
 - 状态优先级为禁用（未加载）／加载 > 按下 > 悬浮 > 默认；焦点环独立叠加，选中／展开独立表达。禁止把 focus、hover 当作业务 selected，禁止把 loading 画成灰色 disabled。库按钮 loading 不使用通用白蒙层，避免暗色主题突然泛白。
-- 主色、成功、警告、危险使用同一算法；info 是中性角色，普通按钮与表格行操作都映射正文色，不能使用禁用弱文字。运行时 info 的基础色、RGB 与派生色从当前 `text` 生成。普通次要操作不得默认改成主色强调。
+- 主色、成功、警告、危险使用同一算法；info 常态映射正文色，不能使用禁用弱文字，有框时保留中性反馈，text/link 时与普通无框命令统一使用主色反馈。运行时 info 的基础色、RGB 与派生色从当前 `text` 生成。普通次要操作常态保持中性色，主色仅作悬浮／按下反馈，不改成常驻实色主按钮；关闭／清除继续使用中性反馈，危险等显式语义不被主色覆盖。
 - 主题原色统一消费：主色链接式按钮、语义文字按钮及主色分段选项直接使用 `--el-color-primary` 等对应主题原色；实色按钮默认背景使用同一原色，白字保持现有设计。导航链接使用 `.app-interaction-link.app-interaction-link--primary` 共享颜色、悬停下划线和键盘焦点，保留 RouterLink 导航语义。禁止按对比度阈值自动生成另一套常态文字色或实色背景；可读性通过具体主题评审处理。
 - 登录页例外只覆盖 `login-primary` 品牌提交和 `login-tab` 模式页签；创建账户、返回登录、发送验证码等文字命令使用 `el-button link`，切换预设用标准按钮，主题图标用 `AppIconButton`。不得按 `login-*` 前缀放行任意原生按钮或私有颜色配方。
 - 样式复用必须消除覆盖：共享角色的消费者只维护几何，禁止在宿主、局部 scoped 选择器或动作名称子文字上覆盖共享交互色，复合卡片中独立的金融值与业务状态继续消费对应 token；静态值与导航值共用名称类时，静态颜色只匹配非链接分支。不得用整行或整个按钮组的 opacity 表示已办／只读，避免连同可用操作一起变淡；使用状态标签和中性表面表达。

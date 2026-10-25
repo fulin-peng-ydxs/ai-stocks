@@ -2,6 +2,7 @@
 import AppForm from '@/components/AppForm.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppCloseButton from '@/components/AppCloseButton.vue'
 import type { ControlRowSize } from '@/components/controlRowSizing'
 import { Refresh } from '@element-plus/icons-vue'
 import { ref } from 'vue'
@@ -18,6 +19,8 @@ import PageSegmented from '@/components/PageSegmented.vue'
 // 样板只改变本地展示状态，使用真实组件，不请求或保存业务数据。
 const disabled = ref(false)
 const invalid = ref(false)
+const commandLoading = ref(false)
+const commandSelected = ref(false)
 const value = ref('示例内容')
 const range = ref<[string, string]>(['2026-01-01', '2026-01-02'])
 const selection = ref('a')
@@ -37,6 +40,7 @@ const selections = ref(['a', 'b'])
     <AppControlRow class="border-state-preview__tools">
       <el-checkbox v-model="disabled">禁用控件</el-checkbox>
       <el-checkbox v-model="invalid">字段错误</el-checkbox>
+      <el-checkbox v-model="commandLoading">命令加载</el-checkbox>
       <el-radio-group v-model="columns" aria-label="详情列数">
         <el-radio-button :value="1">一列</el-radio-button>
         <el-radio-button :value="2">两列</el-radio-button>
@@ -93,6 +97,20 @@ const selections = ref(['a', 'b'])
       <el-popover :placement="APP_BOTTOM_FLOATING_PLACEMENT" :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS" trigger="click" effect="dark" content="浮层形态由内容角色决定，深浅底色不改变卡片圆角。">
         <template #reference><el-button>深底浮层样板</el-button></template>
       </el-popover>
+    </AppControlRow>
+    <AppControlRow class="border-state-preview__tools" aria-label="无框命令状态样板">
+      <el-button text :disabled="disabled" :loading="commandLoading">文字命令样板</el-button>
+      <el-button text type="info" :disabled="disabled" :loading="commandLoading">info 文字样板</el-button>
+      <el-button text bg :disabled="disabled" :loading="commandLoading">带底文字样板</el-button>
+      <el-button link :disabled="disabled" :loading="commandLoading">链接命令样板</el-button>
+      <el-button link type="info" :disabled="disabled" :loading="commandLoading">info 链接样板</el-button>
+      <el-button text bg type="danger" :disabled="disabled" :loading="commandLoading">危险命令样板</el-button>
+      <el-button type="info" :disabled="disabled" :loading="commandLoading">中性有框样板</el-button>
+      <AppIconButton label="无框图标样板" :disabled="disabled" :loading="commandLoading"><Refresh /></AppIconButton>
+      <AppIconButton label="带底图标样板" variant="soft" :disabled="disabled" :loading="commandLoading"><Refresh /></AppIconButton>
+      <AppIconButton label="图标选择样板" :aria-pressed="commandSelected" :disabled="disabled" :loading="commandLoading"
+        @click="commandSelected = !commandSelected"><Refresh /></AppIconButton>
+      <AppCloseButton label="关闭命令样板" :disabled="disabled" :loading="commandLoading" />
     </AppControlRow>
     <AppDetailFields :columns="columns">
       <AppDetailField label="字段一" value="普通字段" />

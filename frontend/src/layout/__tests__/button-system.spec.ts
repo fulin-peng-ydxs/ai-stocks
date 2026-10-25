@@ -141,7 +141,7 @@ describe('全站按钮与图标操作契约', () => {
     expect(rowActions).not.toContain('--row-action-menu-bg:')
     expect(states).toContain('--app-button-neutral-text: var(--el-text-color-regular)')
     expect(states).toContain('--app-button-disabled-text: var(--el-disabled-text-color)')
-    // 普通 info 与行操作 info 必须共用中性角色，不能只修表格。
+    // 普通 info 与行操作 info 的常态文字共用中性角色，交互反馈按外形处理。
     expect(states).toContain(':where(.el-button--info, .is-tone-info)')
 
   })

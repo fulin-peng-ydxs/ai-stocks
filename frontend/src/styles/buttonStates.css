@@ -1,5 +1,6 @@
 /* 按钮状态事实源。几何由 global.css / 组件负责，页面只选择 type、plain、text、link。 */
 :root {
+  --app-button-primary-soft-bg: color-mix(in srgb, var(--el-color-primary) 8%, var(--el-bg-color));
   --app-button-primary-hover-bg: color-mix(in srgb, var(--el-color-primary) 14%, var(--el-bg-color));
   --app-button-primary-pressed-bg: color-mix(in srgb, var(--el-color-primary) 22%, var(--el-bg-color));
   --app-button-primary-solid-pressed-bg: color-mix(in srgb, var(--el-color-primary) 88%, black);
@@ -73,13 +74,24 @@ html[data-layout-preset] .app-icon-button:not([data-close-size]):where(.is-prima
   --app-button-pressed-bg: var(--app-button-tone-pressed);
   --app-button-pressed-border: var(--app-button-tone);
 }
-/* 普通 info 与行操作 info 都是次要命令，完整复用中性角色。 */
+/* info 常态保持中性；有框命令保留中性反馈，无框命令在下方统一接入主色反馈。 */
 html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice):where(.el-button--info, .is-tone-info) {
   --app-button-rest-text: var(--app-button-neutral-text);
   --app-button-hover-text: var(--app-button-neutral-strong-text);
   --app-button-pressed-text: var(--app-button-neutral-strong-text);
   --app-button-hover-bg: var(--app-button-neutral-hover-bg);
   --app-button-pressed-bg: var(--app-button-neutral-pressed-bg);
+}
+/* 普通命令共用主色反馈；外形由 text/link/图标规则承接，显式语义与关闭动作不混入。 */
+html[data-layout-preset] .el-button:not(.el-button--primary, .el-button--success, .el-button--warning, .el-button--danger, .el-button--info, .is-tone-primary, .is-tone-success, .is-tone-warning, .is-tone-danger, .is-tone-info, .app-interaction-target, .app-interaction-trigger, .app-interaction-choice),
+html[data-layout-preset] .el-button:where(.is-text, .is-link):where(.el-button--info, .is-tone-info):not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice),
+html[data-layout-preset] .app-icon-button:where(.is-default):not([data-close-size]) {
+  --app-button-hover-text: var(--el-color-primary);
+  --app-button-hover-bg: var(--app-button-primary-soft-bg);
+  --app-button-hover-border: var(--el-color-primary);
+  --app-button-pressed-text: var(--el-color-primary);
+  --app-button-pressed-bg: var(--app-button-primary-pressed-bg);
+  --app-button-pressed-border: var(--el-color-primary);
 }
 html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice):where(.is-text, .is-link),
 html[data-layout-preset] .app-icon-button:not([data-close-size]) {
@@ -98,10 +110,6 @@ html[data-layout-preset] .app-icon-button[aria-pressed='true']:not([data-close-s
   --app-button-hover-bg: var(--app-interaction-selected-background);
   --app-button-pressed-text: var(--el-color-primary);
   --app-button-pressed-bg: var(--app-button-primary-hover-bg);
-}
-html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice).is-text.is-has-bg {
-  --app-button-hover-bg: var(--app-button-neutral-pressed-bg);
-  --app-button-pressed-bg: color-mix(in srgb, var(--el-text-color-primary) 14%, var(--app-button-neutral-hover-bg));
 }
 html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice).is-link {
   --app-button-hover-bg: transparent;
