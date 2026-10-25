@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import AppControlRow from '@/components/AppControlRow.vue'
-import AppScrollArea from '@/components/AppScrollArea.vue'
 import { ArrowRight } from '@element-plus/icons-vue'
 
 withDefaults(defineProps<{
@@ -54,9 +53,6 @@ const emit = defineEmits<{
         <slot name="controls" />
       </AppControlRow>
     </header>
-    <AppScrollArea v-if="$slots.summary" class="market-analysis-header__summary">
-      <slot name="summary" />
-    </AppScrollArea>
   </div>
 </template>
 
@@ -71,11 +67,6 @@ const emit = defineEmits<{
   justify-content: space-between;
   gap: var(--app-space-3);
   min-height: 72px;
-  padding: var(--app-space-3) var(--app-space-4);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-.market-analysis-header__summary {
-  min-width: 0;
   padding: var(--app-space-3) var(--app-space-4);
   border-bottom: 1px solid var(--el-border-color-lighter);
 }

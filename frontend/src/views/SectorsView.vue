@@ -35,8 +35,6 @@ import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioR
 import SectorCompareChart from '@/components/SectorCompareChart.vue'
 import type { CrossSectionDatum } from '@/components/SectorCompareChart.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
-import StockQuoteSummary from '@/components/stock-chart/StockQuoteSummary.vue'
-import { useKlineHeaderQuote } from '@/composables/useKlineHeaderQuote'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { normalizePageSize, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
@@ -408,10 +406,6 @@ const klineBars = computed<Bar[]>(() =>
     isSelectionRefresh.value ? loadedChartActiveCode.value : activeCode.value
   ] ?? []),
 )
-const {
-  activeBar: chartActiveBar, supplement: chartMeasurementSummary,
-  quoteWindow: chartQuoteWindow, summary: headerSummary, widths: headerQuoteWidths,
-} = useKlineHeaderQuote(klineBars, () => `${activeCode.value}:${chartMode.value}:${chartPreferences.klinePeriod.value}`)
 const klineWarmupBars = computed<Bar[]>(() =>
   toBoardChartBars(compareWarmupBars.value[
     isSelectionRefresh.value ? loadedChartActiveCode.value : activeCode.value
@@ -1346,14 +1340,6 @@ const menuPageTitle = useMenuPageTitle()
             data-testid="sectors-chart-header"
             @open-detail="openDetail"
           >
-            <template v-if="chartMode === 'kline' && headerSummary" #summary>
-              <StockQuoteSummary
-                :summary="headerSummary"
-                :widths="headerQuoteWidths"
-                column-gap="relaxed"
-                data-testid="sectors-header-quote"
-              />
-            </template>
             <template #description>
               <span>
                 {{ chartMode === 'compare' ? `与 ${Math.max(0, chartCodes.length - 1)} 个板块对比区间强弱` : '查看板块指数开高低收与量能' }}
@@ -1448,10 +1434,6 @@ const menuPageTitle = useMenuPageTitle()
               :zoom-start="0"
               :zoom-end="100"
               aria-label="板块指数多图联动工作区"
-              :show-kline-tooltip="false"
-              @active-bar-change="chartActiveBar = $event"
-              @measurement-summary-change="chartMeasurementSummary = $event"
-              @quote-window-change="chartQuoteWindow = $event"
               enable-return-measurement
               enable-kline-period-switch
               v-model:return-measurement-mode="chartPreferences.returnMeasurementMode.value"

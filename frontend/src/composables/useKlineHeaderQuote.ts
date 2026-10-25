@@ -4,7 +4,7 @@ import { buildKlineBarQuoteSummary } from '@/components/stock-chart/chartUtils'
 import { klineQuoteWindowWidths, type StockQuoteWindow } from '@/components/stock-chart/workspaceOptions'
 import type { StockQuoteSupplement } from '@/components/stock-chart/stockQuoteSummary'
 
-/** 板块列表和详情共用图表事件，头部与当前周期、光标及测算保持一致。 */
+/** 板块详情消费图表事件，头部与当前周期、光标及测算保持一致。 */
 export function useKlineHeaderQuote(bars: Ref<Bar[]>, context: () => unknown) {
   const activeBar = shallowRef<Bar | null>(null)
   const supplement = shallowRef<StockQuoteSupplement | null>(null)
