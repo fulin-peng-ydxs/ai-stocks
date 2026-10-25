@@ -17,9 +17,9 @@ describe('操作行消费门禁', () => {
     expect(audit('<template><AppControlRow><AppSelect :style="{width: w}" /></AppControlRow></template>'))
       .toEqual([])
   })
-  it('跟踪共享组件的具名操作插槽，不污染正文内容', () => {
+  it.each(['actions', 'toolbar', 'footer'])('跟踪共享组件的%s插槽，不污染正文内容', slot => {
     expect(audit(`<template><AppWorkspacePane>
-      <template #actions><AppSelect size="small" /></template>
+      <template #${slot}><AppSelect size="small" /></template>
       <AppSelect size="large" />
     </AppWorkspacePane></template>`)).toHaveLength(1)
   })

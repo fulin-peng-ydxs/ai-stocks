@@ -15,6 +15,41 @@ const version: RuleVersionDetail = {
 }
 
 describe('TradeOperationEditor', () => {
+  it.each(['buy', 'sell'] as const)('%s 买卖核对独立成章，显示规则正文并保留核对值与只读约束', async side => {
+    const selected = `${side}-1`
+    const withContent = { ...version, action_rules: version.action_rules.map(rule => ({ ...rule,
+      content: rule.action_type === 'buy' ? '买入资金50%\n分批建仓' : '跌破支撑卖出',
+    })) }
+    const operation = { stock_code: '000001.SZ', stock_name_snapshot: '平安银行', side,
+      stock_rule_id: 'stock-1', action_rule_id: selected, action_matches: false,
+      price: '10', quantity: '100', amount: '1000', fee: '0',
+      operated_at: '2026-10-23T10:00:00', note: null, display_order: 1 }
+    const wrapper = mount(TradeOperationEditor, {
+      props: { modelValue: [operation], version: withContent, tradeDate: '2026-10-23', automatic: true },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
+    })
+    await wrapper.get('[data-testid="operation-card-toggle"]').trigger('click')
+    const section = wrapper.get('[data-testid="operation-action-check-section"]')
+    expect(section.get('h5').text()).toBe('买卖规则核对')
+    expect(section.element.parentElement).toBe(wrapper.get('[data-testid="operation-trade-section"]').element.parentElement)
+    expect(wrapper.get('[data-testid="operation-context-section"]').find('[data-testid="operation-action-check-section"]').exists()).toBe(false)
+    expect(section.get('.operation-rule-content').text()).toBe(side === 'buy' ? '买入资金50%\n分批建仓' : '跌破支撑卖出')
+    const result = section.findComponent({ name: 'ElSegmented' })
+    expect(result.props('modelValue')).toBe(false)
+    result.vm.$emit('update:modelValue', true)
+    await flushPromises()
+    expect((wrapper.emitted('update:modelValue')!.at(-1)![0] as any[])[0]).toMatchObject({ action_rule_id: selected, action_matches: true, side })
+    await wrapper.setProps({ modelValue: [{ ...operation, action_matches: undefined }] })
+    expect(result.props('modelValue')).toBe(true)
+    await wrapper.setProps({ disabled: true })
+    expect(result.props('disabled')).toBe(true)
+    await wrapper.setProps({ version: { ...withContent, action_rules: withContent.action_rules.map(rule => ({ ...rule, content: null })) } })
+    expect(section.get('.operation-rule-content').text()).toBe(side === 'buy' ? '唯一买入' : '唯一卖出')
+    expect(result.props('modelValue')).toBe(true)
+    await wrapper.setProps({ version: { ...withContent, rule_id: '' } })
+    expect(wrapper.find('[data-testid="operation-action-check-section"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('自动模式拒绝零价零数量，交割单手工金额差异允许继续提交', async () => {
     const operation = { event_id: 'fill', stock_code: '600000.SH', stock_name_snapshot: '浦发银行', side: 'buy' as const,
       stock_rule_id: 'stock-1', action_rule_id: 'buy-1', price: '10', quantity: '100', amount: '999.99',

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { useSlots } from 'vue'
 
 withDefaults(defineProps<{
@@ -7,14 +8,23 @@ withDefaults(defineProps<{
   eyebrow?: string
   ariaLabel?: string
   headerVisible?: boolean
+  padding?: 'none' | 'standard'
+  /** 正文滚动只能由本容器或内部工作区中的一方负责。 */
+  scroll?: 'delegated' | 'body'
+  fill?: boolean
 }>(), {
   eyebrow: '',
   ariaLabel: '',
   headerVisible: true,
+  padding: 'none',
+  scroll: 'delegated',
+  fill: false,
 })
 
 defineSlots<{
   actions?: () => unknown
+  toolbar?: () => unknown
+  footer?: () => unknown
   default: () => unknown
 }>()
 
@@ -22,7 +32,7 @@ const slots = useSlots()
 </script>
 
 <template>
-  <section class="app-workspace-pane" :aria-label="ariaLabel || title">
+  <section class="app-workspace-pane" :class="{ 'is-padded': padding === 'standard', 'is-fill': fill }" :aria-label="ariaLabel || title">
     <header
       v-if="headerVisible"
       class="app-workspace-pane__header"
@@ -35,9 +45,18 @@ const slots = useSlots()
         <slot name="actions" />
       </AppControlRow>
     </header>
+    <AppControlRow v-if="slots.toolbar" class="app-workspace-pane__toolbar">
+      <slot name="toolbar" />
+    </AppControlRow>
     <div class="app-workspace-pane__body">
-      <slot />
+      <AppScrollArea v-if="scroll === 'body'" class="app-workspace-pane__scroll">
+        <div class="app-workspace-pane__flow"><slot /></div>
+      </AppScrollArea>
+      <slot v-else />
     </div>
+    <AppControlRow v-if="slots.footer" justify="end" class="app-workspace-pane__footer">
+      <slot name="footer" />
+    </AppControlRow>
   </section>
 </template>
 
@@ -52,6 +71,16 @@ const slots = useSlots()
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }
+.app-workspace-pane.is-fill { flex: 1 1 auto; height: 100%; }
+.app-workspace-pane__toolbar, .app-workspace-pane__footer {
+  flex: none;
+  padding: var(--app-space-3) var(--layout-card-padding);
+}
+.app-workspace-pane__toolbar { border-bottom: 1px solid var(--el-border-color-lighter); }
+.app-workspace-pane__footer { border-top: 1px solid var(--el-border-color-lighter); }
+.app-workspace-pane.is-padded > .app-workspace-pane__body { padding: var(--layout-card-padding); gap: var(--app-space-3); }
+.app-workspace-pane__scroll { flex: 1 1 auto; min-height: 0; }
+.app-workspace-pane__flow { display: grid; align-content: start; gap: var(--app-space-4); min-width: 0; }
 
 .app-workspace-pane__header {
   display: flex;

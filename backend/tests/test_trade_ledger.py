@@ -108,13 +108,118 @@ def test_one_breached_trade_does_not_create_partial_from_other_passing_condition
 
 def test_initial_limit_and_buy_caused_limit_are_explicit():
     rule = {"rule_id": "r", "version_no": 1, "name": "纪律", "max_positions": 1}
-    opening = prepare_opening([{"stock_code": "A", "quantity": "100"},
-                               {"stock_code": "B", "quantity": "100"}])
+    opening = prepare_opening([{"stock_code": "A", "quantity": "100", "rule_id": "r"},
+                               {"stock_code": "B", "quantity": "100", "rule_id": "r"}])
     assert calculate_day(opening, [], DAY, rules=[rule])["assessment"] == "breached"
     result = calculate_day(opening[:1], [event("C", rule_id="r")], DAY, rules=[rule])
     assert result["events"][0]["compliance_status"] == "breached"
     assert result["assessment"] == "breached"
 
+
+
+def test_rule_limits_use_owned_positions_and_keep_manual_violation_separate():
+    rules = [{"rule_id": rid, "version_no": 1, "name": rid, "max_positions": 1}
+             for rid in ("dividend", "trend")]
+    result = calculate_day([], [event("A", rule_id="dividend", issues=["选股条件不符合"]),
+                                event("B", order=2, rule_id="trend")], DAY, rules=rules)
+    assert result["peak_positions"] == 2
+    assert [e["peak_positions"] for e in result["evaluations"]] == [1, 1]
+    assert [e["assessment"] for e in result["evaluations"]] == ["breached", "complied"]
+    assert result["events"][1]["issues"] == []
+    assert result["events"][0]["issues"] == ["选股条件不符合"]
+    assert result["assessment"] == "partial"
+
+
+def test_same_stock_across_groups_is_deduplicated_inside_each_rule():
+    rules = [{"rule_id": rid, "version_no": 1, "name": rid, "max_positions": 1}
+             for rid in ("first", "second")]
+    opening = prepare_opening([
+        {"stock_code": "A", "quantity": "100", "rule_id": "first", "stock_rule_id": "one"},
+        {"stock_code": "A", "quantity": "100", "rule_id": "first", "stock_rule_id": "two"},
+        {"stock_code": "A", "quantity": "100", "rule_id": "second"},
+        {"stock_code": "B", "quantity": "100"},
+    ])
+    result = calculate_day(opening, [], DAY, rules=rules)
+    assert result["peak_positions"] == 2
+    assert [e["peak_positions"] for e in result["evaluations"]] == [1, 1]
+    assert all(e["issues"] == [] for e in result["evaluations"])
+    assert result["assessment"] == "complied"
+
+
+def test_only_buy_causing_own_rule_to_exceed_limit_is_breached():
+    rules = [{"rule_id": rid, "version_no": 1, "name": rid, "max_positions": 1}
+             for rid in ("first", "second")]
+    opening = prepare_opening([{"stock_code": "A", "quantity": "100", "rule_id": "first"}])
+    result = calculate_day(opening, [event("B", rule_id="second"),
+                                    event("C", order=2, rule_id="first")], DAY, rules=rules)
+    assert result["events"][0]["compliance_status"] == "complied"
+    assert result["events"][1]["issues"] == ["本规则持仓2只，超过上限1只"]
+    assert [e["issues"] for e in result["evaluations"]] == [[], []]
+    assert [e["peak_positions"] for e in result["evaluations"]] == [2, 1]
+
+
+def test_linked_check_does_not_inherit_other_rules_existing_position_breach():
+    rules = [{"rule_id": rid, "version_no": 1, "name": rid, "max_positions": 1}
+             for rid in ("first", "second")]
+    opening = prepare_opening([{"stock_code": code, "quantity": "100", "rule_id": "second"}
+                               for code in ("A", "B")])
+    result = calculate_day(opening, [event("C", rule_id="first", rule_checks=[
+        {"rule_id": "second", "issues": [], "warnings": []},
+    ])], DAY, rules=rules)
+    assert len(result["positions"]) == 3
+    assert result["events"][0]["issues"] == []
+    assert result["events"][0]["rule_checks"][0]["issues"] == []
+    assert result["evaluations"][1]["issues"] == ["本规则持仓2只，超过上限1只"]
+    assert result["evaluations"][1]["breached_count"] == 1
+    assert [e["peak_positions"] for e in result["evaluations"]] == [1, 2]
+
+
+def test_add_to_existing_stock_does_not_repeat_opening_position_breach():
+    rule = {"rule_id": "r", "version_no": 1, "name": "纪律", "max_positions": 1}
+    opening = prepare_opening([{"stock_code": code, "quantity": "100", "rule_id": "r"}
+                               for code in ("A", "B")])
+    result = calculate_day(opening, [event("A", rule_id="r")], DAY, rules=[rule])
+    assert result["events"][0]["issues"] == []
+    assert result["evaluations"][0]["breached_count"] == 1
+    assert result["evaluations"][0]["peak_positions"] == 2
+
+
+@pytest.mark.parametrize("sell_first,expected_peak,breached", [(True, 1, False), (False, 2, True)])
+def test_rule_peak_obeys_real_trade_order(sell_first, expected_peak, breached):
+    rules = [{"rule_id": rid, "version_no": 1, "name": rid, "max_positions": 1}
+             for rid in ("first", "second")]
+    opening = prepare_opening([{"stock_code": "A", "quantity": "100", "rule_id": "first"},
+                               {"stock_code": "B", "quantity": "100", "rule_id": "second"}])
+    actions = [("A", "sell"), ("C", "buy")] if sell_first else [("C", "buy"), ("A", "sell")]
+    result = calculate_day(opening, [event(code, side, index, rule_id="first")
+                                    for index, (code, side) in enumerate(actions, 1)], DAY, rules=rules)
+    assert result["evaluations"][0]["peak_positions"] == expected_peak
+    assert any(e["issues"] for e in result["events"]) == breached
+    assert result["evaluations"][1]["assessment"] == "complied"
+    assert result["evaluations"][1]["peak_positions"] == 1
+
+
+def test_unrelated_stock_group_budget_does_not_attach_to_new_buy():
+    rule = {"rule_id": "r", "version_no": 1, "name": "纪律", "stock_rules": [
+        {"detail_id": "old", "name": "原分组", "max_capital": "100"},
+        {"detail_id": "new", "name": "新分组", "max_capital": "2000"},
+    ]}
+    opening = prepare_opening([{"stock_code": "A", "quantity": "100", "cost": "200",
+                                "rule_id": "r", "stock_rule_id": "old"}])
+    result = calculate_day(opening, [event("B", rule_id="r", stock_rule_id="new")], DAY, rules=[rule])
+    assert result["events"][0]["issues"] == []
+    assert result["evaluations"][0]["issues"] == ["原分组持仓成本200.00元，超过资金上限"]
+
+
+def test_position_adjustment_only_changes_limits_of_its_own_rule():
+    rules = [{"rule_id": rid, "version_no": 1, "name": rid, "max_positions": 1}
+             for rid in ("first", "second")]
+    opening = prepare_opening([{"stock_code": "A", "quantity": "100", "rule_id": "first"}])
+    result = calculate_day(opening, [event("B", kind="position", adjustment_type="transfer",
+                                         amount=None, note="转入", rule_id="first")], DAY, rules=rules)
+    assert result["evaluations"][0]["issues"] == ["本规则持仓2只，超过上限1只"]
+    assert result["evaluations"][1]["issues"] == []
+    assert result["evaluations"][1]["peak_positions"] == 0
 
 def test_adjustments_are_not_trade_amounts_and_need_reason():
     result = calculate_day([], [event(kind="position", adjustment_type="transfer", amount="500", note="转入"),
@@ -343,7 +448,7 @@ def test_split_preserves_cost_and_allocates_quantity_across_groups(side, delta, 
     assert [p["cost"] for p in result["positions"]] == ["1000.00", None]
     assert result["cash"] == "500.00"
     assert result["buy_amount"] == result["sell_amount"] == "0.00"
-    assert result["calculation_version"] == "ledger-v2"
+    assert result["calculation_version"] == "ledger-v3"
 
 
 def test_split_keeps_new_bought_shares_unavailable_and_rejects_zero_position():
@@ -425,3 +530,73 @@ def test_rule_resolution_uses_same_database_snapshot_as_account(pg, market):
         rule_id = _published_rule(service.discipline)
         assert service._rules(dates[0], conn) == []
     assert service.context(dates[0])["rules"][0]["rule_id"] == rule_id
+
+
+def test_rule_scoped_limits_preview_save_amend_and_history(pg, market):
+    from backend.tests.test_trade_discipline_t3 import _rule_payload
+
+    dates = _seed_market(market)
+    for code in ("600001.SH", "600002.SH"):
+        market.execute("INSERT INTO stock_basic(code,name,board) VALUES (?,?,'主板')", [code, code])
+        market.execute("INSERT INTO daily_bar(code,trade_date) VALUES (?,?)", [code, dates[0]])
+    service = ledger(pg, market)
+    rule_ids = []
+    for name in ("分红纪律", "趋势纪律"):
+        rule_id = service.discipline.create_rule(dict(_rule_payload(name), max_positions=1))["id"]
+        service.discipline.publish_rule(rule_id, expected_revision=1)
+        rule_ids.append(rule_id)
+    context = service.initialize(dates[0], [], None, 0)
+    events = [dict(_operation(dates[0]), event_id=f"scoped-{index}", rule_id=rid,
+                   stock_code=code, display_order=index + 1)
+              for index, (rid, code) in enumerate(zip(rule_ids, ("600000.SH", "600001.SH"), strict=True))]
+    content = submit_payload(context, events)
+    preview = service.submit(dates[0], content, preview=True)
+    assert preview["assessment"] == "complied"
+    assert preview["peak_positions"] == 2
+    assert [r["peak_positions"] for r in preview["evaluations"]] == [1, 1]
+    saved = service.submit(dates[0], content)
+    assert saved["evaluations"] == preview["evaluations"]
+    assert saved["calculation_version"] == "ledger-v3"
+    original = service.revisions(dates[0], 1)["snapshot"]
+    events.append(dict(_operation(dates[0]), event_id="scoped-extra", rule_id=rule_ids[0],
+                       stock_code="600002.SH", display_order=3))
+    revised = service.submit(dates[0], submit_payload(service.context(dates[0]), events))
+    results = {row["rule_id"]: row for row in revised["evaluations"]}
+    assert results[rule_ids[0]]["peak_positions"] == 2
+    assert results[rule_ids[0]]["assessment"] == "partial"
+    assert results[rule_ids[1]]["peak_positions"] == 1
+    assert results[rule_ids[1]]["assessment"] == "complied"
+    assert revised["events"][1]["issues"] == []
+    assert revised["events"][2]["issues"] == ["本规则持仓2只，超过上限1只"]
+    assert service.revisions(dates[0], 1)["snapshot"] == original
+    assert {row["rule_id"]: row["assessment"] for row in service.summary(dates[0])["rules"]} == {
+        rule_ids[0]: "partial", rule_ids[1]: "complied",
+    }
+
+
+def test_buy_and_sell_fees_are_allocated_once_to_cost_cash_and_profit():
+    bought = calculate_day([], [event(quantity="100", price="10", fee="5")], DAY, opening_cash="2000")
+    assert bought["positions"][0]["cost"] == "1005.00"
+    assert bought["cash"] == "995.00"
+    # 估值使用真实服务入口，确认浮动盈亏以含买入费用的剩余成本为基准。
+    import pandas as pd
+
+    class Quotes:
+        def query_df(self, _sql, _params):
+            return pd.DataFrame([{"code": "A", "trade_date": DAY, "close": 11}])
+
+    service = TradeLedgerService.__new__(TradeLedgerService)
+    service.discipline = type("Discipline", (), {"market": Quotes()})()
+    marked = service._marked_positions(bought["positions"], DAY)
+    assert marked[0]["market_value"] == "1100.00"
+    assert marked[0]["unrealized_pnl"] == "95.00"
+    sold = calculate_day(bought["positions"], [event(side="sell", quantity="40", price="12", fee="2")],
+                         DAY, opening_cash=bought["cash"])
+    assert sold["positions"][0]["cost"] == "603.00"
+    assert sold["realized_pnl"] == "76.00"  # 480 - 2 - 402（402中包含已分摊买入费用2元）
+    assert sold["cash"] == "1473.00"
+    assert sold["net_outflow"] == "-478.00"
+    marked = service._marked_positions(sold["positions"], DAY)
+    assert marked[0]["market_value"] == "660.00"
+    assert marked[0]["unrealized_pnl"] == "57.00"
+    assert sold["realized_pnl"] == "76.00"

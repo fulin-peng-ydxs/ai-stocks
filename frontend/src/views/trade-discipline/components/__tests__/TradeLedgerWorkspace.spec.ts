@@ -2,18 +2,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessageBox } from 'element-plus'
 import TradeLedgerWorkspace from '../TradeLedgerWorkspace.vue'
 import TradeOperationEditor from '../TradeOperationEditor.vue'
 import FixedDecimalInput from '../FixedDecimalInput.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import { ledgerEventPayload, type LedgerContext } from '@/api/tradeLedger'
 
-const api = vi.hoisted(() => ({ context: vi.fn(), initialize: vi.fn(), submit: vi.fn(), preview: vi.fn(), history: vi.fn(), revision: vi.fn() }))
+const api = vi.hoisted(() => ({ context: vi.fn(), initialize: vi.fn(), submit: vi.fn(), preview: vi.fn(), history: vi.fn(), revision: vi.fn(), withdraw: vi.fn() }))
 vi.mock('@/api/tradeLedger', async (original) => ({
   ...await original<typeof import('@/api/tradeLedger')>(),
   getLedgerContext: api.context, initializeLedger: api.initialize,
-  submitLedger: api.submit, previewLedger: api.preview, getLedgerHistory: api.history, getLedgerRevision: api.revision,
+  submitLedger: api.submit, previewLedger: api.preview, getLedgerHistory: api.history, getLedgerRevision: api.revision, withdrawLedger: api.withdraw,
 }))
 const version = { rule_id: 'r', version_no: 1, name: '趋势纪律', capital: '100000',
   stock_rules: [{ detail_id: 's', name: '趋势选股', enabled: true, display_order: 1, max_capital: null, content: null }],
@@ -36,11 +36,151 @@ beforeEach(() => {
   api.submit.mockResolvedValue({})
 })
 describe('账户日结简化填报', () => {
+  it('移除手动核对按钮后，完整成交仍自动预览且可直接提交', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountWorkspace()
+    try {
+      await flushPromises()
+      expect(wrapper.get('.app-workspace-pane__footer').findAll('button')).toHaveLength(1)
+      expect(wrapper.text()).not.toContain('核对持仓与规则')
+      wrapper.findComponent(TradeOperationEditor).vm.$emit('update:modelValue', [{
+        event_id: 'auto-preview', stock_code: '600000.SH', stock_name_snapshot: '浦发银行', side: 'buy',
+        stock_rule_id: 's', action_rule_id: 'a', price: '10', quantity: '100', amount: '1000',
+        fee: '5', operated_at: '2026-10-23T10:00:00', note: null, display_order: 1,
+      }])
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(700)
+      await flushPromises()
+      expect(api.preview).toHaveBeenCalledTimes(1)
+      expect(api.preview.mock.calls[0][0].events[0]).toMatchObject({ price: '10', quantity: '100', fee: '5' })
+      expect(api.submit).not.toHaveBeenCalled()
+      await wrapper.get('.app-workspace-pane__footer button').trigger('click')
+      await flushPromises()
+      expect(api.submit).toHaveBeenCalledTimes(1)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+  it('浮动盈亏按正负展示金融颜色，零值和缺失值不套用盈亏色', async () => {
+    api.context.mockResolvedValue(context({ positions: [
+      ...['45.00', '-45.00', '0.00', null].map((pnl, index) => ({ stock_code: `60000${index}.SH`,
+        stock_name: `股票${index}`, quantity: '100', available_quantity: '100', cost: '1000',
+        market_value: '1000', unrealized_pnl: pnl, quote_date: '2026-10-23', rule_id: 'r', stock_rule_id: 's' })),
+    ] }))
+    const wrapper = mountWorkspace({ mode: 'positions' })
+    try {
+      await flushPromises()
+      expect(wrapper.get('.up').text()).toBe('+45.00')
+      expect(wrapper.get('.down').text()).toBe('-45.00')
+      expect(wrapper.get('.muted').text()).toBe('数据不完整')
+      expect(wrapper.findAll('.up, .down')).toHaveLength(2)
+    } finally { wrapper.unmount() }
+  })
+  it.each(['cancel', 'success', 'failure', 'stale'] as const)('撤回确认使用统一弹窗，%s 分支不遗留抽屉或丢失失败反馈', async outcome => {
+    const snapshot: NonNullable<LedgerContext['snapshot']> = { trade_date: '2026-10-23', events: [], positions: [],
+      opening_positions: [], omissions: [], rules: [version], assessment: 'complied', complete: true,
+      peak_positions: 0, buy_amount: '0', sell_amount: '0', fee: '0', net_outflow: '0',
+      cash: null, realized_pnl: null, review_note: null, evaluations: [] }
+    api.context.mockResolvedValue(context({ snapshot, latest_trade_date: '2026-10-23', current_revision_no: 1 }))
+    const confirm = vi.spyOn(ElMessageBox, 'confirm')
+    let finishConfirmation: (() => void) | undefined
+    if (outcome === 'cancel') confirm.mockRejectedValue('cancel')
+    else if (outcome === 'stale') confirm.mockImplementation(() => new Promise(resolve => { finishConfirmation = () => resolve('confirm' as never) }))
+    else confirm.mockResolvedValue('confirm' as never)
+    if (outcome === 'failure') api.withdraw.mockRejectedValue(new Error('账户已变化，请刷新后重试'))
+    else api.withdraw.mockResolvedValue({})
+    const wrapper = mountWorkspace()
+    try {
+      await flushPromises()
+      await wrapper.findAll('button').find(node => node.text() === '撤回最新日结')!.trigger('click')
+      await flushPromises()
+      if (outcome === 'stale') {
+        await wrapper.setProps({ tradeDate: '2026-10-26' })
+        await flushPromises()
+        finishConfirmation!()
+        await flushPromises()
+      }
+      expect(confirm).toHaveBeenCalledWith(expect.stringContaining('2026-10-23'), '撤回最新日结', expect.objectContaining({
+        confirmButtonText: '确认撤回', cancelButtonText: '取消', confirmButtonType: 'danger', closeOnClickModal: false,
+      }))
+      expect(wrapper.findAllComponents({ name: 'AppDetailDrawer' }).some(drawer => drawer.attributes('title') === '撤回最新日结')).toBe(false)
+      if (outcome === 'cancel' || outcome === 'stale') expect(api.withdraw).not.toHaveBeenCalled()
+      else { expect(api.withdraw).toHaveBeenCalledTimes(1); expect(api.withdraw).toHaveBeenCalledWith('2026-10-23', 1) }
+      if (outcome === 'success') expect(wrapper.emitted('submitted')).toHaveLength(1)
+      if (outcome === 'failure') {
+        expect(wrapper.text()).toContain('账户已变化，请刷新后重试')
+        expect(wrapper.emitted('submitted')).toBeUndefined()
+        expect(wrapper.findAll('button').find(node => node.text() === '撤回最新日结')!.attributes('disabled')).toBeUndefined()
+      }
+    } finally {
+      confirm.mockRestore()
+      wrapper.unmount()
+    }
+  })
+  it('空白草稿不作为已录成交，唯一候选默认选中，关联只追加核对不重复记账', async () => {
+    const second = { ...version, rule_id: 'second', name: '第二套规则' }
+    api.context.mockResolvedValue(context({ rules: [version, second] }))
+    const wrapper = mountWorkspace()
+    await flushPromises()
+    const firstEditor = wrapper.findComponent(TradeOperationEditor)
+    const draft = { event_id: 'one-fill', stock_code: '', stock_name_snapshot: '', side: 'buy',
+      stock_rule_id: 's', action_rule_id: 'a', price: '10', quantity: '100', amount: '1000',
+      fee: '0', operated_at: '2026-10-23T10:00:00', note: null, display_order: 1 }
+    firstEditor.vm.$emit('update:modelValue', [draft])
+    const target = wrapper.get('.ledger-entry-context').findComponent({ name: 'AppSelect' })
+    target.vm.$emit('update:modelValue', 'second')
+    target.vm.$emit('change', 'second')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="ledger-link-trade-row"]').exists()).toBe(false)
+    firstEditor.vm.$emit('update:modelValue', [{ ...draft, stock_code: '600000.SH', stock_name_snapshot: '浦发银行' }])
+    await flushPromises()
+    const row = wrapper.get('[data-testid="ledger-link-trade-row"]')
+    expect(row.findComponent({ name: 'ElSelect' }).props('modelValue')).toBe('one-fill')
+    expect(row.text()).toContain('浦发银行 · 买入 · 10:00:00')
+    await row.get('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="ledger-link-trade-row"]').exists()).toBe(false)
+    const secondEditor = wrapper.findAllComponents(TradeOperationEditor).find(editor => editor.props('version').rule_id === 'second')!
+    expect(secondEditor.props('modelValue')).toEqual([expect.objectContaining({ event_id: 'one-fill', linked: true })])
+    await wrapper.findAll('button').find(node => node.text() === '提交当日记录')!.trigger('click')
+    await flushPromises()
+    const events = api.submit.mock.calls[0][0].events
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ event_id: 'one-fill', rule_id: 'r', rule_checks: [expect.objectContaining({ rule_id: 'second' })] })
+    wrapper.unmount()
+  })
+  it('多个成交不擅自选择，移除选中成交后清理失效引用', async () => {
+    api.context.mockResolvedValue(context({ rules: [version, { ...version, rule_id: 'second', name: '第二套规则' }] }))
+    const wrapper = mountWorkspace({ preferredRuleId: 'second' })
+    await flushPromises()
+    const target = wrapper.get('.ledger-entry-context').findComponent({ name: 'AppSelect' })
+    target.vm.$emit('update:modelValue', 'r')
+    target.vm.$emit('change', 'r')
+    const editor = wrapper.findComponent(TradeOperationEditor)
+    const draft = { event_id: 'one', stock_code: '600000.SH', stock_name_snapshot: '浦发银行', side: 'buy',
+      stock_rule_id: 's', action_rule_id: 'a', price: '10', quantity: '100', amount: '1000',
+      fee: '0', operated_at: '2026-10-23T10:00:00', note: null, display_order: 1 }
+    const other = { ...draft, event_id: 'two', display_order: 2 }
+    editor.vm.$emit('update:modelValue', [draft, other])
+    await flushPromises()
+    const source = () => wrapper.get('[data-testid="ledger-link-trade-row"]').findComponent({ name: 'AppSelect' })
+    expect(source().findComponent({ name: 'ElSelect' }).props('modelValue')).toBe('')
+    source().vm.$emit('update:modelValue', 'one')
+    await flushPromises()
+    editor.vm.$emit('update:modelValue', [other])
+    await flushPromises()
+    expect(source().findComponent({ name: 'ElSelect' }).props('modelValue')).toBe('two')
+    editor.vm.$emit('update:modelValue', [])
+    await flushPromises()
+    expect(wrapper.find('[data-testid="ledger-link-trade-row"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('持仓摘要与日期共用顶部工具行，规则仍在下方填写区切换', async () => {
     api.context.mockResolvedValue(context({ rules: [version, { ...version, rule_id: 'second', name: '第二套规则' }] }))
     const wrapper = mountWorkspace()
     await flushPromises()
-    const toolbar = wrapper.get('.ledger-toolbar')
+    const toolbar = wrapper.get('.app-workspace-pane__toolbar')
     expect(toolbar.findComponent({ name: 'TradeDatePicker' }).exists()).toBe(true)
     expect(toolbar.get('.ledger-summary').text()).toContain('期初持仓 0 只')
     expect(toolbar.findComponent({ name: 'AppSelect' }).exists()).toBe(false)
@@ -65,6 +205,7 @@ describe('账户日结简化填报', () => {
     const wrapper = mountWorkspace(props)
     await flushPromises()
     expect(wrapper.find('.ledger-entry-context [aria-label="操作适用规则"]').exists()).toBe(false)
+    expect(wrapper.find('.app-workspace-pane__footer').exists()).toBe(false)
     wrapper.unmount()
   })
   it('没有遗漏和调整时不渲染空框，新增后展开字段，删除后收起', async () => {
@@ -239,6 +380,8 @@ describe('账户日结简化填报', () => {
     await flushPromises()
     await wrapper.findAll('button').find(node => node.text() === '提交当日记录')!.trigger('click')
     expect(wrapper.get('.ledger-entry-context').findComponent({ name: 'AppSelect' }).findComponent({ name: 'ElSelect' }).props('disabled')).toBe(true)
+    expect(wrapper.get('.app-workspace-pane__footer').text()).not.toContain('核对持仓与规则')
+    expect(wrapper.get('.app-workspace-pane__footer button').attributes('disabled')).toBeDefined()
     const exposed = wrapper.vm as unknown as { isDirty: () => boolean; requestLeave: () => Promise<boolean> }
     expect(exposed.isDirty()).toBe(true)
     expect(await exposed.requestLeave()).toBe(false)

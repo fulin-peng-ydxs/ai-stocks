@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { StockConditionPanelDefaults } from '@/layout/configPanel'
-import AppFormHelp from '@/components/AppFormHelp.vue'
+import HelpHint from '@/components/HelpHint.vue'
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { Delete, Plus } from '@element-plus/icons-vue'
@@ -397,7 +398,7 @@ defineExpose({ expandOperation, validate })
         <section class="operation-form-section" aria-label="操作依据" data-testid="operation-context-section">
           <header>
             <h5 class="app-section-title">操作依据</h5>
-            <p>{{ operation.linked ? '引用同一笔已录成交，仅核对本套规则；成交数量和金额不会重复记账。' : '记录标的、执行时间及本次操作对应的纪律规则。' }}</p>
+            <HelpHint :text="operation.linked ? '引用同一笔已录成交，仅核对本套规则；成交数量和金额不会重复记账。' : '记录标的、执行时间及本次操作对应的纪律规则。'" label="操作依据说明" />
           </header>
           <div class="operation-grid">
             <el-form-item label="股票" required class="operation-field operation-field--stock">
@@ -424,7 +425,7 @@ defineExpose({ expandOperation, validate })
               >
                 <el-option v-for="rule in stockRules" :key="rule.detail_id!" :label="rule.name || '未命名规则'" :value="rule.detail_id!" />
               </AppSelect>
-              <small v-if="!stockRules.length" class="field-error">当前版本没有可用选股规则</small>
+              <span v-if="!stockRules.length" class="app-body-text field-error">当前版本没有可用选股规则</span>
             </el-form-item>
             <el-form-item v-if="!automatic || version.rule_id" :label="operation.side === 'sell' ? '卖出规则' : '买入规则'" required class="operation-field operation-field--rule">
               <AppSelect
@@ -446,7 +447,7 @@ defineExpose({ expandOperation, validate })
                   </BuiltinOptionRow>
                 </el-option>
               </AppSelect>
-              <small v-if="!actionRules(operation.side).length" class="field-error">当前方向没有可用买卖规则</small>
+              <span v-if="!actionRules(operation.side).length" class="app-body-text field-error">当前方向没有可用买卖规则</span>
             </el-form-item>
             <el-form-item v-if="showCompliance" label="履约状态" required class="operation-field operation-field--compliance">
               <el-segmented
@@ -457,15 +458,22 @@ defineExpose({ expandOperation, validate })
                 @update:model-value="updateCompliance(index, $event)"
               />
             </el-form-item>
-            <el-form-item v-if="automatic && version.rule_id" label="买卖规则核对" class="operation-field operation-field--compliance">
-              <el-segmented :model-value="operation.action_matches ?? true" :options="[{ label: '符合', value: true }, { label: '不符合', value: false }]" :disabled="disabled" @update:model-value="update(index, { action_matches: Boolean($event) })" />
-              <AppFormHelp>{{ version.action_rules.find(rule => rule.detail_id === operation.action_rule_id)?.content || '按实际执行情况核对所选买卖规则。' }}</AppFormHelp>
-            </el-form-item>
           </div>
         </section>
 
+        <section v-if="automatic && version.rule_id" class="operation-form-section" aria-label="买卖规则核对" data-testid="operation-action-check-section">
+          <header>
+            <h5 class="app-section-title">买卖规则核对</h5>
+            <HelpHint text="按实际执行情况核对所选买卖规则，默认符合。" label="买卖规则核对说明" />
+          </header>
+          <AppControlRow class="operation-rule-check" justify="between">
+            <p class="app-body-text operation-rule-content">{{ version.action_rules.find(rule => rule.detail_id === operation.action_rule_id)?.content?.trim() || ruleName(operation, 'action') }}</p>
+            <el-segmented aria-label="买卖规则核对结果" :model-value="operation.action_matches ?? true" :options="[{ label: '符合', value: true }, { label: '不符合', value: false }]" :disabled="disabled" @update:model-value="update(index, { action_matches: Boolean($event) })" />
+          </AppControlRow>
+        </section>
+
         <section v-if="operation.side === 'buy' && selectedStockRule(operation) && (!automatic || version.rule_id)" class="operation-form-section" aria-label="选股条件核对" data-testid="operation-conditions">
-          <header><h5 class="app-section-title">选股条件核对</h5><p>检查项默认符合，可按实际修改；股价按本笔成交价核对。</p></header>
+          <header><h5 class="app-section-title">选股条件核对</h5><HelpHint text="检查项默认符合，可按实际修改；股价按本笔成交价核对。ST按交易日逐日数据核对；亏损与ST风险按规则预填，可按实际修改。" label="选股条件核对说明" /></header>
           <StockRuleConditionChecklist :panel-defaults="conditionPanelDefaults" :ref="(component: unknown) => setConditionRef(operation, index, component)" :rule="selectedStockRule(operation)!" :operation="operation" :results="operation.checklist_results" checking :disabled="disabled"
             :open-sections="conditionSections[conditionKey(operation, index)] ?? {}" @update:open-sections="conditionSections[conditionKey(operation, index)] = $event" @update:results="update(index, { checklist_results: $event })">
             <template #risk>
@@ -481,15 +489,16 @@ defineExpose({ expandOperation, validate })
                 <template #label>{{ conditionFactLabel(operation[field.key]) }}</template>
                 <el-option v-for="option in conditionFactOptions" :key="option.value" :label="option.label" :value="option.value" />
               </AppSelect>
-              <small v-if="disabled && !operation[field.key]" class="app-caption-text">{{ conditionFactLabel(operation[field.key]) }}</small>
+              <span v-if="disabled && !operation[field.key]" class="app-body-text">{{ conditionFactLabel(operation[field.key]) }}</span>
             </el-form-item>
           </div>
-          <AppFormHelp>ST按交易日逐日数据核对；亏损与ST风险按规则预填，可按实际修改。</AppFormHelp>
             </template>
           </StockRuleConditionChecklist>
           <el-form-item v-if="automatic && selectedStockRule(operation)?.content?.trim()" label="补充选股条件核对">
-            <el-segmented :model-value="operation.stock_matches ?? true" :options="[{ label: '符合', value: true }, { label: '不符合', value: false }]" :disabled="disabled" @update:model-value="update(index, { stock_matches: Boolean($event) })" />
-            <AppFormHelp>{{ selectedStockRule(operation)?.content }}</AppFormHelp>
+            <AppControlRow class="operation-rule-check" justify="between">
+              <p class="app-body-text operation-rule-content">{{ selectedStockRule(operation)?.content }}</p>
+              <el-segmented aria-label="补充选股条件核对结果" :model-value="operation.stock_matches ?? true" :options="[{ label: '符合', value: true }, { label: '不符合', value: false }]" :disabled="disabled" @update:model-value="update(index, { stock_matches: Boolean($event) })" />
+            </AppControlRow>
           </el-form-item>
           <ul v-if="stockConditionViolations(selectedStockRule(operation), operation).length" class="condition-warnings" role="status"><li v-for="warning in stockConditionViolations(selectedStockRule(operation), operation)" :key="warning">{{ warning }}</li></ul>
         </section>
@@ -497,7 +506,7 @@ defineExpose({ expandOperation, validate })
         <section class="operation-form-section" aria-label="成交明细" data-testid="operation-trade-section">
           <header>
             <h5 class="app-section-title">成交明细</h5>
-            <p>{{ automatic ? '金额按价格×数量自动计算，可按交割单修正；费用可填0。' : '成交价、数量、成交金额和费用均须填写；费用可填0，系统不会覆盖手工填写值。' }}</p>
+            <HelpHint :text="automatic ? '金额按价格×数量自动计算，可按交割单修正；费用可填0。' : '成交价、数量、成交金额和费用均须填写；费用可填0，系统不会覆盖手工填写值。'" label="成交明细说明" />
           </header>
           <div class="operation-grid">
             <el-form-item label="成交价" :required="!disabled" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.price" :scale="4" :integer-digits="16" :disabled="disabled || operation.linked" placeholder="0.0000" @update:model-value="update(index, { price: $event })" /></el-form-item>
@@ -505,9 +514,9 @@ defineExpose({ expandOperation, validate })
             <el-form-item label="成交金额" :required="!disabled" class="operation-field operation-field--amount">
               <FixedDecimalInput :model-value="operation.amount" grouped :disabled="disabled || operation.linked" @update:model-value="update(index, { amount: $event })" />
               <el-button v-if="automatic && operation.amount_mode === 'manual' && !disabled && !operation.linked" text size="small" @click="restoreAutoAmount(index)">恢复自动计算</el-button>
-              <small v-if="computedAmount(operation) !== null" :class="{ 'field-error': amountMismatch(operation) }">
+              <span v-if="computedAmount(operation) !== null" class="app-body-text operation-calculation" :class="{ 'field-error': amountMismatch(operation) }">
                 价 × 量 = {{ computedAmount(operation) }}{{ amountMismatch(operation) ? '，与填写金额不一致' : '' }}
-              </small>
+              </span>
             </el-form-item>
             <el-form-item label="费用" :required="!disabled" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.fee" grouped :disabled="disabled || operation.linked" @update:model-value="update(index, { fee: $event })" /></el-form-item>
           </div>
@@ -529,7 +538,7 @@ defineExpose({ expandOperation, validate })
 
 <style scoped>
 .operation-editor { container: trade-operation / inline-size; }
-.condition-warnings { margin: var(--app-space-2) 0; padding-left: var(--app-space-4); color: var(--el-color-warning); font-size: var(--app-font-size-caption); }
+.condition-warnings { margin: var(--app-space-2) 0; padding-left: var(--app-space-4); color: var(--el-color-warning); font-size: var(--app-font-size-body); }
 .operation-card-list { display: grid; gap: var(--app-space-2); }
 .operation-card__issue {
   flex: none;
@@ -545,12 +554,20 @@ defineExpose({ expandOperation, validate })
   padding-top: var(--app-space-4);
   border-top: 1px solid var(--el-border-color-lighter);
 }
-.operation-form-section > header { margin-bottom: var(--app-space-3); }
-
-.operation-form-section p {
-  margin: var(--app-space-1) 0 0;
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
+.operation-form-section > header {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
+  margin-bottom: var(--app-space-3);
+}
+.operation-rule-check { width: 100%; }
+.operation-rule-check > .el-segmented { flex: none; }
+.operation-rule-content {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .operation-grid {
   display: grid;
@@ -566,6 +583,7 @@ defineExpose({ expandOperation, validate })
 .operation-field--compliance { grid-column: span 6; }
 .operation-grid :deep(.el-select), .operation-grid :deep(.el-input), .operation-grid :deep(.el-date-editor) { width: 100%; }
 .operation-grid :deep(.el-form-item__content) { display: block; }
+.operation-calculation { display: block; width: 100%; margin-top: var(--app-space-1); }
 .operation-note { margin-bottom: 0; }
 .field-error { display: block; margin-top: var(--app-space-1); color: var(--el-color-danger); }
 @container trade-operation (max-width: 1180px) {

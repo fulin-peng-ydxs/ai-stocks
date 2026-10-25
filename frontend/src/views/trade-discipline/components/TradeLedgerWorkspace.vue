@@ -4,15 +4,16 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import type { TableSortChange } from '@/composables/useTableSort'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
 import AppControlItem from '@/components/AppControlItem.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
+import HelpHint from '@/components/HelpHint.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import TradeDisciplineSectionPanel from '@/components/trade-discipline/TradeDisciplineSectionPanel.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppDatePicker from '@/components/AppDatePicker.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
-import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppPagination from '@/components/AppPagination.vue'
@@ -22,6 +23,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import { formatMoney } from '@/utils/money'
+import { marketValueClass } from '@/utils/marketValue'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
 import { getErrorMessage } from '@/utils/error'
 import { checkinAssessmentLabel, checkinAssessmentTagType } from '@/utils/tradeDisciplineAssessment'
@@ -111,6 +113,9 @@ let timer: ReturnType<typeof setTimeout> | undefined
 let requestId = crypto.randomUUID()
 const initialized = computed(() => !!context.value?.initialized_on)
 const disabled = computed(() => !props.canSubmit || !context.value?.can_edit || (!!context.value.snapshot && !editing.value) || busy.value)
+const showEntryControls = computed(() => props.mode === 'checkin' && !loading.value && initialized.value
+  && !!context.value?.initialized_on && props.tradeDate >= context.value.initialized_on
+  && props.canSubmit && context.value.can_edit && (!context.value.snapshot || editing.value))
 const shown = computed(() => preview.value ?? context.value?.snapshot ?? null)
 const positions = computed(() => props.mode === 'positions' ? context.value?.positions ?? [] : shown.value?.positions ?? context.value?.opening_positions ?? [])
 const positionCount = computed(() => new Set(positions.value.map(p => p.stock_code)).size)
@@ -125,8 +130,15 @@ const unplannedRule: RuleVersionDetail = {
 }
 const activeEntryRules = computed(() => entryRules.value.map(id => rules.value.find(r => r.rule_id === id) ?? unplannedRule))
 const linkableTrades = computed(() => trades.value.filter(event => selectedRule.value
+  && event.stock_code?.trim()
   && event.rule_id !== selectedRule.value
   && !event.rule_checks?.some(check => check.rule_id === selectedRule.value)))
+// 关联只追加规则核对；空白草稿不作为候选，候选删除或规则切换后不能留下失效选择。
+watch(linkableTrades, candidates => {
+  if (!candidates.some(event => event.event_id === linkedTradeId.value)) {
+    linkedTradeId.value = candidates.length === 1 ? candidates[0].event_id : ''
+  }
+})
 const dirty = () => busy.value || baseline.value !== snapshot()
 async function requestLeave(): Promise<boolean> {
   if (busy.value) { ElMessage.warning('正在保存账户记录，请完成后再离开'); return false }
@@ -308,11 +320,27 @@ async function initialize() {
   finally { busy.value = false }
 }
 async function withdraw() {
-  if (!context.value || !props.canSubmit || !context.value.can_edit || busy.value) return
-  busy.value = true
+  if (!context.value || !props.canSubmit || !context.value.can_edit || busy.value || withdrawConfirm.value) return
+  const tradeDate = props.tradeDate
+  const accountRevision = context.value.account_revision
+  const contextSeq = loadSeq
+  withdrawConfirm.value = true
   try {
-    await withdrawLedger(props.tradeDate, context.value.account_revision)
-    withdrawConfirm.value = false
+    await ElMessageBox.confirm(
+      `撤回 ${tradeDate} 的日结后，持仓恢复到前一日结，当日规则评价退出统计，历史修订仍保留。之后可重新填报。`,
+      '撤回最新日结',
+      { type: 'warning', confirmButtonType: 'danger', confirmButtonText: '确认撤回',
+        cancelButtonText: '取消', closeOnClickModal: false, closeOnPressEscape: false, showClose: false },
+    )
+  } catch { return }
+  finally { withdrawConfirm.value = false }
+  // 确认只对打开时的交易日与账户版本有效，避免现场变化后撤回另一条日结。
+  if (contextSeq !== loadSeq || props.tradeDate !== tradeDate || context.value?.account_revision !== accountRevision
+    || !props.canSubmit || !context.value.can_edit || busy.value) return
+  busy.value = true
+  previewError.value = ''
+  try {
+    await withdrawLedger(tradeDate, accountRevision)
     await load()
     emit('submitted')
   } catch (err) { previewError.value = getErrorMessage(err, '撤回失败') }
@@ -397,8 +425,8 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
 </script>
 
 <template>
-  <section class="ledger-workspace" data-testid="trade-ledger-workspace">
-    <AppControlRow v-if="mode !== 'history'" class="ledger-toolbar">
+  <AppWorkspacePane class="ledger-workspace" data-testid="trade-ledger-workspace" :title="mode === 'checkin' ? '今日打卡' : mode === 'positions' ? '现有持仓' : '历史记录'" :header-visible="false" padding="standard" :scroll="mode === 'history' ? 'delegated' : 'body'" fill>
+    <template v-if="mode !== 'history'" #toolbar>
       <AppControlItem :label="mode === 'positions' ? '查看日期' : '交易日'">
         <TradeDatePicker :model-value="tradeDate" :disabled="busy" @update:model-value="$event && emit('request-date-change', $event)" />
       </AppControlItem>
@@ -412,12 +440,12 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
         <span class="app-caption-text">r{{ context.current_revision_no }}</span>
         <el-button v-if="!editing && canSubmit && context.can_edit" v-permission="'trade-discipline:checkin-submit'" @click="startAmend">修正最新记录</el-button>
         <el-button v-if="editing && context.can_edit" :disabled="busy" type="danger" plain @click="load">取消修正</el-button>
-        <el-button v-if="canSubmit && context.can_edit && !editing" v-permission="'trade-discipline:checkin-submit'" type="danger" plain @click="withdrawConfirm = true">撤回最新日结</el-button>
+        <el-button v-if="canSubmit && context.can_edit && !editing" v-permission="'trade-discipline:checkin-submit'" type="danger" plain :disabled="busy" :loading="busy" @click="withdraw">撤回最新日结</el-button>
       </template>
-    </AppControlRow>
+    </template>
     <AppStateBlock v-if="loading" state="loading" title="正在加载交易账本…" />
     <AppStateBlock v-else-if="error && !context" state="error" title="交易账户加载失败" :description="error" retry @retry="load" />
-    <AppScrollArea v-else-if="mode !== 'history'" class="ledger-content">
+    <template v-else-if="mode !== 'history'">
       <AppStatusNotice v-if="error" tone="warning" :title="error" />
       <section v-if="!initialized" class="ledger-opening" data-testid="ledger-initialize">
         <header class="ledger-opening-head">
@@ -471,7 +499,7 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
             <AppTableColumn prop="available_quantity" label="可卖数量" min-width="110" />
             <AppTableColumn label="总成本（元）" min-width="130"><template #default="{ row }">{{ row.cost == null ? '未录入' : formatMoney(row.cost) }}</template></AppTableColumn>
             <AppTableColumn label="市值（元）" min-width="130"><template #default="{ row }">{{ row.market_value == null ? '暂无行情' : formatMoney(row.market_value) }}</template></AppTableColumn>
-            <AppTableColumn label="浮动盈亏（元）" min-width="140"><template #default="{ row }">{{ row.unrealized_pnl == null ? '数据不完整' : formatMoney(row.unrealized_pnl) }}</template></AppTableColumn>
+            <AppTableColumn label="浮动盈亏（元）" min-width="140"><template #default="{ row }"><span :class="marketValueClass(row.unrealized_pnl == null ? null : Number(row.unrealized_pnl))">{{ row.unrealized_pnl == null ? '数据不完整' : formatMoney(row.unrealized_pnl, { forceSign: true }) }}</span></template></AppTableColumn>
             <AppTableColumn prop="quote_date" label="估值日期" min-width="120" />
             <AppTableColumn label="所属规则" min-width="160"><template #default="{ row }">{{ ruleName(row.rule_id) }}</template></AppTableColumn>
           </AppDataTable>
@@ -482,20 +510,30 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
           <AppStatusNotice v-if="!context?.can_edit" tone="info" title="历史记录只读。需要纠正较早记录时，请先从最新日结逐日撤回。" />
           <AppForm label-position="top" :disabled="disabled" class="ledger-checkin-form">
             <div class="ledger-entry-context">
-              <AppControlRow v-if="canSubmit && context?.can_edit && (!context.snapshot || editing)">
-                <AppControlItem label="操作适用规则">
+              <AppControlRow v-if="showEntryControls">
+                <AppControlItem>
+                  <template #label>
+                    <span class="app-body-text">操作适用规则</span>
+                    <HelpHint text="一笔实际成交只记一次，履约结果由系统核对。" label="操作适用规则说明" />
+                  </template>
                   <AppSelect v-model="selectedRule" aria-label="操作适用规则" :disabled="disabled" :empty-values="[null, undefined]" class="app-control-width-medium" @change="addRule">
                     <el-option v-for="rule in rules" :key="rule.rule_id" :label="rule.name" :value="rule.rule_id" />
                     <el-option label="未按任何已设规则操作" value="" />
                   </AppSelect>
                 </AppControlItem>
               </AppControlRow>
-            <AppControlRow v-if="!disabled && linkableTrades.length">
-              <span class="app-field-label">同一成交核对其他规则</span>
-              <AppSelect v-model="linkedTradeId" placeholder="选择已录成交"><el-option v-for="event in linkableTrades" :key="event.event_id" :label="`${event.stock_name_snapshot || event.stock_code} · ${event.side === 'buy' ? '买入' : '卖出'} · ${event.operated_at?.slice(11, 19)}`" :value="event.event_id" /></AppSelect>
-              <el-button :disabled="!linkedTradeId" @click="linkExistingTrade">引用成交核对</el-button>
-            </AppControlRow>
-            <AppFormHelp>一笔实际成交只记一次，履约结果由系统核对。</AppFormHelp>
+              <AppControlRow v-if="showEntryControls && linkableTrades.length" data-testid="ledger-link-trade-row">
+                <AppControlItem>
+                  <template #label>
+                    <span class="app-body-text">关联已有成交</span>
+                    <HelpHint text="将其他规则下的已录成交添加到当前选择的规则，只新增规则核对，不重复记账。" label="关联已有成交说明" />
+                  </template>
+                  <AppSelect v-model="linkedTradeId" aria-label="选择要关联的成交" width="wide" placeholder="选择已录入股票的成交" :disabled="disabled">
+                    <el-option v-for="event in linkableTrades" :key="event.event_id" :label="`${event.stock_name_snapshot || event.stock_code} · ${event.side === 'buy' ? '买入' : '卖出'}${event.operated_at ? ` · ${event.operated_at.slice(11, 19)}` : ''}`" :value="event.event_id" />
+                  </AppSelect>
+                </AppControlItem>
+                <el-button :disabled="disabled || !linkedTradeId" @click="linkExistingTrade">添加到当前规则</el-button>
+              </AppControlRow>
             </div>
             <div class="ledger-checkin-layout">
             <div class="ledger-primary">
@@ -550,13 +588,10 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
             <p v-for="item in shown.events.filter(e => e.issues?.length || e.warnings?.length)" :key="item.event_id" class="app-caption-text">{{ item.stock_name_snapshot }}：{{ [...(item.issues ?? []), ...(item.warnings ?? [])].join('；') }}</p>
           </TradeDisciplineSectionPanel>
           <AppStatusNotice v-if="previewError" tone="warning" :title="previewError" />
-          <AppControlRow v-if="!disabled" justify="end" class="ledger-actions">
-            <el-button v-permission="'trade-discipline:checkin-submit'" :loading="previewBusy" @click="runPreview">核对持仓与规则</el-button>
-            <el-button v-permission="'trade-discipline:checkin-submit'" type="primary" :loading="busy" :disabled="!!context?.snapshot && !dirty()" @click="save">{{ context?.snapshot ? '提交修正' : '提交当日记录' }}</el-button>
-          </AppControlRow>
+
         </template>
       </template>
-    </AppScrollArea>
+    </template>
     <template v-else>
       <el-card shadow="never" class="filter-card ledger-filter-card">
         <AppAdvancedSearch group="history" :states="{
@@ -585,7 +620,13 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
         <AppTableColumn v-if="columnVisible('peak_positions')" label="持仓峰值" min-width="100"><template #default="{ row }">{{ row.snapshot.peak_positions }}</template></AppTableColumn>
         <AppTableColumn v-if="columnVisible('current_revision_no')" prop="current_revision_no" label="修订" min-width="80" />
       </AppDataTable>
-      <AppPagination :current-page="page" :page-size="pageSize" :total="total" @current-change="page = $event; loadHistory()" @size-change="page = 1; emit('page-size-change', $event)" />
+
+    </template>
+    <template v-if="mode === 'history' || showEntryControls" #footer>
+      <AppPagination v-if="mode === 'history'" :current-page="page" :page-size="pageSize" :total="total" @current-change="page = $event; loadHistory()" @size-change="page = 1; emit('page-size-change', $event)" />
+      <template v-else>
+        <el-button v-permission="'trade-discipline:checkin-submit'" type="primary" :loading="busy" :disabled="previewBusy || (!!context?.snapshot && !dirty())" @click="save">{{ context?.snapshot ? '提交修正' : '提交当日记录' }}</el-button>
+      </template>
     </template>
     <AppDetailDrawer v-model="detailOpen" title="交易日记录" size="xxl" :subtitle="detail?.trade_date" :state="detailBusy ? 'loading' : detailError ? 'error' : 'ready'" :state-description="detailError" retry @retry="loadRevision">
       <AppStatusNotice v-if="detail?.withdrawn" tone="info" title="该日结已撤回，仅供追溯，不参与持仓及统计。" />
@@ -611,28 +652,21 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
         </el-collapse-item>
       </el-collapse>
     </AppDetailDrawer>
-    <AppDetailDrawer v-model="withdrawConfirm" title="撤回最新日结" size="md">
-      <p>撤回 {{ tradeDate }} 后，持仓恢复到前一日结；当前日的所有规则评价一并退出统计，历史修订仍保留。之后可重新填报，或继续逐日撤回纠正较早记录。</p>
-      <template #footer><el-button :disabled="busy" @click="withdrawConfirm = false">取消</el-button><el-button v-permission="'trade-discipline:checkin-submit'" type="danger" :loading="busy" @click="withdraw">确认撤回</el-button></template>
-    </AppDetailDrawer>
-  </section>
+  </AppWorkspacePane>
 </template>
 
 <style scoped>
-.ledger-workspace { display: flex; flex-direction: column; gap: var(--app-space-3); min-width: 0; min-height: 0; width: 100%; height: 100%; }
-.ledger-toolbar, .ledger-summary, .ledger-actions { flex: none; }
+.ledger-workspace { min-width: 0; }
+.ledger-summary { flex: none; }
 .ledger-filter-card { flex: none; }
-.ledger-content { flex: 1; min-height: 0; min-width: 0; }
-.ledger-section { display: grid; gap: var(--app-space-3); margin-bottom: var(--app-space-5); }
+.ledger-section { display: grid; gap: var(--app-space-3); }
 .ledger-entry-grid { margin-bottom: var(--app-space-3); }
-.ledger-checkin-form, .ledger-actions { width: 100%; min-width: 0; }
-.ledger-checkin-form { display: grid; gap: var(--app-space-4); padding-top: var(--app-space-4); border-top: 1px solid var(--el-border-color); }
+.ledger-checkin-form { display: grid; gap: var(--app-space-4); width: 100%; min-width: 0; }
 .ledger-checkin-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--app-space-5); align-items: start; }
 .ledger-primary, .ledger-supplements { display: flex; flex-direction: column; min-width: 0; gap: var(--app-space-4); }
 .ledger-supplements { container: ledger-supplements / inline-size; }
 .ledger-entry-context { display: grid; gap: var(--app-space-2); }
 .ledger-checkin-form .ledger-section { margin-bottom: 0; }
-.ledger-checkin-form + .ledger-section { margin-top: var(--app-space-4); }
 .ledger-entry-grid > :deep(.el-form-item) { margin-bottom: 0; }
 .ledger-adjustment + .ledger-adjustment { border-top: 1px solid var(--el-border-color-lighter); margin-top: var(--app-space-4); padding-top: var(--app-space-4); }
 .ledger-adjustment-head { margin-bottom: var(--app-space-3); }
@@ -641,7 +675,6 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
 .ledger-entry-grid > :deep(.el-form-item:not(.ledger-entry-action)) { flex: 1 1 180px; min-width: 0; }
 .ledger-entry-grid > :deep(.el-form-item .el-select), .ledger-entry-grid > :deep(.el-form-item .el-date-editor), .ledger-entry-grid > :deep(.el-form-item .el-input-number) { width: 100%; }
 .ledger-summary { min-width: 0; }
-.ledger-actions { padding-block: var(--app-space-3); }
 .ledger-opening { max-width: calc(var(--app-control-width-wide) * 4); }
 .ledger-opening-head { margin-bottom: var(--app-space-5); }
 .ledger-opening-head h3 { margin: 0 0 var(--app-space-2); }

@@ -8,7 +8,7 @@ import postcss from 'postcss'
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const rows = new Set(['AppControlRow', 'AppTabToolbar', 'AppAdvancedSearch', 'StockChartPanelHeader'])
 // 共享组合组件的具名插槽在消费方仍须接受同一门禁。
-const rowSlots = new Map([['AppWorkspacePane', 'actions'], ['AppDetailSection', 'actions'],
+const rowSlots = new Map([['AppWorkspacePane', ['actions', 'toolbar', 'footer']], ['AppDetailSection', 'actions'],
   ['MarketAnalysisHeader', 'controls'], ['AppDetailDrawer', 'header-actions']])
 const boundaries = new Set(['AppForm', 'AppDialog', 'PageDrawer', 'PageDrawerSurface',
   'AppDataTable', 'AppRowActions', 'AppCloseButton'])
@@ -74,7 +74,9 @@ export function auditControlRows(sources) {
       }
       node.children.forEach(child => {
         const slot = child.type === 1 && child.props.find(p => p.type === 7 && p.name === 'slot')
-        const slotOwnsRow = slot && slot.arg?.content === rowSlots.get(node.tag)
+        const ownedSlots = rowSlots.get(node.tag)
+        const slotOwnsRow = slot && (Array.isArray(ownedSlots)
+          ? ownedSlots.includes(slot.arg?.content) : slot.arg?.content === ownedSlots)
         inspect(child, inRow || !!slotOwnsRow)
       })
     }

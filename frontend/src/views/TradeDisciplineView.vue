@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { provideTradeDisciplineCategories, tradeConditionMeta } from '@/composables/useTradeDisciplineCategories'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -495,11 +496,14 @@ watch(tradeDisciplineChangeVersion, async () => {
           />
         </div>
 
-        <section v-if="activePanel !== 'rules'" class="discipline-panel app-surface">
-          <AppStateBlock v-if="!canViewCheckins" state="error" variant="permission" title="无权限查看交易记录" />
+        <template v-if="activePanel !== 'rules'">
+          <AppWorkspacePane v-if="!canViewCheckins" class="discipline-panel" title="交易记录" :header-visible="false" padding="standard" fill>
+            <AppStateBlock state="error" variant="permission" title="无权限查看交易记录" />
+          </AppWorkspacePane>
           <TradeLedgerWorkspace
             v-else
             ref="checkinFormRef"
+            class="discipline-panel"
             :mode="activePanel"
             :trade-date="checkinTradeDate"
             :can-submit="canSubmitCheckins"
@@ -517,9 +521,9 @@ watch(tradeDisciplineChangeVersion, async () => {
             @sort-change="onHistorySortChange"
             @submitted="handleCheckinSubmitted"
           />
-        </section>
+        </template>
 
-        <section v-else class="discipline-panel app-surface">
+        <AppWorkspacePane v-else class="discipline-panel" title="规则管理" :header-visible="false" padding="standard" fill>
           <AppScrollArea class="master-detail-shell">
             <RuleMasterList
               :rules="rules"
@@ -550,7 +554,7 @@ watch(tradeDisciplineChangeVersion, async () => {
               description="规则草稿会保存在服务端，发布后才生成正式版本"
             />
           </AppScrollArea>
-        </section>
+        </AppWorkspacePane>
 
 
       </div>
@@ -603,7 +607,7 @@ watch(tradeDisciplineChangeVersion, async () => {
 .discipline-workspace { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: var(--app-space-3); }
 .discipline-rail { flex: none; }
 .discipline-rail :deep(.page-segmented) { min-width: 360px; }
-.discipline-panel { min-width: 0; min-height: 0; flex: 1 1 auto; padding: var(--layout-card-padding); overflow: hidden; }
+.discipline-panel { min-width: 0; min-height: 0; }
 .master-detail-shell {
   height: 100%;
   min-height: 0;

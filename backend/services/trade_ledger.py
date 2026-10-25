@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from backend.common.exceptions import ValidationError
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
-CALCULATION_VERSION = "ledger-v2"
+CALCULATION_VERSION = "ledger-v3"
 CENT = Decimal("0.01")
 
 
@@ -133,7 +133,8 @@ def calculate_day(
 ) -> dict[str, Any]:
     """从日初重新计算整日，修正时替换有效快照而非叠加旧修订的影响。
 
-    不同规则下的同股成本分组保持独立，股票数量及峰值在账户层去重；
+    不同规则下的同股成本分组保持独立，账户及每套规则的只数分别去重；
+    规则上限只核对其主记账归属，附加核对不转移或复制持仓。
     卖出可跨分组扣减，但优先扣减所选分组，随后按固定顺序分摊。
     """
     positions = deepcopy(opening)
@@ -168,8 +169,9 @@ def calculate_day(
         ordered.append((timestamp, sequence, event))
     ordered.sort(key=lambda item: (item[0], item[1]))
 
-    def held_codes() -> set[str]:
-        return {p["stock_code"] for p in positions if Decimal(p["quantity"]) > 0}
+    def held_codes(rule_id: str | None = None) -> set[str]:
+        return {p["stock_code"] for p in positions if Decimal(p["quantity"]) > 0
+                and (rule_id is None or p.get("rule_id") == rule_id)}
 
     def cost_for(rule_id: str | None = None, stock_rule_id: str | None = None) -> Decimal | None:
         selected = [p for p in positions if Decimal(p["quantity"]) > 0
@@ -185,16 +187,24 @@ def calculate_day(
     realized_complete = True
     output = []
     rules = rules or []
+    rule_map = {rule["rule_id"]: rule for rule in rules}
+    rule_peaks = {rid: len(held_codes(rid)) for rid in rule_map}
     daily_issues: dict[str, list[str]] = {r["rule_id"]: [] for r in rules}
     daily_warnings: dict[str, list[str]] = {r["rule_id"]: [] for r in rules}
 
-    def limits(rule: dict[str, Any]) -> tuple[list[str], list[str]]:
+    def limits(
+        rule: dict[str, Any], *, previous_count: int | None = None,
+        stock_rule_ids: set[str | None] | None = None,
+    ) -> tuple[list[str], list[str]]:
         issues, warnings = [], []
         limit = rule.get("max_positions")
-        if limit is not None and len(held_codes()) > limit:
-            issues.append(f"持仓{len(held_codes())}只，超过上限{limit}只")
+        count = len(held_codes(rule["rule_id"]))
+        # 期初超限单独记录；其后仅新增股票导致只数上升时归到该笔，原股票加仓不重复计数。
+        if limit is not None and count > limit and (previous_count is None or count > previous_count):
+            issues.append(f"本规则持仓{count}只，超过上限{limit}只")
         for stock_rule in rule.get("stock_rules", []):
-            if not stock_rule.get("enabled", True) or stock_rule.get("max_capital") is None:
+            if (not stock_rule.get("enabled", True) or stock_rule.get("max_capital") is None
+                    or stock_rule_ids is not None and stock_rule["detail_id"] not in stock_rule_ids):
                 continue
             value = cost_for(rule["rule_id"], stock_rule["detail_id"])
             if value is None:
@@ -232,6 +242,7 @@ def calculate_day(
             if cash is not None:
                 cash += amount if event["direction"] == "in" else -amount
         elif kind in {"trade", "position"}:
+            previous_count = len(held_codes(rule_id)) if rule_id in rule_map else None
             code = str(event.get("stock_code") or "").strip()
             if not code:
                 raise ValidationError("股票不能为空")
@@ -338,22 +349,20 @@ def calculate_day(
                     if cost_complete:
                         realized += amount - fee - sold_cost
             peak = max(peak, len(held_codes()))
-            for rule in rules:
-                # 减仓不会产生新的持股/资金超限；不能把此前买入的同一违规再记成日级违规。
-                if side != "buy" or kind == "position" and event.get("adjustment_type") == "split":
-                    continue
-                found, pending = limits(rule)
-                linked = next((check for check in event.get("rule_checks", [])
-                               if check["rule_id"] == rule["rule_id"]), None)
-                if kind == "trade" and linked is not None and side == "buy":
-                    linked["issues"].extend(found)
-                    linked["warnings"].extend(pending)
-                elif kind == "trade" and rule["rule_id"] == rule_id and side == "buy":
+            rule = rule_map.get(rule_id)
+            if rule is not None:
+                rule_peaks[rule_id] = max(rule_peaks[rule_id], len(held_codes(rule_id)))
+            # 只有主记账分组增加持仓/成本；其他规则及附加核对不承接本笔的持仓限制。
+            if (rule is not None and side == "buy"
+                    and not (kind == "position" and event.get("adjustment_type") == "split")):
+                found, pending = limits(rule, previous_count=previous_count,
+                                        stock_rule_ids={event.get("stock_rule_id")})
+                if kind == "trade":
                     issues.extend(found)
                     warnings.extend(pending)
                 else:
-                    daily_issues[rule["rule_id"]].extend(found)
-                    daily_warnings[rule["rule_id"]].extend(pending)
+                    daily_issues[rule_id].extend(found)
+                    daily_warnings[rule_id].extend(pending)
         else:
             raise ValidationError("账本事件类型不正确")
         event["primary_issues"] = list(dict.fromkeys(issues))
@@ -387,6 +396,7 @@ def calculate_day(
         evaluations.append({"rule_id": rid, "version_no": rule["version_no"], "rule_name": rule["name"],
                             "assessment": assessment(positive, negative, complete=complete),
                             "complete": complete, "issues": issues, "warnings": warnings,
+                            "peak_positions": rule_peaks[rid],
                             "compliant_count": positive, "breached_count": negative})
     trades = [e for e in output if e.get("kind", "trade") == "trade"]
     complete = all(not e["warnings"] for e in trades) and all(e["complete"] for e in evaluations)
