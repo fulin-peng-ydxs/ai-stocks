@@ -23,6 +23,23 @@ function backgroundOf(selector: string): string | undefined {
 }
 
 describe('PageSegmented', () => {
+  it('宽度策略由共享 fill 声明，切换策略保留选中项与同一控件实例', async () => {
+    const wrapper = mount(PageSegmented, { props: {
+      modelValue: 'a', options: [{ label: '选项一', value: 'a' }, { label: '选项二', value: 'b' }],
+    } })
+    const element = wrapper.element
+    expect(wrapper.classes()).not.toContain('page-segmented--fill')
+    await wrapper.setProps({ fill: true })
+    expect(wrapper.classes()).toContain('page-segmented--fill')
+    expect(wrapper.element).toBe(element)
+    expect(wrapper.findAll('button')[0].attributes('aria-pressed')).toBe('true')
+    await wrapper.findAll('button')[1].trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toEqual([['b']])
+    await wrapper.setProps({ fill: false, modelValue: 'b' })
+    expect(wrapper.findAll('button')[1].attributes('aria-pressed')).toBe('true')
+    wrapper.unmount()
+  })
+
   it('分段继承表单的响应式尺寸，嵌套业务字段无需透传', async () => {
     const wrapper = mount({
       components: { ElForm, PageSegmented },

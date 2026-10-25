@@ -10,6 +10,7 @@ import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import AppTabToolbar from '@/components/AppTabToolbar.vue'
+import AppForm from '@/components/AppForm.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import HelpHint from '@/components/HelpHint.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -1131,6 +1132,21 @@ describe('ConfigView trade tab', () => {
 })
 
 describe('ConfigView score tab 加载查看', () => {
+  it('评分编辑表单与试算工具栏各自拥有尺寸作用域', async () => {
+    routeState.meta.configTab = 'score'
+    vi.mocked(scoreApi.listScoreProfiles).mockResolvedValue([])
+    const wrapper = await mountView('normal', ['score-profile:view', 'score-profile:save'])
+    try {
+      const editor = wrapper.get('[data-testid="score-profile-editor"]')
+      const toolbar = wrapper.get('[data-testid="score-run-controls"]')
+      expect(wrapper.findComponent(AppForm).props('size')).toBe('default')
+      expect(editor.element.tagName).toBe('FORM')
+      expect(toolbar.element.closest('form')).toBeNull()
+      expect(toolbar.attributes('data-control-row')).toBe('default')
+      expect(wrapper.findComponent(AppTableCard).element.closest('form')).toBe(editor.element)
+    } finally { wrapper.unmount() }
+  })
+
   it('评分指标从空表添加再清空时保留同一个外框，关闭列线也不移除外框', async () => {
     routeState.meta.configTab = 'score'
     vi.mocked(scoreApi.listScoreProfiles).mockResolvedValue([])

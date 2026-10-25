@@ -518,7 +518,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               <el-form-item class="cfg-mode" label="训练模式">
                 <PageSegmented
                   v-model="sessionConfig.mode"
-                  tone="primary"
+                  fill
                   aria-label="训练模式"
                   :options="[
                     { label: '单只随机', value: 'single' },
@@ -957,10 +957,10 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
         </PageSettingItem>
         <!-- 本次切到多只时也要能调整回合数，不要求先改长期默认模式。 -->
         <PageSettingItem v-if="settings.mode === 'multi' || (phase === 'config' && sessionConfig.mode === 'multi')" label="回合数（只）" layout="inline">
-          <el-input-number v-model="settings.n_rounds" :min="1" :max="20" size="small" style="width:140px" />
+          <el-input-number v-model="settings.n_rounds" :min="1" :max="20" style="width:140px" />
         </PageSettingItem>
         <PageSettingItem label="每回合连续交易日" layout="inline">
-          <el-input-number v-model="settings.window_days" :min="5" :max="60" size="small" style="width:140px" />
+          <el-input-number v-model="settings.window_days" :min="5" :max="60" style="width:140px" />
         </PageSettingItem>
         <PageSettingItem label="初始资金（元）" layout="inline">
           <el-input-number
@@ -969,7 +969,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
             :step="10000"
             :formatter="formatMoneyInput"
             :parser="parseMoneyInput"
-            size="small"
+
             style="width:160px"
           />
         </PageSettingItem>
@@ -1029,7 +1029,6 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 }
 .cfg-grid :deep(.el-form-item) { margin-bottom: 0; min-width: 0; }
 .cfg-grid :deep(.el-form-item__content) { min-width: 0; }
-.cfg-mode :deep(.page-segmented) { width: 100%; max-width: 240px; }
 .cfg-date-range {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);

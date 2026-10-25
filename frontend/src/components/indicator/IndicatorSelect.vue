@@ -26,7 +26,6 @@ function update(value: string): void {
     :model-value="modelValue || ''"
     :disabled="disabled"
     filterable
-    size="small"
     class="indicator-select"
     @update:model-value="update"
     popper-class="app-option-popper indicator-select-popper"

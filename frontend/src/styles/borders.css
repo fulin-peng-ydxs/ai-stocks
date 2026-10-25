@@ -46,6 +46,42 @@ html[data-layout-preset] :is(.el-textarea__inner, .el-color-picker__trigger, .el
 html[data-layout-preset] .el-segmented { --el-border-radius-base: var(--layout-control-radius); }
 html[data-layout-preset] :is(.el-segmented__item-selected, .el-segmented__item) { border-radius: var(--app-radius-segment); }
 
+/* 库按钮组的 outline 不随选中 border-color 变化；改为实体边界，相邻项只由前项绘制接缝。 */
+html[data-layout-preset] :is(.el-radio-button__inner, .el-checkbox-button__inner) {
+  outline: none;
+  border: 1px solid var(--app-border-default);
+  box-shadow: none;
+}
+html[data-layout-preset] :is(.el-radio-button, .el-checkbox-button):not(:first-child) > :is(.el-radio-button__inner, .el-checkbox-button__inner) {
+  border-left-width: 0;
+}
+html[data-layout-preset] .el-radio-button.is-active .el-radio-button__original-radio:not(:disabled) + .el-radio-button__inner,
+html[data-layout-preset] .el-checkbox-button.is-checked:not(.is-disabled) .el-checkbox-button__inner {
+  border-color: var(--app-border-selected);
+  box-shadow: none;
+  z-index: 1;
+}
+html[data-layout-preset] .el-radio-button__original-radio:disabled + .el-radio-button__inner,
+html[data-layout-preset] .el-checkbox-button.is-disabled .el-checkbox-button__inner {
+  border-color: var(--el-disabled-border-color);
+  box-shadow: none;
+}
+/* 接缝归前项，避免负 margin 在非整数界面比例下与真实边宽发生舍入偏差。 */
+html[data-layout-preset] .el-radio-button:has(+ .el-radio-button.is-active) > .el-radio-button__inner,
+html[data-layout-preset] .el-checkbox-button:has(+ .el-checkbox-button.is-checked) > .el-checkbox-button__inner {
+  border-right-color: var(--app-border-selected);
+}
+html[data-layout-preset] .el-radio-button:has(+ .el-radio-button.is-active.is-disabled) > .el-radio-button__inner,
+html[data-layout-preset] .el-checkbox-button:has(+ .el-checkbox-button.is-checked.is-disabled) > .el-checkbox-button__inner {
+  border-right-color: var(--el-disabled-border-color);
+}
+html[data-layout-preset] .el-radio-button__original-radio:focus-visible + .el-radio-button__inner,
+html[data-layout-preset] .el-checkbox-button__original:focus-visible + .el-checkbox-button__inner {
+  outline: var(--app-focus-ring);
+  outline-offset: 2px;
+  z-index: 2;
+}
+
 /* 输入以内描边承接焦点。range 的真实焦点 class 是 is-active，和单值输入分开适配。 */
 html[data-layout-preset] :is(.el-input__wrapper, .el-select__wrapper, .el-textarea__inner) {
   background-color: var(--chrome-bg-soft);

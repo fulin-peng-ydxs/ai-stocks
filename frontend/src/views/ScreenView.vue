@@ -820,7 +820,7 @@ const menuPageTitle = useMenuPageTitle()
       <div class="screen-layout">
         <!-- 方案列表（R3/R5/R7：统一选择器 list 形态，仅我的 + 搜索系统内置/租户/全体公开） -->
         <aside class="prof-list app-stack-sm">
-          <el-button type="primary" plain size="small" style="width: 100%" @click="newProfile">
+          <el-button type="primary" plain style="width: 100%" @click="newProfile">
             <template #icon><el-icon><Plus /></el-icon></template>
             新建方案
           </el-button>
@@ -843,161 +843,163 @@ const menuPageTitle = useMenuPageTitle()
         </aside>
 
         <!-- 编辑器 -->
-        <AppForm class="editor editor-screen">
-          <div class="ed-head app-cluster-md">
-            <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
-            <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
-              <el-button class="ver-badge" text bg type="primary" data-testid="screen-profile-version" @click="openVersions">v{{ curVersion }}</el-button>
-            </AppHoverInfo>
-            <AssetVisibilityActions
-              v-if="!isNew"
-              :visibility="profileVisibility"
-              :readonly="profileReadonly"
-              :can-publish-tenant="canPublishTenant"
-              :can-publish-public="canPublishPublic"
-              :saving="visibilitySaving"
-              :copy-visible="profileReadonly"
-              copy-permission="screen-profile:save"
-              @publish="publishProfile"
-              @copy="copyCurrentProfile"
-            />
-            <div class="spacer" />
-            <el-button v-permission="'screen-profile:save'" :disabled="profileReadonly || !screenFormChanged" :loading="saving" type="primary" plain @click="save">保存</el-button>
-            <el-button v-permission="'screen-profile:delete'" v-if="curId && !isNew && !profileReadonly" type="danger" plain @click="remove">删除</el-button>
-          </div>
-
-          <!-- 详情加载态/失败态（原子应用 + seq 守卫）：失败已回滚选中值，编辑器保留旧内容 -->
-          <AppStateBlock
-            v-if="profileError"
-            state="error"
-            size="compact"
-            title="筛选方案详情加载失败"
-            :description="profileError"
-            retry
-            @retry="onScreenSelect(profileDetailAttempt || curRef)"
-          />
-          <AppStateBlock
-            v-else-if="profileLoading"
-            state="loading"
-            size="compact"
-            title="正在加载方案详情…"
-          />
-
-          <!-- 复杂嵌套方案：只读运行 -->
-          <AppStatusNotice
-            v-if="complexAst"
-            class="complex-ast-notice"
-            title="该方案含嵌套分组，构建器暂以只读方式运行；如需改写请新建方案。"
-          />
-          <AppScrollArea as="pre" v-if="complexAst" class="ast">{{ JSON.stringify(complexAst, null, 2) }}</AppScrollArea>
-
-          <!-- 融合构建器（卡片包裹，与结果区/编辑器头区分边界，对齐买卖 cond-block） -->
-          <template v-else>
-            <div class="cond-block">
-            <div class="b-group">
-              <span class="hint">组合方式</span>
-              <el-radio-group v-model="groupOp" size="small">
-                <el-radio-button value="AND">满足全部（且）</el-radio-button>
-                <el-radio-button value="OR">满足任一（或）</el-radio-button>
-              </el-radio-group>
-            </div>
-
-            <AppScrollArea
-              class="b-conds"
-              data-testid="screen-condition-builder"
-              :class="{ 'readonly-builder': profileReadonly }"
-            >
-            <div
-              v-for="(c, i) in rows"
-              :key="i"
-              class="b-cond"
-              data-testid="screen-condition-row"
-            >
-              <StrategyItemEnabledSwitch
-                v-model="c.enabled"
-                :disabled="profileReadonly"
-                label="是否启用筛选条件"
+        <section class="editor editor-screen">
+          <AppForm class="screen-profile-form" data-testid="screen-profile-editor">
+            <div class="ed-head app-cluster-md">
+              <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
+              <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
+                <el-button class="ver-badge" text bg type="primary" data-testid="screen-profile-version" @click="openVersions">v{{ curVersion }}</el-button>
+              </AppHoverInfo>
+              <AssetVisibilityActions
+                v-if="!isNew"
+                :visibility="profileVisibility"
+                :readonly="profileReadonly"
+                :can-publish-tenant="canPublishTenant"
+                :can-publish-public="canPublishPublic"
+                :saving="visibilitySaving"
+                :copy-visible="profileReadonly"
+                copy-permission="screen-profile:save"
+                @publish="publishProfile"
+                @copy="copyCurrentProfile"
               />
-              <!-- 指标条件 -->
-              <template v-if="c.kind === 'ind'">
-                <el-tag size="small" type="success" effect="plain" class="kind-tag">指标</el-tag>
-                <IndicatorSelect v-model="c.key" :definitions="registry" :disabled="profileReadonly" @change="onIndKey(c)" />
-                <!-- 动态参数 -->
-                <IndicatorParamFields v-model="c.params" :params="defOf(c.key)?.params ?? []" :disabled="profileReadonly" />
-                <!-- 布尔：成立/不成立 -->
-                <template v-if="defOf(c.key)?.dtype === 'bool'">
-                  <AppSelect
-                    v-model="c.boolVal"
-                    size="small"
-                    :disabled="profileReadonly"
-                    width="compact"
-                  >
-                    <el-option :value="true" label="成立" />
-                    <el-option :value="false" label="不成立" />
-                  </AppSelect>
-                </template>
-                <!-- 数值：比较符 + 阈值 -->
-                <template v-else>
-                  <AppSelect
-                    v-model="c.cmp"
-                    size="small"
-                    :disabled="profileReadonly"
-                    width="compact"
-                  >
-                    <el-option v-for="o in NUM_CMP" :key="o.v" :value="o.v" :label="o.t" />
-                  </AppSelect>
-                  <el-input-number v-model="c.value" :disabled="profileReadonly" :controls="false" size="small" style="width: 86px" />
-                  <template v-if="c.cmp === 'between'">
-                    <span>~</span>
-                    <el-input-number v-model="c.value2" :disabled="profileReadonly" :controls="false" size="small" style="width: 86px" />
-                  </template>
-                </template>
-              </template>
+              <div class="spacer" />
+              <el-button v-permission="'screen-profile:save'" :disabled="profileReadonly || !screenFormChanged" :loading="saving" type="primary" plain @click="save">保存</el-button>
+              <el-button v-permission="'screen-profile:delete'" v-if="curId && !isNew && !profileReadonly" type="danger" plain @click="remove">删除</el-button>
+            </div>
 
-              <!-- 表达式条件 -->
-              <template v-else>
-                <el-tag size="small" type="warning" effect="plain" class="kind-tag">表达式</el-tag>
-                <el-input
-                  v-model="c.expr"
+            <!-- 详情加载态/失败态（原子应用 + seq 守卫）：失败已回滚选中值，编辑器保留旧内容 -->
+            <AppStateBlock
+              v-if="profileError"
+              state="error"
+              size="compact"
+              title="筛选方案详情加载失败"
+              :description="profileError"
+              retry
+              @retry="onScreenSelect(profileDetailAttempt || curRef)"
+            />
+            <AppStateBlock
+              v-else-if="profileLoading"
+              state="loading"
+              size="compact"
+              title="正在加载方案详情…"
+            />
+
+            <!-- 复杂嵌套方案：只读运行 -->
+            <AppStatusNotice
+              v-if="complexAst"
+              class="complex-ast-notice"
+              title="该方案含嵌套分组，构建器暂以只读方式运行；如需改写请新建方案。"
+            />
+            <AppScrollArea as="pre" v-if="complexAst" class="ast">{{ JSON.stringify(complexAst, null, 2) }}</AppScrollArea>
+
+            <!-- 融合构建器（卡片包裹，与结果区/编辑器头区分边界，对齐买卖 cond-block） -->
+            <template v-else>
+              <div class="cond-block">
+              <AppControlRow class="b-group">
+                <span class="hint">组合方式</span>
+                <el-radio-group v-model="groupOp">
+                  <el-radio-button value="AND">满足全部（且）</el-radio-button>
+                  <el-radio-button value="OR">满足任一（或）</el-radio-button>
+                </el-radio-group>
+              </AppControlRow>
+
+              <AppScrollArea
+                class="b-conds"
+                data-testid="screen-condition-builder"
+                :class="{ 'readonly-builder': profileReadonly }"
+              >
+              <AppControlRow
+                v-for="(c, i) in rows"
+                :key="i"
+                class="b-cond"
+                data-testid="screen-condition-row"
+              >
+                <StrategyItemEnabledSwitch
+                  v-model="c.enabled"
                   :disabled="profileReadonly"
-                  size="small"
-                  placeholder="如：COUNT(C > REF(C,1), 5) == 5"
-                  style="flex: 1; min-width: 260px"
+                  label="是否启用筛选条件"
                 />
-              </template>
+                <!-- 指标条件 -->
+                <template v-if="c.kind === 'ind'">
+                  <el-tag size="small" type="success" effect="plain" class="kind-tag">指标</el-tag>
+                  <IndicatorSelect v-model="c.key" :definitions="registry" :disabled="profileReadonly" @change="onIndKey(c)" />
+                  <!-- 动态参数 -->
+                  <IndicatorParamFields v-model="c.params" :params="defOf(c.key)?.params ?? []" :disabled="profileReadonly" />
+                  <AppControlRow :wrap="false">
+                    <!-- 布尔：成立/不成立 -->
+                    <template v-if="defOf(c.key)?.dtype === 'bool'">
+                      <AppSelect
+                        v-model="c.boolVal"
+                        :disabled="profileReadonly"
+                        width="compact"
+                      >
+                        <el-option :value="true" label="成立" />
+                        <el-option :value="false" label="不成立" />
+                      </AppSelect>
+                    </template>
+                    <!-- 数值：比较符 + 阈值 -->
+                    <template v-else>
+                      <AppSelect
+                        v-model="c.cmp"
+                        :disabled="profileReadonly"
+                        width="compact"
+                      >
+                        <el-option v-for="o in NUM_CMP" :key="o.v" :value="o.v" :label="o.t" />
+                      </AppSelect>
+                      <el-input-number v-model="c.value" :disabled="profileReadonly" :controls="false" class="app-control-width-compact" />
+                      <template v-if="c.cmp === 'between'">
+                        <span>~</span>
+                        <el-input-number v-model="c.value2" :disabled="profileReadonly" :controls="false" class="app-control-width-compact" />
+                      </template>
+                    </template>
+                    <AppRowActions :actions="conditionRowActions(i)" :inline-limit="1" />
+                  </AppControlRow>
+                </template>
 
-              <AppRowActions :actions="conditionRowActions(i)" :inline-limit="1" />
-            </div>
-            </AppScrollArea>
+                <!-- 表达式条件 -->
+                <template v-else>
+                  <el-tag size="small" type="warning" effect="plain" class="kind-tag">表达式</el-tag>
+                  <el-input
+                    v-model="c.expr"
+                    :disabled="profileReadonly"
+                    placeholder="如：COUNT(C > REF(C,1), 5) == 5"
+                    style="flex: 1; min-width: 260px"
+                  />
+                </template>
 
-            <AppControlRow class="b-actions">
-              <el-button :disabled="profileReadonly" @click="addIndRow">
-                <template #icon><el-icon><Plus /></el-icon></template>
-                指标条件
-              </el-button>
-              <el-button :disabled="profileReadonly" @click="addExprRow">
-                <template #icon><el-icon><Plus /></el-icon></template>
-                表达式条件
-              </el-button>
-              <HelpTip title="表达式语法" :width="400">
-                <HelpTipItem question="支持哪些语法">
-                  <ul>
-                    <li>算子支持 MA / HHV / LLV / REF / COUNT / SUM / ABS；变量支持 C 收、O 开、H 高、L 低、V 量、TURN 换手。</li>
-                  </ul>
-                </HelpTipItem>
-                <HelpTipItem question="如何保证点时安全">
-                  <ul>
-                    <li>仅使用不晚于当日的数据，不使用未来函数。</li>
-                  </ul>
-                </HelpTipItem>
-              </HelpTip>
-            </AppControlRow>
-            <AppScrollArea as="pre" v-if="settings.astExpanded && buildAst()" class="ast">{{ JSON.stringify(buildAst(), null, 2) }}</AppScrollArea>
-            </div>
-          </template>
+                <AppRowActions v-if="c.kind === 'expr'" :actions="conditionRowActions(i)" :inline-limit="1" />
+              </AppControlRow>
+              </AppScrollArea>
+
+              <AppControlRow class="b-actions">
+                <el-button :disabled="profileReadonly" @click="addIndRow">
+                  <template #icon><el-icon><Plus /></el-icon></template>
+                  指标条件
+                </el-button>
+                <el-button :disabled="profileReadonly" @click="addExprRow">
+                  <template #icon><el-icon><Plus /></el-icon></template>
+                  表达式条件
+                </el-button>
+                <HelpTip title="表达式语法" :width="400">
+                  <HelpTipItem question="支持哪些语法">
+                    <ul>
+                      <li>算子支持 MA / HHV / LLV / REF / COUNT / SUM / ABS；变量支持 C 收、O 开、H 高、L 低、V 量、TURN 换手。</li>
+                    </ul>
+                  </HelpTipItem>
+                  <HelpTipItem question="如何保证点时安全">
+                    <ul>
+                      <li>仅使用不晚于当日的数据，不使用未来函数。</li>
+                    </ul>
+                  </HelpTipItem>
+                </HelpTip>
+              </AppControlRow>
+              <AppScrollArea as="pre" v-if="settings.astExpanded && buildAst()" class="ast">{{ JSON.stringify(buildAst(), null, 2) }}</AppScrollArea>
+              </div>
+            </template>
+          </AppForm>
 
           <!-- 运行筛选 -->
-          <div class="run-head">
+          <AppControlRow class="run-head" size="default" data-testid="screen-run-controls">
             <span class="run-title">筛选结果</span>
             <AssetProfileSelect
               ref="scoreSelectRef"
@@ -1023,8 +1025,8 @@ const menuPageTitle = useMenuPageTitle()
               <template #icon><el-icon><VideoPlay /></el-icon></template>
               运行筛选
             </el-button>
-            <el-button v-if="result && result.hits.length" size="small" @click="exportCsv">导出 CSV</el-button>
-          </div>
+            <el-button v-if="result && result.hits.length" @click="exportCsv">导出 CSV</el-button>
+          </AppControlRow>
           <AppFormHelp>含表达式/带参指标需全市场逐股求值，约十几秒</AppFormHelp>
           <!-- ready 摘要：结果可回溯——命中数、是否排除 ST、按哪个只读方案口径跑的；交易日由日期选择器展示，不重复 -->
           <div v-if="result" class="run-meta">
@@ -1081,7 +1083,7 @@ const menuPageTitle = useMenuPageTitle()
             <AppStateBlock v-else-if="result" state="empty" title="当前条件暂无命中" />
             <AppStateBlock v-else state="empty" title="运行后在这里展示筛选结果" />
           </div>
-        </AppForm>
+        </section>
       </div>
     </AppScrollArea>
     </template>
@@ -1182,6 +1184,10 @@ const menuPageTitle = useMenuPageTitle()
   flex-direction: column;
   min-height: 0;
 }
+.screen-profile-form {
+  flex: 0 0 auto;
+  min-width: 0;
+}
 .spacer {
   flex: 1;
 }
@@ -1208,17 +1214,10 @@ const menuPageTitle = useMenuPageTitle()
   background: var(--el-fill-color-blank);
 }
 .b-group {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
   margin: 0 0 10px;
 }
 .b-cond {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
-  margin-bottom: 8px;
-  flex-wrap: wrap;
+  margin-bottom: var(--app-space-2);
 }
 .kind-tag {
   width: 52px;
@@ -1262,9 +1261,6 @@ const menuPageTitle = useMenuPageTitle()
   gap: var(--app-space-2);
 }
 .run-head {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-3);
   margin: var(--app-space-5) 0 var(--app-space-3);
   flex: none;
 }

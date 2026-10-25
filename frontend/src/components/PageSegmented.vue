@@ -10,6 +10,8 @@ const props = defineProps<{
   testId?: string
   /** 显式尺寸优先，否则继承表单尺寸；无尺寸上下文时跟随页面密度。 */
   size?: 'default' | 'small' | 'large'
+  /** 默认按内容确定宽度；明确需要占满所属字段时统一使用 fill。 */
+  fill?: boolean
   /** 页面级模式切换使用 primary；设置型枚举保持 neutral。 */
   tone?: 'neutral' | 'primary'
   /** tabs 用于图表周期等轻量视图切换；保留分段控件行为，仅改为文字与下划线表达。 */
@@ -35,6 +37,7 @@ function optionTestId(value: OptionValue): string | undefined {
   <div
     class="page-segmented"
     :class="{
+      'page-segmented--fill': props.fill,
       'page-segmented--small': controlSize === 'small',
       'page-segmented--large': controlSize === 'large',
       'page-segmented--primary': props.tone === 'primary',
@@ -70,7 +73,9 @@ function optionTestId(value: OptionValue): string | undefined {
 .page-segmented {
   position: relative;
   box-sizing: border-box;
-  display: grid;
+  display: inline-grid;
+  flex: 0 1 auto;
+  width: max-content;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
   min-width: 0;
@@ -82,6 +87,7 @@ function optionTestId(value: OptionValue): string | undefined {
   border-radius: var(--layout-control-radius);
   background: var(--page-settings-seg-bg);
 }
+.page-segmented--fill { width: 100%; }
 .seg-btn {
   box-sizing: border-box;
   min-width: 0;

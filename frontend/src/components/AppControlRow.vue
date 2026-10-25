@@ -6,10 +6,13 @@ withDefaults(defineProps<{
   align?: 'center' | 'start' | 'end' | 'baseline'
   justify?: 'start' | 'end' | 'between'
   fill?: boolean
+  /** 关联阈值与动作需作为一组换行时，在内层行关闭换行。 */
+  wrap?: boolean
 }>(), {
   align: 'center',
   justify: 'start',
   fill: false,
+  wrap: true,
 })
 const row = useControlRowSizing()
 </script>
@@ -23,6 +26,7 @@ const row = useControlRowSizing()
       `is-align-${align}`,
       `is-justify-${justify}`,
       { 'is-fill': fill },
+      { 'is-nowrap': !wrap },
     ]"
   >
     <slot />
@@ -40,6 +44,7 @@ const row = useControlRowSizing()
 .app-control-row.is-fill :deep(> *) {
   flex: 1 1 auto;
 }
+.app-control-row.is-nowrap { flex-wrap: nowrap; }
 .is-align-center { align-items: center; }
 .is-align-start { align-items: flex-start; }
 .is-align-end { align-items: flex-end; }

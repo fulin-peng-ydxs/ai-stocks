@@ -484,9 +484,6 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
   align-items: center;
   gap: var(--app-space-2);
 }
-.asset-search__toolbar :deep(.page-segmented) {
-  flex: 0 0 auto;
-}
 .asset-search__q {
   flex: 1 1 200px;
   min-width: 0;

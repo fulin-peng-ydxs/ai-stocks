@@ -107,11 +107,6 @@ function resetFilters(): void {
 <style scoped>
 .limit-ladder__date { width: 220px; }
 .limit-ladder__date :deep(.el-date-editor) { width: 100%; }
-.limit-ladder__window {
-  flex: 0 0 auto;
-  width: auto;
-  min-width: max-content;
-}
 .limit-ladder__search { width: 180px; }
 .limit-ladder__command { flex: 0 0 auto; }
 </style>

@@ -1444,11 +1444,6 @@ onBeforeUnmount(() => {
   gap: var(--app-space-1);
 }
 
-.stock-chart-period-switch {
-  flex: 0 0 auto;
-  width: auto;
-}
-
 .stock-chart-metric-rail {
   box-sizing: border-box;
   height: 28px;

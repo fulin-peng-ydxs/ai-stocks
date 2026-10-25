@@ -35,7 +35,7 @@ describe('一级编辑表单尺寸', () => {
     wrapper.unmount()
   })
 
-  it('主表单的输入框和嵌套分段默认继承大号，并保留字段写回', async () => {
+  it('主表单的输入框和嵌套分段默认跟随页面密度，并保留字段写回', async () => {
     const wrapper = mount(defineComponent({
       components: { AppForm, ElFormItem, ElInput, PageSegmented },
       setup() { return { draft: reactive({ name: '', mode: 'all' }) } },
@@ -43,18 +43,18 @@ describe('一级编辑表单尺寸', () => {
         <div><PageSegmented v-model="draft.mode" :options="[{label:'全部',value:'all'},{label:'指定',value:'selected'}]" /></div>
       </AppForm>`,
     }))
-    expect(wrapper.getComponent(ElForm).props('size')).toBe('large')
-    expect(wrapper.getComponent(ElInput).classes()).toContain('el-input--large')
-    expect(wrapper.getComponent(PageSegmented).classes()).toContain('page-segmented--large')
+    expect(wrapper.getComponent(ElForm).props('size')).toBe('default')
+    expect(wrapper.getComponent(ElInput).classes()).not.toContain('el-input--large')
+    expect(wrapper.getComponent(PageSegmented).classes()).not.toContain('page-segmented--large')
     await wrapper.get('input').setValue('采集任务')
     await wrapper.getComponent(PageSegmented).findAll('button')[1].trigger('click')
     expect(wrapper.vm.draft).toEqual({ name: '采集任务', mode: 'selected' })
     wrapper.unmount()
   })
 
-  it('局部密度例外可显式声明，不影响默认大号的其他实例', async () => {
-    const wrapper = mount(AppForm, { props: { size: 'default' } })
-    expect(wrapper.getComponent(ElForm).props('size')).toBe('default')
+  it('独立场景可显式声明尺寸', async () => {
+    const wrapper = mount(AppForm, { props: { size: 'large' } })
+    expect(wrapper.getComponent(ElForm).props('size')).toBe('large')
     await wrapper.setProps({ size: 'small' })
     expect(wrapper.getComponent(ElForm).props('size')).toBe('small')
     wrapper.unmount()

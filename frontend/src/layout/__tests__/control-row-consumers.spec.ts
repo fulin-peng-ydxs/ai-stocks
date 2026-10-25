@@ -29,15 +29,45 @@ describe('操作行消费门禁', () => {
     expect(audit(`<template><AppControlRow class="bar" /></template>
       <style>.bar{height:32px}</style>`)).toHaveLength(1)
   })
-  it('保留附属角色尺寸，边界内的行外编辑控件可独立声明尺寸', () => {
+  it('保留附属角色尺寸，独立表单通过整体尺寸声明层级', () => {
     expect(audit(`<template><AppControlRow>
       <AppCloseButton label="关闭预览" size="compact" /><el-tag size="small" />
       <el-button link size="small">详情</el-button>
       <AppDialog><AppSelect size="large" /></AppDialog>
-      <AppForm><AppSelect size="large" /></AppForm>
+      <AppForm size="large"><AppSelect /></AppForm>
     </AppControlRow></template>`)).toEqual([])
     expect(audit(`<template><AppControlRow><AppDialog><AppControlRow>
       <AppSelect size="large" />
     </AppControlRow></AppDialog></AppControlRow></template>`)).toHaveLength(1)
+  })
+
+  it('分段宽度门禁覆盖业务类、媒体查询、内联样式和动态逃逸', () => {
+    for (const property of ['width:360px', 'min-width:240px', 'max-width:80%', 'flex:1', 'padding:8px']) {
+      expect(audit(`<template><section><PageSegmented class="business-choice" /></section></template>
+        <style>@container app-viewport (max-width:900px) {.business-choice {${property}}}</style>`))
+        .toHaveLength(1)
+      expect(audit(`<template><PageSegmented style="${property}" /></template>`)).toHaveLength(1)
+    }
+    for (const binding of [':style="widths"', ':class="classes"', 'v-bind="options"']) {
+      expect(audit(`<template><PageSegmented ${binding} /></template>`)).toHaveLength(1)
+    }
+    expect(audit(`<template><PageSegmented fill class="choice" /></template>
+      <style>.choice {margin-bottom:12px; align-self:start}</style>`)).toEqual([])
+    expect(auditControlRows([{ file: 'styles/fixture.css', source: '.page-segmented{width:360px}' }]))
+      .toHaveLength(1)
+  })
+
+  it('普通表单和设置字段继承统一档位，表格行内与附属动作保留角色边界', () => {
+    for (const field of ['AppSelect', 'el-input-number', 'IndicatorParamFields', 'PageSegmented']) {
+      for (const host of ['AppForm', 'PageSettingItem']) {
+        expect(audit(`<template><${host}><div><${field} size="small" /></div></${host}></template>`))
+          .toHaveLength(1)
+      }
+    }
+    expect(audit(`<template><AppForm><AppControlRow size="small"><AppSelect /></AppControlRow>
+      <AppDataTable><AppTableColumn><el-input-number size="small" /></AppTableColumn></AppDataTable>
+      <AppStatusNotice><el-button size="small">重试</el-button></AppStatusNotice>
+      <AppIconButton size="sm" label="复制" />
+    </AppForm></template>`)).toEqual([])
   })
 })

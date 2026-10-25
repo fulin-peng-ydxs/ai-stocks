@@ -12,6 +12,17 @@ const components = { AppControlRow, AppForm, AppDialog, PageDrawer,
   ElForm, ElFormItem, ElConfigProvider, ElInput }
 
 describe('操作行共同尺寸', () => {
+  it('关联字段可整组换行，切换换行策略不重建输入或丢失草稿', async () => {
+    const wrapper = mount(AppControlRow, { slots: { default: '<input value="保留草稿" />' } })
+    const input = wrapper.get('input').element
+    expect(wrapper.classes()).not.toContain('is-nowrap')
+    await wrapper.setProps({ wrap: false })
+    expect(wrapper.classes()).toContain('is-nowrap')
+    expect(wrapper.get('input').element).toBe(input)
+    expect((input as HTMLInputElement).value).toBe('保留草稿')
+    wrapper.unmount()
+  })
+
   it('无显式档位时继承表单项、表单和全局，default 明确回到页面密度', () => {
     const wrapper = mount(defineComponent({
       components,
@@ -75,8 +86,8 @@ describe('操作行共同尺寸', () => {
       AppScrollArea: { template: '<div><slot /></div>' },
     } } })
     await flushPromises()
-    for (const [id, size] of [['new-form', 'large'], ['dialog', 'default'],
-      ['dialog-form', 'large'], ['drawer', 'default']]) {
+    for (const [id, size] of [['new-form', 'default'], ['dialog', 'default'],
+      ['dialog-form', 'default'], ['drawer', 'default']]) {
       expect(wrapper.get(`[data-testid="${id}"]`).attributes('data-control-row')).toBe(size)
     }
     expect(wrapper.findAll('.app-control-row-boundary').length).toBeGreaterThanOrEqual(4)

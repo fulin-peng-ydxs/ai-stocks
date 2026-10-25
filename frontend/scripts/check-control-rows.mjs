@@ -16,37 +16,63 @@ const controls = new Set(['el-button', 'el-input', 'el-input-number', 'el-date-p
   'el-radio-group', 'el-radio-button', 'el-checkbox-group', 'el-checkbox-button', 'el-segmented',
   'AppSelect', 'AppFilterSelect', 'AppMultiSelect', 'AppSearchInput', 'AppDatePicker',
   'TradeDatePicker', 'PageSegmented', 'AppIconButton', 'AssetProfileSelect',
-  'MarketBenchmarkSelect', 'IndicatorSelect', 'KlineRangeSelect', 'StockCodeMultiSelect',
+  'MarketBenchmarkSelect', 'IndicatorSelect', 'IndicatorParamFields', 'KlineRangeSelect', 'StockCodeMultiSelect',
   'StockGroupSelect', 'BoardGroupSelect'])
 const shared = new Set(['components/AppControlRow.vue', 'components/AppTabToolbar.vue',
   'components/AppAdvancedSearch.vue', 'components/AppSelect.vue', 'components/AppFilterSelect.vue',
   'components/PageSegmented.vue', 'components/AppIconButton.vue'])
 const height = /^(?:(?:min-|max-)?(?:height|block-size)|--app-control-row-height)$/
+const segmentedGeometry = /^(?:(?:min-|max-)?(?:width|height|inline-size|block-size)|display|flex(?:-.+)?|grid(?:-.+)?|padding(?:-.+)?|font(?:-.+)?|border(?:-.+)?|background(?:-.+)?|gap|row-gap|column-gap|line-height|color|box-shadow|--.+)$/
+const fieldBoundaries = new Set(['AppDataTable', 'AppTableColumn', 'el-table', 'el-table-column',
+  'AppRowActions', 'AppStateBlock', 'AppStatusNotice', 'AppDialog', 'PageDrawer', 'PageDrawerSurface'])
 const classNames = source => [...source.matchAll(/\.([\w-]+)/g)].map(match => match[1])
 const staticAttr = (node, name) => node.props.find(p => p.type === 6 && p.name === name)
 
-/** 行级消费检查与构建共享；例外按附属角色、表单/浮层边界区分，不按整页放行。 */
+/** 与构建共用控件尺寸和分段几何门禁；紧凑例外按表格/附属动作角色识别，不按页面放行。 */
 export function auditControlRows(sources) {
   const violations = []
   for (const { file, source } of sources) {
     const report = (line, message) => violations.push(`${file}:${line} ${message}`)
     const rowClasses = new Set(['app-control-row', 'app-tab-toolbar', 'app-advanced-search'])
     const controlClasses = new Set()
+    const segmentedClasses = new Set(['page-segmented', 'seg-btn', 'seg-label', 'seg-indicator'])
     const descriptor = file.endsWith('.vue') ? parseVue(source).descriptor : undefined
     const template = descriptor?.template
-    function inspect(node, inRow = false) {
+    function inspect(node, inRow = false, inField = false) {
       if (node.type !== 1) return
       if (boundaries.has(node.tag)) inRow = false
+      if (fieldBoundaries.has(node.tag)) inField = false
+      if (['AppForm', 'PageSettingItem'].includes(node.tag)) inField = true
       const ownsRow = rows.has(node.tag) || node.props.some(p =>
         p.type === 7 && p.name === 'bind' && p.arg?.content === 'data-control-row')
       inRow ||= ownsRow
       const classes = (staticAttr(node, 'class')?.value?.content ?? '').split(/\s+/).filter(Boolean)
       if (ownsRow) classes.forEach(c => rowClasses.add(c))
       const textCommand = staticAttr(node, 'text') || staticAttr(node, 'link')
+      const line = template.loc.start.line + node.loc.start.line - 1
+      if (inField && !inRow && controls.has(node.tag) && node.tag !== 'AppIconButton' && !textCommand) {
+        const size = node.props.find(p => p.type === 6 && p.name === 'size'
+          || p.type === 7 && p.name === 'bind' && p.arg?.content === 'size')
+        if (size && !(size.type === 6 && size.value?.content === 'default')) {
+          report(line, '普通表单/设置字段不得独立设置 size；尺寸由表单或操作组统一提供')
+        }
+      }
+      if (node.tag === 'PageSegmented' && file !== 'components/PageSegmented.vue') {
+        classes.forEach(c => segmentedClasses.add(c))
+        for (const prop of node.props) {
+          if (prop.type === 6 && prop.name === 'style') {
+            postcss.parse(`x{${prop.value?.content ?? ''}}`).walkDecls(decl => {
+              if (segmentedGeometry.test(decl.prop)) report(line, `分段控件不得内联覆盖 ${decl.prop}；宽度由共享 fill 声明`)
+            })
+          }
+          if (prop.type === 7 && prop.name === 'bind' && (!prop.arg || ['style', 'class'].includes(prop.arg.content))) {
+            report(line, '分段控件不得通过动态样式/类或整包绑定绕过共享几何；排列使用外层容器')
+          }
+        }
+      }
       const participant = inRow && controls.has(node.tag) && !textCommand
       if (participant || ownsRow) {
         if (participant) classes.forEach(c => controlClasses.add(c))
-        const line = template.loc.start.line + node.loc.start.line - 1
         if (participant && node.props.some(p => p.type === 6 && p.name === 'size'
           || p.type === 7 && p.name === 'bind' && p.arg?.content === 'size')) {
           report(line, '行内常规控件不得独立设置 size；共同尺寸由行提供')
@@ -77,21 +103,28 @@ export function auditControlRows(sources) {
         const ownedSlots = rowSlots.get(node.tag)
         const slotOwnsRow = slot && (Array.isArray(ownedSlots)
           ? ownedSlots.includes(slot.arg?.content) : slot.arg?.content === ownedSlots)
-        inspect(child, inRow || !!slotOwnsRow)
+        inspect(child, inRow || !!slotOwnsRow, inField && !['actions', 'header-actions', 'tail'].includes(slot?.arg?.content))
       })
     }
     if (template) baseParse(template.content).children.forEach(node => inspect(node))
     const styles = descriptor?.styles ?? (file.endsWith('.css') ? [{ content: source }] : [])
     for (const style of styles) {
-      if (shared.has(file) || file === 'styles/global.css') continue
+      if (file === 'components/PageSegmented.vue') continue
       postcss.parse(style.content).walkRules(rule => {
         const classes = classNames(rule.selector)
+        const segmentedRule = classes.some(c => segmentedClasses.has(c))
+        const segmentedInternal = classes.some(c => ['seg-btn', 'seg-label', 'seg-indicator'].includes(c))
         const rowRule = classes.some(c => rowClasses.has(c))
         const controlRule = classes.some(c => controlClasses.has(c))
           || rowRule && /\.(?:el-(?:input|select|button|segmented)|page-segmented|seg-btn)\b/.test(rule.selector)
-        if (!rowRule && !controlRule) return
+        if (!rowRule && !controlRule && !segmentedRule) return
         rule.walkDecls(decl => {
-          if (!height.test(decl.prop)) return
+          if (segmentedRule && (segmentedInternal || segmentedGeometry.test(decl.prop))) {
+            report((style.loc?.start.line ?? 1) + (decl.source?.start?.line ?? 1) - 1,
+              `分段控件不得私自覆盖 ${decl.prop}（${rule.selector}）；使用共享尺寸及 fill`)
+            return
+          }
+          if (shared.has(file) || file === 'styles/global.css' || !height.test(decl.prop)) return
           if (rowRule && !controlRule && decl.prop === 'min-height'
             && decl.value === 'var(--app-control-row-height)') return
           report((style.loc?.start.line ?? 1) + (decl.source?.start?.line ?? 1) - 1,
@@ -121,5 +154,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (violations.length) {
     console.error(violations.join('\n'))
     process.exitCode = 1
-  } else console.log('操作行共同尺寸检查通过')
+  } else console.log('控件共同尺寸与分段宽度检查通过')
 }

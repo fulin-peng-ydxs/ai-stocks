@@ -2589,9 +2589,6 @@ const menuPageTitle = useMenuPageTitle()
   flex: 0 0 auto;
   margin-bottom: var(--app-space-3);
 }
-.backtest-mode-rail :deep(.page-segmented) {
-  min-width: 240px;
-}
 .sell-tag { margin: 1px 2px 1px 0; }
 .dlg-tbl-title { margin: 14px 0 6px; font-weight: var(--app-font-weight-section); font-size: var(--app-font-size-table); }
 .form-card { margin-bottom: var(--app-space-3); flex: 0 0 auto; }
@@ -2771,10 +2768,6 @@ const menuPageTitle = useMenuPageTitle()
 }
 
 @container app-viewport (max-width: 480px) {
-  .backtest-mode-rail :deep(.page-segmented) {
-    width: 100%;
-    min-width: 0;
-  }
   .form-card :deep(.el-card__body) {
     padding: 12px;
   }

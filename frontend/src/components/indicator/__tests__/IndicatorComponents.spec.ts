@@ -2,11 +2,13 @@
 
 import { mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
+import { defineComponent, ref } from 'vue'
 import { describe, expect, it } from 'vitest'
 
 import IndicatorParamFields from '../IndicatorParamFields.vue'
 import IndicatorParamSchemaEditor from '../IndicatorParamSchemaEditor.vue'
 import IndicatorSelect from '../IndicatorSelect.vue'
+import AppForm from '@/components/AppForm.vue'
 import type { IndicatorDef } from '@/api/scoreProfile'
 
 const definitions: IndicatorDef[] = [
@@ -28,6 +30,36 @@ const definitions: IndicatorDef[] = [
 ]
 
 describe('技术指标共享组件', () => {
+  it('指标选择和动态参数继承一级表单尺寸，紧凑例外可显式覆盖且保留输入', async () => {
+    const formSize = ref<'large' | 'default'>('large')
+    const wrapper = mount(defineComponent({
+      components: { AppForm, IndicatorSelect, IndicatorParamFields },
+      setup: () => ({ formSize, definitions, values: ref({ window: 20 }),
+        params: [{ name: 'window', label: '统计周期', type: 'int', default: 20 }] }),
+      template: `<AppForm :size="formSize">
+        <IndicatorSelect model-value="ma" :definitions="definitions" />
+        <IndicatorParamFields v-model="values" :params="params" />
+        <IndicatorSelect size="small" model-value="ma" :definitions="definitions" />
+        <IndicatorParamFields size="small" v-model="values" :params="params" />
+      </AppForm>`,
+    }), { global: { plugins: [ElementPlus] } })
+    try {
+      const fields = wrapper.findAllComponents({ name: 'ElInputNumber' })
+      const selects = wrapper.findAllComponents({ name: 'ElSelect' })
+      expect(selects[0].classes()).toContain('el-select--large')
+      expect(fields[0].classes()).toContain('el-input-number--large')
+      expect(selects[1].classes()).toContain('el-select--small')
+      expect(fields[1].classes()).toContain('el-input-number--small')
+      fields[0].vm.$emit('update:modelValue', 60)
+      formSize.value = 'default'
+      await wrapper.vm.$nextTick()
+      expect(selects[0].classes()).not.toContain('el-select--large')
+      expect(fields[0].classes()).not.toContain('el-input-number--large')
+      expect(fields[0].props('modelValue')).toBe(60)
+      expect(fields[1].classes()).toContain('el-input-number--small')
+    } finally { wrapper.unmount() }
+  })
+
   it('选择器按通用指标和快捷预设分组，并保留已选停用指标', () => {
     const wrapper = mount(IndicatorSelect, {
       props: { modelValue: 'old', definitions },

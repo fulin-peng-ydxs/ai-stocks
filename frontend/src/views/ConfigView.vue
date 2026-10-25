@@ -1846,7 +1846,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <div class="score-layout pane-fill">
           <!-- 方案列表（R3/R5/R7：统一选择器 list 形态，仅我的 + 搜索系统内置/租户/全体公开） -->
           <aside class="prof-list app-stack-sm">
-            <el-button type="primary" plain size="small" style="width: 100%" @click="newProfile">
+            <el-button type="primary" plain style="width: 100%" @click="newProfile">
               <template #icon><el-icon><Plus /></el-icon></template>
               新建方案
             </el-button>
@@ -1871,183 +1871,188 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           </aside>
 
           <!-- 编辑器 -->
-          <AppForm class="editor editor-score">
-            <div class="ed-head app-cluster-md">
-              <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
-              <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
-                <el-button class="ver-badge" text bg type="primary" @click="openScoreVersions">v{{ curVersion }}</el-button>
-              </AppHoverInfo>
-              <AssetVisibilityActions
-                v-if="!isNew"
-                :visibility="profileVisibility"
-                :readonly="profileReadonly"
-                :can-publish-tenant="canPublishTenant"
-                :can-publish-public="canPublishPublic"
-                :saving="visibilitySaving"
-                :copy-visible="profileReadonly"
-                copy-permission="score-profile:save"
-                @publish="publishScoreProfile"
-                @copy="copyCurrentScoreProfile"
-              />
-              <span class="wsum" :class="{ bad: weightSum !== 100 }">权重合计 {{ weightSum }}%</span>
-              <div class="spacer" />
-              <el-button v-permission="'score-profile:save'" :disabled="profileReadonly || !scoreFormChanged" :loading="saving" type="primary" @click="save">保存</el-button>
-              <el-button v-permission="'score-profile:delete'" v-if="curId && !isNew && !profileReadonly" type="danger" plain @click="remove">删除</el-button>
-            </div>
+          <section class="editor editor-score">
+            <AppForm class="score-profile-form" data-testid="score-profile-editor">
+              <div class="ed-head app-cluster-md">
+                <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
+                <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
+                  <el-button class="ver-badge" text bg type="primary" @click="openScoreVersions">v{{ curVersion }}</el-button>
+                </AppHoverInfo>
+                <AssetVisibilityActions
+                  v-if="!isNew"
+                  :visibility="profileVisibility"
+                  :readonly="profileReadonly"
+                  :can-publish-tenant="canPublishTenant"
+                  :can-publish-public="canPublishPublic"
+                  :saving="visibilitySaving"
+                  :copy-visible="profileReadonly"
+                  copy-permission="score-profile:save"
+                  @publish="publishScoreProfile"
+                  @copy="copyCurrentScoreProfile"
+                />
+                <span class="wsum" :class="{ bad: weightSum !== 100 }">权重合计 {{ weightSum }}%</span>
+                <div class="spacer" />
+                <el-button v-permission="'score-profile:save'" :disabled="profileReadonly || !scoreFormChanged" :loading="saving" type="primary" @click="save">保存</el-button>
+                <el-button v-permission="'score-profile:delete'" v-if="curId && !isNew && !profileReadonly" type="danger" plain @click="remove">删除</el-button>
+              </div>
 
-            <div class="score-profile-options">
-              <span class="score-profile-option-label">
-                ST 股票参与评分排名
-                <HelpHint text="决定 ST 是否进入该方案的评分母集和全市场排名；参与评分不会自动加分或扣分。" />
-              </span>
-              <PageSegmented
-                :model-value="includeSt"
-                :options="[
-                  { label: '参与', value: true },
-                  { label: '不参与', value: false },
-                ]"
-                aria-label="ST 股票参与评分排名"
-                :disabled="profileReadonly"
-                test-id="score-include-st"
-                @update:model-value="includeSt = Boolean($event)"
-              />
-            </div>
+              <AppControlRow class="score-profile-options">
+                <span class="score-profile-option-label">
+                  ST 股票参与评分排名
+                  <HelpHint text="决定 ST 是否进入该方案的评分母集和全市场排名；参与评分不会自动加分或扣分。" />
+                </span>
+                <PageSegmented
+                  :model-value="includeSt"
+                  :options="[
+                    { label: '参与', value: true },
+                    { label: '不参与', value: false },
+                  ]"
+                  aria-label="ST 股票参与评分排名"
+                  :disabled="profileReadonly"
+                  test-id="score-include-st"
+                  @update:model-value="includeSt = Boolean($event)"
+                />
+              </AppControlRow>
 
-            <AppTableCard class="score-items-card">
-              <!-- 详情加载态/失败态（P1-2）：失败已回滚选中值，编辑器保留旧内容 -->
-              <AppStateBlock
-                v-if="profileDetailError"
-                state="error"
-                size="compact"
-                title="评分方案详情加载失败"
-                :description="profileDetailError"
-                retry
-                @retry="onScoreSelect(scoreDetailAttempt || curRef)"
-              />
-              <AppStateBlock
-                v-else-if="profileDetailLoading"
-                state="loading"
-                size="compact"
-                title="正在加载方案详情…"
-              />
+              <AppTableCard class="score-items-card">
+                <!-- 详情加载态/失败态（P1-2）：失败已回滚选中值，编辑器保留旧内容 -->
+                <AppStateBlock
+                  v-if="profileDetailError"
+                  state="error"
+                  size="compact"
+                  title="评分方案详情加载失败"
+                  :description="profileDetailError"
+                  retry
+                  @retry="onScoreSelect(scoreDetailAttempt || curRef)"
+                />
+                <AppStateBlock
+                  v-else-if="profileDetailLoading"
+                  state="loading"
+                  size="compact"
+                  title="正在加载方案详情…"
+                />
 
-              <AppDataTable
-                :data="items"
-                size="small"
-                :border="tableBorder('scoreItems')"
-                class="item-table"
-                embedded
-              >
-                <AppTableColumn label="启用" role="switch">
-                  <template #default="{ row }">
-                    <StrategyItemEnabledSwitch
-                      v-model="row.enabled"
-                      :disabled="profileReadonly"
-                      label="是否启用评分指标"
-                      @change="onScoreEnabledChange"
-                    />
-                  </template>
-                </AppTableColumn>
-                <AppTableColumn label="指标" control-width="long">
-                  <template #default="{ row }">
-                    <IndicatorSelect
-                      v-model="row.indicator"
-                      :definitions="registry"
-                      :disabled="profileReadonly"
-                      @change="onIndicatorChange(row)"
-                    />
-                    <!-- 动态参数（如 连续上涨N天 的 N）-->
-                    <div v-if="defOf(row.indicator)?.params?.length" class="param-row">
-                      <IndicatorParamFields
-                        v-model="row.params!"
-                        :params="defOf(row.indicator)!.params"
+                <AppDataTable
+                  :data="items"
+                  size="small"
+                  :border="tableBorder('scoreItems')"
+                  class="item-table"
+                  embedded
+                >
+                  <AppTableColumn label="启用" role="switch">
+                    <template #default="{ row }">
+                      <StrategyItemEnabledSwitch
+                        v-model="row.enabled"
                         :disabled="profileReadonly"
+                        label="是否启用评分指标"
+                        @change="onScoreEnabledChange"
                       />
-                    </div>
-                  </template>
-                </AppTableColumn>
-
-                <AppTableColumn label="打分方式" control-width="wide">
-                  <template #default="{ row }">
-                    <div class="scoring-cell">
-                      <el-radio-group
-                        :model-value="row.scoring.type"
+                    </template>
+                  </AppTableColumn>
+                  <AppTableColumn label="指标" control-width="long">
+                    <template #default="{ row }">
+                      <!-- 评分表格行内编辑统一使用紧凑档。 -->
+                      <IndicatorSelect
                         size="small"
-                        @change="(v: string) => onScoringTypeChange(row, v)"
-                      >
-                        <el-radio-button value="bool" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'number'">
-                          布尔
-                        </el-radio-button>
-                        <el-radio-button value="linear" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'bool'">
-                          线性
-                        </el-radio-button>
-                        <el-radio-button value="band" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'bool'">
-                          分段
-                        </el-radio-button>
-                      </el-radio-group>
-
-                      <!-- bool -->
-                      <span v-if="row.scoring.type === 'bool'" class="tip">满足=100 / 否=0</span>
-                      <!-- linear -->
-                      <div v-else-if="row.scoring.type === 'linear'" class="linear-row">
-                        <span>0分→</span>
-                        <el-input-number v-model="row.scoring.min" size="small" :controls="false" :disabled="profileReadonly" style="width: 78px" />
-                        <span>100分→</span>
-                        <el-input-number v-model="row.scoring.max" size="small" :controls="false" :disabled="profileReadonly" style="width: 78px" />
-                      </div>
-                      <!-- band -->
-                      <div v-else class="band-box">
-                        <div v-for="(b, bi) in row.scoring.bands" :key="bi" class="band-row">
-                          <el-input-number v-model="b[0]" size="small" :controls="false" :disabled="profileReadonly" style="width: 64px" />
-                          <span>~</span>
-                          <el-input-number v-model="b[1]" size="small" :controls="false" :disabled="profileReadonly" style="width: 64px" />
-                          <span>→</span>
-                          <el-input-number v-model="b[2]" size="small" :controls="false" :disabled="profileReadonly" :min="0" :max="100" style="width: 64px" />
-                          <span>分</span>
-                          <AppIconButton label="删除分段" size="xs" tone="danger" :disabled="profileReadonly" @click="removeBand(row, bi)">
-                            <el-icon><Close /></el-icon>
-                          </AppIconButton>
-                        </div>
-                        <el-button link type="primary" size="small" :disabled="profileReadonly" @click="addBand(row)">
-                          <template #icon><el-icon><Plus /></el-icon></template>
-                          段
-                        </el-button>
-                      </div>
-                    </div>
-                  </template>
-                </AppTableColumn>
-
-                <AppTableColumn label="权重" control-width="medium">
-                  <template #default="{ row, $index }">
-                    <div class="weight-cell">
-                      <el-slider
-                        :model-value="Math.round(row.weight * 100)"
-                        :min="0"
-                        :max="100"
-                        :disabled="profileReadonly || !itemEnabled(row)"
-                        @input="(v: number) => onWeightChange($index, v)"
+                        v-model="row.indicator"
+                        :definitions="registry"
+                        :disabled="profileReadonly"
+                        @change="onIndicatorChange(row)"
                       />
-                      <span class="wval">{{ Math.round(row.weight * 100) }}%</span>
-                    </div>
-                  </template>
-                </AppTableColumn>
+                      <!-- 动态参数（如 连续上涨N天 的 N）-->
+                      <div v-if="defOf(row.indicator)?.params?.length" class="param-row">
+                        <IndicatorParamFields
+                          size="small"
+                          v-model="row.params!"
+                          :params="defOf(row.indicator)!.params"
+                          :disabled="profileReadonly"
+                        />
+                      </div>
+                    </template>
+                  </AppTableColumn>
 
-                <!-- 操作列：单删除动作，用紧凑操作列 role；structural(48px) 会放不下「更多」按钮测量层造成横向滚动 -->
-                <AppTableColumn label="操作" role="action-compact">
-                  <template #default="{ $index }">
-                    <AppRowActions :actions="scoreItemRowActions($index)" :inline-limit="1" />
-                  </template>
-                </AppTableColumn>
-              </AppDataTable>
-            </AppTableCard>
+                  <AppTableColumn label="打分方式" control-width="wide">
+                    <template #default="{ row }">
+                      <div class="scoring-cell">
+                        <el-radio-group
+                          :model-value="row.scoring.type"
+                          size="small"
+                          @change="(v: string) => onScoringTypeChange(row, v)"
+                        >
+                          <el-radio-button value="bool" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'number'">
+                            布尔
+                          </el-radio-button>
+                          <el-radio-button value="linear" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'bool'">
+                            线性
+                          </el-radio-button>
+                          <el-radio-button value="band" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'bool'">
+                            分段
+                          </el-radio-button>
+                        </el-radio-group>
 
-            <el-button size="small" plain style="margin-top: 8px" :disabled="profileReadonly" @click="addItem">
-              <template #icon><el-icon><Plus /></el-icon></template>
-              添加指标
-            </el-button>
+                        <!-- bool -->
+                        <span v-if="row.scoring.type === 'bool'" class="tip">满足=100 / 否=0</span>
+                        <!-- linear -->
+                        <div v-else-if="row.scoring.type === 'linear'" class="linear-row">
+                          <span>0分→</span>
+                          <el-input-number v-model="row.scoring.min" size="small" :controls="false" :disabled="profileReadonly" style="width: 78px" />
+                          <span>100分→</span>
+                          <el-input-number v-model="row.scoring.max" size="small" :controls="false" :disabled="profileReadonly" style="width: 78px" />
+                        </div>
+                        <!-- band -->
+                        <div v-else class="band-box">
+                          <div v-for="(b, bi) in row.scoring.bands" :key="bi" class="band-row">
+                            <el-input-number v-model="b[0]" size="small" :controls="false" :disabled="profileReadonly" style="width: 64px" />
+                            <span>~</span>
+                            <el-input-number v-model="b[1]" size="small" :controls="false" :disabled="profileReadonly" style="width: 64px" />
+                            <span>→</span>
+                            <el-input-number v-model="b[2]" size="small" :controls="false" :disabled="profileReadonly" :min="0" :max="100" style="width: 64px" />
+                            <span>分</span>
+                            <AppIconButton label="删除分段" size="xs" tone="danger" :disabled="profileReadonly" @click="removeBand(row, bi)">
+                              <el-icon><Close /></el-icon>
+                            </AppIconButton>
+                          </div>
+                          <el-button link type="primary" size="small" :disabled="profileReadonly" @click="addBand(row)">
+                            <template #icon><el-icon><Plus /></el-icon></template>
+                            段
+                          </el-button>
+                        </div>
+                      </div>
+                    </template>
+                  </AppTableColumn>
+
+                  <AppTableColumn label="权重" control-width="medium">
+                    <template #default="{ row, $index }">
+                      <div class="weight-cell">
+                        <el-slider
+                          :model-value="Math.round(row.weight * 100)"
+                          :min="0"
+                          :max="100"
+                          :disabled="profileReadonly || !itemEnabled(row)"
+                          @input="(v: number) => onWeightChange($index, v)"
+                        />
+                        <span class="wval">{{ Math.round(row.weight * 100) }}%</span>
+                      </div>
+                    </template>
+                  </AppTableColumn>
+
+                  <!-- 操作列：单删除动作，用紧凑操作列 role；structural(48px) 会放不下「更多」按钮测量层造成横向滚动 -->
+                  <AppTableColumn label="操作" role="action-compact">
+                    <template #default="{ $index }">
+                      <AppRowActions :actions="scoreItemRowActions($index)" :inline-limit="1" />
+                    </template>
+                  </AppTableColumn>
+                </AppDataTable>
+              </AppTableCard>
+
+              <el-button plain style="margin-top: 8px" :disabled="profileReadonly" @click="addItem">
+                <template #icon><el-icon><Plus /></el-icon></template>
+                添加指标
+              </el-button>
+            </AppForm>
 
             <!-- 试算 -->
-            <div class="run-head">
+            <AppControlRow class="run-head" size="default" data-testid="score-run-controls">
               <span class="run-title">试算榜单</span>
               <el-tag v-if="runRows.length" type="info" size="small" round>共 {{ runRows.length }} 只</el-tag>
               <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" default-latest />
@@ -2055,7 +2060,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 <template #icon><el-icon><VideoPlay /></el-icon></template>
                 用当前配置试算
               </el-button>
-            </div>
+            </AppControlRow>
             <AppStateBlock v-if="running && !runRows.length" state="loading" title="正在试算评分结果…" />
             <AppStateBlock
               v-else-if="runError"
@@ -2101,7 +2106,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               title="当前配置在该交易日暂无评分结果"
             />
             <AppStateBlock v-else state="empty" title="配置评分规则后点「用当前配置试算」" />
-          </AppForm>
+          </section>
         </div>
       </template>
 
@@ -2271,7 +2276,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       <template v-else-if="activeTab === 'trade'">
         <div class="score-layout pane-fill">
           <aside class="prof-list app-stack-sm">
-            <el-button type="primary" plain size="small" style="width: 100%" @click="newTradeProfile">
+            <el-button type="primary" plain style="width: 100%" @click="newTradeProfile">
               <template #icon><el-icon><Plus /></el-icon></template>
               新建方案
             </el-button>
@@ -2336,57 +2341,59 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             />
             <!-- 买入条件 -->
             <div class="cond-block">
-              <div class="cond-head">
+              <AppControlRow class="cond-head">
                 <span class="cond-title buy">买入条件</span>
-                <el-radio-group v-model="buyLogic" size="small" :disabled="tReadonly">
+                <el-radio-group v-model="buyLogic" :disabled="tReadonly">
                   <el-radio-button value="AND">且(全满足)</el-radio-button>
                   <el-radio-button value="OR">或(任一)</el-radio-button>
                 </el-radio-group>
-                <el-button v-permission="'trade-profile:preview'" size="small" :loading="previewing === 'buy'" @click="previewSide('buy')">
+                <el-button v-permission="'trade-profile:preview'" :loading="previewing === 'buy'" @click="previewSide('buy')">
                   <template #icon><el-icon><VideoPlay /></el-icon></template>
                   试算
                 </el-button>
                 <el-tag v-if="previewHit.buy !== null" type="success" size="small" round>命中 {{ previewHit.buy }} 只{{ previewDate.buy ? ` · ${previewDate.buy}` : '' }}</el-tag>
-              </div>
-              <div v-for="(c, i) in buyConds" :key="'b' + i" class="cond-row">
+              </AppControlRow>
+              <AppControlRow v-for="(c, i) in buyConds" :key="'b' + i" class="cond-row">
                 <StrategyItemEnabledSwitch v-model="c.enabled" :disabled="tReadonly" label="是否启用买入条件" />
                 <IndicatorSelect v-model="c.indicator" :definitions="registry" :disabled="tReadonly" @change="onCondIndicator(c)" />
                 <IndicatorParamFields v-model="c.params!" :params="defOf(c.indicator)?.params ?? []" :disabled="tReadonly" />
-                <template v-if="defOf(c.indicator)?.dtype === 'bool'">
-                  <AppSelect
-                    :model-value="c.value"
-                    size="small"
-                    :disabled="tReadonly"
-                    @change="(v: boolean) => (c.value = v)"
-                    width="compact"
-                  >
-                    <el-option :value="true" label="满足" />
-                    <el-option :value="false" label="不满足" />
-                  </AppSelect>
-                </template>
-                <template v-else>
-                  <AppSelect
-                    :model-value="c.cmp"
-                    size="small"
-                    :disabled="tReadonly"
-                    @change="(v: string) => onCmpChange(c, v)"
-                    width="compact"
-                  >
-                    <el-option v-for="o in NUM_CMP" :key="o.v" :value="o.v" :label="o.t" />
-                  </AppSelect>
-                  <template v-if="c.cmp === 'between'">
-                    <el-input-number :model-value="(c.value as number[])[0]" size="small" :disabled="tReadonly" :controls="false" style="width: 78px"
-                                     @update:model-value="(v: number) => (c.value = [v, (c.value as number[])[1]])" />
-                    <span>~</span>
-                    <el-input-number :model-value="(c.value as number[])[1]" size="small" :disabled="tReadonly" :controls="false" style="width: 78px"
-                                     @update:model-value="(v: number) => (c.value = [(c.value as number[])[0], v])" />
+                <AppControlRow :wrap="false">
+                  <template v-if="defOf(c.indicator)?.dtype === 'bool'">
+                    <AppSelect
+                      :model-value="c.value"
+
+                      :disabled="tReadonly"
+                      @change="(v: boolean) => (c.value = v)"
+                      width="compact"
+                    >
+                      <el-option :value="true" label="满足" />
+                      <el-option :value="false" label="不满足" />
+                    </AppSelect>
                   </template>
-                  <el-input-number v-else :model-value="(c.value as number)" size="small" :disabled="tReadonly" :controls="false" style="width: 96px"
-                                   @update:model-value="(v: number) => (c.value = v)" />
-                </template>
-                <AppRowActions :actions="tradeCondRowActions('buy', i)" :inline-limit="1" />
-              </div>
-              <el-button size="small" plain :disabled="tReadonly" @click="addCond('buy')">
+                  <template v-else>
+                    <AppSelect
+                      :model-value="c.cmp"
+
+                      :disabled="tReadonly"
+                      @change="(v: string) => onCmpChange(c, v)"
+                      width="compact"
+                    >
+                      <el-option v-for="o in NUM_CMP" :key="o.v" :value="o.v" :label="o.t" />
+                    </AppSelect>
+                    <template v-if="c.cmp === 'between'">
+                      <el-input-number :model-value="(c.value as number[])[0]" :disabled="tReadonly" :controls="false" class="app-control-width-compact"
+                                       @update:model-value="(v: number) => (c.value = [v, (c.value as number[])[1]])" />
+                      <span>~</span>
+                      <el-input-number :model-value="(c.value as number[])[1]" :disabled="tReadonly" :controls="false" class="app-control-width-compact"
+                                       @update:model-value="(v: number) => (c.value = [(c.value as number[])[0], v])" />
+                    </template>
+                    <el-input-number v-else :model-value="(c.value as number)" :disabled="tReadonly" :controls="false" class="app-control-width-compact"
+                                     @update:model-value="(v: number) => (c.value = v)" />
+                  </template>
+                  <AppRowActions :actions="tradeCondRowActions('buy', i)" :inline-limit="1" />
+                </AppControlRow>
+              </AppControlRow>
+              <el-button plain :disabled="tReadonly" @click="addCond('buy')">
                 <template #icon><el-icon><Plus /></el-icon></template>
                 买入条件
               </el-button>
@@ -2394,57 +2401,59 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 
             <!-- 卖出条件 -->
             <div class="cond-block">
-              <div class="cond-head">
+              <AppControlRow class="cond-head">
                 <span class="cond-title sell">卖出条件</span>
-                <el-radio-group v-model="sellLogic" size="small" :disabled="tReadonly">
+                <el-radio-group v-model="sellLogic" :disabled="tReadonly">
                   <el-radio-button value="AND">且(全满足)</el-radio-button>
                   <el-radio-button value="OR">或(任一)</el-radio-button>
                 </el-radio-group>
-                <el-button v-permission="'trade-profile:preview'" size="small" :loading="previewing === 'sell'" @click="previewSide('sell')">
+                <el-button v-permission="'trade-profile:preview'" :loading="previewing === 'sell'" @click="previewSide('sell')">
                   <template #icon><el-icon><VideoPlay /></el-icon></template>
                   试算
                 </el-button>
-                <el-tag v-if="previewHit.sell !== null" type="warning" size="small" round>命中 {{ previewHit.sell }} 只{{ previewDate.sell ? ` · ${previewDate.sell}` : '' }}</el-tag>
-              </div>
-              <div v-for="(c, i) in sellConds" :key="'s' + i" class="cond-row">
+                <el-tag v-if="previewHit.sell !== null" type="warning" round>命中 {{ previewHit.sell }} 只{{ previewDate.sell ? ` · ${previewDate.sell}` : '' }}</el-tag>
+              </AppControlRow>
+              <AppControlRow v-for="(c, i) in sellConds" :key="'s' + i" class="cond-row">
                 <StrategyItemEnabledSwitch v-model="c.enabled" :disabled="tReadonly" label="是否启用卖出条件" />
                 <IndicatorSelect v-model="c.indicator" :definitions="registry" :disabled="tReadonly" @change="onCondIndicator(c)" />
                 <IndicatorParamFields v-model="c.params!" :params="defOf(c.indicator)?.params ?? []" :disabled="tReadonly" />
-                <template v-if="defOf(c.indicator)?.dtype === 'bool'">
-                  <AppSelect
-                    :model-value="c.value"
-                    size="small"
-                    :disabled="tReadonly"
-                    @change="(v: boolean) => (c.value = v)"
-                    width="compact"
-                  >
-                    <el-option :value="true" label="满足" />
-                    <el-option :value="false" label="不满足" />
-                  </AppSelect>
-                </template>
-                <template v-else>
-                  <AppSelect
-                    :model-value="c.cmp"
-                    size="small"
-                    :disabled="tReadonly"
-                    @change="(v: string) => onCmpChange(c, v)"
-                    width="compact"
-                  >
-                    <el-option v-for="o in NUM_CMP" :key="o.v" :value="o.v" :label="o.t" />
-                  </AppSelect>
-                  <template v-if="c.cmp === 'between'">
-                    <el-input-number :model-value="(c.value as number[])[0]" size="small" :disabled="tReadonly" :controls="false" style="width: 78px"
-                                     @update:model-value="(v: number) => (c.value = [v, (c.value as number[])[1]])" />
-                    <span>~</span>
-                    <el-input-number :model-value="(c.value as number[])[1]" size="small" :disabled="tReadonly" :controls="false" style="width: 78px"
-                                     @update:model-value="(v: number) => (c.value = [(c.value as number[])[0], v])" />
+                <AppControlRow :wrap="false">
+                  <template v-if="defOf(c.indicator)?.dtype === 'bool'">
+                    <AppSelect
+                      :model-value="c.value"
+
+                      :disabled="tReadonly"
+                      @change="(v: boolean) => (c.value = v)"
+                      width="compact"
+                    >
+                      <el-option :value="true" label="满足" />
+                      <el-option :value="false" label="不满足" />
+                    </AppSelect>
                   </template>
-                  <el-input-number v-else :model-value="(c.value as number)" size="small" :disabled="tReadonly" :controls="false" style="width: 96px"
-                                   @update:model-value="(v: number) => (c.value = v)" />
-                </template>
-                <AppRowActions :actions="tradeCondRowActions('sell', i)" :inline-limit="1" />
-              </div>
-              <el-button size="small" plain :disabled="tReadonly" @click="addCond('sell')">
+                  <template v-else>
+                    <AppSelect
+                      :model-value="c.cmp"
+
+                      :disabled="tReadonly"
+                      @change="(v: string) => onCmpChange(c, v)"
+                      width="compact"
+                    >
+                      <el-option v-for="o in NUM_CMP" :key="o.v" :value="o.v" :label="o.t" />
+                    </AppSelect>
+                    <template v-if="c.cmp === 'between'">
+                      <el-input-number :model-value="(c.value as number[])[0]" :disabled="tReadonly" :controls="false" class="app-control-width-compact"
+                                       @update:model-value="(v: number) => (c.value = [v, (c.value as number[])[1]])" />
+                      <span>~</span>
+                      <el-input-number :model-value="(c.value as number[])[1]" :disabled="tReadonly" :controls="false" class="app-control-width-compact"
+                                       @update:model-value="(v: number) => (c.value = [(c.value as number[])[0], v])" />
+                    </template>
+                    <el-input-number v-else :model-value="(c.value as number)" :disabled="tReadonly" :controls="false" class="app-control-width-compact"
+                                     @update:model-value="(v: number) => (c.value = v)" />
+                  </template>
+                  <AppRowActions :actions="tradeCondRowActions('sell', i)" :inline-limit="1" />
+                </AppControlRow>
+              </AppControlRow>
+              <el-button plain :disabled="tReadonly" @click="addCond('sell')">
                 <template #icon><el-icon><Plus /></el-icon></template>
                 卖出条件
               </el-button>
@@ -2453,11 +2462,11 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <!-- 兜底 -->
             <div class="cond-block">
               <span class="cond-title">兜底(可选,卖出安全网)</span>
-              <div class="backstop-row">
-                <span class="bs-item"><label>止盈</label><el-input-number v-model="backstop.tp" size="small" :disabled="tReadonly" :controls="false" :min="0" style="width: 80px" /><i>%</i></span>
-                <span class="bs-item"><label>止损</label><el-input-number v-model="backstop.sl" size="small" :disabled="tReadonly" :controls="false" :min="0" style="width: 80px" /><i>%</i></span>
-                <span class="bs-item"><label>最大持仓</label><el-input-number v-model="backstop.hold" size="small" :disabled="tReadonly" :controls="false" :min="1" style="width: 80px" /><i>天</i></span>
-              </div>
+              <AppControlRow class="backstop-row">
+                <span class="bs-item"><label>止盈</label><el-input-number v-model="backstop.tp" :disabled="tReadonly" :controls="false" :min="0" class="app-control-width-compact" /><i>%</i></span>
+                <span class="bs-item"><label>止损</label><el-input-number v-model="backstop.sl" :disabled="tReadonly" :controls="false" :min="0" class="app-control-width-compact" /><i>%</i></span>
+                <span class="bs-item"><label>最大持仓</label><el-input-number v-model="backstop.hold" :disabled="tReadonly" :controls="false" :min="1" class="app-control-width-compact" /><i>天</i></span>
+              </AppControlRow>
             </div>
           </AppForm>
         </div>
@@ -2882,21 +2891,22 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   flex-direction: column;
   min-height: 0;
 }
+.score-profile-form {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-width: 0;
+}
 /* 前置规则表保持内容高度，后方添加与试算入口继续随正文排列。 */
 .score-items-card {
   flex: 0 0 auto;
 }
-.editor-score > .ed-head {
+.score-profile-form > .ed-head {
   margin-bottom: var(--app-space-3);
 }
 .score-profile-options {
   align-self: flex-start;
-  min-height: var(--app-control-height-md);
   margin-bottom: var(--app-space-3);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--app-space-3);
-  flex-wrap: wrap;
 }
 .score-profile-option-label {
   display: inline-flex;
@@ -3205,12 +3215,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   border-radius: var(--layout-card-radius);
   background: var(--el-fill-color-blank);
 }
-.cond-head {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-3);
-  margin-bottom: 10px;
-}
+.cond-head { margin-bottom: var(--app-density-form-gap, var(--app-space-3)); }
 .cond-title {
   font-weight: var(--app-font-weight-section);
   font-size: var(--app-font-size-body);
@@ -3221,18 +3226,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .cond-title.sell {
   color: var(--el-color-success);
 }
-.cond-row {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
-  margin-bottom: 7px;
-  flex-wrap: wrap;
-}
-.backstop-row {
-  display: flex;
-  gap: var(--app-space-5);
-  margin-top: 8px;
-}
+.cond-row { margin-bottom: var(--app-density-control-gap, var(--app-space-2)); }
+.backstop-row { margin-top: var(--app-density-control-gap, var(--app-space-2)); }
 .bs-item {
   display: inline-flex;
   align-items: center;

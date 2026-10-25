@@ -53,3 +53,27 @@ it('输入错误焦点保留错误语义，禁用覆盖错误焦点且保留中�
     expect(getComputedStyle(field).boxShadow, content).toContain(`var(${border})`)
   }
 })
+
+it('真实库按钮组在中间项选中与禁用时没有普通 outline 或负向补线残留', () => {
+  // 加载实际依赖 CSS，防止库从 border 改成 outline 后只测项目声明而漏掉冲突。
+  style.textContent = ['radio', 'checkbox'].map(kind => readFileSync(resolve(
+    process.cwd(), `node_modules/element-plus/theme-chalk/el-${kind}-button.css`,
+  ), 'utf8')).join('\n') + style.textContent
+  for (const kind of ['radio', 'checkbox']) {
+    const selected = kind === 'radio' ? 'is-active' : 'is-checked'
+    const original = kind === 'radio' ? 'original-radio' : 'original'
+    fixture.innerHTML = `<div class="el-${kind}-group">${['is-disabled', selected, ''].map(state =>
+      `<label class="el-${kind}-button ${state}"><input type="${kind}" class="el-${kind}-button__${original}" ${state === 'is-disabled' ? 'disabled' : ''}>
+        <span class="el-${kind}-button__inner">选项</span></label>`,
+    ).join('')}</div>`
+    const items = fixture.querySelectorAll<HTMLElement>(`.el-${kind}-button__inner`)
+    for (const item of items) {
+      expect(getComputedStyle(item).outline, `${kind}: ${item.parentElement!.className}`).toBe('none')
+      expect(getComputedStyle(item).boxShadow).toBe('none')
+    }
+    expect(getComputedStyle(items[1]).zIndex).toBe('1')
+    items[1].parentElement!.classList.add('is-disabled')
+    items[1].previousElementSibling!.setAttribute('disabled', '')
+    expect(getComputedStyle(items[1]).boxShadow).toBe('none')
+  }
+})

@@ -195,6 +195,7 @@ import ScheduleView from '@/views/data/ScheduleView.vue'
 import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import ScreenView from '@/views/ScreenView.vue'
+import AppForm from '@/components/AppForm.vue'
 import BacktestView from '@/views/BacktestView.vue'
 import TrainingView from '@/views/TrainingView.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
@@ -1613,6 +1614,27 @@ describe('代表性页面四态回归', () => {
     const wrapper = await mountView(ScreenView)
     expect(wrapper.text()).toContain('运行后在这里展示筛选结果')
     wrapper.unmount()
+  })
+
+  it('筛选编辑与执行工具栏使用相同页面密度，结果区独立于表单', async () => {
+    const wrapper = await mountView(ScreenView, {}, { AppControlRow: false })
+    try {
+      const editor = wrapper.get('[data-testid="screen-profile-editor"]')
+      const toolbar = wrapper.get('[data-testid="screen-run-controls"]')
+      expect(wrapper.findComponent(AppForm).props('size')).toBe('default')
+      expect(toolbar.element.closest('form')).toBeNull()
+      expect(toolbar.attributes('data-control-row')).toBe('default')
+      expect(wrapper.get('.run-table-wrap').element.closest('form')).toBeNull()
+      const add = editor.findAll('button').find(button => button.text() === '指标条件')!
+      await add.trigger('click')
+      const condition = editor.findAll('[data-testid="screen-condition-row"]').at(-1)!
+      expect(condition.attributes('data-control-row')).toBe('default')
+      await editor.get('input[placeholder="方案名称"]').setValue('保留中的方案')
+      await editor.findAll('button').find(button => button.text() === '表达式条件')!.trigger('click')
+      expect((editor.get('input[placeholder="方案名称"]').element as HTMLInputElement).value)
+        .toBe('保留中的方案')
+      expect(toolbar.attributes('data-control-row')).toBe('default')
+    } finally { wrapper.unmount() }
   })
 
   it('筛选运行失败落到结果区错误态', async () => {

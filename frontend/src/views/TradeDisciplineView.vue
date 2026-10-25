@@ -606,7 +606,6 @@ watch(tradeDisciplineChangeVersion, async () => {
 .leave-decision-copy { margin: 0; color: var(--el-text-color-regular); line-height: var(--app-line-height-longform); }
 .discipline-workspace { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: var(--app-space-3); }
 .discipline-rail { flex: none; }
-.discipline-rail :deep(.page-segmented) { min-width: 360px; }
 .discipline-panel { min-width: 0; min-height: 0; }
 .master-detail-shell {
   height: 100%;
@@ -641,6 +640,5 @@ watch(tradeDisciplineChangeVersion, async () => {
   .page-head,
   .discipline-rail { flex-direction: column; align-items: stretch; }
   .page-head-actions { justify-content: flex-end; }
-  .discipline-rail :deep(.page-segmented) { min-width: 0; }
 }
 </style>

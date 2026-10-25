@@ -759,7 +759,6 @@ function setSort(slotId: string, field: string, order: string): void {
             v-else
             :model-value="sortField(s.slotId)"
             class="ca-select"
-            size="small"
             filterable
             @update:model-value="(v: string) => setSort(s.slotId, String(v), sortOrder(s.slotId))"
           >
@@ -807,7 +806,6 @@ function setSort(slotId: string, field: string, order: string): void {
             v-else
             :model-value="strVal(s.slotId, 'defaultSort')"
             class="ca-select"
-            size="small"
             filterable
             @update:model-value="(v: string) => config.setComponentKnob(s.slotId, 'defaultSort', String(v))"
           >

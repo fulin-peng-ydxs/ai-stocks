@@ -6,6 +6,8 @@ const props = defineProps<{
   params: IndicatorParam[]
   modelValue: Record<string, number>
   disabled?: boolean
+  /** 默认继承所属表单；表格行内等紧凑编辑由消费点显式声明。 */
+  size?: 'small' | 'default' | 'large'
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: Record<string, number>] }>()
 
@@ -28,7 +30,7 @@ function setValue(name: string, value: number | undefined): void {
       :min="param.min ?? undefined"
       :max="param.max ?? undefined"
       :step="param.type === 'int' ? 1 : 0.1"
-      size="small"
+      :size="size"
       class="indicator-param-field__input"
       @update:model-value="(value: number | undefined) => setValue(param.name, value)"
     />
