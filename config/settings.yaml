@@ -42,7 +42,10 @@ datasource:
   cooldown_sec: 30          # 限流或连续技术失败后共同冷却，到期单请求试探
   failure_threshold: 3      # 连续技术失败达到此数后冷却
   max_response_mb: 32       # 单次响应读取容量；超过应缩小分页或区间
-  sources: {}               # 按已登记来源覆盖请求参数；未设置或null继承通用规则
+  sources:                  # 按已登记来源覆盖；其它来源未设置或null时继承通用规则
+    ths_board:
+      rate_limit_per_sec: 8  # 板块来源合计频率，分页和重试均计入
+      network_concurrency: 8 # 板块来源真实网络在途上限
   max_retries: 3              # 总尝试次数，包含首次
   retry_backoff_sec: 2        # 重试退避秒数
   socket_timeout_sec: 30      # 全局 socket 超时（秒），防公开接口请求挂死
@@ -208,7 +211,8 @@ mail:
 # 同花顺板块：最小起始间隔与通用频率取更严格值，超时/尝试/退避默认继承通用配置。
 # 历史显式覆盖保留；置 null 后恢复继承。Cookie仅用于板块登录页。
 ths_board:
-  min_interval_sec: 1.0      # 相邻请求最小间隔（秒），越小请求越快
+  min_interval_sec: 0.125    # 板块最小请求起始间隔，与来源频率取更严格值
+  member_concurrency: 8     # 成分按板块并发，每个工作线程使用独立会话
   timeout_sec: null          # 继承 datasource.socket_timeout_sec
   max_retries: null          # 继承 datasource.max_retries（包含首次）
   retry_backoff_sec: null    # 继承 datasource.retry_backoff_sec

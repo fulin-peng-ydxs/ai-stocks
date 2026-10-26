@@ -22,6 +22,7 @@ def _gate(calls, group, policy):
 
 def test_policy_inherits_common_and_preserves_legacy_explicit_values():
     settings = Settings()
+    settings.ths_board.min_interval_sec = 1
     settings.datasource.socket_timeout_sec = 37
     settings.datasource.max_retries = 4
     assert rp.request_policy("ths_board", settings).timeout == 37
@@ -34,6 +35,29 @@ def test_policy_inherits_common_and_preserves_legacy_explicit_values():
     assert rp.request_policy("ths_board", settings).timeout == 37
     settings.datasource.rate_limit_per_sec = 0.5
     assert rp.request_policy("ths_board", settings).rate == 0.5
+
+
+def test_board_source_overrides_are_not_reported_as_legacy(monkeypatch):
+    """板块来源独立配置与旧超时覆盖分别展示，配置页不再误报会话串行。"""
+    from backend.config.settings import SourceRequestOverrides
+    from backend.services import data_sources, ths_cookie_status
+
+    settings = Settings()
+    settings.datasource.sources["ths_board"] = SourceRequestOverrides(
+        network_concurrency=8, rate_limit_per_sec=8,
+    )
+    monkeypatch.setattr(data_sources, "get_effective_settings", lambda: settings)
+    monkeypatch.setattr(ths_cookie_status, "ths_cookie_status", lambda **_: {})
+
+    class Repo:
+        def list(self, _):
+            return {}
+
+    row = data_sources.source_status(False, repo=Repo(), source="ths_board")["sources"][0]
+    assert row["network_concurrency"] == row["work_concurrency"] == 8
+    assert row["rate_limit_per_sec"] == 8
+    assert row["serial_required"] is False
+    assert row["policy_origin"] == "来源单独配置 + 板块频率限制"
 
 
 @pytest.mark.parametrize(
@@ -192,7 +216,8 @@ def test_source_registry_explains_capabilities_and_uses_real_policy(monkeypatch)
     assert rows["baostock"]["login_timeout_sec"] == 123
     assert rows["baostock"]["concurrency"] == 1
     assert rows["baostock"]["serial_required"] is True
-    assert rows["ths_board"]["serial_required"] is True
+    assert rows["ths_board"]["serial_required"] is False
+    assert rows["ths_board"]["work_concurrency"] == settings.ths_board.member_concurrency
     assert rows["akshare"]["network_concurrency"] == 6
     assert rows["akshare"]["work_concurrency"] == 7
     assert rows["akshare"]["serial_required"] is False

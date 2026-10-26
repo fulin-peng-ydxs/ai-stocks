@@ -144,6 +144,11 @@ def test_source_overrides_and_session_hard_limit():
     assert rp.request_policy("sina", settings).rate == 7
     settings.datasource.sources["baostock"] = SourceRequestOverrides(network_concurrency=9)
     assert rp.request_policy("baostock", settings).concurrency == 1
+    settings.datasource.sources["ths_board"] = SourceRequestOverrides(
+        network_concurrency=8, rate_limit_per_sec=8,
+    )
+    assert rp.request_policy("ths_board", settings).concurrency == 8
+    assert rp.request_policy("ths_board", settings).rate == 8
     with pytest.raises(ValueError, match="未登记来源"):
         Settings.model_validate({"datasource": {"sources": {"unknown": {"max_retries": 2}}}})
 

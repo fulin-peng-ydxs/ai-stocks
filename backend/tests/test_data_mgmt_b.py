@@ -1525,7 +1525,8 @@ def test_ths_board_config_overridable(client, monkeypatch):
     """同花顺请求参数走覆盖层：Settings 模型字段 + CONFIG_GROUPS 白名单，可被 app_config 覆盖。"""
     from backend.config.settings import Settings
     s = Settings()
-    assert s.ths_board.min_interval_sec == 1.0
+    assert s.ths_board.min_interval_sec == 0.125
+    assert s.ths_board.member_concurrency == 8
     assert s.ths_board.timeout_sec is None
     assert s.ths_board.max_retries is None
     assert s.ths_board.retry_backoff_sec is None
@@ -1588,7 +1589,7 @@ def test_board_update_uses_latest_open_day(client, monkeypatch, eod_session):
         captured["start"] = start
         captured["end"] = end
         captured["resume_from_latest"] = resume_from_latest
-        return {"rows": 0, "boards": 0}
+        return {"rows": 0, "boards": 0, "end": end.isoformat()}
 
     def fake_ingest_board_fund_flow(self, snapshot_date=None, periods=None, board_codes=None,
                                     board_type=None, ctx=None):
@@ -1601,7 +1602,7 @@ def test_board_update_uses_latest_open_day(client, monkeypatch, eod_session):
     monkeypatch.setattr(BoardIngestService, "ingest_board_members", fake_ingest_board_members, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_bar", fake_ingest_board_bar, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow", fake_ingest_board_fund_flow, raising=True)
-    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: setattr(self, "c", client), raising=True)
     # _latest_open_day 返回 2026-08-07（周五交易日）
     monkeypatch.setattr(ingest_mod.IngestionService, "_latest_open_day",
                         lambda self: date(2026, 8, 7), raising=True)
@@ -1645,7 +1646,7 @@ def test_board_fund_only_uses_latest_board_bar_date(client, monkeypatch, eod_ses
     monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow",
                         fake_ingest_board_fund_flow, raising=True)
     monkeypatch.setattr(ingest_mod.IngestionService, "__init__",
-                        lambda self, source=None: None, raising=True)
+                        lambda self, source=None: setattr(self, "c", client), raising=True)
     monkeypatch.setattr(ingest_mod.IngestionService, "_latest_open_day",
                         lambda self: date(2026, 8, 10), raising=True)
 
@@ -1716,12 +1717,12 @@ def test_ingest_board_only_selects_tables(client, monkeypatch, eod_session):
     monkeypatch.setattr(BoardIngestService, "ingest_board_bar",
                         lambda self, start, end=None, board_codes=None, board_type=None,
                         probe_ready=False, resume_from_latest=False, ctx=None:
-                        called.__setitem__("bar", 1) or {"rows": 0, "boards": 0}, raising=True)
+                        called.__setitem__("bar", 1) or {"rows": 0, "boards": 0, "end": end.isoformat()}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow",
                         lambda self, snapshot_date=None, periods=None, board_codes=None,
                         board_type=None, ctx=None:
                         called.__setitem__("fund", 1) or {"rows": 0, "unmatched": 0}, raising=True)
-    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: setattr(self, "c", client), raising=True)
     monkeypatch.setattr(ingest_mod.IngestionService, "_latest_open_day",
                         lambda self: __import__("datetime").date(2026, 8, 7), raising=True)
 

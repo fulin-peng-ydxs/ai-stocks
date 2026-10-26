@@ -2034,6 +2034,8 @@ def _h_board(params: dict, ctx: TaskContext) -> dict:
         ingest_kwargs["only"] = only
     if params.get("limit") is not None:
         ingest_kwargs["limit"] = params["limit"]
+    if params.get("concurrency") is not None:
+        ingest_kwargs["concurrency"] = _concurrency(params)
     # force_members 透传（任务 API/调度参数指定时强制刷新全量成分，绕过周频跳过）：
     # None=按 mode/board_codes 自动；bool/字符串（"1"/"true"）规范化。
     fm = params.get("force_members")

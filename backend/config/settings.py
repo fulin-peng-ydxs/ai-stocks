@@ -276,7 +276,8 @@ class ThsBoardConfig(BaseModel):
     同花顺股票分钟使用独立接口，不读取板块Cookie和专属频率。
     """
 
-    min_interval_sec: float = Field(default=1.0, ge=0.05, le=30)   # 相邻请求最小间隔（秒），越小请求越快
+    min_interval_sec: float = Field(default=0.125, ge=0.05, le=30)  # 来源合计最多8次/秒
+    member_concurrency: int = Field(default=8, ge=1, le=16)  # 按板块并发取成分，写入仍串行
     timeout_sec: float | None = Field(default=None, ge=1, le=120)           # 单请求超时（秒）
     max_retries: int | None = Field(default=None, ge=1, le=10)  # 旧显式覆盖；None继承通用
     retry_backoff_sec: float | None = Field(default=None, ge=0, le=60)  # 重试退避基数（秒，指数退避）

@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 
 from backend.common.exceptions import StorageError
+from backend.services.async_task import TaskCancelled
 from backend.services.board_ingest import BoardIngestService
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
@@ -39,6 +40,13 @@ class _FakeSource:
     def get_board_members(self, code, board_type="concept"):
         codes = self._members.get(code, [])
         return {"codes": codes, "complete": self._complete.get(code, True), "pages": 1}
+
+    def fork(self):
+        from copy import copy
+        return copy(self)
+
+    def close(self):
+        pass
 
     def get_board_dict(self, board_type):
         return self._board_dict.get(board_type, _EMPTY_MEMBER_DF)
@@ -163,8 +171,8 @@ def test_member_checkpoint_and_resume_skip_completed(tmp_path):
 
         def check_cancel(self):
             self.checks += 1
-            if self.cancel_at == self.checks:
-                raise RuntimeError("cancel")
+            if self.cancel_at and self.checkpoint.get("member_done_codes"):
+                raise TaskCancelled()
 
         def set_phase(self, phase, **data):
             self.checkpoint.update({"phase": phase, **data})
@@ -173,8 +181,10 @@ def test_member_checkpoint_and_resume_skip_completed(tmp_path):
             pass
 
     first = _Ctx(cancel_at=2)
-    with pytest.raises(RuntimeError, match="cancel"):
-        svc.ingest_board_members(board_codes=["309121", "881121"], ctx=first, force=True)
+    with pytest.raises(TaskCancelled):
+        svc.ingest_board_members(
+            board_codes=["309121", "881121"], ctx=first, force=True, concurrency=1,
+        )
     assert first.checkpoint["member_done_codes"] == ["309121"]
 
     resumed = _Ctx(checkpoint=dict(first.checkpoint))
@@ -1191,3 +1201,178 @@ def test_live_fund_checkpoint_requires_same_snapshot_date(
     result = live_fund_service.ingest_board_fund_flow(board_type='concept', ctx=ctx)
     assert result['rows'] == expected_rows
     assert ctx.checkpoint['fund_snapshot_date'] == '2026-10-19'
+
+
+class _MemberCtx:
+    """只在主线程写断点；取消信号可被工作线程读取。"""
+
+    def __init__(self, checkpoint=None, cancel_after_commit=False):
+        from backend.datasource.observability import RequestTracker
+
+        self.checkpoint = dict(checkpoint or {})
+        self.request_tracker = RequestTracker()
+        self.cancel_after_commit = cancel_after_commit
+        self.logs = []
+
+    def check_cancel(self):
+        if self.cancel_after_commit and self.checkpoint.get('member_done_codes'):
+            raise TaskCancelled()
+
+    def set_phase(self, phase, **data):
+        self.checkpoint.update(phase=phase, **data)
+
+    def set_checkpoint(self, **data):
+        self.checkpoint.update(data)
+
+    def log(self, message, *args):
+        self.logs.append(message)
+
+    def flush(self):
+        pass
+
+
+def test_parallel_members_market_scale_main_thread_writes_and_source_cleanup(tmp_path, monkeypatch):
+    """481板块走真实服务读清单→并发取源→串行完整性门禁/事务落表，验证工作线程隔离。"""
+    import threading
+    import time
+    from backend.config.settings import Settings
+
+    settings = Settings()
+    settings.ths_board.member_concurrency = 8
+    monkeypatch.setattr('backend.services.board_ingest.get_effective_settings', lambda: settings)
+    codes = [f'{310000+i}' for i in range(481)]
+    members = [f'{600000+i}' for i in range(10)]
+    barrier = threading.Barrier(8)
+    main_thread = threading.get_ident()
+    sources = []
+    fetched = []
+    source_guard = threading.Lock()
+
+    class Source:
+        def __init__(self):
+            self.started = False
+            self.thread = None
+            self.closed = False
+
+        def get_board_members(self, code, board_type):
+            if not self.started:
+                self.started = True
+                self.thread = threading.get_ident()
+                barrier.wait(timeout=10)
+            assert self.thread == threading.get_ident() != main_thread
+            with source_guard:
+                fetched.append(code)
+            time.sleep(0.001)
+            return {'codes': members, 'complete': True, 'pages': 1}
+
+        def close(self):
+            assert threading.get_ident() == main_thread
+            self.closed = True
+
+    def factory():
+        instance = Source()
+        with source_guard:
+            sources.append(instance)
+        return instance
+
+    svc, c = _make_service(tmp_path, _FakeSource({}), source_factory=factory)
+    c.executemany(
+        'INSERT INTO board_dict(board_code,name,board_type,has_members) VALUES (?,?,?,true)',
+        [[code, code, 'concept'] for code in codes],
+    )
+    store = svc._store_member_snapshot
+
+    def store_on_main(*args):
+        assert threading.get_ident() == main_thread
+        return store(*args)
+
+    monkeypatch.setattr(svc, '_store_member_snapshot', store_on_main)
+    ctx = _MemberCtx()
+    result = svc.ingest_board_members(force=True, ctx=ctx)
+    assert set(result) == set(fetched) == set(codes)
+    assert len(fetched) == 481
+    assert len(sources) == len({s.thread for s in sources}) == 8
+    assert all(s.closed for s in sources)
+    assert c.query_df('SELECT count(*) AS n FROM board_member').iloc[0]['n'] == 4810
+    assert c.query_df('SELECT count(*) AS n FROM board_dict WHERE member_snapshot_at IS NOT NULL').iloc[0]['n'] == 481
+    assert ctx.checkpoint['member_done_codes'] == sorted(codes)
+    assert ctx.checkpoint['phase_done'] == ctx.checkpoint['phase_total'] == 481
+    assert ctx.request_tracker.meta['work_concurrency'] == 8
+
+
+def test_parallel_members_failure_cancellation_resume_and_cleanup(tmp_path):
+    """取消后没有孤儿写入，断点只保留已提交板块；续跑拒绝不完整快照并保留旧数据。"""
+    import threading
+
+    members = {'309121': ['300476'], '309122': ['600000'], '309123': ['688981']}
+    svc, c = _make_service(tmp_path, _FakeSource(members))
+    c.executemany(
+        'INSERT INTO board_dict(board_code,name,board_type,has_members) VALUES (?,?,?,true)',
+        [[code, code, 'concept'] for code in members],
+    )
+    barrier = threading.Barrier(2)
+    closed = []
+
+    class Source(_FakeSource):
+        def get_board_members(self, code, board_type='concept'):
+            barrier.wait(timeout=5)
+            return super().get_board_members(code, board_type)
+
+        def close(self):
+            closed.append(id(self))
+
+    svc._source_factory = lambda: Source(members)
+    first = _MemberCtx(cancel_after_commit=True)
+    with pytest.raises(TaskCancelled):
+        svc.ingest_board_members(force=True, concurrency=2, ctx=first)
+    committed = first.checkpoint['member_done_codes']
+    assert len(committed) == 1
+    assert c.query_df('SELECT DISTINCT board_code FROM board_member')['board_code'].tolist() == committed
+    assert len(closed) == 2
+    assert c.query_df("SELECT * FROM data_update_log WHERE status='failed'").empty
+    pending = sorted(set(members)-set(committed))
+    # 本轮一个源端不完整，一个完整；失败项不得进入成功断点。
+    failed = pending[0]
+    c.execute('INSERT INTO board_member(board_code,code,first_seen_date) VALUES (?, ?, ?)',
+              [failed, '000001.SZ', date(2026, 1, 1)])
+    svc._source_factory = lambda: _FakeSource(members, complete={failed: False})
+    resumed = _MemberCtx(first.checkpoint)
+    result = svc.ingest_board_members(force=True, concurrency=2, ctx=resumed)
+    assert set(result) == set(pending)
+    assert 'error' in result[failed]
+    assert resumed.checkpoint['member_done_codes'] == sorted(set(members)-{failed})
+    assert c.query_df('SELECT code FROM board_member WHERE board_code=?', [failed])['code'].tolist() == ['000001.SZ']
+    assert c.query_df('SELECT member_snapshot_at FROM board_dict WHERE board_code=?', [failed]).iloc[0]['member_snapshot_at'] is pd.NaT
+    assert resumed.checkpoint['phase_done'] == resumed.checkpoint['phase_total'] == 3
+
+
+@pytest.mark.parametrize('concurrency', [0, 17, True, 1.5, '8'])
+def test_member_concurrency_rejects_invalid_values(tmp_path, concurrency):
+    svc, _ = _make_service(tmp_path, _FakeSource({}))
+    with pytest.raises(ValueError, match='并发数'):
+        svc.ingest_board_members(concurrency=concurrency)
+
+
+def test_board_task_passes_concurrency_to_collection_entry(monkeypatch):
+    """任务并发覆盖送达正式编排入口，强制刷新参数保持独立。"""
+    from types import SimpleNamespace
+    from backend.services import ingest
+    from backend.services.async_task import _h_board
+
+    captured = {}
+
+    class Service:
+        def ingest_board(self, **kwargs):
+            captured.update(kwargs)
+            return {'failed': []}
+
+    monkeypatch.setattr(ingest, 'IngestionService', Service)
+    ctx = SimpleNamespace(log=lambda *a: None, progress=lambda *a: None,
+                          check_cancel=lambda: None)
+    result = _h_board({'codes': ['309121'], 'only': ['members'],
+                       'force_members': True, 'concurrency': 3}, ctx)
+    assert result['ok'] is True
+    assert captured['concurrency'] == 3
+    assert captured['force_members'] is True
+    assert captured['board_codes'] == ['309121']
+    assert captured['ctx'] is ctx

@@ -129,8 +129,8 @@ export const CONFIG_SYSTEM_GROUP_SECTIONS: Record<string, ConfigFieldSection[]> 
     { key: 'session', title: 'BaoStock 会话规则', hint: '共享登录会话强制串行；登录完成后使用通用请求超时。', fieldPaths: ['datasource.baostock_login_timeout_sec'] },
   ],
   ths_board: [
-    { key: 'rate', title: '来源频率限制', hint: '与通用频率取更严格值；板块会话保持串行。', fieldPaths: ['ths_board.min_interval_sec'] },
-    { key: 'collection', title: '成分采集规则', fieldPaths: ['ths_board.member_update_interval_days'] },
+    { key: 'rate', title: '来源频率限制', hint: '与该来源的生效请求频率取更严格值；分页和重试共享额度。', fieldPaths: ['ths_board.min_interval_sec'] },
+    { key: 'collection', title: '成分采集规则', hint: '按板块并发取源，每线程独立会话；完整快照由主线程统一落库。', fieldPaths: ['ths_board.member_concurrency', 'ths_board.member_update_interval_days'] },
     { key: 'credential', title: '访问凭据', fieldPaths: ['ths_board.login_cookie', 'ths_board.cookie_validity_days'] },
     {
       key: 'compatibility',

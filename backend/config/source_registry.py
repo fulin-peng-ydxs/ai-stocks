@@ -7,6 +7,6 @@ SOURCE_GROUPS = {
     "szse": {"label": "深交所", "domains": ("szse.cn",), "serial": False},
     "bse": {"label": "北交所资料接口", "domains": ("bse.cn",), "serial": False},
     "ths": {"label": "同花顺分时", "domains": (), "serial": False},
-    "ths_board": {"label": "同花顺板块", "domains": (), "serial": True},
+    "ths_board": {"label": "同花顺板块", "domains": (), "serial": False},
     "baostock": {"label": "BaoStock", "domains": (), "serial": True},
 }

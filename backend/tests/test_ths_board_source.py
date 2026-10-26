@@ -81,6 +81,24 @@ def test_extract_member_codes():
     assert tb._extract_member_codes(html) == ["300476", "603936"]
 
 
+def test_fork_isolates_session_v_and_cache_and_keeps_explicit_policy():
+    """并发工作线程不共享可变会话；任务凭据和旧显式覆盖不会在分叉时丢失。"""
+    source = ThsBoardSource(
+        timeout=11, max_retries=2, retry_backoff_sec=0.5, login_cookie="user=test; v=old",
+    )
+    source._v_code = "old-v"
+    source._clid_cache[("concept", "309121")] = "886071"
+    child = source.fork()
+    try:
+        assert child._session is not source._session
+        assert child._v_code is None and child._clid_cache == {}
+        assert child._login_cookie == source._login_cookie
+        assert child._request_overrides == source._request_overrides
+    finally:
+        child.close()
+        source.close()
+
+
 def test_is_login_wall():
     assert tb._is_login_wall(_LOGIN_WALL) is True
     assert tb._is_login_wall(_member_page(["300476"])) is False
@@ -605,3 +623,35 @@ def test_get_board_members_login_true_end():
     m = s.get_board_members("309121", "concept")
     assert set(m["codes"]) == {"300476"}
     assert m["complete"] is True
+
+
+def test_v_cookie_cold_start_in_parallel_process():
+    """独立冷进程验证原生引擎初始化，不让其它用例预热掩盖并发崩溃。"""
+    import subprocess
+    import sys
+
+    code = '''
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from backend.config.settings import Settings
+from backend.datasource import request_policy
+from backend.datasource.ths_board import ThsBoardSource
+request_policy.get_effective_settings = Settings
+barrier = threading.Barrier(8)
+def generate(_):
+    source = ThsBoardSource(login_cookie="")
+    try:
+        barrier.wait(timeout=10)
+        value = source._v_cookie()
+        assert value and value != "None"
+        return value
+    finally:
+        source.close()
+with ThreadPoolExecutor(max_workers=8) as pool:
+    assert len(list(pool.map(generate, range(16)))) == 16
+print("cold-start-ok")
+'''
+    result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True,
+                            timeout=45, check=False)
+    assert result.returncode == 0, result.stderr[-3000:]
+    assert 'cold-start-ok' in result.stdout

@@ -3922,7 +3922,8 @@ class IngestionService:
                      force_current_day: bool = False,
                      date_start: date | str | None = None,
                      date_end: date | str | None = None,
-                     target_end: date | None = None) -> dict:
+                     target_end: date | None = None,
+                     concurrency: int | None = None) -> dict:
         """板块数据编排：字典 → 成分快照 → 指数 → 资金流。
 
         承接 plan §6.4 T4：单步骤失败记日志不中断（返回失败清单），供 T5/T6 失败隔离与续跑。
@@ -4056,7 +4057,7 @@ class IngestionService:
             try:
                 result["members"] = svc.ingest_board_members(
                     board_codes=board_codes, board_type=board_type, ctx=ctx,
-                    force=force_members)
+                    force=force_members, concurrency=concurrency)
                 errs = [f"members:{c}: {r['error']}" for c, r in result["members"].items()
                         if "error" in r]
                 skipped = sum(1 for r in result["members"].values() if r.get("skipped"))

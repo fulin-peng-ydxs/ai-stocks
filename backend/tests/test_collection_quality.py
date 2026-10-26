@@ -261,17 +261,21 @@ def test_board_reports_each_member_before_tail_quality(market, monkeypatch):
     ctx = ProgressContext()
     def init(service, *args, **kwargs):
         service.c = market
+        service.src = SimpleNamespace(get_board_members=lambda *_: {"codes": [], "complete": True})
+        service._source_factory = None
     monkeypatch.setattr(BoardIngestService, "__init__", init)
-    def member(service, code, board_type, day):
+    def member(service, code, material, day):
         assert ctx.checkpoint["collection_quality_pending"] == {"board": ["B1", "B2"]}
         if code == "B2":
             assert any("1/2" in msg for _, msg in ctx.events)
         market.execute("UPDATE board_dict SET member_snapshot_at=now() WHERE board_code=?", [code])
         return {"total": 0, "added": 0}
-    monkeypatch.setattr(BoardIngestService, "_ingest_one_member", member)
+    monkeypatch.setattr(BoardIngestService, "_store_member_snapshot", member)
     service = IngestionService.__new__(IngestionService)
     service.c = market
-    result = service.ingest_board(ctx=ctx, board_codes=["B1", "B2"], only=["members"])
+    result = service.ingest_board(
+        ctx=ctx, board_codes=["B1", "B2"], only=["members"], concurrency=1,
+    )
     assert result["ok"] is True
     assert ctx.checkpoint["member_done_codes"] == ["B1", "B2"]
     assert any("板块成分 1/2" in msg for _, msg in ctx.events)

@@ -12,6 +12,7 @@ from backend.config.request_snapshot import get_request_settings as get_effectiv
 from backend.datasource.base import get_source, with_retry
 from backend.datasource.request_policy import request_policy
 from backend.config.request_snapshot import request_settings_status
+from backend.config.source_registry import SOURCE_GROUPS
 from backend.datasource.request_runtime import source_runtime
 from backend.storage.data_source_health_repository import DataSourceHealthRepository
 
@@ -45,7 +46,7 @@ SOURCE_DEFINITIONS = (
         "ths_board",
         "同花顺板块",
         "ths_board",
-        "板块字典、成分、指数和资金流；独立Cookie、会话串行",
+        "板块字典、成分、指数和资金流；成分按板块并发、每线程独立会话与动态v",
         "board",
     ),
     ("intraday_sina", "新浪分时", "sina", "个股分时常规主源；指数修复备用；1分钟窗口", "intraday"),
@@ -166,10 +167,13 @@ def source_status(do_ping: bool = True, *, repo=None, source: str | None = None)
             "rate_limit_per_sec": policy.rate,
             "max_attempts": policy.attempts,
             "retry_backoff_sec": policy.backoff,
-            "serial_required": group in {"baostock", "ths_board"},
+            "serial_required": SOURCE_GROUPS[group]["serial"],
             "concurrency": policy.concurrency,
             "network_concurrency": policy.concurrency,
-            "work_concurrency": s.update_concurrency,
+            "work_concurrency": (
+                settings.ths_board.member_concurrency if group == "ths_board"
+                else s.update_concurrency
+            ),
             "runtime": runtimes[group],
             "policy_version": snapshot_status["version"],
             "policy_degraded": snapshot_status["degraded"],
@@ -177,7 +181,9 @@ def source_status(do_ping: bool = True, *, repo=None, source: str | None = None)
             "request_unit": "SDK查询（含登录和游标读取）" if group == "baostock" else "HTTP请求",
             "policy_overrides": list(policy.overrides),
             "policy_origin": (
-                ("保留旧显式覆盖" if policy.overrides else "继承通用配置")
+                ("保留旧显式覆盖" if any(
+                    key.startswith("ths_board.") for key in policy.overrides
+                ) else "来源单独配置" if policy.overrides else "继承通用配置")
                 + (" + 板块频率限制" if group == "ths_board" else "")
             ),
             "login_timeout_sec": s.baostock_login_timeout_sec if group == "baostock" else None,

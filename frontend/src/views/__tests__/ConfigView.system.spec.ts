@@ -437,7 +437,7 @@ describe('ConfigView system tab', () => {
   it('数据治理承载真实来源清单，查看不联网，单项测试后更新状态', async () => {
     const source = { source: 'ths_board', label: '同花顺板块', role: 'board' as const, scope: '字典、成分、指数和资金流',
       up: null, last_test_at: null, last_success_at: null, failure_reason: null,
-      timeout_sec: 12, rate_limit_per_sec: 1, network_concurrency: 1, serial_required: true, max_attempts: 3,
+      timeout_sec: 12, rate_limit_per_sec: 8, network_concurrency: 8, work_concurrency: 8, serial_required: false, max_attempts: 3,
       retry_backoff_sec: 2, policy_origin: '保留旧显式覆盖' }
     vi.mocked(dataApi.getSources).mockResolvedValue({ sources: [source] })
     vi.mocked(dataApi.testSources).mockResolvedValue({ sources: [{ ...source, up: true }] })
@@ -449,7 +449,8 @@ describe('ConfigView system tab', () => {
     expect(dataApi.testSources).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('数据源能力与健康')
     expect(wrapper.text()).toContain('超时 12 秒')
-    expect(wrapper.text()).toContain('会话串行 1')
+    expect(wrapper.text()).toContain('来源网络并发上限 8')
+    expect(wrapper.text()).toContain('默认工作并发 8')
     expect(wrapper.text()).toContain('保留旧显式覆盖')
     await wrapper.find('.source-health [role="button"]').trigger('click')
     const button = wrapper.findAll('button').find((node) => node.text() === '测试全部来源')!

@@ -20,16 +20,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
 import pandas as pd
 
 from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
+from backend.config import get_effective_settings
 from backend.dataquality.checker import severity_for
 from backend.datasource.akshare_source import classify_board, to_full_code
 from backend.datasource.ths_board import FUND_FLOW_PERIODS, ThsBoardSource
 from backend.services import eod_dates
+from backend.services.async_task import TaskCancelled
+from backend.services.bounded_parallel import run_bounded_parallel
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
@@ -129,10 +134,12 @@ class BoardIngestService:
     """板块数据采集编排（R1-R4，只进不出模型）。"""
 
     def __init__(self, client: DuckDBClient | None = None, source: ThsBoardSource | None = None,
-                 member_interval_days: int | None = None):
+                 member_interval_days: int | None = None,
+                 source_factory: Callable[[], ThsBoardSource] | None = None):
         self.c = client or get_client()
         init_db(self.c)
         self.src = source or ThsBoardSource()
+        self._source_factory = source_factory
         # 成分快照更新间隔（天，周频控制）：显式入参优先；未传读生效配置；配置异常回落 7 天。
         # 对齐 ThsBoardSource 同款「显式入参 → 生效配置 → 参数默认」模式，便于测试注入与 Web 配置生效。
         if member_interval_days is None:
@@ -307,7 +314,8 @@ class BoardIngestService:
                              board_codes: list[str] | None = None,
                              board_type: str | None = None,
                              ctx: object | None = None,
-                             force: bool = False) -> dict:
+                             force: bool = False,
+                             concurrency: int | None = None) -> dict:
         """逐板块成分快照：完整快照 INSERT ON CONFLICT DO NOTHING 落库（只进不出）。
 
         board_codes=None → 全量（从 board_dict 读取有成分数据的板块）。单板块失败记日志不中断，
@@ -318,7 +326,22 @@ class BoardIngestService:
         距今 >= member_update_interval_days 天」或「从未完整落库（member_snapshot_at IS NULL）」
         的板块，未达间隔的记 skipped 跳过（不计失败、不打日志 failed、不写 incomplete issue）。
         force=True 绕过间隔直接全量（质量页修复重采 / backfill 初始化 / CLI --force-members 用）。
+        并发数缺省读取 ths_board.member_concurrency；工作线程只取源，主线程落库并维护断点。
+        每线程独立来源会话，同一板块仍顺序执行双排序分页，来源总频率和冷却继续共享。
         """
+        default_concurrency = get_effective_settings().ths_board.member_concurrency
+        requested_concurrency = concurrency if concurrency is not None else default_concurrency
+        if (isinstance(requested_concurrency, bool)
+                or not isinstance(requested_concurrency, int)
+                or not 1 <= requested_concurrency <= 16):
+            raise ValueError("板块成分采集并发数必须为1~16的整数")
+        tracker = getattr(ctx, "request_tracker", None)
+        if tracker:
+            tracker.meta.update(
+                work_concurrency=requested_concurrency,
+                default_concurrency=default_concurrency,
+                concurrency_origin="task" if concurrency is not None else "default",
+            )
         sdate = snapshot_date or _asia_date()
         # 读取板块清单
         types = _board_types(board_type)
@@ -379,15 +402,34 @@ class BoardIngestService:
             ctx.set_phase("board_members", done=len(done_codes), total=phase_total,
                           phase_total=phase_total, phase_done=resumed_members,
                           current_item=None, member_done_codes=sorted(done_codes))
-        for i, (_, b) in enumerate(df_boards.iterrows(), 1):
-            code, board_type = str(b["board_code"]), str(b["board_type"])
-            if ctx:
-                ctx.check_cancel()
-                ctx.set_phase("board_members", done=len(done_codes), total=phase_total,
-                              phase_total=phase_total, phase_done=resumed_members + i - 1,
-                              current_item=code, member_done_codes=sorted(done_codes))
+        items = [(str(b.board_code), str(b.board_type))
+                 for b in df_boards.itertuples(index=False)]
+        work_concurrency = min(requested_concurrency, max(1, n_total))
+        local = threading.local()
+        worker_sources: list[ThsBoardSource] = []
+        source_lock = threading.Lock()
+
+        def fetch(item):
+            code, current_type = item
+            if work_concurrency == 1:
+                source = self.src
+            else:
+                if not hasattr(local, "source"):
+                    # 不在取源线程中构造服务或访问DuckDB；独立会话避免v刷新/缓存相互干扰。
+                    factory = self._source_factory or self.src.fork
+                    local.source = factory()
+                    with source_lock:
+                        worker_sources.append(local.source)
+                source = local.source
+            return source.get_board_members(code, current_type)
+
+        def complete(i, item, material, error, pending):
+            nonlocal n_err
+            code, _ = item
             try:
-                results[code] = self._ingest_one_member(code, board_type, sdate)
+                if error is not None:
+                    raise error
+                results[code] = self._store_member_snapshot(code, material, sdate)
                 r = results[code]
                 done_codes.add(code)
                 if ctx:
@@ -402,6 +444,8 @@ class BoardIngestService:
                         f"排除范围外 {r.get('excluded_out_of_scope', 0)} 只，"
                         f"新增 {r.get('added', 0)} 只"
                     )
+            except TaskCancelled:
+                raise
             except Exception as e:  # noqa: BLE001 —— 单板块失败跳过不中断，记 data_update_log failed
                 log.warning("板块 %s 成分快照失败: %s", code, e)
                 results[code] = {"error": str(e)}
@@ -413,6 +457,18 @@ class BoardIngestService:
                     ctx.set_phase("board_members", done=len(done_codes), total=phase_total,
                                   phase_total=phase_total, phase_done=resumed_members + i,
                                   current_item=code, member_done_codes=sorted(done_codes))
+        if ctx:
+            ctx.log(f"板块成分：待采 {n_total} 个板块，工作并发 {work_concurrency}；"
+                    "来源总频率、在途上限与冷却共享，主线程统一落库")
+        try:
+            run_bounded_parallel(
+                items, fetch, concurrency=work_concurrency, ctx=ctx,
+                wait_label="板块成分", on_complete=complete,
+            )
+        finally:
+            # 共享队列已等待在途工作安全退出，之后才关闭各工作线程自己的连接池。
+            for source in worker_sources:
+                source.close()
         if skipped_codes and ctx:
             ctx.log(f"成分：{len(skipped_codes)} 个板块未达更新间隔（{self._member_interval_days} 天），跳过")
         # 更新留痕（聚合：一次运行一条日志，避免逐板块刷屏）
@@ -440,6 +496,10 @@ class BoardIngestService:
           上层 ingest_board_members 记失败、data_update_log 记 failed 待重采；已采旧数据原样保留。
         """
         m = self.src.get_board_members(code, board_type)
+        return self._store_member_snapshot(code, m, sdate)
+
+    def _store_member_snapshot(self, code: str, m: dict, sdate: date) -> dict:
+        """在编排线程校验完整性并原子落库；串行、并发及质量修复共用同一口径。"""
         codes_full = [to_full_code(c) for c in m["codes"]]
         source_set = set(codes_full)
         cur_set = {

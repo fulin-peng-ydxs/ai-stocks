@@ -88,8 +88,8 @@ _SINA_JS_RUNTIME_LOCK = threading.Lock()
 _SINA_JS_RUNTIME_CONTEXT = None
 
 
-def ensure_sina_js_runtime_ready() -> None:
-    """在并发新浪日线请求前，幂等且串行地初始化 MiniRacer 进程运行时。"""
+def ensure_js_runtime_ready() -> None:
+    """新浪解码与同花顺动态v共用MiniRacer进程预热，首次初始化收敛到单线程。"""
     global _SINA_JS_RUNTIME_CONTEXT
     if _SINA_JS_RUNTIME_CONTEXT is not None:
         return
@@ -98,6 +98,11 @@ def ensure_sina_js_runtime_ready() -> None:
             context = py_mini_racer.MiniRacer()
             context.eval("1 + 1")
             _SINA_JS_RUNTIME_CONTEXT = context
+
+
+def ensure_sina_js_runtime_ready() -> None:
+    """兼容新浪采集入口，实际预热由跨来源共享的JS运行时入口维护。"""
+    ensure_js_runtime_ready()
 
 
 def set_default_request_timeout(timeout: float) -> None:

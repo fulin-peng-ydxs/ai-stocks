@@ -34,7 +34,7 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "datasource.primary", "label": "行情主接入器", "type": "enum", "options": ["akshare", "baostock"], "desc": "只控制支持切换的行情能力。AKShare 内部使用新浪、东财等接口；分时、股本和板块按各自能力取源。"},
         {"path": "datasource.fallback", "label": "行情备用接入器", "type": "enum", "options": ["akshare", "baostock"], "desc": "行情主接入器不可用时的备用来源。"},
         {"path": "datasource.history_years", "label": "回填年限", "type": "int", "min": 1, "max": 30, "desc": "历史行情回填向前覆盖的年数。"},
-        {"path": "datasource.update_concurrency", "label": "默认采集并发数", "type": "int", "min": 1, "max": 16, "desc": "单任务工作单元上限；任务显式参数可覆盖。分时按股票并发，BaoStock 和板块会话保持串行；不放大来源请求频率。"},
+        {"path": "datasource.update_concurrency", "label": "默认采集并发数", "type": "int", "min": 1, "max": 16, "desc": "单任务工作单元上限；任务显式参数可覆盖。分时按股票并发，BaoStock 会话保持串行；板块成分使用板块专属并发设置，不放大来源请求频率。"},
         {"path": "datasource.rate_limit_per_sec", "label": "每来源请求上限(次/秒)", "type": "number", "min": 0.1, "max": 50, "desc": "按实际来源跨线程、跨进程合计限制请求起始频率，分页及重试均计入；新浪行情与新浪分时共享限额。"},
         {"path": "datasource.baostock_login_timeout_sec", "label": "BaoStock登录超时(秒)", "type": "number", "min": 1, "max": 600, "desc": "仅限登录等待，登录完成后恢复普通请求超时。"},
         {"path": "datasource.socket_timeout_sec", "label": "请求超时(秒)", "type": "number", "min": 1, "desc": "每次网络尝试的连接和读取超时；不是整个任务的时长上限。下一次请求读取新值，在途请求不变。"},
@@ -59,6 +59,7 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "audit.retention_days", "label": "审计保留期/默认查询窗口(天)", "type": "int", "min": 7, "max": 365, "desc": "审计页未选择时间时默认查询最近多少天，同时用于自动清理超期审计日志。"},
     ]},
     {"key": "ths_board", "label": "同花顺板块", "desc": "板块来源的特殊频率限制、采集规则和访问凭据；同花顺股票分钟不使用本组Cookie。", "fields": [
+        {"path": "ths_board.member_concurrency", "label": "成分采集并发数", "type": "int", "min": 1, "max": 16, "desc": "同时处理的板块上限，默认8；每线程独立会话，单板块按双排序顺序翻页，主线程统一落库。任务显式并发参数优先；任务开始时确定。"},
         {"path": "ths_board.min_interval_sec", "label": "请求间隔(秒)", "type": "number", "min": 0.05, "max": 30, "desc": "板块接口最小请求起始间隔，与通用来源频率取更严格限制；不影响同花顺股票分钟接口。"},
         {"path": "ths_board.timeout_sec", "nullable": True, "label": "请求超时(秒)", "type": "number", "min": 1, "max": 120, "desc": "旧显式覆盖；关闭单独设置后继承通用请求超时。"},
         {"path": "ths_board.max_retries", "nullable": True, "label": "最多尝试次数", "type": "int", "min": 1, "max": 10, "desc": "旧显式覆盖，包含首次；关闭单独设置后继承通用最多尝试次数。"},

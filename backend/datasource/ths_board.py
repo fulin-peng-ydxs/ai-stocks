@@ -139,6 +139,19 @@ class ThsBoardSource:
         # 可选登录态：显式入参 > 环境/文件 > 页面加密配置，不硬编码、不把明文写日志。
         self._login_cookie = login_cookie if login_cookie is not None else _login_cookie_from_config()
 
+    def fork(self) -> ThsBoardSource:
+        """为工作线程创建独立会话、动态v和缓存，沿用本任务的凭据及显式请求覆盖。"""
+        return ThsBoardSource(
+            timeout=self._request_overrides["timeout"],
+            max_retries=self._request_overrides["attempts"],
+            retry_backoff_sec=self._request_overrides["backoff"],
+            login_cookie=self._login_cookie,
+        )
+
+    def close(self) -> None:
+        """任务收尾时释放工作线程会话的连接池。"""
+        self._session.close()
+
     # ── v cookie（反爬校验）──────────────────────────────────
 
     @with_retry()
@@ -147,7 +160,10 @@ class ThsBoardSource:
         if self._v_code:
             return self._v_code
         import py_mini_racer
+        from backend.datasource.akshare_source import ensure_js_runtime_ready
 
+        # 复用新浪已有进程预热入口，避免独立板块任务冷启动时触发V8原生并发初始化崩溃。
+        ensure_js_runtime_ready()
         js_path = _ths_js_path()
         with open(js_path, encoding="utf-8") as f:
             js = f.read()
