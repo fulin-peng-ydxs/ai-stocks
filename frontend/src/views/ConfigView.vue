@@ -1624,17 +1624,18 @@ function onScoreCopied(item: ProfileSummary) {
   }
 }
 // 「加载查看」（R5/§7.0）：载入编辑器只读展示（页面级状态，不污染 mine 列表，也不经组件选中态——
-// 组件刻意不把临时项设为选中，规避 el-select 把 selectedItem 锁到非持久 tempItem 的更新循环）。
+// 组件只保留会话候选，编辑器的选中上下文由页面详情入口维护）。
 // 复用 onScoreSelect（seq 守卫 + 失败回滚），只读由 profileReadonly 控制、不自动试算。
 function onScoreLoaded(item: ProfileSummary) {
   const summary = item as ScoreProfileSummary
   onScoreSelect(summary.profile_ref || summary.id)
 }
-// 行内「×」只移除「加载查看」临时预览项，不删除资产；组件只会为当前 tempItem 发出此事件。
+// 行内「×」只移除对应会话预览；未选中项被移除时保留当前编辑器。
 // 不用 readonly 推断临时项：平台内置资产对其物理 owner 可能是 readonly=false，仍须完整清理页面状态。
-async function onScoreTempRemoved(item: ProfileSummary) {
+async function onScoreTempRemoved(item: ProfileSummary, wasSelected = true) {
   const summary = item as ScoreProfileSummary
   ElMessage.info(`已移除预览的方案「${summary.name}」`)
+  if (!wasSelected) return
   // 先同步清空外部身份、参数和试算，再刷新 mine；刷新失败也不会留下“来源已移除、参数仍可编辑”的假新建态。
   newProfile()
   await scoreSelectRef.value?.reload()
@@ -1656,9 +1657,10 @@ function onTradeLoaded(item: ProfileSummary) {
   onTradeSelect(tradeProfileKey(summary))
 }
 // 行内「×」只移除「加载查看」临时预览项，不删除资产；清理契约与评分方案一致。
-async function onTradeTempRemoved(item: ProfileSummary) {
+async function onTradeTempRemoved(item: ProfileSummary, wasSelected = true) {
   const summary = item as TradeProfileSummary
   ElMessage.info(`已移除预览的方案「${summary.name}」`)
+  if (!wasSelected) return
   // 与评分方案一致：移除即同步丢弃外部参数；mine 刷新失败时仍保持干净的新建态。
   newTradeProfile()
   await tradeSelectRef.value?.reload()

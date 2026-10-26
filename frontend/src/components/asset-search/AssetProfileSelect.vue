@@ -5,11 +5,11 @@ import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 // 统一「资产方案选择器」（R3/R7）：下拉/侧栏双形态，列表只加载「我的」资产（纯 owner），
 // 内置「搜索」入口打开 AssetSearchDrawer；「加载查看」注入会话内临时只读选中项
-// （不进「我的」、切换即丢弃、不持久化、不自动运行，§7.0 契约）；「复制为我的」
+// （不进「我的」、切换保留、显式移除、不持久化）；「复制为我的」
 // 成功后刷新「我的」并选中新资产。五页选择器实例统一消费本组件，不允许页面私有同类逻辑。
 // 权限态（§307）：配置 viewPermission 后，无权限角色不渲染搜索入口与复制引导，
 // 不调用 browse（避免 403），抽屉内显示「无权限查看」无权态——不把无权伪装成空态。
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
@@ -49,11 +49,11 @@ const props = withDefaults(defineProps<{
   testId?: string
   /** 加载查看后直接选中：适用于“选择即执行/展示”的消费页；默认仍只发 loaded，由页面决定展示方式。 */
   selectLoaded?: boolean
-  /** option=临时项注入本组件候选；external=仅通知父级，由父级在选择器外展示。 */
+  /** option=选中由页面承接；external=会话候选可再次加载，当前运行方案由父级在选择器外展示。 */
   loadedMode?: 'option' | 'external'
   /** 当前默认加载方案的资产 key（仅榜单页评分方案传）；透传给抽屉做行内互斥高亮 */
   defaultItemKey?: string
-  /** list 形态给「加载查看」注入的临时项显示行内「×」：仅从列表移除该预览（不删数据、不碰我的方案） */
+  /** 已加载的会话候选显示「×」，仅移除该预览（不删数据、不碰我的方案）。 */
   removableTemp?: boolean
 }>(), {
   mode: 'select',
@@ -85,15 +85,13 @@ const emit = defineEmits<{
   rerunDone: [result: unknown, item: ProfileSummary]
   /** 设为/取消默认加载方案（仅榜单页评分方案）：透传抽屉行操作，item=null 表示取消默认 */
   setDefault: [item: ProfileSummary | null]
-  /** 行内「×」移除了「加载查看」临时预览项：只卸载预览、不删除资产；页面据此清掉编辑器身份/参数/结果 */
-  tempRemoved: [item: ProfileSummary]
+  /** 只卸载会话候选、不删除资产；仅移除当前项时清理编辑器或结果。 */
+  tempRemoved: [item: ProfileSummary, wasSelected: boolean]
 }>()
 
 const items = ref<ProfileSummary[]>([])
-// §7.0 会话内临时只读选中项：注入候选顶部，不进「我的」，切换即丢弃
-const tempItem = ref<ProfileSummary | null>(null)
-// 选择即执行页面的稳定只读 option：与 tempItem 分开，避免 ElSelect 把当前选中锁到临时预览项后递归更新。
-const selectedLoadedItem = ref<ProfileSummary | null>(null)
+// 会话候选独立于 mine，按 opaque ref 去重；保持对象稳定，切换不卸载 option。
+const loadedItems = ref<ProfileSummary[]>([])
 const loadingMine = ref(false)
 const errorMine = ref('')
 const drawerOpen = ref(false)
@@ -106,11 +104,10 @@ const canBrowse = computed(() => (
   !props.viewPermission || hasPermission(auth.role, auth.permissions, props.viewPermission)
 ))
 
-const options = computed<ProfileSummary[]>(() => (
-  selectedLoadedItem.value
-    ? [selectedLoadedItem.value, ...items.value]
-    : tempItem.value ? [tempItem.value, ...items.value] : items.value
-))
+const options = computed<ProfileSummary[]>(() => {
+  const mineKeys = new Set(items.value.map(assetItemKey))
+  return [...loadedItems.value.filter((item) => !mineKeys.has(assetItemKey(item))), ...items.value]
+})
 const mineUnavailable = computed(() => !!errorMine.value && options.value.length === 0)
 
 const selectedItem = computed(() => (
@@ -119,14 +116,14 @@ const selectedItem = computed(() => (
 
 const inner = computed({
   get: () => props.modelValue,
-  set: (value: string) => emit('update:modelValue', value),
+  set: (value: string) => onSelect(value),
 })
 
-// 切换/清空选中即丢弃临时只读项
-watch(() => props.modelValue, (value) => {
-  if (tempItem.value && assetItemKey(tempItem.value) !== value) tempItem.value = null
-  if (selectedLoadedItem.value && assetItemKey(selectedLoadedItem.value) !== value) selectedLoadedItem.value = null
-})
+function retainLoaded(item: ProfileSummary) {
+  const key = assetItemKey(item)
+  if (items.value.some((p) => assetItemKey(p) === key)) return
+  loadedItems.value = [item, ...loadedItems.value.filter((p) => assetItemKey(p) !== key)]
+}
 
 // 返回 mine 列表；失败时保留旧列表（不清空）并返回 null，由调用方区分成功/失败（P1-3）。
 async function reload(): Promise<ProfileSummary[] | null> {
@@ -134,6 +131,9 @@ async function reload(): Promise<ProfileSummary[] | null> {
   errorMine.value = ''
   try {
     items.value = await props.fetchMine()
+    // 若候选已归入 mine，只由 mine 维护，避免删除本人资产后从会话缓存重新冒出。
+    const mineKeys = new Set(items.value.map(assetItemKey))
+    loadedItems.value = loadedItems.value.filter((item) => !mineKeys.has(assetItemKey(item)))
     emit('ready', items.value)
     return items.value
   } catch (error) {
@@ -161,37 +161,27 @@ function openSearch(source?: AssetBrowseSource) {
   drawerRef.value?.openWith(source)
 }
 
-// 命令式装载（不进抽屉）：与 onDrawerLoad 的 selectLoaded 分支同构，供榜单页「默认加载方案」
-// 在页面进入时复用已验证的 selectedLoadedItem 链路（选中项始终在 options 内，规避 ElSelect 递归陷阱）。
+// 榜单/筛选默认方案复用同一会话候选入口，选中项始终存在于 options 中。
 function applyLoaded(item: ProfileSummary) {
   if (!props.selectLoaded) return
-  tempItem.value = null
-  selectedLoadedItem.value = item
+  retainLoaded(item)
   emit('loaded', item)
   emit('update:modelValue', assetItemKey(item))
 }
 
-/** 清理所有会话内加载项；父级移除外部快照时用同一入口同步组件内部状态。 */
-function clearTransient() {
-  tempItem.value = null
-  selectedLoadedItem.value = null
+/** 重置时清理全部；外部展示的「×」传 key，只移除对应候选。 */
+function clearTransient(key?: string) {
+  loadedItems.value = key
+    ? loadedItems.value.filter((item) => assetItemKey(item) !== key)
+    : []
 }
 
 defineExpose({ reload, openSearch, applyLoaded, clearTransient })
 
-// 「加载查看」= 临时只读预览对象：注入候选顶部 + emit loaded，**不设为当前选中**（不 emit update:modelValue）。
-// 关键：若同步选中，el-select 会把 selectedItem 锁到不在持久 items 的 tempItem 上，#label/option/watch 形成
-// 稳定更新循环（ElSelect 递归超限）。故由各页 loaded 回调在**页面级状态**载入该对象做只读展示——
-// ConfigView 编辑器 selectProfile 载入、个股详情 tradeId 回显，均不经过本组件的选中态。
+// 加载动作仍由页面决定是否立即展示/计算；只改变候选的保留周期。
 function onDrawerLoad(raw: AssetBrowseItem) {
   const item = raw as ProfileSummary
-  if (props.selectLoaded) {
-    tempItem.value = null
-    selectedLoadedItem.value = item
-  } else {
-    selectedLoadedItem.value = null
-    tempItem.value = props.loadedMode === 'option' ? item : null
-  }
+  retainLoaded(item)
   emit('loaded', item)
   if (props.selectLoaded) emit('update:modelValue', assetItemKey(item))
 }
@@ -219,33 +209,39 @@ async function onDrawerCopied(result: AssetCopyResult) {
     items.value = [fallback, ...items.value.filter((p) => p.id !== result.id)]
     emit('copiedItem', fallback)
   }
-  selectedLoadedItem.value = null
-  tempItem.value = null
   emit('update:modelValue', result.profile_ref || result.id)
   emit('copied', result)
 }
 
 function onSelect(value: string) {
   if (loadingMine.value) return
+  const loaded = loadedItems.value.find((item) => assetItemKey(item) === value)
+  const isMine = items.value.some((item) => assetItemKey(item) === value)
+  if (loaded && !isMine) {
+    // 切回已加载项时先恢复父级 summary；external 模式由快照承接运行口径，不把公开 ref 写入 mine 选值。
+    if (props.selectLoaded || props.loadedMode === 'external') emit('loaded', loaded)
+    if (props.loadedMode === 'external') return
+  }
   emit('update:modelValue', value)
 }
 
 const emptyText = computed(() => `暂无我的${props.assetLabel}`)
 
-// 行内「×」：仅给「加载查看」注入的临时预览项（tempItem，含系统内置/别人的非「我的」方案）显示；
-// 仅从列表移除该预览、丢弃临时选中，不删数据、不调 API、不碰「我的」方案。
-// 删除资产始终由消费页右上角的独立删除按钮承接，不得复用此入口。
+// 移除仅作用于对应会话候选，不触碰 mine 或其他已加载方案。
 function isTempRow(p: ProfileSummary): boolean {
-  return props.removableTemp && !!tempItem.value && assetItemKey(p) === assetItemKey(tempItem.value)
+  const key = assetItemKey(p)
+  return props.removableTemp
+    && loadedItems.value.some((item) => assetItemKey(item) === key)
+    && !items.value.some((item) => assetItemKey(item) === key)
 }
 function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
   event.stopPropagation()
   if (!isTempRow(p)) return
-  // 若该预览项正是当前选中，先清空选中（watch 会随之丢弃 tempItem），再兜底复位。
-  if (props.modelValue === assetItemKey(p)) inner.value = ''
-  tempItem.value = null
-  // 通知页面收尾：清掉该外来方案在编辑器的只读身份/运行口径，回到「我的」上下文
-  emit('tempRemoved', p)
+  const key = assetItemKey(p)
+  const wasSelected = props.modelValue === key
+  clearTransient(key)
+  if (wasSelected) emit('update:modelValue', '')
+  emit('tempRemoved', p, wasSelected)
 }
 </script>
 
@@ -295,15 +291,25 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
             :label="p.name"
             :value="assetItemKey(p)"
           >
-            <AssetProfileLabel
-              :name="p.name"
-              :version="p.version"
-              :source="assetDisplaySource(p.source, p.is_preset)"
-              :is-preset="p.is_preset"
-              :owner-label="p.owner_label"
-              :readonly="p.readonly"
-              :label-mine="labelMine"
-            />
+            <div class="asset-profile-select__option">
+              <AssetProfileLabel
+                :name="p.name"
+                :version="p.version"
+                :source="assetDisplaySource(p.source, p.is_preset)"
+                :is-preset="p.is_preset"
+                :owner-label="p.owner_label"
+                :readonly="p.readonly"
+                :label-mine="labelMine"
+              />
+              <AppCloseButton
+                v-if="isTempRow(p)"
+                class="asset-profile-select__remove"
+                :label="`从列表移除「${p.name}」`"
+                size="compact"
+                :data-testid="`${testId}-remove`"
+                @click="onRemoveTemp(p, $event)"
+              />
+            </div>
           </el-option>
           <template #empty>
             <div class="asset-profile-select__empty">
@@ -509,6 +515,11 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
   padding: 0;
   border-radius: var(--layout-control-radius, 6px);
   cursor: pointer;
+}
+.asset-profile-select__option {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-1);
 }
 .asset-profile-select__item-label {
   padding: 6px 8px;

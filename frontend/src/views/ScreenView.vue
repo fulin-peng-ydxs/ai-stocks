@@ -407,11 +407,12 @@ function onScreenReady(list: ProfileSummary[]) {
 function onScreenLoaded(item: ProfileSummary) {
   onScreenSelect(item.profile_ref || item.id)
 }
-// 行内「×」只移除「加载查看」临时预览项，不删除资产；组件只会为当前 tempItem 发出此事件。
-// 页面必须无条件清掉对应身份/参数/运行口径/结果，不能用 readonly 推断是否为临时项：
+// 行内「×」只移除对应会话预览；只有当前项被移除时才清空编辑器。
+// 移除当前项时必须清掉对应身份/参数/运行口径/结果，不能用 readonly 推断是否为临时项：
 // 平台内置资产对其物理 owner 可能是 readonly=false，但仍属于 source=preset 的临时加载项。
-async function onScreenTempRemoved(item: ProfileSummary) {
+async function onScreenTempRemoved(item: ProfileSummary, wasSelected = true) {
   ElMessage.info(`已移除预览的方案「${item.name}」`)
+  if (!wasSelected) return
   // 先清空外部身份、条件和结果，再刷新 mine；即使刷新失败也不会残留已移除方案的参数。
   newProfile()
   await profileSelectRef.value?.reload()

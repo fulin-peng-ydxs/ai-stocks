@@ -103,7 +103,7 @@ test('筛选页资产搜索抽屉：三来源、复制为我的、临时只读�
     await expect(copiedRow).toBeVisible()
     await expect(copiedRow.locator('.asset-visibility-tag')).toHaveCount(0)
 
-    // 加载查看（§6.8.2 契约 + T6 缺陷修复）：组件只设 tempItem + emit loaded、不联动选中；ScreenView 现经
+    // 加载查看（§6.8.2 契约 + T6 缺陷修复）：组件保留会话候选并 emit loaded、不联动选中；ScreenView 现经
     // @loaded 直接按 profile_ref 页面级载入该公开方案详情（getProfile），构建区载入其条件、readonly 只读。
     await page.keyboard.press('Escape')
     await expect(drawer).toBeHidden()

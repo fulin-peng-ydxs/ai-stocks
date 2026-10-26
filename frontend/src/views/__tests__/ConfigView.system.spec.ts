@@ -1120,8 +1120,12 @@ describe('ConfigView trade tab', () => {
 
     // 模拟平台内置资产对物理 owner 的详情口径：source=preset，但 readonly=false。
     // 同一 tick 内触发移除，避免 jsdom 重渲染完整可编辑条件表导致 Element Plus 自身递归噪声。
+    selector.vm.$emit('tempRemoved', { ...summary, profile_ref: 'other_trade' }, false)
+    await flushPromises()
+    expect((wrapper.vm as any).tCurRef).toBe(summary.profile_ref)
+    expect((wrapper.vm as any).buyConds).toHaveLength(1)
     ;(wrapper.vm as any).tReadonly = false
-    selector.vm.$emit('tempRemoved', summary)
+    selector.vm.$emit('tempRemoved', summary, true)
     await flushPromises()
     expect((wrapper.vm as any).tCurRef).toBe('')
     expect((wrapper.vm as any).tReadonly).toBe(false)
@@ -1239,8 +1243,12 @@ describe('ConfigView score tab 加载查看', () => {
     expect((wrapper.vm as any).items).toHaveLength(1)
 
     // 模拟平台内置资产对物理 owner 的详情口径：source=preset，但 readonly=false。
+    selector.vm.$emit('tempRemoved', { ...summary, profile_ref: 'other_score' }, false)
+    await flushPromises()
+    expect((wrapper.vm as any).curRef).toBe(summary.profile_ref)
+    expect((wrapper.vm as any).items).toHaveLength(1)
     ;(wrapper.vm as any).profileReadonly = false
-    selector.vm.$emit('tempRemoved', summary)
+    selector.vm.$emit('tempRemoved', summary, true)
     await flushPromises()
     expect((wrapper.vm as any).curRef).toBe('')
     expect((wrapper.vm as any).profileReadonly).toBe(false)

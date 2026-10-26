@@ -175,7 +175,7 @@ describe('AssetProfileSelect', () => {
     wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', publicItem)
     await flush()
     // 「加载查看」= 临时只读预览对象：注入候选顶部 + emit loaded，**不联动 update:modelValue**。
-    // 组件刻意不把临时项设为选中（规避 el-select 把 selectedItem 锁到非持久 tempItem 的更新循环）；
+    // 默认只保留会话候选，不直接改变页面的选中上下文；
     // 是否载入展示由各页 loaded 回调在页面级状态完成。
     expect(wrapper.emitted('update:modelValue')).toBeFalsy()
     expect(wrapper.emitted('loaded')).toBeTruthy()
@@ -190,45 +190,65 @@ describe('AssetProfileSelect', () => {
     wrapper.unmount()
   })
 
-  it('external 模式只通知父级，不向候选注入临时项', async () => {
+  it('external 模式保留候选供再次加载，不把公开 ref 写入 mine 选值', async () => {
     const { wrapper } = mountSelect({ loadedMode: 'external' })
     await flush()
     wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', publicItem)
     await flush()
 
     expect(wrapper.emitted('loaded')?.at(-1)).toEqual([publicItem])
-    expect((wrapper.vm as unknown as { tempItem: ProfileSummary | null }).tempItem).toBeNull()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     await wrapper.find('[data-testid="asset-profile-select-select"]').trigger('click')
     await flush()
     const options = Array.from(document.querySelectorAll('.el-select-dropdown__item'))
-    expect(options).toHaveLength(1)
-    expect(options[0]?.textContent).toContain('我的筛选方案A')
+    expect(options).toHaveLength(2)
+    expect(options[0]?.textContent).toContain(publicItem.name)
+    wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', mineItem.profile_ref)
+    await flush()
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([mineItem.profile_ref])
+    wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', publicItem.profile_ref)
+    await flush()
+    expect(wrapper.emitted('loaded')).toHaveLength(2)
+    expect(wrapper.emitted('update:modelValue')).toHaveLength(1)
     wrapper.unmount()
   })
 
-  it('clearTransient 同步清理组件内临时候选', async () => {
+  it('clearTransient 可按 key 移除外部快照候选，重置时清空所有候选', async () => {
     const { wrapper } = mountSelect()
     await flush()
     wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', publicItem)
+    wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', { ...publicItem, id: 'other', profile_ref: 'ref_other' })
     await flush()
+    wrapper.vm.clearTransient(publicItem.profile_ref)
+    await flush()
+    expect((wrapper.vm as unknown as { loadedItems: ProfileSummary[] }).loadedItems.map(item => item.profile_ref))
+      .toEqual(['ref_other'])
     ;(wrapper.vm as unknown as { clearTransient: () => void }).clearTransient()
     await flush()
-    expect((wrapper.vm as unknown as { tempItem: ProfileSummary | null }).tempItem).toBeNull()
+    expect((wrapper.vm as unknown as { loadedItems: ProfileSummary[] }).loadedItems).toEqual([])
     wrapper.unmount()
   })
 
-  it('切换到其他对象即丢弃临时只读项', async () => {
-    const { wrapper } = mountSelect()
+  it.each(['select', 'list'] as const)('%s 模式切换和清空保留多个已加载方案，重复加载按 ref 更新去重', async (mode) => {
+    const { wrapper } = mountSelect({ mode })
     await flush()
     wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', publicItem)
     await flush()
+    const preset = { ...publicItem, id: 'preset', profile_ref: 'ref_preset', is_preset: true, source: 'preset' }
+    wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', preset)
+    wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', { ...publicItem, version: 5 })
+    await flush()
     await wrapper.setProps({ modelValue: 'ref_my_a' })
+    await wrapper.setProps({ modelValue: '' })
     await flush()
-    await wrapper.find('[data-testid="asset-profile-select-select"]').trigger('click')
+    if (mode === 'select') await wrapper.find('[data-testid="asset-profile-select-select"]').trigger('click')
     await flush()
-    const options = Array.from(document.querySelectorAll('.el-select-dropdown__item'))
-    expect(options).toHaveLength(1)
-    expect(options[0]?.textContent).toContain('我的筛选方案A')
+    const options = Array.from(document.querySelectorAll(mode === 'select'
+      ? '.el-select-dropdown__item' : '.asset-profile-select__item'))
+    expect(options).toHaveLength(3)
+    expect(options[0]?.textContent).toContain(publicItem.name)
+    expect((wrapper.vm as unknown as { loadedItems: ProfileSummary[] }).loadedItems[0].version).toBe(5)
+    expect(wrapper.emitted('ready')?.at(-1)).toEqual([[mineItem]])
     wrapper.unmount()
   })
 
@@ -252,6 +272,12 @@ describe('AssetProfileSelect', () => {
     const options = Array.from(document.querySelectorAll('.el-select-dropdown__item'))
     expect(options[0]?.textContent).toContain('量价齐升·进攻型')
     expect(options[0]?.textContent).toContain('全体公开')
+    await wrapper.setProps({ modelValue: mineItem.profile_ref })
+    wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', publicItem.profile_ref)
+    await flush()
+    expect(wrapper.emitted('loaded')).toHaveLength(2)
+    expect(wrapper.emitted('loaded')?.at(-1)).toEqual([publicItem])
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([publicItem.profile_ref])
     wrapper.unmount()
   })
 
@@ -268,6 +294,8 @@ describe('AssetProfileSelect', () => {
     const copyItem = vi.fn(async () => ({ id: 'new_id', profile_ref: 'ref_new', name: '量价齐升·进攻型 副本', version: 1 }))
     const { wrapper } = mountSelect({ fetchMine, copyItem })
     await flush()
+    wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', publicItem)
+    await flush()
     wrapper.findComponent(AssetSearchDrawer).vm.$emit('copied', { id: 'new_id', profile_ref: 'ref_new', name: '量价齐升·进攻型 副本', version: 1 }, publicItem)
     await flush()
     expect(fetchMine).toHaveBeenCalledTimes(2)
@@ -275,6 +303,7 @@ describe('AssetProfileSelect', () => {
     expect(wrapper.emitted('copied')).toBeTruthy()
     // P2-2：复制后回写完整 summary（含 source/readonly/is_preset），父级据此并入
     expect(wrapper.emitted('copiedItem')?.at(-1)).toEqual([copiedItem])
+    expect((wrapper.vm as unknown as { loadedItems: ProfileSummary[] }).loadedItems).toEqual([publicItem])
     wrapper.unmount()
   })
 
@@ -366,11 +395,49 @@ describe('AssetProfileSelect', () => {
     await wrapper.find('[data-testid="asset-profile-select-remove"]').trigger('click')
     await flush()
 
-    expect(wrapper.emitted('tempRemoved')?.at(-1)).toEqual([presetOwnerItem])
+    expect(wrapper.emitted('tempRemoved')?.at(-1)).toEqual([presetOwnerItem, false])
     expect(wrapper.text()).not.toContain('本人名下系统内置方案')
     expect(wrapper.text()).toContain('我的筛选方案A')
     expect(fetchMine).toHaveBeenCalledTimes(1)
     expect(copyItem).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it.each(['select', 'list'] as const)('%s 移除未选中预览保留当前选择及其他候选，移除当前项才清空选中', async (mode) => {
+    const { wrapper } = mountSelect({ mode, modelValue: mineItem.profile_ref })
+    await flush()
+    const preset = { ...publicItem, id: 'preset', profile_ref: 'ref_preset', name: '系统方案', is_preset: true }
+    const drawer = wrapper.findComponent(AssetSearchDrawer)
+    drawer.vm.$emit('load', publicItem)
+    drawer.vm.$emit('load', preset)
+    await flush()
+    if (mode === 'select') await wrapper.find('[data-testid="asset-profile-select-select"]').trigger('click')
+    await flush()
+    const removePublic = document.querySelector<HTMLElement>(`[aria-label="从列表移除「${publicItem.name}」"]`)
+    removePublic!.click()
+    await flush()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.emitted('tempRemoved')?.at(-1)).toEqual([publicItem, false])
+    await wrapper.setProps({ modelValue: preset.profile_ref })
+    document.querySelector<HTMLElement>('[aria-label="从列表移除「系统方案」"]')!.click()
+    await flush()
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([''])
+    expect(wrapper.emitted('tempRemoved')?.at(-1)).toEqual([preset, true])
+    expect((wrapper.vm as unknown as { loadedItems: ProfileSummary[] }).loadedItems).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('会话项与 mine 的相同 ref 只显示一次，自己的方案不显示移除预览入口', async () => {
+    const fetchMine = vi.fn().mockResolvedValueOnce([mineItem]).mockResolvedValueOnce([])
+    const { wrapper } = mountSelect({ mode: 'list', fetchMine })
+    await flush()
+    wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', mineItem)
+    await flush()
+    expect(wrapper.findAll('.asset-profile-select__item')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="asset-profile-select-remove"]').exists()).toBe(false)
+    await wrapper.vm.reload()
+    await flush()
+    expect(wrapper.findAll('.asset-profile-select__item')).toHaveLength(0)
     wrapper.unmount()
   })
 

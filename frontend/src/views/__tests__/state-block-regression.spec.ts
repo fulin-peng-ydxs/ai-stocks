@@ -1839,7 +1839,11 @@ describe('代表性页面四态回归', () => {
     await flushPromises()
     expect((wrapper.vm as any).rows).toHaveLength(1)
 
-    selector.vm.$emit('tempRemoved', summary)
+    selector.vm.$emit('tempRemoved', { ...summary, profile_ref: 'other_screen' }, false)
+    await flushPromises()
+    expect((wrapper.vm as any).curRef).toBe(summary.profile_ref)
+    expect((wrapper.vm as any).rows).toHaveLength(1)
+    selector.vm.$emit('tempRemoved', summary, true)
     await flushPromises()
     expect((wrapper.vm as any).curRef).toBe('')
     expect((wrapper.vm as any).loadedProfile).toBeNull()

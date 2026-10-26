@@ -145,7 +145,7 @@ const AssetSearchDrawerStub = assetCompStub('AssetSearchDrawer', 'asset-search-d
 const AssetProfileSelectStub = defineComponent({
   name: 'AssetProfileSelect',
   props: ['modelValue', 'assetLabel', 'kind', 'fetchMine', 'browse', 'copyItem', 'copyPermission', 'viewPermission', 'rerunItem', 'rerunPermission', 'canBrowse', 'placeholder', 'labelMine', 'testId'],
-  emits: ['update:modelValue', 'ready', 'loaded', 'copiedItem', 'copied', 'load', 'rerunDone'],
+  emits: ['update:modelValue', 'ready', 'loaded', 'copiedItem', 'copied', 'load', 'rerunDone', 'tempRemoved'],
   setup() {
     return () => h('div', { 'data-testid': 'asset-profile-select-stub' })
   },
@@ -638,7 +638,7 @@ describe('BacktestView 三方案选择器（T5）', () => {
     wrapper.unmount()
   })
 
-  it('临时→mine 切换即丢弃临时项，buildBody 使用新的会话选择', async () => {
+  it('公开→mine 切换只清理当前快照，再次加载保留候选后 buildBody 使用对应 ref', async () => {
     const wrapper = await mountView()
     await emitAllReady(wrapper)
     await emitLoaded(wrapper, 'backtest-score-select', {
@@ -652,6 +652,16 @@ describe('BacktestView 三方案选择器（T5）', () => {
     // 临时项被清除（chip 消失）
     expect(wrapper.find('[data-testid="backtest-score-select-temp"]').exists()).toBe(false)
     // 改选 mine 后临时快照已清，buildBody 用新 mine（覆盖「改选另一个 mine → 用新 mine」）
+    expect((wrapper.vm as any).buildBody().score_profile_id).toBe('avr_score_1')
+    const reloaded = { id: 'pub-x', profile_ref: 'avr_score_pub', name: '公开评分', version: 3, source: 'public', readonly: true }
+    score.vm.$emit('loaded', reloaded)
+    await flushPromises()
+    expect((wrapper.vm as any).buildBody().score_profile_id).toBe('avr_score_pub')
+    score.vm.$emit('tempRemoved', { ...reloaded, profile_ref: 'other_public' }, false)
+    await flushPromises()
+    expect((wrapper.vm as any).buildBody().score_profile_id).toBe('avr_score_pub')
+    score.vm.$emit('tempRemoved', reloaded, false)
+    await flushPromises()
     expect((wrapper.vm as any).buildBody().score_profile_id).toBe('avr_score_1')
     wrapper.unmount()
   })

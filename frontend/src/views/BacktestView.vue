@@ -210,7 +210,7 @@ const tradeProfiles = ref<TradeProfileSummary[]>([])
 const nextRunSourceRef = ref('')
 
 // 加载查看的临时只读项（2026-08-01 复审重裁：选择器外只读展示，DESIGN ElSelect 递归契约不破）。
-// 不再并入选择器候选、不设为选择器选中（组件仍只锁 mine/tempItem，选择器外 chip 显示名称非 opaque ref）；
+// 组件保留会话候选，不把外部 ref 写入 mine 选值；选择器外 chip 显示本次运行方案的名称和版本；
 // 不持久化、不自动运行。普通回测与稳健性测试都按 tempSelected 快照 > mine 选择器值 > 空取 ref。
 // 用户选 mine 项 / 复制为我的即清；载入历史则按归属重新投影为 mine 选中、只读快照或失效态。
 const tempSelected = ref<{
@@ -268,8 +268,8 @@ const RERUN_STRATEGY_FIELDS = [
 
 // R3/R5/R7：三方案选择器统一走 AssetProfileSelect（select 形态）——下拉只加载「我的」source=mine 纯 owner，
 // 「搜索」入口打开共享抽屉（系统内置/租户公开/全体公开）。「加载查看」走方案b：只记 tempSelected 快照、
-// 选择器外 chip 展示（非 opaque ref），运行按快照优先（tempSelected > mine > 空），不并入候选、不选中、
-// 不自动运行、不持久化；切换/复制/载入历史即清。「复制为我的」并入候选并由组件选中。
+// 选择器外 chip 展示（非 opaque ref），运行按快照优先（tempSelected > mine > 空），不写入 mine 选值、
+// 不自动运行、不持久化；切换/复制/载入历史只清当前快照，会话候选保留。「复制为我的」并入候选并由组件选中。
 // 组件为列表唯一事实源（onMounted fetchMine → emit ready），父页不再各自 list_visible，normalize 时序移 ready。
 async function fetchMineScreenProfiles(): Promise<ProfileSummary[]> {
   if (!hasPermission(auth.role, auth.permissions, 'screen-profile:view')) return []
@@ -783,8 +783,8 @@ function onTradeReady(items: ProfileSummary[]) {
   projectHistoryProfile('trade')
   reconcileProfileRefs()
 }
-// 「加载查看」临时只读项（方案b）：仅记快照供选择器外 chip 展示 + 运行时按快照取 ref，不并入选择器候选、
-// 不设为选择器选中（组件仍只锁 mine/tempItem，不破 ElSelect 递归契约）；不运行、不持久化、切换即弃。
+// 「加载查看」：组件保留会话候选，页面记快照供选择器外 chip 展示 + 运行时按快照取 ref，
+// 不设为选择器选中；切换只释放当前运行快照，组件会话候选保留，可再次选择加载。
 function onScreenLoaded(item: ProfileSummary) {
   historyProfileDisplays.value.screen = null
   historyProfileUnavailable.value.screen = false
@@ -804,15 +804,16 @@ function onTradeLoaded(item: ProfileSummary) {
 // copiedItem 回写完整 summary。复制结果归「我的」，不是临时项——清空对应 tempSelected（避免误当临时剔除），
 // 选中交给组件的 update:modelValue。
 function onScreenCopied(_item: ProfileSummary) {
-  clearTemp('screen')
+  clearTemp('screen', false)
 }
 function onScoreCopied(_item: ProfileSummary) {
-  clearTemp('score')
+  clearTemp('score', false)
 }
 function onTradeCopied(_item: ProfileSummary) {
-  clearTemp('trade')
+  clearTemp('trade', false)
 }
-function clearTemp(kind: 'screen' | 'score' | 'trade') {
+function clearTemp(kind: 'screen' | 'score' | 'trade', remove = true) {
+  const current = tempSelected.value[kind]
   tempSelected.value[kind] = null
   historyProfileDisplays.value[kind] = null
   historyProfileUnavailable.value[kind] = false
@@ -821,14 +822,22 @@ function clearTemp(kind: 'screen' | 'score' | 'trade') {
     score: scoreProfileSelectRef,
     trade: tradeProfileSelectRef,
   }[kind]
-  selector.value?.clearTransient?.()
+  if (remove && current) selector.value?.clearTransient?.(current.profile_ref || current.id)
 }
 // 用户在选择器里做出选择（含重选同一值）即丢弃对应临时只读快照：watch(profileId) 只在值变化时触发，
 // 覆盖不了「已选 mine-A → 加载公开 → 重选同一 mine-A」这一边界；故在 update:modelValue 回调里无条件清。
-// 不改组件选中逻辑（组件 tempItem 由组件自管，运行取的是页面 tempSelected 快照，组件残留不影响口径）。
-function onScoreSelect() { clearTemp('score') }
-function onScreenSelect() { clearTemp('screen') }
-function onTradeSelect() { clearTemp('trade') }
+// 不改组件选中逻辑（组件会话候选由组件自管，运行取的是页面 tempSelected 快照，组件残留不影响口径）。
+function onScoreSelect() { clearTemp('score', false) }
+function onScreenSelect() { clearTemp('screen', false) }
+function onTradeSelect() { clearTemp('trade', false) }
+
+// external 模式的当前项由页面快照确定，不能按 mine 选择器的 modelValue 判断。
+function onLoadedRemoved(kind: 'screen' | 'score' | 'trade', item: ProfileSummary) {
+  const current = tempSelected.value[kind]
+  if (current && (current.profile_ref || current.id) === (item.profile_ref || item.id)) {
+    clearTemp(kind, false)
+  }
+}
 
 async function loadHistory(sequence?: number): Promise<boolean> {
   const requestSequence = ++historyLoadSequence
@@ -1923,6 +1932,7 @@ const menuPageTitle = useMenuPageTitle()
               test-id="backtest-score-select"
               @ready="onScoreReady"
               @loaded="onScoreLoaded"
+              @temp-removed="onLoadedRemoved('score', $event)"
               @copied-item="onScoreCopied"
               @update:model-value="onScoreSelect"
             />
@@ -1980,6 +1990,7 @@ const menuPageTitle = useMenuPageTitle()
                 test-id="backtest-screen-select"
                 @ready="onScreenReady"
                 @loaded="onScreenLoaded"
+                @temp-removed="onLoadedRemoved('screen', $event)"
                 @copied-item="onScreenCopied"
                 @update:model-value="onScreenSelect"
               />
@@ -2035,6 +2046,7 @@ const menuPageTitle = useMenuPageTitle()
                 test-id="backtest-trade-select"
                 @ready="onTradeReady"
                 @loaded="onTradeLoaded"
+                @temp-removed="onLoadedRemoved('trade', $event)"
                 @copied-item="onTradeCopied"
                 @update:model-value="onTradeSelect"
               />
