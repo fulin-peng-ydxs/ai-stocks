@@ -108,6 +108,8 @@
 - 排序操作：统一复用 `AppSortControl`，并作为所属筛选/操作栏的最后一个控件；空间不足保持 DOM 顺序整体换行。
 - 图标关闭/移除临时界面：使用 `AppCloseButton`；库内置关闭由全局适配，档位、状态、适用范围和业务边界统一引用 DESIGN §4，不私写配方。
 - 纯图标操作：使用 `AppIconButton`；异步纯图标操作使用 `:loading`；具体尺寸、默认 tooltip／显式豁免和 Unicode 禁令见 DESIGN。
+- 控件样式差异按 DESIGN §4「样式归属」通过尺寸属性或共享变体表达；核对 `design-contracts.json` 的受保护属性、精确持有者及绑定转发，覆盖输入/选择/日期、选择项、表单、表格/分页、卡片/页签和弹窗/抽屉。禁止以 scoped、deep/global、合法 token 或库组件样式属性绕过；需要文本域填充、技术文本、多行候选或紧凑/成长卡片时消费 DESIGN 登记的共享变体，不复制内部选择器。
+- 新增基础控件核对 DESIGN §4 的样式接入登记；重置、脚本写入、专项归属和根包装继承统一由 `check:contracts` 检查，例外只能登记到已有 `design-contracts.json`，不得另设页面放行列表。
 - 提示与可访问名称：图标默认用途提示与明确豁免、必要说明、禁用原因和真实截断统一引用 DESIGN §4“提示、截断与可访问名称”；分别复用 `AppIconButton` / `AppHoverInfo` / `AppActionHint` / `AppOverflowTooltipHost`，其他控件不因名称自动生成气泡。
 - 专用原生按钮例外：
 - 自检结论：
@@ -389,6 +391,7 @@ const drawerConfig = {
 | 路由、页面登记、占位与布局合法性 | DESIGN §5、§7 与 `pageRegistry` / validator | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、`validator.spec.ts` |
 | 受控控件与共享状态接入 | DESIGN §4、`design-contracts.json` 及共享组件 | `check:contracts`、`design-contract-gates.spec.ts`、相关消费者及行为测试 |
 | 字体、边框、提示、滚动和共同尺寸 | DESIGN 对应专章与共享实现 | `check:design` 中对应扫描器及其定向测试 |
+| 基础控件与容器的属性归属 | DESIGN §4、`design-contracts.json` 的 `styleRoles`、共享适配及布局所有者 | `check:contracts` 的覆盖/失效登记/精确绑定检查、各家族合法与违规样例、all 重置、运行时精确授权、新增控件/专项登记与根包装继承；真实样板和代表性页面的字阶、尺寸、浮层、明暗主题及缩放复核 |
 | 新字段和配置消费 | DESIGN §7.3 与前后端配置事实源 | 配置契约、后端 layout 测试及真实保存/回显验证 |
 | 四态、响应式及实际交互 | DESIGN §4、§8 和本模板的计划/维护矩阵 | 低层边界测试及登记检查；实际几何、可达性、恢复和最终呈现由受影响页面浏览器复核 |
 

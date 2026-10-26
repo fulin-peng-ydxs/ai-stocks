@@ -1876,7 +1876,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <div class="ed-head app-cluster-md">
                 <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
                 <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
-                  <el-button class="ver-badge" text bg type="primary" @click="openScoreVersions">v{{ curVersion }}</el-button>
+                  <el-button class="app-button-badge" text bg type="primary" @click="openScoreVersions">v{{ curVersion }}</el-button>
                 </AppHoverInfo>
                 <AssetVisibilityActions
                   v-if="!isNew"
@@ -2304,7 +2304,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <div class="ed-head app-cluster-md">
               <el-input v-model="tEditName" :disabled="tReadonly" placeholder="方案名称" style="width: 190px" />
               <AppHoverInfo v-if="tCurVersion && !tIsNew" content="点击查看历史版本">
-                <el-button class="ver-badge" text bg type="primary" @click="openTradeVersions">v{{ tCurVersion }}</el-button>
+                <el-button class="app-button-badge" text bg type="primary" @click="openTradeVersions">v{{ tCurVersion }}</el-button>
               </AppHoverInfo>
               <AssetVisibilityActions
                 v-if="!tIsNew"
@@ -2660,7 +2660,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <span>01</span>
             <div><h3>选择创建方式</h3><p>第一次创建建议从模板开始，公式创建适合熟悉指标计算的人。</p></div>
           </header>
-          <el-radio-group v-model="defMode" class="indicator-create-mode">
+          <el-radio-group v-model="defMode" class="indicator-create-mode app-choice-button-card">
             <el-radio-button value="template">
               <b>模板创建</b><small>选择常用计算，修改周期即可</small>
             </el-radio-button>
@@ -2741,7 +2741,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               :rows="4"
               :disabled="semanticLocked"
               placeholder="输入计算公式"
-              class="indicator-formula-input"
+              class="app-code-input"
               @input="defPreview = null"
             />
             <AppFormHelp>示例：(C / REF(C, {window}) - 1) * 100</AppFormHelp>
@@ -2921,16 +2921,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .spacer {
   flex: 1;
 }
-.ver-badge {
-  font-size: var(--app-font-size-caption);
-  height: auto;
-  min-height: 0;
-  border-radius: var(--app-radius-pill);
-  padding: 1px 8px;
-  font-weight: var(--app-font-weight-section);
-  cursor: pointer;
-  user-select: none;
-}
 .mono {
   font-family: var(--app-font-family-mono);
 }
@@ -3097,14 +3087,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 :global(.indicator-create-mode) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--app-space-3); }
 :global(.indicator-create-mode .el-radio-button) { width: 100%; }
 :global(.indicator-create-mode .el-radio-button__inner) {
-  /* 两行创建方式属于选项卡片，显式声明自然高度与卡片内距。 */
-  --app-choice-control-height: auto;
-  --app-choice-padding-block: var(--app-space-3);
-  --app-choice-display: grid;
-  --app-choice-justify: start;
   width: 100%;
-  min-height: 68px;
-  padding-inline: var(--app-space-4);
   justify-items: start;
   border: 1px solid var(--el-border-color-light) !important;
   border-radius: var(--layout-card-radius) !important;
@@ -3155,11 +3138,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   grid-template-columns: minmax(280px, 1.3fr) minmax(180px, 1fr) max-content;
 }
 :global(.indicator-definition-form .el-form-item) { margin: 0; }
-:global(.indicator-definition-form .el-form-item__label) {
-  color: var(--el-text-color-regular);
-  font-weight: var(--app-font-weight-section);
-}
-:global(.indicator-formula-input textarea),
 :global(.indicator-formula-preview code),
 :global(.indicator-preview-result code) { font-family: var(--app-font-family-mono); }
 :global(.indicator-formula-preview) {

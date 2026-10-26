@@ -119,7 +119,6 @@ defineExpose({ openCompactAnalysis, closeCompactAnalysis })
 }
 .market-list-panel :deep(.app-data-table) {
   flex: 1 1 auto;
-  min-height: 0;
 }
 :deep(.el-table__row.stock-analysis-row--active > td.el-table__cell) {
   background: color-mix(in srgb, var(--el-color-primary-light-9) 72%, var(--el-bg-color));

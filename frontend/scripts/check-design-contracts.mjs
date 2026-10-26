@@ -4,18 +4,28 @@ import { pathToFileURL } from 'node:url'
 import postcss from 'postcss'
 import ts from 'typescript'
 import {
-  attributeText, attributes, auditComponentEntries, designContracts, designSources,
-  frontendRoot, literalStrings, scriptAst, sourceParts, walkScript, walkTemplate,
+  attributeText, attributes, auditComponentEntries, auditStyleComponents, designContracts, designSources,
+  frontendRoot, inferStyleRoles, literalStrings, scriptAst, sourceParts, walkScript, walkTemplate,
 } from './design-source.mjs'
 
-const classesOf = node => attributes(node, 'class').flatMap(prop => {
-  if (prop.type === 6) return attributeText(prop).split(/\s+/)
-  const ast = scriptAst('class.ts', `(${attributeText(prop)})`)
-  return literalStrings(ast).flatMap(value => value.split(/\s+/))
-}).filter(Boolean)
+const nodeClassCache = new WeakMap()
+const classesOf = node => {
+  if (nodeClassCache.has(node)) return nodeClassCache.get(node)
+  const names = attributes(node, 'class').flatMap(prop => {
+    if (prop.type === 6) return attributeText(prop).split(/\s+/)
+    const ast = scriptAst('class.ts', `(${attributeText(prop)})`)
+    return literalStrings(ast).flatMap(value => value.split(/\s+/))
+  }).filter(Boolean)
+  nodeClassCache.set(node, names)
+  return names
+}
 const cssClasses = selector => [...selector.matchAll(/\.([_a-zA-Z][\w-]*)/g)].map(match => match[1])
 const staticClassesOf = node => attributes(node, 'class').filter(prop => prop.type === 6)
   .flatMap(prop => attributeText(prop).split(/\s+/))
+const canonicalTag = tag => tag.replaceAll('-', '').toLowerCase()
+const roleClasses = role => [role.className, ...(role.classNames ?? [])]
+const matchesRole = (node, role) => classesOf(node).some(name => roleClasses(role).includes(name))
+  || role.tags?.some(tag => canonicalTag(tag) === canonicalTag(node.tag))
 
 function nestingDepth(text) {
   let depth = 0, quote = ''
@@ -43,8 +53,11 @@ function roleTargets(template, roles = designContracts.styleRoles) {
   walkTemplate(template, (node, ancestors) => {
     const classes = classesOf(node)
     for (const role of roles) {
-      const root = [node, ...ancestors].find(item => classesOf(item).includes(role.className))
-      if (root && (root === node || role.descendants)) targets.push({ node, role, classes,
+      const scope = roles.find(candidate => candidate.className === role.within)
+      if (scope && !ancestors.some(item => matchesRole(item, scope))) continue
+      const root = [node, ...ancestors].find(item => matchesRole(item, role))
+      if (root && (root === node || role.descendants)) targets.push({ node, role,
+        classes: [...classes, ...(root === node ? [role.className] : [])],
         exclusions: [...staticClassesOf(node), ...(root === node ? [role.className] : [])],
         ancestors: ancestors.flatMap(classesOf) })
     }
@@ -53,13 +66,27 @@ function roleTargets(template, roles = designContracts.styleRoles) {
 }
 
 function protectedProperty(role, property) {
-  return role.properties.includes(property)
+  if (!property.startsWith('--')) property = property.toLowerCase()
+  return property === 'all' || role.properties.includes(property)
+    || role.properties.includes('font') && property.startsWith('font-')
+    || role.properties.includes('padding') && property.startsWith('padding-')
     || role.properties.includes('background') && property.startsWith('background-')
     || role.properties.includes('border') && /^border-(?:top|right|bottom|left)(?:-(?:color|width|style))?$/.test(property)
 }
 
 /** 使用选择器中的角色/别名及后代关系判断覆盖，不剥离伪类后再靠 DOM 偶然匹配。 */
 function targetsSelector(selector, target) {
+  const globallyApplied = selector.includes(':global(')
+  // Vue 的 deep/global 包装不改变最终样式目标；先展开再判断末端，避免把子文字当成按钮根。
+  for (const name of ['deep', 'global']) {
+    const prefix = `:${name}(`
+    for (let start = selector.indexOf(prefix); start >= 0; start = selector.indexOf(prefix)) {
+      let end = start + prefix.length
+      while (end < selector.length && nestingDepth(selector.slice(start, end + 1)) > 0) end++
+      if (end >= selector.length) break
+      selector = selector.slice(0, start) + selector.slice(start + prefix.length, end) + selector.slice(end + 1)
+    }
+  }
   // 只检查选择器真正作用的末端元素；相邻兄弟和 :has() 内的条件不是样式目标。
   let subject = '', depth = 0, quote = ''
   for (const char of selector.trim()) {
@@ -71,41 +98,110 @@ function targetsSelector(selector, target) {
     else subject += char
   }
   subject = withoutHas(subject)
+  // .cell 等通用名称只在表格上下文中受控，不能误伤指标条等独立组件的同名类。
+  if (target.contexts && !globallyApplied
+    && !cssClasses(selector.slice(0, selector.length - subject.length)).some(name => target.contexts.includes(name))) return false
+  // 装饰伪元素的尺寸属于组件几何，不是按钮自身的尺寸覆盖。
+  if (/::(?:before|after|marker)\b/.test(subject)) return false
   // 明确排除该角色的普通名称样式不属于覆盖；排除条件不能含组合器或其它状态。
   for (const match of subject.matchAll(/:not\(([^()]+)\)/g)) {
     if (nestingDepth(subject.slice(0, match.index)) > 0) continue
     if (match[1].split(',').some(value => target.exclusions.includes(value.trim().match(/^\.([\w-]+)$/)?.[1]))) return false
   }
   const classes = cssClasses(subject)
-  if (classes.some(name => target.classes.includes(name))) return true
+  // is-active 等通用状态名不能把无关的另一种组件认作同一控件。
+  const identities = classes.filter(name => !/^(?:is|has)-/.test(name))
+  if ((identities.length ? identities : classes).some(name => target.classes.includes(name))) return true
   const tag = subject.match(/^[a-z][\w-]*/i)?.[0]
-  return tag === target.node.tag && (!cssClasses(selector).length
+  // input/textarea 是库组件生成的真实内层，也须沿调用方别名追踪，不能只识别 .el-* 类。
+  if (tag && target.role.innerTags?.includes(tag)
+    && (!cssClasses(selector).length || cssClasses(selector.slice(0, -subject.length))
+      .some(name => [...target.classes, ...target.ancestors].includes(name)))) return true
+  return !!tag && (tag === target.node.tag || tag === target.role.elementTag
+    && target.role.tags?.some(name => canonicalTag(name) === canonicalTag(target.node.tag))) && (!cssClasses(selector).length
     || cssClasses(selector).some(name => target.ancestors.includes(name)))
 }
 
-export function auditSharedStyles(sources, roles = designContracts.styleRoles) {
+export function auditSharedStyles(sources, roles = designContracts.styleRoles, { verifyOwners = false } = {}) {
+  roles = inferStyleRoles(sources, roles)
   const violations = []
-  const prepared = sources.map(item => ({ ...item, ...sourceParts(item.file, item.source) }))
-  const externalTargets = prepared.flatMap(item => roleTargets(item.template, roles))
+  const usedOwners = new Set()
+  const prepared = sources.map(item => {
+    const parts = sourceParts(item.file, item.source)
+    return { ...item, ...parts, targets: roleTargets(parts.template, roles) }
+  })
+  const externalTargets = prepared.flatMap(item => item.targets)
   for (const item of prepared) {
-    if (item.file === 'styles/global.css') continue
-    const targets = (item.file.endsWith('.css') ? externalTargets : roleTargets(item.template, roles))
+    // all 会同时重置多个角色属性；不允许用通配选择器、普通结构节点或登记例外绕过。
+    for (const style of item.styles) postcss.parse(style.content).walkDecls(decl => {
+      if (decl.prop.toLowerCase() === 'all') violations.push(`${item.file}: ${decl.parent.selector ?? '<style>'} 禁止使用 all 重置共享样式`)
+    })
+    walkTemplate(item.template, node => {
+      const names = new Set(['style', ...roles.flatMap(role => role.styleAttributes ?? [])])
+      for (const prop of [...names].flatMap(name => attributes(node, name))) {
+        const value = attributeText(prop)
+        const reportReset = () => violations.push(`${item.file}: <${node.tag}> 禁止使用 all 重置共享样式`)
+        if (prop.type === 6) postcss.parse(`x{${value}}`).walkDecls(decl => {
+          if (decl.prop.toLowerCase() === 'all') reportReset()
+        })
+        else walkScript(scriptAst(item.file, `(${value})`), part => {
+          if (ts.isPropertyAssignment(part) || ts.isShorthandPropertyAssignment(part)) {
+            const name = ts.isComputedPropertyName(part.name) && ts.isStringLiteralLike(part.name.expression)
+              ? part.name.expression.text : part.name.getText().replace(/['"]/g, '')
+            if (name.toLowerCase() === 'all') reportReset()
+          }
+          if (ts.isStringLiteralLike(part) && /(?:^|;)\s*all\s*:/i.test(part.text)) reportReset()
+        })
+      }
+    })
+    const targets = (item.file.endsWith('.css') ? externalTargets : item.targets)
       .filter(target => roles.some(role => role.className === target.role.className))
+    // 已登记的根角色也拦截仅有 :deep()/外部选择器、没有本地模板实例的覆盖。
+    for (const role of roles.filter(role => role.owners)) {
+      const scope = roles.find(candidate => candidate.className === role.within)
+      const contexts = scope && !item.file.endsWith('.css') ? [
+        ...roleClasses(scope),
+        ...externalTargets.filter(target => target.role === scope).flatMap(target => [...target.classes, ...target.ancestors]),
+      ] : undefined
+      for (const name of roleClasses(role)) targets.push({
+        node: { tag: '', props: [] }, role, classes: [name], exclusions: [name], ancestors: [], contexts,
+      })
+    }
     const report = (selector, property) => violations.push(`${item.file}: ${selector} 不得私设 ${property}；使用共享角色入口`)
+    const allowed = (role, selector, property) => {
+      if (property === 'all') return false
+      if (!role.owners) return item.file === 'styles/global.css'
+      return role.owners.some((owner, index) => {
+        if (owner.file !== item.file || !owner.selectors.includes(selector)
+          || !owner.properties.includes(property) || !owner.reason?.trim()) return false
+        usedOwners.add(`${role.className}:${index}:${selector}:${property}`)
+        return true
+      })
+    }
+    const allowsBinding = (target, prop) => (target.role.bindings ?? []).some((binding, index) => {
+      const name = prop.arg ? prop.arg.content : 'attrs'
+      if (binding.file !== item.file || canonicalTag(binding.tag) !== canonicalTag(target.node.tag)
+        || binding.name !== name || binding.expression !== attributeText(prop) || !binding.reason?.trim()) return false
+      usedOwners.add(`${target.role.className}:binding:${index}`)
+      return true
+    })
     for (const style of item.styles) postcss.parse(style.content).walkRules(rule => {
       for (const target of targets) {
         if (!rule.selectors.some(selector => targetsSelector(selector, target))) continue
         rule.walkDecls(decl => {
-          if (protectedProperty(target.role, decl.prop)) report(rule.selector, decl.prop)
+          if (protectedProperty(target.role, decl.prop) && !allowed(target.role, rule.selector, decl.prop)) report(rule.selector, decl.prop)
         })
       }
     })
-    for (const target of targets) {
-      for (const prop of attributes(target.node, 'style')) {
+    // 外部 CSS 借模板识别消费类，但绑定必须在模板所属文件校验，不能把 CSS 文件当成透传者。
+    for (const target of item.targets) {
+      for (const prop of (target.role.styleAttributes ?? ['style']).flatMap(name => attributes(target.node, name))) {
         if (prop.type === 6) postcss.parse(`x{${attributeText(prop)}}`).walkDecls(decl => {
-          if (protectedProperty(target.role, decl.prop)) report('<inline style>', decl.prop)
+          if (protectedProperty(target.role, decl.prop) && !allowed(target.role, '<inline style>', decl.prop)) report('<inline style>', decl.prop)
         })
         else {
+          // 唯一适配器可以透传自身属性/计算几何，消费方不能借同名表达式获得授权。
+          if (allowsBinding(target, prop)) continue
           const expression = attributeText(prop)
           if (!expression.trim().startsWith('{')) {
             report('<dynamic style>', '不可静态确认的样式绑定')
@@ -113,7 +209,11 @@ export function auditSharedStyles(sources, roles = designContracts.styleRoles) {
           }
           const ast = scriptAst(item.file, `(${expression})`)
           walkScript(ast, node => {
-            if (ts.isPropertyAssignment(node)) {
+            if (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node)) {
+              if (ts.isComputedPropertyName(node.name)) {
+                report('<dynamic style>', '不可静态确认的样式属性名')
+                return
+              }
               const key = node.name.getText(ast).replace(/['"]/g, '').replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)
               if (protectedProperty(target.role, key)) report('<dynamic style>', key)
             }
@@ -121,9 +221,214 @@ export function auditSharedStyles(sources, roles = designContracts.styleRoles) {
           })
         }
       }
-      if (target.node.props.some(prop => prop.type === 7 && prop.name === 'bind' && !prop.arg)) {
-        report('<v-bind>', '整包属性绑定')
+      for (const prop of target.node.props.filter(prop => prop.type === 7 && prop.name === 'bind' && !prop.arg)) {
+        if (!allowsBinding(target, prop)) report('<v-bind>', '整包属性绑定')
       }
+    }
+  }
+  if (verifyOwners) for (const role of roles) {
+    for (const [index, binding] of (role.bindings ?? []).entries()) {
+      if (!usedOwners.has(`${role.className}:binding:${index}`)) {
+        violations.push(`${binding.file}: ${binding.tag} 的 ${role.className} ${binding.name} 绑定归属已失效`)
+      }
+    }
+    for (const [index, owner] of (role.owners ?? []).entries()) {
+      if (!owner.reason?.trim() || !owner.selectors.length || !owner.properties.length) {
+        violations.push(`${role.className}: 样式持有者必须登记精确选择器、属性与语义依据`)
+      }
+      for (const selector of owner.selectors) for (const property of owner.properties) {
+        if (!usedOwners.has(`${role.className}:${index}:${selector}:${property}`)) {
+          violations.push(`${owner.file}: ${selector} 的 ${role.className}.${property} 样式归属登记已失效`)
+        }
+      }
+    }
+  }
+  return [...new Set(violations)]
+}
+
+/** 运行时样式写入默认拒绝；主题、缩放、浮层和测量仅按目标、操作与属性授权。 */
+export function auditRuntimeStyles(sources, owners = designContracts.runtimeStyleOwners ?? [], { verifyOwners = false } = {}) {
+  const violations = []
+  const used = new Set()
+  const normalize = name => name.startsWith('--') ? name : name.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)
+  const unwrap = node => {
+    while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node)
+      || ts.isTypeAssertionExpression(node) || ts.isNonNullExpression(node))) node = node.expression
+    return node
+  }
+  const member = node => {
+    node = unwrap(node)
+    if (node && ts.isPropertyAccessExpression(node)) return { object: node.expression, key: node.name.text }
+    if (node && ts.isElementAccessExpression(node)) return { object: node.expression,
+      key: ts.isStringLiteralLike(node.argumentExpression) ? node.argumentExpression.text : null }
+    return null
+  }
+  for (const { file, source } of sources) for (const script of sourceParts(file, source).scripts) {
+    const ast = scriptAst(file, script)
+    const aliases = new Map()
+    const renderNames = new Set(['h', 'createVNode', 'createElementVNode'])
+    const vueNamespaces = new Set()
+    const remember = (name, value) => aliases.set(name, [...(aliases.get(name) ?? []), value])
+    walkScript(ast, node => {
+      if (ts.isImportDeclaration(node) && node.moduleSpecifier.text === 'vue') {
+        const bindings = node.importClause?.namedBindings
+        if (bindings && ts.isNamespaceImport(bindings)) vueNamespaces.add(bindings.name.text)
+        if (bindings && ts.isNamedImports(bindings)) for (const entry of bindings.elements) {
+          if (['h', 'createVNode', 'createElementVNode'].includes((entry.propertyName ?? entry.name).text)) renderNames.add(entry.name.text)
+        }
+      }
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) remember(node.name.text, node.initializer)
+      if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+        && ts.isIdentifier(node.left)) remember(node.left.text, node.right)
+    })
+    const resolve = (node, seen = new Set()) => {
+      node = unwrap(node)
+      if (node && ts.isIdentifier(node) && aliases.get(node.text)?.length === 1 && !seen.has(node.text)) {
+        return resolve(aliases.get(node.text)[0], new Set([...seen, node.text]))
+      }
+      return node
+    }
+    const styleRef = (node, seen = new Set()) => {
+      node = unwrap(node)
+      if (!node) return null
+      if (ts.isIdentifier(node) && aliases.has(node.text) && !seen.has(node.text)) {
+        return aliases.get(node.text).map(value => styleRef(value, new Set([...seen, node.text]))).find(Boolean) ?? null
+      }
+      const access = member(node)
+      return access?.key === 'style' ? `${access.object.getText(ast)}.style` : null
+    }
+    const literal = node => {
+      node = resolve(node)
+      return node && ts.isStringLiteralLike(node) ? node.text : null
+    }
+    const report = (node, operation, target, properties = []) => {
+      const expression = node.getText(ast)
+      const keys = properties.map(normalize)
+      const allowed = owners.some((owner, index) => {
+        if (owner.file !== file || owner.operation !== operation || owner.target !== target || !owner.reason?.trim()) return false
+        if (keys.includes('all')) return false
+        if (owner.expression ? owner.expression !== expression
+          : !keys.length || keys.some(key => !owner.properties?.includes(key))) return false
+        used.add(`${index}:used`)
+        for (const key of keys) used.add(`${index}:${key}`)
+        return true
+      })
+      if (!allowed) violations.push(`${file}:${ast.getLineAndCharacterOfPosition(node.getStart(ast)).line + 1} 未授权运行时样式 ${operation} ${target} ${keys.join(',') || '<动态/整包>'}；使用共享呈现或精确登记`)
+    }
+    const objectKeys = node => {
+      node = resolve(node)
+      if (!node || !ts.isObjectLiteralExpression(node)) return []
+      const keys = []
+      for (const property of node.properties) {
+        if (!property.name || ts.isComputedPropertyName(property.name)) return []
+        keys.push(property.name.getText(ast).replace(/['"]/g, ''))
+      }
+      return keys
+    }
+    const isStyleElement = node => {
+      node = resolve(node)
+      return node && ts.isCallExpression(node) && /(?:createElement|querySelector)$/.test(node.expression.getText(ast))
+        && literal(node.arguments[0]) === 'style'
+    }
+    const styleProps = new Set(['style', ...designContracts.styleRoles.flatMap(role => role.styleAttributes ?? [])].map(canonicalTag))
+    const inspectRenderProps = (node, target, anchor = node) => {
+      const value = resolve(node)
+      // h 的第二参也可承载纯文本、子节点或插槽；这些不是可变样式属性。
+      if (value && (ts.isStringLiteralLike(value) || ts.isNumericLiteral(value)
+        || ts.isArrayLiteralExpression(value) || ts.isArrowFunction(value) || ts.isFunctionExpression(value)
+        || value.kind === ts.SyntaxKind.NullKeyword || value.getText(ast) === 'undefined')) return
+      if (value && ts.isConditionalExpression(value)) {
+        inspectRenderProps(value.whenTrue, target, anchor)
+        inspectRenderProps(value.whenFalse, target, anchor)
+      } else if (value && ts.isObjectLiteralExpression(value)) {
+        for (const property of value.properties) {
+          if (ts.isSpreadAssignment(property)) inspectRenderProps(property.expression, target, property)
+          else if (property.name && (ts.isComputedPropertyName(property.name)
+            || styleProps.has(canonicalTag(property.name.getText(ast).replace(/['"]/g, ''))))) report(property, 'renderStyle', target)
+        }
+      } else if (value) {
+        report(anchor, 'renderProps', target)
+      }
+    }
+    walkScript(ast, node => {
+      const mutation = ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment
+        && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment ? node.left
+        : ts.isDeleteExpression(node) ? node.expression
+          : (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node))
+            && [ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken].includes(node.operator) ? node.operand : null
+      if (mutation) {
+        const access = member(mutation)
+        const target = styleRef(access?.object)
+        if (target) report(node, 'write', target, access.key ? [access.key] : [])
+        else if (access?.key === 'style') report(node, 'replace', styleRef(mutation))
+        else if (access?.key === 'adoptedStyleSheets') report(node, 'stylesheet', access.object.getText(ast))
+        else if (access && ['textContent', 'innerHTML', 'innerText'].includes(access.key) && isStyleElement(access.object)) {
+          report(node, 'stylesheet', access.object.getText(ast))
+        }
+      }
+      if (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name) && styleRef(node.initializer)) {
+        if (node.name.elements.some(item => ['setProperty', 'removeProperty'].includes((item.propertyName ?? item.name).getText(ast)))) {
+          report(node, 'extract', styleRef(node.initializer))
+        }
+      }
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+        const access = member(node.initializer)
+        if (access && styleRef(access.object) && (access.key === null || ['setProperty', 'removeProperty'].includes(access.key))) {
+          report(node, 'extract', styleRef(access.object))
+        }
+      }
+      if ((ts.isReturnStatement(node) || ts.isPropertyAssignment(node)) && styleRef(node.expression ?? node.initializer)) {
+        report(node, 'escape', styleRef(node.expression ?? node.initializer))
+      }
+      if (ts.isArrowFunction(node) && styleRef(node.body)) report(node, 'escape', styleRef(node.body))
+      if (ts.isArrayLiteralExpression(node)) for (const element of node.elements) {
+        if (styleRef(element)) report(element, 'escape', styleRef(element))
+      }
+      if (!ts.isCallExpression(node)) return
+      const access = member(node.expression)
+      const callee = resolve(node.expression)
+      if (renderNames.has(callee?.getText(ast)) || access && vueNamespaces.has(access.object.getText(ast)) && renderNames.has(access.key)) {
+        if (node.arguments[1]) inspectRenderProps(node.arguments[1], node.expression.getText(ast))
+      }
+      const target = access && styleRef(access.object)
+      if (target) {
+        if (['getPropertyValue', 'getPropertyPriority', 'item', 'toString'].includes(access.key)) return
+        const key = literal(node.arguments[0])
+        report(node, access.key ?? 'dynamicCall', target, key ? [key] : [])
+        return
+      }
+      const attributeIndex = access?.key === 'setAttributeNS' ? 1 : 0
+      const attributeName = literal(node.arguments[attributeIndex])?.toLowerCase() ?? null
+      if (access && ['setAttribute', 'setAttributeNS', 'removeAttribute', 'toggleAttribute'].includes(access.key)
+        && (attributeName === 'style' || attributeName === null)) {
+        report(node, access.key, access.object.getText(ast))
+        return
+      }
+      if (['Object.assign', 'Object.defineProperty', 'Object.defineProperties', 'Reflect.set', 'Reflect.deleteProperty'].includes(node.expression.getText(ast))
+        && styleRef(node.arguments[0])) {
+        const assignments = node.arguments.slice(1).map(objectKeys)
+        report(node, node.expression.getText(ast), styleRef(node.arguments[0]),
+          node.expression.getText(ast) === 'Object.assign' ? assignments.every(keys => keys.length) ? assignments.flat() : []
+            : node.expression.getText(ast) === 'Object.defineProperties' ? objectKeys(node.arguments[1])
+            : literal(node.arguments[1]) ? [literal(node.arguments[1])] : [])
+        return
+      }
+      if (access && (['insertRule', 'deleteRule', 'addRule', 'replaceSync'].includes(access.key)
+        || access.key === 'replace' && /(?:CSSStyleSheet|styleSheets|\.sheet\b)/.test(resolve(access.object)?.getText(ast) ?? '')
+        || /(?:adoptedStyleSheets|styleSheets)/.test(access.object.getText(ast)))) {
+        report(node, 'stylesheet', access.object.getText(ast))
+        return
+      }
+      for (const argument of node.arguments) if (styleRef(argument)) report(node, 'escape', styleRef(argument))
+    })
+  }
+  if (verifyOwners) for (const [index, owner] of owners.entries()) {
+    if (!owner.reason?.trim() || !owner.target || !owner.operation || (!owner.expression && !owner.properties?.length)) {
+      violations.push(`${owner.file}: 运行时样式授权必须登记目标、操作、属性或精确表达式以及依据`)
+    }
+    if (!used.has(`${index}:used`)) violations.push(`${owner.file}: ${owner.target} ${owner.operation} 运行时样式授权已失效`)
+    if (!owner.expression) for (const property of owner.properties ?? []) {
+      if (!used.has(`${index}:${property}`)) violations.push(`${owner.file}: ${owner.target}.${property} 运行时样式授权已失效`)
     }
   }
   return [...new Set(violations)]
@@ -329,7 +634,8 @@ export function auditButtonKinds(sources) {
 
 export function auditDesignContracts(sources = designSources(), design = readFileSync(join(frontendRoot, '../DESIGN.md'), 'utf8')) {
   return [
-    ...auditComponentEntries(sources), ...auditSharedStyles(sources), ...auditColorSources(sources),
+    ...auditComponentEntries(sources), ...auditStyleComponents(sources, undefined, undefined, { verifyRegistry: true }),
+    ...auditSharedStyles(sources, designContracts.styleRoles, { verifyOwners: true }), ...auditRuntimeStyles(sources, undefined, { verifyOwners: true }), ...auditColorSources(sources),
     ...auditButtonKinds(sources),
     ...auditButtonStates(sources.find(item => item.file === 'styles/buttonStates.css')?.source ?? ''),
     ...auditDesignStateContract(sources.find(item => item.file === 'styles/global.css')?.source ?? '', design),

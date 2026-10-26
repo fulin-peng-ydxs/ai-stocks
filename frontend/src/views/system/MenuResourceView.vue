@@ -630,7 +630,7 @@ const menuPageTitle = useMenuPageTitle()
                     </AppSelect>
                   </div>
                   <div class="mr-field"><label>路由</label>
-                    <el-input v-model="form.routePath" placeholder="如 /board" class="mono"
+                    <el-input v-model="form.routePath" placeholder="如 /board" class="app-code-input"
                               :disabled="form.type === 'group' || !canMenuUpdate" @input="onFormChange" />
                   </div>
                   <div class="mr-field"><label>图标</label>
@@ -712,7 +712,7 @@ const menuPageTitle = useMenuPageTitle()
                         v-if="editingId === r.id"
                         v-model="resDraft.code"
                         size="small"
-                        class="mono"
+                        class="app-code-input"
                         :placeholder="r.id === NEW_ROW ? 'menu:action（全局唯一）' : 'menu:action'"
                       />
                       <div v-else class="mr-code-cell">
@@ -752,7 +752,7 @@ const menuPageTitle = useMenuPageTitle()
                         >
                           <el-option v-for="mth in ['GET','POST','PUT','DELETE']" :key="mth" :label="mth" :value="mth" />
                         </AppSelect>
-                        <el-input v-model="resDraft.apiPath" size="small" class="mono" placeholder="/api/…（按钮可空）" />
+                        <el-input v-model="resDraft.apiPath" size="small" class="app-code-input" placeholder="/api/…（按钮可空）" />
                       </div>
                       <span v-else class="mono" :class="{ dim: !r.api_path }">{{ bindingText(r) }}</span>
                     </template>
@@ -806,7 +806,7 @@ const menuPageTitle = useMenuPageTitle()
           <el-form-item label="菜单编码" required>
             <el-input
               v-model="menuCreateForm.code"
-              class="mono"
+              class="app-code-input"
               placeholder="必填，创建后不可修改"
             />
           </el-form-item>
@@ -819,7 +819,7 @@ const menuPageTitle = useMenuPageTitle()
             </AppSelect>
           </el-form-item>
           <el-form-item label="路由" v-if="menuCreateForm.type !== 'group'" required>
-            <el-input v-model="menuCreateForm.routePath" class="mono" placeholder="如 /board（须与前端已注册路由对应）" />
+            <el-input v-model="menuCreateForm.routePath" class="app-code-input" placeholder="如 /board（须与前端已注册路由对应）" />
           </el-form-item>
           <el-form-item label="图标">
             <IconPicker v-model="menuCreateForm.icon" />
@@ -896,12 +896,11 @@ const menuPageTitle = useMenuPageTitle()
 .mr-field { display: flex; align-items: center; gap: var(--app-space-2); }
 .mr-field label { width: 54px; text-align: right; color: var(--el-text-color-regular); font-size: var(--app-font-size-table); flex: none; }
 .mr-field :deep(.el-select), .mr-field :deep(.el-input) { flex: 1; }
-.mono :deep(input), .mono { font-family: var(--app-font-family-mono); }
+.mono { font-family: var(--app-font-family-mono); }
 .hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-placeholder); }
 .mr-func-head { margin-bottom: 10px; }
 .resource-table {
   flex: 1 1 auto;
-  min-height: 0;
   overflow: hidden;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: var(--layout-card-radius);

@@ -1846,7 +1846,7 @@ const menuPageTitle = useMenuPageTitle()
     </div>
     <el-card
       shadow="never"
-      class="form-card"
+      class="form-card app-card-compact"
     >
       <AppForm label-position="top" class="backtest-params" :class="{ 'is-score-check': kind === 'score_check' }">
         <div class="form-row parameter-grid">
@@ -2264,7 +2264,7 @@ const menuPageTitle = useMenuPageTitle()
       </div>
 
       <!-- 逐笔交易（策略）-->
-      <el-card v-if="hasTradeRows" shadow="never" class="block trade-block">
+      <el-card v-if="hasTradeRows" shadow="never" class="block trade-block app-card-body-fill">
         <AppControlRow class="block-title">
           逐笔交易（{{ strat!.trades.length }} 笔）
           <span class="sub">点任一行 → 在 K 线上看该股的买卖点与原因（不跳转）</span>
@@ -2709,12 +2709,6 @@ const menuPageTitle = useMenuPageTitle()
   display: flex;
   flex-direction: column;
 }
-.trade-block :deep(.el-card__body) {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
 .trade-table-wrap {
   flex: 1 1 auto;
   min-height: 0;
@@ -2768,9 +2762,6 @@ const menuPageTitle = useMenuPageTitle()
 }
 
 @container app-viewport (max-width: 480px) {
-  .form-card :deep(.el-card__body) {
-    padding: 12px;
-  }
   .parameter-grid,
   .date-range { grid-template-columns: minmax(0, 1fr); }
   .date-range-separator { display: none; }

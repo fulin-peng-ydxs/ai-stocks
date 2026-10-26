@@ -1148,6 +1148,7 @@ html.dark {
   min-width: 0;
   max-width: min(var(--app-command-menu-max-width), calc(100cqw - 24px));
 }
+.app-row-actions-popper.el-popper { padding: var(--app-space-1); }
 .app-command-menu-popper .el-dropdown-menu__item {
   white-space: normal;
   overflow-wrap: anywhere;
@@ -1165,9 +1166,50 @@ html.dark {
   height: auto;
   min-height: var(--app-density-control-height, var(--app-control-height-md));
   padding-block: var(--app-space-1);
+  padding-inline: var(--app-space-3);
+  font-size: var(--app-font-size-body);
   line-height: var(--app-line-height-body);
   white-space: normal;
   overflow-wrap: anywhere;
+}
+/* 等宽长说明候选仍由选择器共享适配，领域组件只维护内容排列。 */
+.app-select-popper--fit .el-select-dropdown__item {
+  padding-block: var(--app-density-control-gap);
+  line-height: var(--app-line-height-comfy);
+}
+/* 多行选择与内嵌选择分别保留完整点击区和所属条目几何。 */
+html[data-layout-preset] :is(.el-checkbox, .el-radio).app-choice-multiline {
+  height: auto;
+  min-height: var(--app-density-control-height);
+}
+html[data-layout-preset] .app-choice-multiline :is(.el-checkbox__label, .el-radio__label) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: var(--app-line-height-table);
+}
+html[data-layout-preset] :is(.el-checkbox, .el-radio).app-choice-card {
+  height: auto;
+  padding: var(--app-space-3);
+}
+html[data-layout-preset] .el-checkbox.app-choice-inline { height: auto; }
+html[data-layout-preset] .app-choice-inline .el-checkbox__label { padding-left: 0; }
+/* 配置文本与复盘编辑器共用填充方式；外部容器决定可用空间。 */
+html[data-layout-preset] .app-textarea-fill {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: calc(var(--app-line-height-body) * 4);
+}
+html[data-layout-preset] .app-textarea-fill .el-textarea__inner { height: 100%; }
+html[data-layout-preset] .app-code-input .el-textarea__inner { font-family: var(--app-font-family-mono); }
+html[data-layout-preset] .app-code-input .el-input__inner { font-family: var(--app-font-family-mono); }
+/* 含标题与说明的按钮式候选使用共享卡片几何，仍沿用库的选择与键盘行为。 */
+html[data-layout-preset] .app-choice-button-card .el-radio-button__inner {
+  --app-choice-control-height: auto;
+  --app-choice-padding-block: var(--app-space-3);
+  --app-choice-display: grid;
+  --app-choice-justify: start;
+  min-height: calc(var(--app-line-height-body) * 2 + var(--app-space-3) * 2);
+  padding-inline: var(--app-space-4);
 }
 .app-option-popper .el-select-dropdown__item,
 .app-option-popper .el-dropdown-menu__item {
@@ -1328,6 +1370,7 @@ html[data-layout-preset] .el-card {
   background-color: var(--el-bg-color);
   border-color: var(--chrome-border);
   color: var(--chrome-text);
+  font-size: var(--app-font-size-body);
 }
 /* 遵守 el-card 的 shadow 契约；never 不叠加实体外沿以外的阴影。 */
 html[data-layout-preset] .el-card:is(.is-always-shadow, .is-hover-shadow:hover, .is-hover-shadow:focus) {
@@ -1335,6 +1378,22 @@ html[data-layout-preset] .el-card:is(.is-always-shadow, .is-hover-shadow:hover, 
 }
 html[data-layout-preset] .el-card__body {
   padding: var(--layout-card-padding);
+}
+html[data-layout-preset] .el-card.app-card-compact > .el-card__header {
+  padding: var(--app-space-2) var(--app-space-3);
+}
+html[data-layout-preset] .el-card.app-card-compact > .el-card__body {
+  padding: var(--app-space-3);
+}
+html[data-layout-preset] .app-card-body-fill > .el-card__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+html[data-layout-preset] .el-pagination {
+  font-size: var(--app-table-content-font-size);
+  line-height: var(--app-table-content-line-height);
 }
 /* 有边框描述表的标签格属于常驻信息分区，不借用 hover 状态的 Element token。 */
 .el-descriptions__label.el-descriptions__cell.is-bordered-label {
@@ -1467,6 +1526,28 @@ html[data-layout-preset] .el-button.is-text,
 html[data-layout-preset] .el-button.is-link {
   height: var(--app-control-height-sm);
   padding: 0 6px;
+}
+/* 行操作与命令菜单共用按钮尺寸；菜单只扩展点击区，不另设正文字号。 */
+html[data-layout-preset] .app-row-actions .el-button.app-row-actions__button {
+  min-height: var(--app-control-height-xs);
+  padding: 0 5px;
+}
+html[data-layout-preset] .app-command-menu-popper .el-button.app-row-actions-menu__item {
+  height: auto;
+  min-height: var(--app-control-height-sm);
+  padding: var(--app-space-1) 10px;
+}
+html[data-layout-preset] .app-command-menu-popper .el-dropdown-menu__item {
+  font-size: var(--app-button-font-size);
+  line-height: var(--app-line-height-table);
+}
+/* 版本入口为紧凑徽标命令，两处方案编辑器共同消费。 */
+html[data-layout-preset] .el-button.app-button-badge {
+  height: auto;
+  min-height: 0;
+  padding: 1px var(--app-space-2);
+  border-radius: var(--app-radius-pill);
+  font-size: var(--app-font-size-caption);
 }
 /* 字段值属于阅读内容；链接式按钮的 small/large 也继承字段字阶，不套命令字重。 */
 html[data-layout-preset] .app-table-field-link,

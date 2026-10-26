@@ -648,7 +648,7 @@ const menuPageTitle = useMenuPageTitle()
         retry
         @retry="retryPageRegion"
       >
-        <el-tabs v-model="tab" class="config-tabs" :before-leave="() => !operationBusy" @tab-change="onTabChange">
+        <el-tabs v-model="tab" class="app-workspace-tabs config-tabs" :before-leave="() => !operationBusy" @tab-change="onTabChange">
           <el-tab-pane label="页面设计" name="workbench">
             <div class="workbench-pane">
             <section class="app-surface plain-panel source-panel">
@@ -962,14 +962,12 @@ const menuPageTitle = useMenuPageTitle()
 }
 .config-tabs {
   flex: 1 1 auto;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 .config-tabs :deep(.el-tabs__content) {
   flex: 1 1 auto;
-  min-height: 0;
   overflow: hidden;
 }
 .config-tabs :deep(.el-tab-pane) {

@@ -1119,16 +1119,16 @@ function setSort(slotId: string, field: string, order: string): void {
               <template #title>
                 <!-- 标题内的选值控件不能触发分组展开或键盘激活。 -->
                 <span @click.stop @keydown.stop>
-                  <el-checkbox :value="group.value">{{ group.label }}</el-checkbox>
+                  <el-checkbox class="app-choice-multiline" :value="group.value">{{ group.label }}</el-checkbox>
                 </span>
               </template>
               <div class="ca-collapse-children" role="group" :aria-label="`${group.label}下级分区`">
-                <el-checkbox v-for="child in group.children" :key="child.value" :value="child.value">
+                <el-checkbox class="app-choice-multiline" v-for="child in group.children" :key="child.value" :value="child.value">
                   {{ child.label }}
                 </el-checkbox>
               </div>
             </SettingsGroup>
-            <el-checkbox v-else :value="group.value">{{ group.label }}</el-checkbox>
+            <el-checkbox v-else class="app-choice-multiline" :value="group.value">{{ group.label }}</el-checkbox>
           </div>
         </el-checkbox-group>
       </SettingsGroup>
@@ -1160,14 +1160,7 @@ function setSort(slotId: string, field: string, order: string): void {
 }
 .ca-collapse-options :deep(.el-checkbox) {
   max-width: 100%;
-  height: auto;
-  min-height: var(--app-density-control-height);
   margin-inline-end: 0;
-}
-.ca-collapse-options :deep(.el-checkbox__label) {
-  white-space: normal;
-  overflow-wrap: anywhere;
-  line-height: var(--app-line-height-table);
 }
 
 .ca-search-hint {
@@ -1185,12 +1178,6 @@ function setSort(slotId: string, field: string, order: string): void {
 }
 .ca-number {
   width: 100%;
-}
-.ca-select :deep(.el-select__placeholder),
-.ca-select :deep(.el-select__selected-item) {
-  color: var(--page-settings-text);
-  font-size: var(--app-font-size-table);
-  font-weight: var(--app-font-weight-section);
 }
 /* 页面布局「点击预览即配置」聚焦高亮 */
 .ca-highlight {

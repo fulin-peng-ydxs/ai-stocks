@@ -40,7 +40,7 @@ const resourceStats = computed(() => {
   <section v-if="isGroup" class="pt-group" :class="{ collapsed, locked: node.sysLocked }">
     <div class="pt-group-head">
       <el-checkbox
-        class="pt-node-checkbox"
+        class="pt-node-checkbox app-choice-inline"
         :model-value="stateOf(node) === 'on'"
         :indeterminate="stateOf(node) === 'half'"
         :disabled="readonly || node.sysLocked"
@@ -91,7 +91,7 @@ const resourceStats = computed(() => {
   <section v-else class="pt-menu" :class="{ locked: node.sysLocked }">
     <div class="pt-menu-row">
       <el-checkbox
-        class="pt-node-checkbox"
+        class="pt-node-checkbox app-choice-inline"
         :model-value="stateOf(node) === 'on'"
         :indeterminate="stateOf(node) === 'half'"
         :disabled="readonly || node.sysLocked"
@@ -244,7 +244,6 @@ const resourceStats = computed(() => {
   font-weight: var(--app-font-weight-regular);
 }
 .pt-node-checkbox {
-  height: auto;
   margin-right: 0;
 }
 .pt-node-checkbox :deep(.el-checkbox__label) {

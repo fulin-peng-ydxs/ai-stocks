@@ -18,6 +18,8 @@ const props = withDefaults(defineProps<{
   /** 长说明等明确场景可选择等宽；默认面板按内容扩展到共享上限。 */
   fitInputWidth?: boolean
   popperClass?: string
+  /** 摘要型筛选器只占一行，复用相同尺寸映射并裁切内部候选标签。 */
+  singleLine?: boolean
 }>(), {
   filterable: true,
   width: undefined,
@@ -25,6 +27,7 @@ const props = withDefaults(defineProps<{
   fallbackPlacements: () => [...APP_BOTTOM_FLOATING_FALLBACKS],
   fitInputWidth: false,
   popperClass: '',
+  singleLine: false,
 })
 
 const select = ref<SelectInstance>()
@@ -47,7 +50,7 @@ defineExpose({
     v-bind="$attrs"
     :filterable="filterable"
     class="app-select"
-    :class="width ? `app-control-width-${width}` : undefined"
+    :class="[width ? `app-control-width-${width}` : undefined, { 'app-select--single-line': singleLine }]"
     :placement="placement"
     :fallback-placements="fallbackPlacements"
     :fit-input-width="fitInputWidth"
@@ -70,4 +73,5 @@ defineExpose({
   min-height: var(--app-select-control-height);
   padding-block: 0;
 }
+.app-select--single-line :deep(.el-select__wrapper) { height: var(--app-select-control-height); }
 </style>

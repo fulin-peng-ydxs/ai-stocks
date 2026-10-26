@@ -179,7 +179,6 @@ function collapsed(key: string): boolean {
               v-else-if="field.type === 'enum'"
               :model-value="String(valueOf(field.path) ?? '')"
               :disabled="disabled"
-              popper-class="config-select-popper"
               placeholder="请选择"
               @update:model-value="(value: string) => setValue(field.path, value)"
             >
@@ -246,7 +245,6 @@ function collapsed(key: string): boolean {
   grid-template-columns: repeat(auto-fill, minmax(220px, 280px));
   gap: var(--app-space-3) var(--app-space-5);
   align-items: start;
-  padding: 0;
 }
 .field-label {
   display: inline-flex;
@@ -303,9 +301,6 @@ function collapsed(key: string): boolean {
 .is-invalid :deep(.el-input-number .el-input__wrapper),
 .is-invalid :deep(.el-select .el-select__wrapper) {
   box-shadow: 0 0 0 1px var(--el-color-danger) inset;
-}
-:global(.config-select-popper .el-select-dropdown__item) {
-  padding-inline: 14px;
 }
 
 @container app-viewport (max-width: 720px) {

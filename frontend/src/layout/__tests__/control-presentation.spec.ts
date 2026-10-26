@@ -27,7 +27,6 @@ describe('交互呈现的共享尺寸契约', () => {
       ['styles/global.css', 'html[data-layout-preset] .el-button', 'height'],
       ['components/PageSegmented.vue', '.page-segmented', 'height'],
       ['components/AppSelect.vue', '.app-select', '--app-select-control-height'],
-      ['components/AppFilterSelect.vue', '.app-filter-select__control :deep(.el-select__wrapper)', 'height'],
 
 
       ['styles/global.css', 'html[data-layout-preset] .el-radio-button', '--app-choice-control-height'],
@@ -54,7 +53,8 @@ describe('交互呈现的共享尺寸契约', () => {
     expect(declaration('styles/global.css', `html[data-layout-preset] .el-button.el-button--${size}`, 'height')).toBe(expected)
     expect(declaration('components/PageSegmented.vue', `.page-segmented--${size}`, 'height')).toBe(expected)
     expect(declaration('components/AppSelect.vue', `.app-select.el-select--${size}`, '--app-select-control-height')).toBe(expected)
-    expect(declaration('components/AppFilterSelect.vue', `.app-filter-select--${size} .app-filter-select__control :deep(.el-select__wrapper)`, 'height')).toBe(expected)
+    expect(declaration('components/AppSelect.vue', '.app-select--single-line :deep(.el-select__wrapper)', 'height'))
+      .toBe('var(--app-select-control-height)')
     for (const kind of ['radio-button', 'checkbox-button', 'segmented']) {
       const selector = `html[data-layout-preset] .el-${kind}--${size}${kind === 'segmented' ? ':not(.el-segmented--vertical)' : ''}`
       expect(declaration('styles/global.css', selector, '--app-choice-control-height')).toBe(expected)
@@ -77,7 +77,9 @@ describe('交互呈现的共享尺寸契约', () => {
     }
     const segmented = 'html[data-layout-preset] .el-segmented:not(.el-segmented--vertical)'
     expect(declaration('styles/global.css', segmented, 'min-height')).toBe('var(--app-choice-control-height)')
-    expect(declaration('views/ConfigView.vue', ':global(.indicator-create-mode .el-radio-button__inner)', '--app-choice-control-height')).toBe('auto')
-    expect(declaration('views/ConfigView.vue', ':global(.indicator-create-mode .el-radio-button__inner)', '--app-choice-justify')).toBe('start')
+    expect(declaration('styles/global.css', 'html[data-layout-preset] .app-choice-button-card .el-radio-button__inner', '--app-choice-control-height')).toBe('auto')
+    expect(declaration('styles/global.css', 'html[data-layout-preset] .app-choice-button-card .el-radio-button__inner', '--app-choice-justify')).toBe('start')
+    expect(readFileSync(resolve('src/components/AppFilterSelect.vue'), 'utf8')).toContain('single-line')
+    expect(declaration('components/AppFilterSelect.vue', '.app-filter-select__control :deep(.el-select__wrapper)', 'height')).toBeUndefined()
   })
 })

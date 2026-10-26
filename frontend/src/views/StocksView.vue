@@ -1071,7 +1071,7 @@ const menuPageTitle = useMenuPageTitle()
     </el-card>
 
     <!-- 分组横幅 -->
-    <el-card v-if="inGroupMode && groupDetail" shadow="never" class="group-banner">
+    <el-card v-if="inGroupMode && groupDetail" shadow="never" class="group-banner app-card-compact">
       <div class="gb-row">
         <div class="gb-main">
           <el-dropdown
@@ -1521,9 +1521,6 @@ const menuPageTitle = useMenuPageTitle()
 }
 .group-banner {
   margin-bottom: 0;
-}
-.group-banner :deep(.el-card__body) {
-  padding: var(--app-space-2) var(--app-space-3);
 }
 .gb-row {
   display: flex;

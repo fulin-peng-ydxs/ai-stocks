@@ -14,7 +14,7 @@ defineProps<{
     <el-checkbox
       v-for="resource in resources"
       :key="resource.key"
-      class="pt-func"
+      class="pt-func app-choice-inline app-choice-card"
       :class="{ locked: resource.sysLocked, baseline: resource.baselineLocked }"
       :model-value="resource.baselineLocked || stateOf(resource) === 'on'"
       :disabled="readonly || resource.sysLocked || resource.baselineLocked"
@@ -43,12 +43,10 @@ defineProps<{
 .pt-func {
   display: flex;
   width: 100%;
-  height: auto;
   align-items: center;
   gap: var(--app-space-2);
   min-width: 0;
   margin-right: 0;
-  padding: 7px 9px;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: var(--layout-control-radius);
@@ -101,7 +99,6 @@ defineProps<{
   color: var(--el-color-warning);
 }
 :deep(.el-checkbox) {
-  height: auto;
   margin-right: 0;
 }
 :deep(.el-checkbox__label) {
@@ -110,7 +107,6 @@ defineProps<{
   align-items: center;
   gap: var(--app-space-2);
   min-width: 0;
-  padding-left: 0;
   color: inherit;
 }
 </style>

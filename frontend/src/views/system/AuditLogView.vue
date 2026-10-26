@@ -952,8 +952,6 @@ const menuPageTitle = useMenuPageTitle()
 }
 .change-table :deep(.cell) {
   color: var(--el-text-color-regular);
-  font-size: var(--app-font-size-caption);
-  line-height: var(--app-line-height-comfy);
   text-align: left;
   overflow-wrap: anywhere;
   white-space: pre-wrap;

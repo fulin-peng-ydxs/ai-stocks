@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
+import { createPinia } from 'pinia'
 import { describe, expect, it } from 'vitest'
 import BorderStatePreview from '../components/BorderStatePreview.vue'
 
 describe('真实边界状态样板', () => {
   it('命令样板可本地切换选中、加载和禁用，忙态不能继续切换', async () => {
-    const wrapper = mount(BorderStatePreview, { global: { plugins: [ElementPlus] } })
+    const wrapper = mount(BorderStatePreview, { global: { plugins: [ElementPlus, createPinia()] } })
     const row = wrapper.get('[aria-label="无框命令状态样板"]')
     const selection = row.get('[aria-label="图标选择样板"]')
     await selection.trigger('click')
@@ -24,7 +25,7 @@ describe('真实边界状态样板', () => {
   })
 
   it('错误/禁用使用真实表单分支，结果内容替换保持同一外框', async () => {
-    const wrapper = mount(BorderStatePreview, { global: { plugins: [ElementPlus] } })
+    const wrapper = mount(BorderStatePreview, { global: { plugins: [ElementPlus, createPinia()] } })
     const checks = wrapper.findAll('.el-checkbox input')
     await checks[1].setValue(true)
     expect(wrapper.findAll('.el-form-item.is-error')).toHaveLength(4)

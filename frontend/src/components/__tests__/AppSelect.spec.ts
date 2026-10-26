@@ -24,6 +24,19 @@ describe('AppSelect', () => {
     { label: '个股研究', value: 'stocks' },
   ]
 
+  it('单行摘要切换只改变共享呈现，不清空多选值或把内部属性泄漏给库组件', async () => {
+    const update = vi.fn()
+    const wrapper = mountSelect({ multiple: true, modelValue: ['ladder', 'stocks'], 'onUpdate:modelValue': update, size: 'small' }, { singleLine: true }, pages)
+    expect(wrapper.classes()).toContain('app-select--single-line')
+    expect(wrapper.findComponent(ElSelect).props('modelValue')).toEqual(['ladder', 'stocks'])
+    expect(wrapper.attributes('single-line')).toBeUndefined()
+    await wrapper.setProps({ singleLine: false })
+    expect(wrapper.classes()).not.toContain('app-select--single-line')
+    expect(wrapper.findComponent(ElSelect).props('modelValue')).toEqual(['ladder', 'stocks'])
+    expect(update).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('默认可输入过滤，无匹配或清空搜索不改业务值，确认候选才提交一次', async () => {
     const update = vi.fn()
     const change = vi.fn()

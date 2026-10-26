@@ -48,7 +48,7 @@ function onFileChange(event: Event) {
     </AppControlRow>
 
     <el-input
-      class="layout-config-transfer-panel__editor"
+      class="layout-config-transfer-panel__editor app-textarea-fill app-code-input"
       :model-value="modelValue"
       type="textarea"
       :rows="6"
@@ -102,11 +102,6 @@ function onFileChange(event: Event) {
 .layout-config-transfer-panel__editor {
   display: flex;
   flex: 1 1 0;
-  min-height: calc(var(--app-line-height-body) * 6);
-}
-.layout-config-transfer-panel__editor :deep(.el-textarea__inner) {
-  height: 100%;
-  font-family: var(--app-font-family-mono);
 }
 .layout-config-transfer-panel__actions {
   padding-top: var(--app-space-3);

@@ -491,9 +491,6 @@ const menuPageTitle = useMenuPageTitle()
 .preset-name {
   font-weight: var(--app-font-weight-section);
 }
-.preset-form {
-  padding-right: 4px;
-}
 .form-section-title {
   margin: 14px 0 8px;
   font-size: var(--app-font-size-table);

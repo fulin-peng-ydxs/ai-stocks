@@ -15,6 +15,12 @@ import AppDetailFields from '@/components/AppDetailFields.vue'
 import AppDetailField from '@/components/AppDetailField.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
+import AppTableColumn from '@/components/AppTableColumn.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
+import AppDialog from '@/components/AppDialog.vue'
+import PageDrawer from '@/components/PageDrawer.vue'
 
 // 样板只改变本地展示状态，使用真实组件，不请求或保存业务数据。
 const disabled = ref(false)
@@ -32,6 +38,10 @@ const state = ref<'loading' | 'empty' | 'error'>('empty')
 const options = [{ label: '方案一', value: 'a' }, { label: '方案二', value: 'b' }]
 const rowSize = ref<ControlRowSize>('default')
 const selections = ref(['a', 'b'])
+const dialogOpen = ref(false)
+const drawerOpen = ref(false)
+const longChoice = ref(false)
+const previewRows = [{ name: '共享字阶与表格行操作', description: '较长的候选说明用于核对换行、字号与点击区。' }]
 </script>
 
 <template>
@@ -131,6 +141,38 @@ const selections = ref(['a', 'b'])
       </el-radio-group>
     </AppControlRow>
     <AppTableCard><AppStateBlock :state="state" title="结果区域样板" size="compact" /></AppTableCard>
+    <AppControlRow aria-label="样式归属接入样板">
+      <AppFilterSelect v-model="selections" :options="options" multiple :visible-tag-count="2" aria-label="摘要筛选样板" :disabled="disabled" />
+      <el-checkbox v-model="longChoice" class="app-choice-multiline" :disabled="disabled">可换行的较长选项说明，保持完整点击区域</el-checkbox>
+      <el-button :disabled="disabled" @click="dialogOpen = true">打开弹窗样板</el-button>
+      <el-button :disabled="disabled" @click="drawerOpen = true">打开抽屉样板</el-button>
+    </AppControlRow>
+    <el-input v-model="value" class="app-textarea-fill app-code-input" type="textarea" :rows="4" aria-label="代码文本样板" :disabled="disabled" />
+    <AppTableCard>
+      <AppDataTable :data="previewRows" embedded aria-label="样式归属表格样板">
+        <AppTableColumn label="名称" prop="name" role="name" />
+        <AppTableColumn label="说明" prop="description" role="description" />
+        <AppTableColumn label="操作" role="action">
+          <template #default>
+            <AppRowActions :inline-limit="1" :actions="[
+              { key: 'open', label: '查看详情', disabled, onClick: () => { drawerOpen = true } },
+              { key: 'disabled', label: '不可用的操作', disabled: true, placement: 'more' },
+              { key: 'loading', label: '重新加载样板内容', loading: commandLoading, placement: 'more' },
+            ]" />
+          </template>
+        </AppTableColumn>
+      </AppDataTable>
+    </AppTableCard>
+    <AppDialog v-model="dialogOpen" title="弹窗样板" size="compact">
+      <p class="app-body-text">关闭后保留当前样板输入。</p>
+      <AppSelect v-model="selection" aria-label="弹窗选择样板">
+        <el-option v-for="option in options" :key="option.value" :label="option.label" :value="option.value" />
+      </AppSelect>
+    </AppDialog>
+    <PageDrawer v-model="drawerOpen" title="抽屉样板" size="lg">
+      <p class="app-body-text">共享标题、正文和内距。</p>
+      <el-input v-model="value" aria-label="抽屉输入样板" />
+    </PageDrawer>
   </details>
 </template>
 

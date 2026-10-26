@@ -111,6 +111,7 @@ function onChange(value: string[] | string) {
       v-bind="multiple ? { options } : {}"
       v-model="selected"
       class="app-filter-select__control"
+      single-line
       :multiple="multiple"
       :clearable="clearable"
       :filterable="filterable"
@@ -166,15 +167,6 @@ function onChange(value: string[] | string) {
 .app-filter-select__control :deep(.el-select__wrapper),
 .app-filter-select__control :deep(.el-select__selection) {
   flex-wrap: nowrap;
-}
-.app-filter-select__control :deep(.el-select__wrapper) {
-  height: var(--app-control-row-height, var(--app-density-control-height, var(--app-control-height-md)));
-}
-.app-filter-select--small .app-filter-select__control :deep(.el-select__wrapper) {
-  height: var(--app-control-row-height, var(--app-control-height-sm));
-}
-.app-filter-select--large .app-filter-select__control :deep(.el-select__wrapper) {
-  height: var(--app-control-row-height, var(--app-control-height-lg));
 }
 .app-filter-select--multiple.app-filter-select--has-selection .app-filter-select__control :deep(.el-select__wrapper) {
   overflow: hidden;

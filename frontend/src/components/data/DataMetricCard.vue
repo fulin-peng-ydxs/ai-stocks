@@ -30,7 +30,7 @@ defineEmits<{ action: [] }>()
       {{ value }}<span v-if="unit" class="data-metric-unit">{{ unit }}</span>
     </div>
     <div v-if="summary" class="data-metric-summary">{{ summary }}</div>
-    <el-button data-button-kind="navigation" v-if="actionLabel" link type="primary" class="data-metric-action" @click="$emit('action')">
+    <el-button data-button-kind="navigation" v-if="actionLabel" link type="primary" class="data-metric-action" size="small" @click="$emit('action')">
       {{ actionLabel }}<el-icon class="el-icon--right"><ArrowRight /></el-icon>
     </el-button>
   </el-card>
@@ -54,7 +54,7 @@ defineEmits<{ action: [] }>()
 .warning { color: var(--app-warning-text); }
 .danger { color: var(--app-danger-text); }
 .data-metric-summary { width: 100%; min-width: 0; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.data-metric-action { margin: auto 0 0; font-size: var(--app-font-size-caption); }
+.data-metric-action { margin: auto 0 0; }
 @container app-viewport (max-height: 700px) {
   .data-metric-card :deep(.el-card__body) { gap: var(--app-space-1); padding: var(--app-space-2) var(--app-space-3); }
   .data-metric-value { font-size: var(--app-font-size-body); line-height: var(--app-line-height-body); }

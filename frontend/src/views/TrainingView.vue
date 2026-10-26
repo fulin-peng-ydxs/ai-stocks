@@ -917,9 +917,9 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           </AppDataTable>
         </el-card>
 
-        <el-card shadow="never" class="review-card">
+        <el-card shadow="never" class="review-card app-card-body-fill">
           <template #header><span class="card-title">整局复盘</span></template>
-          <el-input v-model="reviewNote" type="textarea" :rows="4" placeholder="记录本局思路、复盘总结、改进点……" />
+          <el-input class="app-textarea-fill" v-model="reviewNote" type="textarea" :rows="4" placeholder="记录本局思路、复盘总结、改进点……" />
           <AppControlRow class="review-actions"><el-button v-permission="'training:review'" type="primary" :disabled="!reviewChanged" @click="persistReview">保存复盘</el-button></AppControlRow>
         </el-card>
     </AppScrollArea>
@@ -1125,9 +1125,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 /* 整局复盘：收尾块吃富余空间（视口剩余 > 内容自然高时填满复盘卡，不再固定矮）；
    余量不足时靠 min-height 保住可用区，由 result-body 整区滚动兜底（DESIGN §5.4 阶梯）。 */
 .review-card { flex: 1 1 auto; min-height: 200px; display: flex; flex-direction: column; }
-.review-card :deep(.el-card__body) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.review-card :deep(.el-textarea) { flex: 1 1 auto; min-height: 96px; }
-.review-card :deep(.el-textarea__inner) { height: 100%; resize: vertical; }
+.review-card :deep(.el-textarea__inner) { resize: vertical; }
 .review-actions { margin-top: 10px; text-align: right; flex: 0 0 auto; }
 
 .up { color: var(--el-color-danger); }

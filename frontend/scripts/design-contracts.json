@@ -80,6 +80,1897 @@
         "--el-color-primary"
       ],
       "descendants": true
+    },
+    {
+      "className": "el-button",
+      "tags": [
+        "el-button"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "--app-button-font-size",
+        "--app-button-font-weight",
+        "height",
+        "min-height",
+        "max-height",
+        "block-size",
+        "min-block-size",
+        "max-block-size",
+        "padding"
+      ],
+      "owners": [
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-button"
+          ],
+          "properties": [
+            "font-size",
+            "font-weight",
+            "height",
+            "padding"
+          ],
+          "reason": "命令尺寸、行操作、菜单点击区、徽标命令及字段值导航的共享适配入口"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-button.el-button--small",
+            "html[data-layout-preset] .el-button.el-button--large"
+          ],
+          "properties": [
+            "font-size",
+            "height",
+            "padding"
+          ],
+          "reason": "命令尺寸、行操作、菜单点击区、徽标命令及字段值导航的共享适配入口"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-button.is-circle,\nhtml[data-layout-preset] .el-button.is-square"
+          ],
+          "properties": [
+            "padding"
+          ],
+          "reason": "命令尺寸、行操作、菜单点击区、徽标命令及字段值导航的共享适配入口"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-button.is-text,\nhtml[data-layout-preset] .el-button.is-link"
+          ],
+          "properties": [
+            "height",
+            "padding"
+          ],
+          "reason": "命令尺寸、行操作、菜单点击区、徽标命令及字段值导航的共享适配入口"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-row-actions .el-button.app-row-actions__button"
+          ],
+          "properties": [
+            "min-height",
+            "padding"
+          ],
+          "reason": "命令尺寸、行操作、菜单点击区、徽标命令及字段值导航的共享适配入口"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-command-menu-popper .el-button.app-row-actions-menu__item"
+          ],
+          "properties": [
+            "height",
+            "min-height",
+            "padding"
+          ],
+          "reason": "命令尺寸、行操作、菜单点击区、徽标命令及字段值导航的共享适配入口"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-button.app-button-badge"
+          ],
+          "properties": [
+            "font-size",
+            "height",
+            "min-height",
+            "padding"
+          ],
+          "reason": "命令尺寸、行操作、菜单点击区、徽标命令及字段值导航的共享适配入口"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-table-field-link,\nhtml[data-layout-preset] .el-button.app-table-field-link"
+          ],
+          "properties": [
+            "font-family",
+            "font-size",
+            "font-weight",
+            "line-height"
+          ],
+          "reason": "命令尺寸、行操作、菜单点击区、徽标命令及字段值导航的共享适配入口"
+        },
+        {
+          "file": "components/MarketAnalysisHeader.vue",
+          "selectors": [
+            ".market-analysis-header__detail"
+          ],
+          "properties": [
+            "height",
+            "padding"
+          ],
+          "reason": "行情分析标题内的附属导航保持内容高度，不拉高标题行；字号使用 small"
+        },
+        {
+          "file": "components/MarketCompareMetricStrip.vue",
+          "selectors": [
+            ".market-metric.el-button.is-text"
+          ],
+          "properties": [
+            "height",
+            "min-height",
+            "padding"
+          ],
+          "reason": "行情指标选择卡片的复合内容与响应式几何，由该共享指标条维护"
+        },
+        {
+          "file": "views/ConfigView.vue",
+          "selectors": [
+            ":global(.indicator-template-grid .el-button)"
+          ],
+          "properties": [
+            "height",
+            "min-height",
+            "padding"
+          ],
+          "reason": "指标模板候选承载多行说明的卡片选择角色，不是标准单行命令"
+        },
+        {
+          "file": "views/LoginView.vue",
+          "selectors": [
+            ".login-preset"
+          ],
+          "properties": [
+            "font-size",
+            "height",
+            "padding"
+          ],
+          "reason": "登录品牌区的预设切换入口沿用独立品牌排版，不用于业务命令"
+        },
+        {
+          "file": "views/LoginView.vue",
+          "selectors": [
+            ".login-emailcode .send"
+          ],
+          "properties": [
+            "font-size",
+            "padding"
+          ],
+          "reason": "登录浮动字段内验证码附属命令与输入值对齐"
+        },
+        {
+          "file": "views/LoginView.vue",
+          "selectors": [
+            ".login-link"
+          ],
+          "properties": [
+            "font",
+            "padding"
+          ],
+          "reason": "登录切换导航继承周围正文排版"
+        },
+        {
+          "file": "views/SectorsView.vue",
+          "selectors": [
+            ".sector-select"
+          ],
+          "properties": [
+            "height",
+            "min-height",
+            "padding"
+          ],
+          "reason": "板块对象选择入口承载对象名称，不增加主从栏标题高度"
+        },
+        {
+          "file": "views/StocksView.vue",
+          "selectors": [
+            ".gb-name"
+          ],
+          "properties": [
+            "font-size",
+            "font-weight",
+            "line-height",
+            "padding"
+          ],
+          "reason": "分组工作台的对象标题兼任切换入口，使用既有数字强调角色"
+        },
+        {
+          "file": "views/TrainingView.vue",
+          "selectors": [
+            ".hl"
+          ],
+          "properties": [
+            "font-size",
+            "font-weight",
+            "padding"
+          ],
+          "reason": "训练揭晓入口以既有分区强调角色展示待揭晓内容"
+        },
+        {
+          "file": "views/limit-ladder/LadderHotspots.vue",
+          "selectors": [
+            ".ladder-hotspots__chip",
+            ".ladder-hotspots__more"
+          ],
+          "properties": [
+            "min-height",
+            "padding"
+          ],
+          "reason": "连板热点候选为紧凑标签选择角色，尺寸由领域共享组件维护"
+        },
+        {
+          "file": "views/limit-ladder/LimitLadderCard.vue",
+          "selectors": [
+            ".limit-ladder-card .limit-ladder-card__select.el-button"
+          ],
+          "properties": [
+            "font",
+            "height",
+            "line-height",
+            "min-height",
+            "padding"
+          ],
+          "reason": "连板对象卡片整体选择入口继承卡片内容排版与高度"
+        },
+        {
+          "file": "views/system/PermissionTree.vue",
+          "selectors": [
+            ".pt-resource-trigger"
+          ],
+          "properties": [
+            "padding"
+          ],
+          "reason": "权限树字段内功能点触发器保留行内阅读几何"
+        }
+      ],
+      "elementTag": "button"
+    },
+    {
+      "className": "app-icon-button",
+      "tags": [
+        "AppIconButton",
+        "AppCloseButton"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "--app-button-font-size",
+        "--app-button-font-weight",
+        "height",
+        "min-height",
+        "max-height",
+        "block-size",
+        "min-block-size",
+        "max-block-size",
+        "padding",
+        "width",
+        "min-width",
+        "max-width",
+        "--app-icon-button-size",
+        "--app-icon-button-glyph"
+      ],
+      "owners": [
+        {
+          "file": "components/AppIconButton.vue",
+          "selectors": [
+            ".app-icon-button"
+          ],
+          "properties": [
+            "--app-icon-button-glyph",
+            "--app-icon-button-size",
+            "height",
+            "min-width",
+            "padding",
+            "width"
+          ],
+          "reason": "图标按钮唯一实现维护自身外框和图形档位；调用方使用 size"
+        },
+        {
+          "file": "components/AppIconButton.vue",
+          "selectors": [
+            ".app-icon-button.is-xs",
+            ".app-icon-button.is-sm"
+          ],
+          "properties": [
+            "--app-icon-button-glyph",
+            "--app-icon-button-size"
+          ],
+          "reason": "图标按钮唯一实现维护自身外框和图形档位；调用方使用 size"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ":root :is(.app-icon-button.app-close-control[data-close-size],\n  .el-dialog__headerbtn,\n  .el-message-box__headerbtn,\n  .el-tag__close,\n  .el-input__clear,\n  .el-textarea__clear,\n  .el-select__clear,\n  .el-cascader__clear-btn,\n  .el-date-editor .clear-icon,\n  .el-date-editor .el-range__close-icon,\n  .el-alert__close-btn:not(.is-customed),\n  .el-message__closeBtn,\n  .el-notification__closeBtn)"
+          ],
+          "properties": [
+            "font-size",
+            "height",
+            "line-height",
+            "min-width",
+            "padding",
+            "width"
+          ],
+          "reason": "共享关闭角色维护独立命中区，沿用既有关闭适配器"
+        },
+        {
+          "file": "views/LoginView.vue",
+          "selectors": [
+            ".login-theme"
+          ],
+          "properties": [
+            "--app-icon-button-size"
+          ],
+          "reason": "登录品牌区的主题入口使用既有独立圆形外框；不改变业务工具栏档位"
+        }
+      ],
+      "elementTag": "button"
+    },
+    {
+      "className": "el-dropdown-menu__item",
+      "tags": [
+        "el-dropdown-item"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "--app-button-font-size",
+        "--app-button-font-weight",
+        "height",
+        "min-height",
+        "max-height",
+        "block-size",
+        "min-block-size",
+        "max-block-size",
+        "padding"
+      ],
+      "owners": [
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-command-menu-popper .el-dropdown-menu__item"
+          ],
+          "properties": [
+            "font-size",
+            "line-height"
+          ],
+          "reason": "普通命令菜单统一消费默认命令字阶"
+        },
+        {
+          "file": "components/AppSortControl.vue",
+          "selectors": [
+            ":global(.app-sort-control-popper .el-dropdown-menu__item.is-current)"
+          ],
+          "properties": [
+            "font-weight"
+          ],
+          "reason": "排序选择器的当前项字重属于该共享选择器的持续选中语义"
+        },
+        {
+          "file": "components/TopNavigation.vue",
+          "selectors": [
+            ".top-navigation-dropdown .el-dropdown-menu__item"
+          ],
+          "properties": [
+            "font-family",
+            "font-size",
+            "font-weight",
+            "line-height",
+            "min-height",
+            "padding-inline"
+          ],
+          "reason": "导航菜单承载应用导航层级，复用导航 token，与业务命令菜单区分"
+        },
+        {
+          "file": "components/TopNavigation.vue",
+          "selectors": [
+            ".top-navigation-dropdown .el-dropdown-menu__item.is-active"
+          ],
+          "properties": [
+            "font-weight"
+          ],
+          "reason": "导航菜单承载应用导航层级，复用导航 token，与业务命令菜单区分"
+        }
+      ]
+    },
+    {
+      "className": "app-row-actions-menu__label",
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "--app-button-font-size",
+        "--app-button-font-weight"
+      ],
+      "owners": []
+    },
+    {
+      "className": "app-row-actions",
+      "tags": [
+        "AppRowActions"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height"
+      ],
+      "owners": []
+    },
+    {
+      "className": "el-input",
+      "classNames": [
+        "el-input__wrapper",
+        "el-input__inner",
+        "el-input-number",
+        "el-input-number__increase",
+        "el-input-number__decrease",
+        "el-textarea",
+        "el-textarea__inner"
+      ],
+      "tags": [
+        "el-input",
+        "el-input-number",
+        "AppSearchInput",
+        "FixedDecimalInput"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "height",
+        "min-height",
+        "max-height",
+        "block-size",
+        "min-block-size",
+        "max-block-size",
+        "padding"
+      ],
+      "owners": [
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-textarea-fill"
+          ],
+          "properties": [
+            "min-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-textarea-fill .el-textarea__inner"
+          ],
+          "properties": [
+            "height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-code-input .el-textarea__inner"
+          ],
+          "properties": [
+            "font-family"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-code-input .el-input__inner"
+          ],
+          "properties": [
+            "font-family"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-form-item__label,\nhtml[data-layout-preset] .el-input__inner,\nhtml[data-layout-preset] .el-select__placeholder,\nhtml[data-layout-preset] .el-select__selected-item"
+          ],
+          "properties": [
+            "font-size",
+            "line-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ],
+      "bindings": [],
+      "innerTags": [
+        "input",
+        "textarea"
+      ]
+    },
+    {
+      "className": "el-select",
+      "classNames": [
+        "el-select__wrapper",
+        "el-select__placeholder",
+        "el-select__selected-item",
+        "el-select-dropdown__item",
+        "el-select-dropdown",
+        "el-cascader",
+        "el-cascader__search-input",
+        "el-cascader-node",
+        "el-tree-select",
+        "el-select-v2",
+        "el-select-v2__wrapper",
+        "el-select-v2__placeholder",
+        "app-filter-select__control"
+      ],
+      "tags": [
+        "el-select",
+        "el-select-v2",
+        "el-cascader",
+        "el-tree-select",
+        "AppSelect",
+        "AppFilterSelect",
+        "AppMultiSelect",
+        "IndicatorSelect",
+        "MarketBenchmarkSelect",
+        "StockGroupSelect",
+        "BoardGroupSelect"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "height",
+        "min-height",
+        "max-height",
+        "block-size",
+        "min-block-size",
+        "max-block-size",
+        "padding",
+        "--app-select-control-height"
+      ],
+      "owners": [
+        {
+          "file": "components/AppSelect.vue",
+          "selectors": [
+            ".app-select"
+          ],
+          "properties": [
+            "--app-select-control-height"
+          ],
+          "reason": "选择器唯一尺寸映射与单行摘要扩展"
+        },
+        {
+          "file": "components/AppSelect.vue",
+          "selectors": [
+            ".app-select.el-select--small"
+          ],
+          "properties": [
+            "--app-select-control-height"
+          ],
+          "reason": "选择器唯一尺寸映射与单行摘要扩展"
+        },
+        {
+          "file": "components/AppSelect.vue",
+          "selectors": [
+            ".app-select.el-select--large"
+          ],
+          "properties": [
+            "--app-select-control-height"
+          ],
+          "reason": "选择器唯一尺寸映射与单行摘要扩展"
+        },
+        {
+          "file": "components/AppSelect.vue",
+          "selectors": [
+            ".app-select :deep(.el-select__wrapper)"
+          ],
+          "properties": [
+            "min-height",
+            "padding-block"
+          ],
+          "reason": "选择器唯一尺寸映射与单行摘要扩展"
+        },
+        {
+          "file": "components/AppSelect.vue",
+          "selectors": [
+            ".app-select--single-line :deep(.el-select__wrapper)"
+          ],
+          "properties": [
+            "height"
+          ],
+          "reason": "选择器唯一尺寸映射与单行摘要扩展"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-select-popper .el-select-dropdown__item"
+          ],
+          "properties": [
+            "height",
+            "min-height",
+            "padding-block",
+            "padding-inline",
+            "font-size",
+            "line-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-select-popper--fit .el-select-dropdown__item"
+          ],
+          "properties": [
+            "padding-block",
+            "line-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-form-item__label,\nhtml[data-layout-preset] .el-input__inner,\nhtml[data-layout-preset] .el-select__placeholder,\nhtml[data-layout-preset] .el-select__selected-item"
+          ],
+          "properties": [
+            "font-size",
+            "line-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ],
+      "bindings": [
+        {
+          "file": "components/AppSelect.vue",
+          "tag": "el-select",
+          "name": "attrs",
+          "expression": "$attrs",
+          "reason": "共享适配器原样转发调用属性，消费方仍接受同一角色检查"
+        },
+        {
+          "file": "components/AppMultiSelect.vue",
+          "tag": "AppSelect",
+          "name": "attrs",
+          "expression": "$attrs",
+          "reason": "共享适配器原样转发调用属性，消费方仍接受同一角色检查"
+        },
+        {
+          "file": "components/indicator/IndicatorSelect.vue",
+          "tag": "AppSelect",
+          "name": "attrs",
+          "expression": "$attrs",
+          "reason": "共享适配器原样转发调用属性，消费方仍接受同一角色检查"
+        },
+        {
+          "file": "components/AppFilterSelect.vue",
+          "tag": "component",
+          "name": "attrs",
+          "expression": "multiple ? { options } : {}",
+          "reason": "共享筛选器只向多选实现传递 options，不包含样式或尺寸"
+        }
+      ],
+      "innerTags": [
+        "input"
+      ]
+    },
+    {
+      "className": "el-date-editor",
+      "classNames": [
+        "el-range-editor",
+        "el-range-input",
+        "el-date-picker",
+        "el-date-range-picker",
+        "el-time-panel",
+        "el-time-range-picker"
+      ],
+      "tags": [
+        "el-date-picker",
+        "el-time-picker",
+        "el-time-select",
+        "AppDatePicker",
+        "TradeDatePicker"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "height",
+        "min-height",
+        "max-height",
+        "block-size",
+        "min-block-size",
+        "max-block-size",
+        "padding"
+      ],
+      "owners": [
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ":root :is(.app-icon-button.app-close-control[data-close-size],\n  .el-dialog__headerbtn,\n  .el-message-box__headerbtn,\n  .el-tag__close,\n  .el-input__clear,\n  .el-textarea__clear,\n  .el-select__clear,\n  .el-cascader__clear-btn,\n  .el-date-editor .clear-icon,\n  .el-date-editor .el-range__close-icon,\n  .el-alert__close-btn:not(.is-customed),\n  .el-message__closeBtn,\n  .el-notification__closeBtn)"
+          ],
+          "properties": [
+            "height",
+            "padding",
+            "font-size",
+            "line-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ],
+      "bindings": [
+        {
+          "file": "components/AppDatePicker.vue",
+          "tag": "el-date-picker",
+          "name": "attrs",
+          "expression": "$attrs",
+          "reason": "共享适配器原样转发调用属性，消费方仍接受同一角色检查"
+        }
+      ],
+      "innerTags": [
+        "input"
+      ]
+    },
+    {
+      "className": "page-segmented",
+      "classNames": [
+        "seg-btn",
+        "seg-label",
+        "seg-indicator",
+        "el-radio-button",
+        "el-radio-button__inner",
+        "el-checkbox-button",
+        "el-checkbox-button__inner",
+        "el-segmented",
+        "el-segmented__item"
+      ],
+      "tags": [
+        "PageSegmented",
+        "el-radio-button",
+        "el-checkbox-button",
+        "el-segmented"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "height",
+        "min-height",
+        "max-height",
+        "block-size",
+        "min-block-size",
+        "max-block-size",
+        "padding",
+        "--app-choice-control-height",
+        "--app-choice-padding-block",
+        "--app-choice-display",
+        "--app-choice-justify"
+      ],
+      "owners": [
+        {
+          "file": "components/PageSegmented.vue",
+          "selectors": [
+            ".page-segmented"
+          ],
+          "properties": [
+            "height",
+            "padding"
+          ],
+          "reason": "分段控件唯一几何、文字和选中标记实现"
+        },
+        {
+          "file": "components/PageSegmented.vue",
+          "selectors": [
+            ".seg-btn"
+          ],
+          "properties": [
+            "min-height",
+            "height",
+            "padding",
+            "font-size",
+            "font-weight"
+          ],
+          "reason": "分段控件唯一几何、文字和选中标记实现"
+        },
+        {
+          "file": "components/PageSegmented.vue",
+          "selectors": [
+            ".page-segmented--small"
+          ],
+          "properties": [
+            "height"
+          ],
+          "reason": "分段控件唯一几何、文字和选中标记实现"
+        },
+        {
+          "file": "components/PageSegmented.vue",
+          "selectors": [
+            ".page-segmented--large"
+          ],
+          "properties": [
+            "height"
+          ],
+          "reason": "分段控件唯一几何、文字和选中标记实现"
+        },
+        {
+          "file": "components/PageSegmented.vue",
+          "selectors": [
+            ".page-segmented--tabs"
+          ],
+          "properties": [
+            "padding"
+          ],
+          "reason": "分段控件唯一几何、文字和选中标记实现"
+        },
+        {
+          "file": "components/PageSegmented.vue",
+          "selectors": [
+            ".page-segmented--tabs .seg-btn"
+          ],
+          "properties": [
+            "min-height",
+            "height",
+            "padding",
+            "font-size",
+            "font-weight"
+          ],
+          "reason": "分段控件唯一几何、文字和选中标记实现"
+        },
+        {
+          "file": "components/PageSegmented.vue",
+          "selectors": [
+            ".seg-indicator"
+          ],
+          "properties": [
+            "height"
+          ],
+          "reason": "分段控件唯一几何、文字和选中标记实现"
+        },
+        {
+          "file": "components/PageSegmented.vue",
+          "selectors": [
+            ".page-segmented--tabs .seg-btn.active,\n.page-segmented--tabs.page-segmented--primary .seg-btn.active"
+          ],
+          "properties": [
+            "font-weight"
+          ],
+          "reason": "分段控件唯一几何、文字和选中标记实现"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-choice-button-card .el-radio-button__inner"
+          ],
+          "properties": [
+            "--app-choice-control-height",
+            "--app-choice-padding-block",
+            "--app-choice-display",
+            "--app-choice-justify",
+            "min-height",
+            "padding-inline"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-radio-button,\nhtml[data-layout-preset] .el-checkbox-button,\nhtml[data-layout-preset] .el-segmented:not(.el-segmented--vertical)"
+          ],
+          "properties": [
+            "--app-choice-control-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-radio-button__inner,\nhtml[data-layout-preset] .el-checkbox-button__inner"
+          ],
+          "properties": [
+            "height",
+            "padding-block",
+            "font-size"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-segmented:not(.el-segmented--vertical)"
+          ],
+          "properties": [
+            "height",
+            "min-height",
+            "font-size"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ],
+      "bindings": []
+    },
+    {
+      "className": "el-checkbox",
+      "classNames": [
+        "el-checkbox__label",
+        "el-radio",
+        "el-radio__label",
+        "el-switch",
+        "el-switch__label",
+        "el-slider",
+        "el-slider__runway",
+        "el-slider__input",
+        "el-rate",
+        "el-color-picker"
+      ],
+      "tags": [
+        "el-checkbox",
+        "el-radio",
+        "el-switch",
+        "el-slider",
+        "el-rate",
+        "el-color-picker",
+        "AppFilterSwitch"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "height",
+        "min-height",
+        "max-height",
+        "block-size",
+        "min-block-size",
+        "max-block-size",
+        "padding"
+      ],
+      "owners": [
+        {
+          "file": "components/AppFilterSwitch.vue",
+          "selectors": [
+            ".app-filter-switch :deep(.el-switch__label)"
+          ],
+          "properties": [
+            "font-size"
+          ],
+          "reason": "筛选开关的共享紧凑标签角色"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] :is(.el-checkbox, .el-radio).app-choice-multiline"
+          ],
+          "properties": [
+            "height",
+            "min-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-choice-multiline :is(.el-checkbox__label, .el-radio__label)"
+          ],
+          "properties": [
+            "line-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] :is(.el-checkbox, .el-radio).app-choice-card"
+          ],
+          "properties": [
+            "height",
+            "padding"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-checkbox.app-choice-inline"
+          ],
+          "properties": [
+            "height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-choice-inline .el-checkbox__label"
+          ],
+          "properties": [
+            "padding-left"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ],
+      "bindings": [],
+      "innerTags": [
+        "input"
+      ]
+    },
+    {
+      "className": "el-form",
+      "classNames": [
+        "el-form-item",
+        "el-form-item__label",
+        "el-form-item__content",
+        "el-form-item__error"
+      ],
+      "tags": [
+        "el-form",
+        "AppForm",
+        "el-form-item"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "padding"
+      ],
+      "owners": [
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-form-item__label,\nhtml[data-layout-preset] .el-input__inner,\nhtml[data-layout-preset] .el-select__placeholder,\nhtml[data-layout-preset] .el-select__selected-item"
+          ],
+          "properties": [
+            "font-size",
+            "line-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ],
+      "bindings": [
+        {
+          "file": "components/AppForm.vue",
+          "tag": "ElForm",
+          "name": "attrs",
+          "expression": "$attrs",
+          "reason": "共享适配器原样转发调用属性，消费方仍接受同一角色检查"
+        }
+      ]
+    },
+    {
+      "className": "el-table",
+      "classNames": [
+        "el-table__cell",
+        "app-data-table",
+        "app-data-table__pager"
+      ],
+      "tags": [
+        "el-table",
+        "AppDataTable"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "height",
+        "min-height",
+        "max-height",
+        "block-size",
+        "min-block-size",
+        "max-block-size",
+        "padding"
+      ],
+      "owners": [
+        {
+          "file": "components/AppDataTable.vue",
+          "selectors": [
+            ".app-data-table"
+          ],
+          "properties": [
+            "min-height"
+          ],
+          "reason": "主表、嵌入表及分页的唯一布局适配"
+        },
+        {
+          "file": "components/AppDataTable.vue",
+          "selectors": [
+            ".app-data-table--fill"
+          ],
+          "properties": [
+            "height"
+          ],
+          "reason": "主表、嵌入表及分页的唯一布局适配"
+        },
+        {
+          "file": "components/AppDataTable.vue",
+          "selectors": [
+            ".app-data-table--embedded"
+          ],
+          "properties": [
+            "height"
+          ],
+          "reason": "主表、嵌入表及分页的唯一布局适配"
+        },
+        {
+          "file": "components/AppDataTable.vue",
+          "selectors": [
+            ".app-data-table__table"
+          ],
+          "properties": [
+            "min-height"
+          ],
+          "reason": "主表、嵌入表及分页的唯一布局适配"
+        },
+        {
+          "file": "components/AppDataTable.vue",
+          "selectors": [
+            ".app-data-table__pager"
+          ],
+          "properties": [
+            "padding"
+          ],
+          "reason": "主表、嵌入表及分页的唯一布局适配"
+        },
+        {
+          "file": "components/AppTableCard.vue",
+          "selectors": [
+            ".app-table-card > :deep(.el-card__body > .app-data-table > .app-data-table__pager)"
+          ],
+          "properties": [
+            "padding"
+          ],
+          "reason": "表格结果卡片统一维护分页区与结果外沿"
+        },
+        {
+          "file": "layout/components/VMixedGrow.vue",
+          "selectors": [
+            ".v-mixed-fixed--shrinkable :deep(.el-table)"
+          ],
+          "properties": [
+            "max-height"
+          ],
+          "reason": "混合成长布局维护前置表的收缩上限和末尾表的最小高度"
+        },
+        {
+          "file": "layout/components/VMixedGrow.vue",
+          "selectors": [
+            ".v-mixed-main :deep(.el-table)"
+          ],
+          "properties": [
+            "min-height"
+          ],
+          "reason": "混合成长布局维护前置表的收缩上限和末尾表的最小高度"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-table"
+          ],
+          "properties": [
+            "font-size",
+            "line-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-table th.el-table__cell"
+          ],
+          "properties": [
+            "font-weight"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-table__cell"
+          ],
+          "properties": [
+            "padding-top",
+            "padding-bottom"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ],
+      "bindings": [
+        {
+          "file": "components/AppDataTable.vue",
+          "tag": "el-table",
+          "name": "attrs",
+          "expression": "$attrs",
+          "reason": "共享适配器原样转发调用属性，消费方仍接受同一角色检查"
+        }
+      ],
+      "styleAttributes": [
+        "style",
+        "header-cell-style",
+        "cell-style",
+        "row-style",
+        "header-row-style"
+      ]
+    },
+    {
+      "className": "el-pagination",
+      "classNames": [
+        "app-pagination",
+        "el-pager"
+      ],
+      "tags": [
+        "el-pagination",
+        "AppPagination"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "height",
+        "min-height",
+        "max-height",
+        "block-size",
+        "min-block-size",
+        "max-block-size",
+        "padding"
+      ],
+      "owners": [
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-pagination"
+          ],
+          "properties": [
+            "font-size",
+            "line-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ],
+      "bindings": []
+    },
+    {
+      "className": "el-dialog",
+      "classNames": [
+        "app-dialog",
+        "el-dialog__body",
+        "el-dialog__header",
+        "el-dialog__footer"
+      ],
+      "tags": [
+        "el-dialog",
+        "AppDialog"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "height",
+        "min-height",
+        "max-height",
+        "block-size",
+        "min-block-size",
+        "max-block-size",
+        "padding",
+        "width",
+        "min-width",
+        "max-width",
+        "inline-size",
+        "min-inline-size",
+        "max-inline-size"
+      ],
+      "owners": [
+        {
+          "file": "components/AppDialog.vue",
+          "selectors": [
+            ".app-dialog"
+          ],
+          "properties": [
+            "max-width",
+            "max-height"
+          ],
+          "reason": "弹窗唯一边界及正文布局实现"
+        },
+        {
+          "file": "components/AppDialog.vue",
+          "selectors": [
+            ".app-dialog.is-fullscreen"
+          ],
+          "properties": [
+            "max-height"
+          ],
+          "reason": "弹窗唯一边界及正文布局实现"
+        },
+        {
+          "file": "components/AppDialog.vue",
+          "selectors": [
+            ".app-dialog .el-dialog__body"
+          ],
+          "properties": [
+            "min-width",
+            "min-height"
+          ],
+          "reason": "弹窗唯一边界及正文布局实现"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".el-dialog"
+          ],
+          "properties": [
+            "max-width"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".el-dialog.is-fullscreen"
+          ],
+          "properties": [
+            "max-width"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ],
+      "bindings": [
+        {
+          "file": "components/AppDialog.vue",
+          "tag": "el-dialog",
+          "name": "attrs",
+          "expression": "$attrs",
+          "reason": "共享适配器原样转发调用属性，消费方仍接受同一角色检查"
+        }
+      ]
+    },
+    {
+      "className": "el-drawer",
+      "classNames": [
+        "el-drawer__body",
+        "el-drawer__header",
+        "page-drawer-surface",
+        "page-drawer-surface__header",
+        "page-drawer-surface__body",
+        "page-drawer-surface__footer"
+      ],
+      "tags": [
+        "el-drawer",
+        "PageDrawer",
+        "PageDrawerSurface",
+        "AppDetailDrawer",
+        "PageSettingsDrawer"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "height",
+        "min-height",
+        "max-height",
+        "block-size",
+        "min-block-size",
+        "max-block-size",
+        "padding",
+        "width",
+        "min-width",
+        "max-width",
+        "inline-size",
+        "min-inline-size",
+        "max-inline-size",
+        "--app-settings-group-level-one-font-size"
+      ],
+      "owners": [
+        {
+          "file": "components/PageDrawer.vue",
+          "selectors": [
+            ".el-overlay.page-drawer-modal .el-drawer"
+          ],
+          "properties": [
+            "max-width"
+          ],
+          "reason": "抽屉唯一宽度与页面边界适配"
+        },
+        {
+          "file": "components/PageDrawer.vue",
+          "selectors": [
+            ".el-overlay.page-drawer-modal--full .el-drawer"
+          ],
+          "properties": [
+            "width",
+            "max-width"
+          ],
+          "reason": "抽屉唯一宽度与页面边界适配"
+        },
+        {
+          "file": "components/PageDrawerSurface.vue",
+          "selectors": [
+            ".page-drawer-surface"
+          ],
+          "properties": [
+            "--app-settings-group-level-one-font-size",
+            "width",
+            "height",
+            "min-height"
+          ],
+          "reason": "抽屉内容表面、标题层级和三段式内距的唯一实现"
+        },
+        {
+          "file": "components/PageDrawerSurface.vue",
+          "selectors": [
+            ".page-drawer-surface.is-title-compact"
+          ],
+          "properties": [
+            "--app-settings-group-level-one-font-size"
+          ],
+          "reason": "抽屉内容表面、标题层级和三段式内距的唯一实现"
+        },
+        {
+          "file": "components/PageDrawerSurface.vue",
+          "selectors": [
+            ".page-drawer-surface__header"
+          ],
+          "properties": [
+            "padding"
+          ],
+          "reason": "抽屉内容表面、标题层级和三段式内距的唯一实现"
+        },
+        {
+          "file": "components/PageDrawerSurface.vue",
+          "selectors": [
+            ".page-drawer-surface__body"
+          ],
+          "properties": [
+            "min-height"
+          ],
+          "reason": "抽屉内容表面、标题层级和三段式内距的唯一实现"
+        },
+        {
+          "file": "components/PageDrawerSurface.vue",
+          "selectors": [
+            ".page-drawer-surface__body.is-scroll-disabled"
+          ],
+          "properties": [
+            "padding"
+          ],
+          "reason": "抽屉内容表面、标题层级和三段式内距的唯一实现"
+        },
+        {
+          "file": "components/PageDrawerSurface.vue",
+          "selectors": [
+            ".page-drawer-surface__footer"
+          ],
+          "properties": [
+            "padding"
+          ],
+          "reason": "抽屉内容表面、标题层级和三段式内距的唯一实现"
+        },
+        {
+          "file": "components/PageDrawerSurface.vue",
+          "selectors": [
+            ".app-drawer-surface-host .el-drawer__header"
+          ],
+          "properties": [
+            "padding"
+          ],
+          "reason": "抽屉内容表面、标题层级和三段式内距的唯一实现"
+        },
+        {
+          "file": "components/PageDrawerSurface.vue",
+          "selectors": [
+            ".app-drawer-surface-host .el-drawer__body"
+          ],
+          "properties": [
+            "padding",
+            "min-height"
+          ],
+          "reason": "抽屉内容表面、标题层级和三段式内距的唯一实现"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".el-drawer"
+          ],
+          "properties": [
+            "max-width",
+            "max-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ],
+      "bindings": [
+        {
+          "file": "components/PageDrawer.vue",
+          "tag": "el-drawer",
+          "name": "attrs",
+          "expression": "$attrs",
+          "reason": "共享适配器原样转发调用属性，消费方仍接受同一角色检查"
+        },
+        {
+          "file": "components/AppDetailDrawer.vue",
+          "tag": "PageDrawer",
+          "name": "attrs",
+          "expression": "$attrs",
+          "reason": "共享适配器原样转发调用属性，消费方仍接受同一角色检查"
+        }
+      ]
+    },
+    {
+      "className": "el-card",
+      "classNames": [],
+      "tags": [
+        "el-card",
+        "AppTableCard"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "padding"
+      ],
+      "owners": [
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-card"
+          ],
+          "properties": [
+            "font-size"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ],
+      "bindings": [],
+      "styleAttributes": [
+        "style",
+        "body-style",
+        "header-style",
+        "footer-style"
+      ]
+    },
+    {
+      "className": "el-tabs",
+      "classNames": [
+        "el-tabs__item",
+        "el-tabs__header",
+        "el-tabs__content"
+      ],
+      "tags": [
+        "el-tabs"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "height",
+        "min-height",
+        "max-height",
+        "block-size",
+        "min-block-size",
+        "max-block-size",
+        "padding"
+      ],
+      "owners": [
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-workspace-tabs.app-workspace-tabs"
+          ],
+          "properties": [
+            "min-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-workspace-tabs.app-workspace-tabs .el-tabs__content"
+          ],
+          "properties": [
+            "min-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ],
+      "bindings": []
+    },
+    {
+      "className": "el-popper",
+      "classNames": [
+        "el-popover",
+        "el-popover__title"
+      ],
+      "tags": [
+        "el-popover"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "padding"
+      ],
+      "owners": [
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-row-actions-popper.el-popper"
+          ],
+          "properties": [
+            "padding"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ],
+      "bindings": [],
+      "styleAttributes": [
+        "style",
+        "popper-style"
+      ]
+    },
+    {
+      "className": "el-card__body",
+      "classNames": [
+        "el-card__header"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height",
+        "padding",
+        "height",
+        "min-height",
+        "max-height"
+      ],
+      "owners": [
+        {
+          "file": "components/AppTableCard.vue",
+          "selectors": [
+            ".app-table-card > :deep(.el-card__body)"
+          ],
+          "properties": [
+            "min-height",
+            "padding"
+          ],
+          "reason": "表格结果卡片的无内距表体及分页布局"
+        },
+        {
+          "file": "components/data/DataMetricCard.vue",
+          "selectors": [
+            ".data-metric-card :deep(.el-card__body)"
+          ],
+          "properties": [
+            "height",
+            "padding"
+          ],
+          "reason": "数据指标卡片统一维护摘要几何和紧凑展示"
+        },
+        {
+          "file": "layout/components/VAdaptiveGrow.vue",
+          "selectors": [
+            ".v-adaptive-grow__main > :deep(.el-card > .el-card__body)"
+          ],
+          "properties": [
+            "min-height"
+          ],
+          "reason": "自适应成长布局允许直接子卡片正文收缩"
+        },
+        {
+          "file": "layout/components/VMixedGrow.vue",
+          "selectors": [
+            ".v-mixed-fixed--shrinkable > :deep(.el-card > .el-card__body)"
+          ],
+          "properties": [
+            "min-height"
+          ],
+          "reason": "混合成长布局允许卡片正文参与受控收缩"
+        },
+        {
+          "file": "layout/components/VMixedGrow.vue",
+          "selectors": [
+            ".v-mixed-main > :deep(.el-card > .el-card__body)"
+          ],
+          "properties": [
+            "min-height"
+          ],
+          "reason": "混合成长布局允许卡片正文参与受控收缩"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".filter-card .el-card__body"
+          ],
+          "properties": [
+            "padding"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-workspace-card.app-workspace-card .el-card__body"
+          ],
+          "properties": [
+            "min-height",
+            "padding"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-card__body"
+          ],
+          "properties": [
+            "padding"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-card.app-card-compact > .el-card__header"
+          ],
+          "properties": [
+            "padding"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-card.app-card-compact > .el-card__body"
+          ],
+          "properties": [
+            "padding"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-card-body-fill > .el-card__body"
+          ],
+          "properties": [
+            "min-height"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ]
+    },
+    {
+      "className": "el-dialog__title",
+      "classNames": [
+        "app-drawer-title",
+        "app-drawer-title--compact",
+        "app-drawer-subtitle"
+      ],
+      "properties": [
+        "font",
+        "font-size",
+        "font-family",
+        "font-weight",
+        "line-height"
+      ],
+      "owners": [
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-drawer-title"
+          ],
+          "properties": [
+            "font-size",
+            "line-height",
+            "font-weight"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-drawer-title--compact"
+          ],
+          "properties": [
+            "font-size",
+            "line-height",
+            "font-weight"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-drawer-subtitle"
+          ],
+          "properties": [
+            "font-size",
+            "line-height",
+            "font-weight"
+          ],
+          "reason": "全站基础值、共享语义角色及密度适配"
+        }
+      ]
+    },
+    {
+      "className": "cell",
+      "within": "el-table",
+      "properties": [
+        "font",
+        "font-family",
+        "font-size",
+        "font-weight",
+        "line-height",
+        "padding"
+      ],
+      "owners": [
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-table .cell"
+          ],
+          "properties": [
+            "line-height"
+          ],
+          "reason": "表格实际文字承载层统一消费低像素密度字阶"
+        },
+        {
+          "file": "components/AppDataTable.vue",
+          "selectors": [
+            ".app-data-table :deep(td.app-table-column--tabular .cell)"
+          ],
+          "properties": [
+            "font-variant-numeric"
+          ],
+          "reason": "共享语义列统一提供表格数字等宽排版"
+        }
+      ]
     }
   ],
   "listStates": [
@@ -342,5 +2233,658 @@
   "listTokens": {
     "--app-interaction-selected-background": "color-mix(in srgb, var(--el-color-primary) 6%, var(--el-bg-color))",
     "--app-interaction-selected-marker": "inset 3px 0 var(--el-color-primary)"
-  }
+  },
+  "styleDelegates": [
+    {
+      "tags": [
+        "ElContainer",
+        "ElAside",
+        "ElHeader",
+        "ElMain"
+      ],
+      "owner": "App.vue",
+      "reason": "应用外壳结构；布局由 App 维护，不承担业务控件字阶或尺寸档位"
+    },
+    {
+      "tags": [
+        "ElOption",
+        "ElOptionGroup"
+      ],
+      "owner": "components/AppSelect.vue",
+      "reason": "选择器候选结构；点击区和候选字阶由共享选择器适配承接"
+    },
+    {
+      "tags": [
+        "ElRadioGroup",
+        "ElCheckboxGroup"
+      ],
+      "owner": "styles/global.css",
+      "reason": "选择项的状态分组容器；实际选项消费已登记的单复选家族"
+    },
+    {
+      "tags": [
+        "ElDropdown",
+        "ElDropdownMenu"
+      ],
+      "owner": "styles/global.css",
+      "reason": "命令菜单容器；可操作条目受菜单角色及按钮状态门禁约束"
+    },
+    {
+      "tags": [
+        "ElButtonGroup"
+      ],
+      "owner": "styles/buttonStates.css",
+      "reason": "按钮分组只排列子命令；各按钮仍受按钮角色约束"
+    },
+    {
+      "tags": [
+        "ElTableColumn"
+      ],
+      "owner": "components/AppTableColumn.vue",
+      "reason": "表格列的声明节点；文本与几何由表格角色及语义列契约维护"
+    },
+    {
+      "tags": [
+        "ElTabPane"
+      ],
+      "owner": "styles/global.css",
+      "reason": "工作区页签内容节点；容器成长与滚动由共享工作区适配维护"
+    },
+    {
+      "tags": [
+        "ElTooltip"
+      ],
+      "owner": "components/AppHoverInfo.ts",
+      "reason": "用途提示/截断提示的库层承载；提示准入和浮层适配由已有专项守卫"
+    },
+    {
+      "tags": [
+        "ElScrollbar"
+      ],
+      "owner": "components/AppScrollArea.vue",
+      "reason": "唯一滚动组件入口；滚动策略与样式由滚动条专项守卫"
+    },
+    {
+      "tags": [
+        "ElCollapseTransition"
+      ],
+      "owner": "components/SettingsGroup.vue",
+      "reason": "无独立视觉字阶的过渡组件；复用共享折叠动效"
+    },
+    {
+      "tags": [
+        "ElMenu",
+        "ElMenuItemGroup"
+      ],
+      "owner": "components/SideMenu.vue",
+      "reason": "侧栏导航专用结构；消费导航 token，不使用业务命令尺寸"
+    },
+    {
+      "tags": [
+        "ElMenuItem",
+        "ElSubMenu"
+      ],
+      "owner": "components/SideMenuItem.vue",
+      "reason": "递归导航项目；导航状态和字阶按 DESIGN 导航专项维护"
+    },
+    {
+      "tags": [
+        "ElSkeleton",
+        "ElEmpty",
+        "ElResult"
+      ],
+      "owner": "components/AppStateBlock.vue",
+      "reason": "结果反馈与占位；复用状态块规范及库原生占位结构"
+    },
+    {
+      "tags": [
+        "ElMessage",
+        "ElMessageBox"
+      ],
+      "owner": "styles/global.css",
+      "reason": "命令式消息和确认反馈服务；动作语义、提示及关闭由现有专项守卫"
+    },
+    {
+      "tags": [
+        "ElIcon",
+        "ElTag",
+        "ElLink",
+        "ElAlert",
+        "ElCollapse",
+        "ElCollapseItem",
+        "ElProgress",
+        "ElDivider",
+        "ElTree"
+      ],
+      "owner": "styles/global.css",
+      "reason": "图形、标签、提示与辅助内容的专项角色；沿用既有 token/边框/字体/关闭门禁，未授予页面修改受保护控件的权限"
+    },
+    {
+      "tags": [
+        "AppControlRow"
+      ],
+      "owner": "components/AppControlRow.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppScrollArea"
+      ],
+      "owner": "components/AppScrollArea.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppStatusDot"
+      ],
+      "owner": "components/AppStatusDot.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppOverflowTooltipHost"
+      ],
+      "owner": "components/AppOverflowTooltipHost.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "PageDensitySyncSettings"
+      ],
+      "owner": "components/PageDensitySyncSettings.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppHoverInfo"
+      ],
+      "owner": "components/AppHoverInfo.ts",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppStateBlock"
+      ],
+      "owner": "components/AppStateBlock.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppDragHandle"
+      ],
+      "owner": "components/AppDragHandle.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppActionHint"
+      ],
+      "owner": "components/AppActionHint.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "PageSettingItem"
+      ],
+      "owner": "components/PageSettingItem.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "PageSettingsApplyButton"
+      ],
+      "owner": "components/PageSettingsApplyButton.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "PageToggleRow"
+      ],
+      "owner": "components/PageToggleRow.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppSplitWorkspace"
+      ],
+      "owner": "components/AppSplitWorkspace.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppWorkspacePane"
+      ],
+      "owner": "components/AppWorkspacePane.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppControlItem"
+      ],
+      "owner": "components/AppControlItem.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppStatusNotice"
+      ],
+      "owner": "components/AppStatusNotice.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppAsyncRegion"
+      ],
+      "owner": "components/AppAsyncRegion.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppFormHelp"
+      ],
+      "owner": "components/AppFormHelp.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppTableColumn"
+      ],
+      "owner": "components/AppTableColumn.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppDetailFields"
+      ],
+      "owner": "components/AppDetailFields.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppDetailField"
+      ],
+      "owner": "components/AppDetailField.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppReorderList"
+      ],
+      "owner": "components/AppReorderList.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppDetailSection"
+      ],
+      "owner": "components/AppDetailSection.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppSummaryDisclosureCard"
+      ],
+      "owner": "components/AppSummaryDisclosureCard.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppJsonViewer"
+      ],
+      "owner": "components/AppJsonViewer.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "PageSettingSection"
+      ],
+      "owner": "components/PageSettingSection.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "PageSettingsTrigger"
+      ],
+      "owner": "components/PageSettingsTrigger.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppTabToolbar"
+      ],
+      "owner": "components/AppTabToolbar.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppAdvancedSearch"
+      ],
+      "owner": "components/AppAdvancedSearch.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppSortControl"
+      ],
+      "owner": "components/AppSortControl.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AppReorderTree"
+      ],
+      "owner": "components/AppReorderTree.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "ComparePinButton"
+      ],
+      "owner": "components/ComparePinButton.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "IconPicker"
+      ],
+      "owner": "components/IconPicker.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "KlineRangeSelect"
+      ],
+      "owner": "components/KlineRangeSelect.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "StockBoardMembershipPanel"
+      ],
+      "owner": "components/StockBoardMembershipPanel.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "StockGroupFavoriteButton"
+      ],
+      "owner": "components/StockGroupFavoriteButton.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "AssetSearchDrawer"
+      ],
+      "owner": "components/asset-search/AssetSearchDrawer.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "CurrentDayFallbackField"
+      ],
+      "owner": "components/data/CurrentDayFallbackField.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "DataMetricCard"
+      ],
+      "owner": "components/data/DataMetricCard.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "ScheduleDownstreamDrawer"
+      ],
+      "owner": "components/data/ScheduleDownstreamDrawer.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "RankedStockResultTable"
+      ],
+      "owner": "components/ranked-stock/RankedStockResultTable.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "StockChartOperationsDrawer"
+      ],
+      "owner": "components/stock-chart/StockChartOperationsDrawer.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "StockIntradayDialog"
+      ],
+      "owner": "components/stock-chart/StockIntradayDialog.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "StrategyItemEnabledSwitch"
+      ],
+      "owner": "components/strategy/StrategyItemEnabledSwitch.vue",
+      "reason": "具名共享组合或领域适配入口；内部基础控件仍消费 styleRoles，专项登记不豁免字号、边框、尺寸与运行时写入检查"
+    },
+    {
+      "tags": [
+        "MasterDetailRatioProfileSettings"
+      ],
+      "owner": "components/MasterDetailRatioProfileSettings.vue",
+      "reason": "比例配置的具名应用入口；根按钮继续继承按钮角色，不豁免调用方的属性保护"
+    }
+  ],
+  "runtimeStyleOwners": [
+    {
+      "file": "layout/useLayoutPreset.ts",
+      "operation": "setProperty",
+      "target": "root.style",
+      "properties": [
+        "--el-bg-color-page",
+        "--el-bg-color",
+        "--el-bg-color-overlay",
+        "--el-fill-color-blank",
+        "--app-section-bg",
+        "--el-fill-color-light",
+        "--el-fill-color-lighter",
+        "--el-fill-color-extra-light",
+        "--el-disabled-bg-color",
+        "--el-border-color",
+        "--el-border-color-light",
+        "--el-border-color-lighter",
+        "--el-border-color-dark",
+        "--el-border-color-darker",
+        "--el-disabled-text-color",
+        "--el-text-color-primary",
+        "--el-text-color-regular",
+        "--el-text-color-secondary",
+        "--el-text-color-placeholder",
+        "--el-text-color-disabled",
+        "--app-muted-text",
+        "--chrome-bg",
+        "--chrome-bg-soft",
+        "--chrome-bg-soft-hover",
+        "--chrome-border",
+        "--chrome-border-strong",
+        "--chrome-border-hover",
+        "--chrome-text",
+        "--chrome-text-strong",
+        "--chrome-text-muted",
+        "--chrome-submenu-bg",
+        "--chrome-active-bg",
+        "--chrome-menu-icon-active-bg",
+        "--chrome-menu-icon-active-border",
+        "--chrome-menu-icon-active-color",
+        "--shell-accent",
+        "--shell-accent-strong",
+        "--shell-accent-soft",
+        "--shell-accent-faint",
+        "--shell-accent-line",
+        "--shell-danger-line",
+        "--shell-canvas-glow",
+        "--shell-surface-shadow",
+        "--shell-control-mark",
+        "--brand-icon-start",
+        "--brand-icon-end",
+        "--brand-signal",
+        "--brand-word",
+        "--brand-word-stroke",
+        "--drawer-bg",
+        "--drawer-card-bg",
+        "--drawer-border",
+        "--drawer-text",
+        "--drawer-text-muted",
+        "--page-settings-bg",
+        "--page-settings-border",
+        "--page-settings-shadow",
+        "--page-settings-section-bg",
+        "--page-settings-section-border",
+        "--page-settings-divider",
+        "--page-settings-text",
+        "--page-settings-text-subtle",
+        "--page-settings-text-muted",
+        "--page-settings-accent",
+        "--page-settings-dot-ring",
+        "--page-settings-trigger-text",
+        "--page-settings-trigger-hover-text",
+        "--page-settings-trigger-hover-bg",
+        "--page-settings-seg-bg",
+        "--page-settings-seg-hover-bg",
+        "--page-settings-seg-active-bg",
+        "--page-settings-seg-active-border",
+        "--page-settings-switch-off",
+        "--page-settings-tip-border",
+        "--page-settings-footer-btn-bg",
+        "--page-settings-footer-btn-hover-bg",
+        "--market-up-color",
+        "--market-down-color",
+        "--app-warning-text",
+        "--app-danger-text",
+        "--score-high-text",
+        "--score-high-bg",
+        "--score-mid-text",
+        "--score-mid-bg"
+      ],
+      "reason": "明暗主题及预设 token 的唯一运行时应用入口，仅允许已登记变量"
+    },
+    {
+      "file": "layout/useLayoutPreset.ts",
+      "operation": "setProperty",
+      "target": "document.documentElement.style",
+      "expression": "document.documentElement.style.setProperty(cssName, `${tokens[key]}${unit}`)",
+      "reason": "预设/语义色共享写入入口的精确动态表达式，不允许新增目标或任意操作"
+    },
+    {
+      "file": "layout/useLayoutPreset.ts",
+      "operation": "setProperty",
+      "target": "root.style",
+      "expression": "root.style.setProperty(`--el-color-${name}`, safeColor)",
+      "reason": "预设/语义色共享写入入口的精确动态表达式，不允许新增目标或任意操作"
+    },
+    {
+      "file": "layout/useLayoutPreset.ts",
+      "operation": "setProperty",
+      "target": "root.style",
+      "expression": "root.style.setProperty(`--el-color-${name}-rgb`, rgbChannelsFromHex(safeColor))",
+      "reason": "预设/语义色共享写入入口的精确动态表达式，不允许新增目标或任意操作"
+    },
+    {
+      "file": "layout/useLayoutPreset.ts",
+      "operation": "setProperty",
+      "target": "root.style",
+      "expression": "root.style.setProperty(\n      `--el-color-${name}-light-${level}`,\n      blendHex(safeColor, quietTarget, 1 - level / 10),\n    )",
+      "reason": "预设/语义色共享写入入口的精确动态表达式，不允许新增目标或任意操作"
+    },
+    {
+      "file": "layout/useLayoutPreset.ts",
+      "operation": "setProperty",
+      "target": "root.style",
+      "expression": "root.style.setProperty(`--el-color-${name}-dark-2`, blendHex(safeColor, activeTarget, 0.8))",
+      "reason": "预设/语义色共享写入入口的精确动态表达式，不允许新增目标或任意操作"
+    },
+    {
+      "file": "layout/useLayoutPreset.ts",
+      "operation": "setProperty",
+      "target": "root.style",
+      "expression": "root.style.setProperty(name, value)",
+      "reason": "预设/语义色共享写入入口的精确动态表达式，不允许新增目标或任意操作"
+    },
+    {
+      "file": "composables/useDisplayScale.ts",
+      "operation": "setProperty",
+      "target": "root.style",
+      "properties": [
+        "--app-display-scale"
+      ],
+      "reason": "显示比例统一应用入口"
+    },
+    {
+      "file": "composables/useDisplayScale.ts",
+      "operation": "removeProperty",
+      "target": "document.documentElement.style",
+      "properties": [
+        "--app-display-scale"
+      ],
+      "reason": "显示比例生命周期清理"
+    },
+    {
+      "file": "composables/settingItemLayout.ts",
+      "operation": "Object.assign",
+      "target": "probe.style",
+      "properties": [
+        "position",
+        "visibility",
+        "pointer-events",
+        "display",
+        "width",
+        "max-width",
+        "gap"
+      ],
+      "reason": "不可交互测量副本的临时布局，finally 移除，不改真实控件"
+    },
+    {
+      "file": "composables/settingItemLayout.ts",
+      "operation": "Object.assign",
+      "target": "copy.style",
+      "properties": [
+        "width",
+        "max-width",
+        "flex",
+        "display"
+      ],
+      "reason": "测量副本的自然宽度"
+    },
+    {
+      "file": "composables/settingItemLayout.ts",
+      "operation": "Object.assign",
+      "target": "label.style",
+      "properties": [
+        "white-space",
+        "flex"
+      ],
+      "reason": "测量副本内标签的单行宽度"
+    },
+    {
+      "file": "utils/elementPlusPopperContainer.ts",
+      "operation": "setProperty",
+      "target": "target.style",
+      "expression": "target.style.setProperty(variable, getComputedStyle(source).getPropertyValue(variable))",
+      "reason": "浮层继承 DENSITY_VARIABLES 中的所属页面密度"
+    },
+    {
+      "file": "utils/elementPlusPopperContainer.ts",
+      "operation": "removeProperty",
+      "target": "target.style",
+      "expression": "target.style.removeProperty(variable)",
+      "reason": "浮层无来源时清理继承密度"
+    },
+    {
+      "file": "components/AppHoverInfo.ts",
+      "operation": "renderProps",
+      "target": "h",
+      "expression": "...attrs",
+      "reason": "共享提示入口仅透传调用属性；新增显式样式属性仍独立拦截，不放行整个渲染函数"
+    }
+  ]
 }

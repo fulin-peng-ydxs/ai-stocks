@@ -161,9 +161,6 @@ function changeRecipe(recipe: StockIngestRecipe) {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--app-space-1);
-  height: auto;
-  padding-block: var(--app-density-control-gap);
-  line-height: var(--app-line-height-comfy);
   white-space: normal;
   overflow-wrap: anywhere;
 }

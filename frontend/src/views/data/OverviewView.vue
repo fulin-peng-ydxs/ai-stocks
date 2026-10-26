@@ -708,7 +708,7 @@ const menuPageTitle = useMenuPageTitle()
       <el-card
         v-if="!error && ov?.quality.by_layer?.length"
         shadow="never"
-        class="quality-summary"
+        class="quality-summary app-card-compact"
         data-testid="overview-quality-summary"
       >
           <template #header>
@@ -742,7 +742,7 @@ const menuPageTitle = useMenuPageTitle()
     <template #workspace>
       <el-card
         shadow="never"
-        class="app-workspace-card overview-workspace-card"
+        class="app-workspace-card overview-workspace-card app-card-compact"
         data-testid="overview-workspace"
       >
         <el-tabs v-model="activeWorkspaceTab" class="app-workspace-tabs overview-tabs">
@@ -1304,7 +1304,6 @@ const menuPageTitle = useMenuPageTitle()
 }
 .overview-panel > .el-table {
   flex: 1 1 auto;
-  min-height: 0;
 }
 .metric-scroll { flex: 0 0 auto; }
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--app-space-3); }
@@ -1362,8 +1361,6 @@ const menuPageTitle = useMenuPageTitle()
 .layer-progress { display: flex; align-items: center; gap: var(--app-space-2); }
 .layer-progress .el-progress { flex: 1; min-width: 0; }
 .layer-progress > span { font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-primary); }
-.quality-summary :deep(.el-card__header) { padding: 9px 12px; }
-.quality-summary :deep(.el-card__body) { padding: 10px 12px; }
 
 .overview-stock-filter { width: min(460px, 100%); }
 .txt-warn { color: var(--app-warning-text); font-weight: var(--app-font-weight-section); }
@@ -1658,12 +1655,9 @@ const menuPageTitle = useMenuPageTitle()
 
 @container app-viewport (max-height: 700px) {
   .stat-grid { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); gap: var(--app-space-2); }
-  .quality-summary :deep(.el-card__header) { padding: 5px 10px; }
-  .quality-summary :deep(.el-card__body) { padding: 5px 10px; }
   .layer-card { padding: 3px 7px; }
   .layer-name { margin-bottom: 2px; font-size: var(--app-font-size-caption); }
 
-  .overview-workspace-card :deep(.el-card__body) { padding: 6px 10px 8px; }
   .overview-tabs :deep(.el-tabs__header) { margin-bottom: 5px; }
 }
 

@@ -732,11 +732,11 @@ const menuPageTitle = useMenuPageTitle()
         </template>
       </p>
       <el-radio-group v-model="ignoreScope" class="ignore-scope-group" data-testid="quality-ignore-scope">
-        <el-radio value="occurrence" border>
+        <el-radio class="app-choice-card" value="occurrence" border>
           <span class="ignore-option-title">仅忽略本次（推荐）</span>
           <span class="ignore-option-note">异常持续期间不重复上报；消失后再发生会重新报告。</span>
         </el-radio>
-        <el-radio value="object" border>
+        <el-radio class="app-choice-card" value="object" border>
           <span class="ignore-option-title">整体忽略</span>
           <span class="ignore-option-note">
             {{ ignoreBatch
@@ -828,7 +828,7 @@ const menuPageTitle = useMenuPageTitle()
 .ignore-scope-label { margin-left: 6px; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .ignore-tip { margin: 0 0 var(--app-space-4); color: var(--el-text-color-secondary); }
 .ignore-scope-group { display: flex; flex-direction: column; align-items: stretch; gap: var(--app-space-3); }
-.ignore-scope-group :deep(.el-radio) { height: auto; margin: 0; padding: 12px; align-items: flex-start; }
+.ignore-scope-group :deep(.el-radio) { margin: 0; align-items: flex-start; }
 .ignore-scope-group :deep(.el-radio__label) { display: flex; flex-direction: column; gap: var(--app-space-1); white-space: normal; }
 .ignore-option-title { color: var(--el-text-color-primary); font-weight: var(--app-font-weight-section); }
 .ignore-option-note { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-comfy); }

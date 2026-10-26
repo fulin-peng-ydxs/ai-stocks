@@ -283,7 +283,6 @@ onBeforeUnmount(() => {
         width="max-content"
         :show-arrow="false"
         :persistent="false"
-        :popper-style="{ padding: '4px' }"
         popper-class="app-command-menu-popper app-row-actions-popper"
         @before-enter="menuOpen = true"
         @after-leave="menuOpen = false"
@@ -386,9 +385,6 @@ onBeforeUnmount(() => {
 
 .app-row-actions__button {
   margin-left: 0 !important;
-  min-height: 24px;
-  padding: 0 5px !important;
-  font-weight: var(--app-font-weight-section);
 }
 
 .app-row-actions__more-icon {
@@ -437,13 +433,9 @@ onBeforeUnmount(() => {
 
 .app-row-actions-menu .el-button.app-row-actions-menu__item {
   width: 100%;
-  height: auto;
-  min-height: 28px;
   justify-content: flex-start;
   margin-left: 0 !important;
-  padding: 4px 10px !important;
   border-radius: var(--app-radius-item);
-  font-size: var(--app-font-size-body);
   text-align: left;
   white-space: normal;
 }

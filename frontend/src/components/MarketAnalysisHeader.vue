@@ -36,7 +36,7 @@ const emit = defineEmits<{
             v-if="detailVisible"
             link
             type="primary"
-            class="market-analysis-header__detail"
+            class="market-analysis-header__detail" size="small"
             :disabled="detailDisabled"
             :data-testid="detailTestId || undefined"
             @click="emit('openDetail')"
@@ -104,7 +104,6 @@ const emit = defineEmits<{
   flex: 0 0 auto;
   height: auto;
   padding: 0;
-  font-size: var(--app-font-size-caption);
 }
 .market-analysis-header__description {
   margin: 0;

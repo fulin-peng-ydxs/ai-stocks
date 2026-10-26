@@ -848,7 +848,7 @@ const menuPageTitle = useMenuPageTitle()
             <div class="ed-head app-cluster-md">
               <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
               <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
-                <el-button class="ver-badge" text bg type="primary" data-testid="screen-profile-version" @click="openVersions">v{{ curVersion }}</el-button>
+                <el-button class="app-button-badge" text bg type="primary" data-testid="screen-profile-version" @click="openVersions">v{{ curVersion }}</el-button>
               </AppHoverInfo>
               <AssetVisibilityActions
                 v-if="!isNew"
@@ -1191,16 +1191,6 @@ const menuPageTitle = useMenuPageTitle()
 .spacer {
   flex: 1;
 }
-.ver-badge {
-  font-size: var(--app-font-size-caption);
-  height: auto;
-  min-height: 0;
-  border-radius: var(--app-radius-pill);
-  padding: 1px 8px;
-  font-weight: var(--app-font-weight-section);
-  cursor: pointer;
-  user-select: none;
-}
 .hint {
   color: var(--app-muted-text);
   font-size: var(--app-font-size-caption);
@@ -1284,7 +1274,6 @@ const menuPageTitle = useMenuPageTitle()
 }
 .run-table-wrap .el-table {
   flex: 1 1 auto;
-  min-height: 0;
 }
 .score {
   color: var(--app-danger-text);
