@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { provide } from 'vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppCloseButton from './AppCloseButton.vue'
 import { resetControlRowSizing } from './controlRowSizing'
+import { PAGE_DRAWER_SURFACE } from './pageDrawerContext'
 
 resetControlRowSizing()
+provide(PAGE_DRAWER_SURFACE, true)
 
 withDefaults(defineProps<{
   title: string

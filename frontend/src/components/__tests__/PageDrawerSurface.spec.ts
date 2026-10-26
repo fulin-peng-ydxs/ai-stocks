@@ -1,9 +1,44 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { defineComponent, h, Teleport } from 'vue'
 import PageDrawerSurface from '@/components/PageDrawerSurface.vue'
+import PageSegmented from '@/components/PageSegmented.vue'
 
 describe('PageDrawerSurface', () => {
+  it.each(['standard', 'compact'] as const)('%s 抽屉中的嵌套和传送分段统一 fill，外部兄弟不受影响', (titleSize) => {
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const NestedField = defineComponent({
+      setup: () => () => h(PageSegmented, {
+        modelValue: 'a',
+        options: [{ label: '选项一', value: 'a' }, { label: '选项二', value: 'b' }],
+        fill: false,
+      }),
+    })
+    const wrapper = mount(defineComponent({
+      setup: () => () => h('div', [
+        h(NestedField),
+        h(PageDrawerSurface, { title: '设置', titleSize }, {
+          default: () => [h(NestedField), h(Teleport, { to: target }, h(NestedField))],
+        }),
+      ]),
+    }))
+    try {
+      const segments = wrapper.findAllComponents(PageSegmented)
+      expect(segments).toHaveLength(3)
+      expect(segments[0].classes()).not.toContain('page-segmented--fill')
+      for (const segment of segments.slice(1)) {
+        expect(segment.classes()).toContain('page-segmented--fill')
+        expect(segment.get('button').attributes('aria-pressed')).toBe('true')
+      }
+      expect(target.querySelector('.page-segmented--fill')).not.toBeNull()
+    } finally {
+      wrapper.unmount()
+      target.remove()
+    }
+  })
+
   it('统一标题、副标题、正文、footer 和关闭入口', async () => {
     const wrapper = mount(PageDrawerSurface, {
       props: {
