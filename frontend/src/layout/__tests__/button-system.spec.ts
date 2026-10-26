@@ -61,7 +61,7 @@ describe('全站按钮与图标操作契约', () => {
     expect(design).toContain('普通业务命令统一使用 Element Plus `<el-button>`')
     expect(design).toContain('纯图标操作统一使用 `AppIconButton`')
     expect(design).toContain('顶栏状态和工具按 `32px` 控件基线对齐')
-    expect(design).toContain('文字 `13px / --app-font-weight-section`')
+    expect(design).toContain('文字 `13px / --app-font-weight-medium`')
     expect(design).toContain('纯图标异步操作必须使用 `AppIconButton` 的 `loading`')
     expect(design).toContain('选择态勾选标记也使用 Element Plus 图标或项目 SVG')
     expect(design).toContain('控件宽度不按组件类型强制等宽')
@@ -74,18 +74,23 @@ describe('全站按钮与图标操作契约', () => {
     expect(globalCss).toContain('--app-control-width-compact: 96px')
     expect(globalCss).toContain('--app-control-width-wide: 300px')
     expect(globalCss).toMatch(/\.app-control-width-fill\s*\{[\s\S]*?--app-control-inline-width:\s*100%;[\s\S]*?min-width:\s*0;/)
-    expect(globalCss).toContain('--app-button-font-weight: var(--app-font-weight-section)')
+    expect(globalCss).toContain('--app-button-font-weight: var(--app-font-weight-medium)')
+    expect(globalCss).toMatch(/\.el-button\s*\{[^}]*font-weight: var\(--app-button-font-weight\)/)
+    expect(globalCss).toMatch(/\.app-command-menu-popper \.el-dropdown-menu__item\s*\{[^}]*font-weight: var\(--app-button-font-weight\)/)
+    expect(read(join(SRC_DIR, 'views/LoginView.vue')))
+      .toMatch(/\.login-primary\s*\{[^}]*font-weight: var\(--app-button-font-weight\)/)
 
     for (const file of ['components/AppSearchInput.vue', 'components/AppFilterSelect.vue']) {
       expect(read(join(SRC_DIR, file)), file).toContain('width: var(--app-control-inline-width, 100%)')
     }
 
-    const sectionFontWeight = globalCss.match(/--app-font-weight-section:\s*([^;]+);/)?.[1].trim()
+    const commandFontWeight = globalCss.match(/--app-font-weight-medium:\s*([^;]+);/)?.[1].trim()
     const frontMatterButtonFontWeight = design
       .match(/button-md:\n(?:    .+\n)*?    fontWeight:\s*([^\n]+)/)?.[1]
       .trim()
 
-    expect(frontMatterButtonFontWeight).toBe(sectionFontWeight)
+    expect(commandFontWeight).toBe('500')
+    expect(frontMatterButtonFontWeight).toBe(commandFontWeight)
   })
 
   it('必须与禁止章节只保留系统级原则，组件实现细节由对应章节和清单承载', () => {
@@ -137,6 +142,7 @@ describe('全站按钮与图标操作契约', () => {
     const rowActions = read(join(SRC_DIR, 'components/AppRowActions.vue'))
 
     const states = read(join(SRC_DIR, 'styles/buttonStates.css'))
+    expect(states).not.toMatch(/\bfont(?:-weight)?\s*:/)
     expect(rowActions).not.toContain('--row-action-text:')
     expect(rowActions).not.toContain('--row-action-menu-bg:')
     expect(states).toContain('--app-button-neutral-text: var(--el-text-color-regular)')

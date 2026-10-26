@@ -443,4 +443,16 @@ describe('透明命令与持久状态的边界', () => {
       css.replace('--app-button-rest-bg: var(--app-interaction-selected-background)', '--app-button-rest-bg: transparent'),
     ]) expect(auditButtonStates(broken)).not.toEqual([])
   })
+  it.each([
+    ['中性悬浮不能重新混入正文色', '--app-button-hover-text: var(--app-button-tone);', '--app-button-hover-text: color-mix(in srgb, var(--app-button-tone) 85%, var(--el-text-color-primary));'],
+    ['按下不能退回无变化或大幅泛白', '--app-button-pressed-text: color-mix(in srgb, var(--app-button-tone) 80%, var(--app-button-text-state-target));', '--app-button-pressed-text: var(--app-button-tone);'],
+    ['语义悬浮不能退回原色', '--app-button-hover-text: color-mix(in srgb, var(--app-button-tone) 88%, var(--app-button-text-state-target));', '--app-button-hover-text: var(--app-button-tone);'],
+    ['白天必须加深', '--app-button-text-state-target: var(--el-color-black);', '--app-button-text-state-target: var(--el-color-white);'],
+    ['夜间必须提亮', '--app-button-text-state-target: var(--el-color-white);', '--app-button-text-state-target: var(--el-color-black);'],
+    ['语义状态必须保留危险色', '.el-button--warning, .el-button--danger, .is-tone-primary,', '.el-button--warning, .is-tone-primary,'],
+    ['语义悬浮不能误伤带底色按钮', '.is-tone-warning, .is-tone-danger):not(.is-has-bg,', '.is-tone-warning, .is-tone-danger):not('],
+  ])('%s', (_name, before, after) => {
+    expect(css).toContain(before)
+    expect(auditButtonStates(css.replaceAll(before, after))).not.toEqual([])
+  })
 })

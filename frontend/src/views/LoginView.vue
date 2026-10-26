@@ -1070,7 +1070,7 @@ function onSubmit() {
   color: var(--login-accent-text);
   box-shadow: 0 10px 24px color-mix(in srgb, var(--login-accent) 25%, transparent);
   font-size: var(--app-font-size-body);
-  font-weight: var(--app-font-weight-section);
+  font-weight: var(--app-button-font-weight);
   cursor: pointer;
   letter-spacing: 0.16em;
   display: flex;

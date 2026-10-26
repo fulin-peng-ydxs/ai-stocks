@@ -1,5 +1,6 @@
 /* 按钮状态事实源。几何由 global.css / 组件负责，页面只选择 type、plain、text、link。 */
 :root {
+  --app-button-text-state-target: var(--el-color-black);
   --app-button-primary-soft-bg: color-mix(in srgb, var(--el-color-primary) 8%, var(--el-bg-color));
   --app-button-primary-hover-bg: color-mix(in srgb, var(--el-color-primary) 14%, var(--el-bg-color));
   --app-button-primary-pressed-bg: color-mix(in srgb, var(--el-color-primary) 22%, var(--el-bg-color));
@@ -14,6 +15,9 @@
   --app-button-disabled-text: var(--el-disabled-text-color);
   --app-button-disabled-bg: var(--el-disabled-bg-color);
   --app-button-disabled-border: var(--el-border-color-light);
+}
+html[data-layout-mode='dark'] {
+  --app-button-text-state-target: var(--el-color-white);
 }
 
 /* 角色变量在元素上计算，避免继承已在根节点解析的语义色。 */
@@ -109,15 +113,18 @@ html[data-layout-preset] .app-icon-button:not([data-close-size]) {
   --app-button-hover-bg: var(--app-icon-hover-bg);
   --app-button-pressed-bg: var(--app-icon-pressed-bg);
 }
-/* 无底文字命令通过文字色区分悬浮/按下；菜单项、显式 bg 和展开状态另行承接。 */
+/* 无底文字命令：中性悬浮直达原色；语义悬浮与全部按下按明暗模式小幅增强。 */
 html[data-layout-preset] .el-button.is-text:where(.el-button--info, .is-tone-info):not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice) {
   --app-button-tone: var(--el-color-primary);
 }
 html[data-layout-preset] .el-button.is-text:not(.is-has-bg, .app-row-actions-menu__item, .app-interaction-target, .app-interaction-trigger, .app-interaction-choice) {
   --app-button-hover-bg: transparent;
   --app-button-pressed-bg: transparent;
-  --app-button-hover-text: color-mix(in srgb, var(--app-button-tone) 85%, var(--el-text-color-primary));
-  --app-button-pressed-text: color-mix(in srgb, var(--app-button-tone) 65%, var(--el-text-color-primary));
+  --app-button-hover-text: var(--app-button-tone);
+  --app-button-pressed-text: color-mix(in srgb, var(--app-button-tone) 80%, var(--app-button-text-state-target));
+}
+html[data-layout-preset] .el-button.is-text:where(.el-button--primary, .el-button--success, .el-button--warning, .el-button--danger, .is-tone-primary, .is-tone-success, .is-tone-warning, .is-tone-danger):not(.is-has-bg, .app-row-actions-menu__item, .app-interaction-target, .app-interaction-trigger, .app-interaction-choice) {
+  --app-button-hover-text: color-mix(in srgb, var(--app-button-tone) 88%, var(--app-button-text-state-target));
 }
 html[data-layout-preset] .el-button.is-text:is(.is-open, [aria-expanded='true']):not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice) {
   --app-button-rest-bg: var(--app-icon-hover-bg);

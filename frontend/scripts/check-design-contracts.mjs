@@ -592,6 +592,22 @@ export function auditButtonStates(css) {
     .some(key => declarations(text[0])[key] !== 'transparent')) {
     violations.push('buttonStates.css: 普通无底文字命令悬浮/按下必须透明，并隔离显式 bg 和菜单项')
   }
+  // 中性与语义文字共用按下规则；色相不取决于正文色，主题只切换加深/提亮方向。
+  if (declarations(rules.find(rule => rule.selector === ':root'))['--app-button-text-state-target'] !== 'var(--el-color-black)'
+    || declarations(rules.find(rule => rule.selector === "html[data-layout-mode='dark']"))['--app-button-text-state-target'] !== 'var(--el-color-white)') {
+    violations.push('buttonStates.css: 文字命令状态色必须白天向黑加深、夜间向白提亮')
+  }
+  const textState = declarations(text[0])
+  if (textState['--app-button-hover-text'] !== 'var(--app-button-tone)'
+    || textState['--app-button-pressed-text'] !== 'color-mix(in srgb, var(--app-button-tone) 80%, var(--app-button-text-state-target))') {
+    violations.push('buttonStates.css: 中性文字命令悬浮必须使用纯主色，按下统一增强 20%')
+  }
+  const semanticTextSelector = 'html[data-layout-preset] .el-button.is-text:where(.el-button--primary, .el-button--success, .el-button--warning, .el-button--danger, .is-tone-primary, .is-tone-success, .is-tone-warning, .is-tone-danger):not(.is-has-bg, .app-row-actions-menu__item, .app-interaction-target, .app-interaction-trigger, .app-interaction-choice)'
+  const semanticText = rules.filter(rule => rule.selector === semanticTextSelector)
+  if (semanticText.length !== 1 || declarations(semanticText[0])['--app-button-hover-text']
+    !== 'color-mix(in srgb, var(--app-button-tone) 88%, var(--app-button-text-state-target))') {
+    violations.push('buttonStates.css: 语义文字命令悬浮统一增强 12%，不得影响 bg、菜单或专用交互角色')
+  }
   const icon = rules.filter(rule => rule.selector === 'html[data-layout-preset] .app-icon-button:not([data-close-size])')
   if (icon.length !== 1 || declarations(icon[0])['--app-button-hover-bg'] !== 'var(--app-icon-hover-bg)'
     || declarations(icon[0])['--app-button-pressed-bg'] !== 'var(--app-icon-pressed-bg)') {

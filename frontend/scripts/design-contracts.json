@@ -456,6 +456,7 @@
           ],
           "properties": [
             "font-size",
+            "font-weight",
             "line-height"
           ],
           "reason": "普通命令菜单统一消费默认命令字阶"
