@@ -701,6 +701,7 @@ async function onLogout() {
               v-model="displayScaleModeModel"
               aria-label="界面比例模式"
               test-id="appearance-display-scale-mode"
+              fill
               :options="displayScaleModeOptions"
             />
           </AppControlRow>
@@ -752,6 +753,7 @@ async function onLogout() {
               v-model="themeModeModel"
               aria-label="明暗模式"
               test-id="appearance-theme-mode"
+              fill
               :options="themeModeOptions"
             >
               <template #icon="{ option }">

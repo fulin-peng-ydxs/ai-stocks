@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppControlItem from '@/components/AppControlItem.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import SettingsGroup from '@/components/SettingsGroup.vue'
@@ -39,14 +40,17 @@ async function applyDensity() {
     :level="1"
     :collapsible="false"
   >
-    <AppControlRow justify="between">
-      <PageSegmented
-        v-model="selectedDensity"
-        aria-label="统一页面密度"
-        :options="options"
-        :disabled="pageDensitySyncing"
-        @update:model-value="result = ''; error = ''"
-      />
+    <AppControlRow :wrap="false">
+      <AppControlItem grow>
+        <PageSegmented
+          v-model="selectedDensity"
+          aria-label="统一页面密度"
+          fill
+          :options="options"
+          :disabled="pageDensitySyncing"
+          @update:model-value="result = ''; error = ''"
+        />
+      </AppControlItem>
       <el-button
         v-permission="'layout:user-config'"
         text
