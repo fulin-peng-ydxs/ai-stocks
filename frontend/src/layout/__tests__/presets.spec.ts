@@ -217,7 +217,7 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     const view = readFileSync(join(SRC_DIR, 'views/layout/LayoutPresetsView.vue'), 'utf8')
     const design = readFileSync(join(SRC_DIR, '../../DESIGN.md'), 'utf8')
 
-    expect(view).toContain('setRuntimePresetSources(enabledPresets)')
+    expect(view).toContain('setRuntimePresetSources(presets.value)')
     expect(view).not.toContain('setPresetCatalog')
     expect(view).not.toContain('setPresetOverrides')
     expect(design).toMatch(

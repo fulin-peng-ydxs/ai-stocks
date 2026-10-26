@@ -239,4 +239,58 @@ describe('视觉预设运行时 Element Plus 色阶', () => {
       .toBe(blendHex('#a78bfa', '#ffffff', 0.8))
     expect(document.documentElement.style.getPropertyValue('--el-bg-color-page')).toBe('#171717')
   })
+
+  it('当前自定义预设停用或删除后立即回退，重新启用不会复活旧选择', () => {
+    const custom = {
+      key: 'custom-active', name: '自定义', description: '', enabled: true,
+      config: { values: { 'tokens.light.primary': '#7c3aed' } },
+    }
+    for (const replacement of [[{ ...custom, enabled: false }], []]) {
+      setRuntimePresetSources([custom])
+      setLayoutPreset(custom.key)
+      expect(document.documentElement.style.getPropertyValue('--el-color-primary')).toBe('#7c3aed')
+      setRuntimePresetSources(replacement)
+      expect(useLayoutPreset().activePresetKey.value).toBe('balanced')
+      expect(useLayoutPreset().options.value.map(({ value }) => value)).toEqual(['balanced'])
+      expect(document.documentElement.style.getPropertyValue('--el-color-primary')).toBe('#1677ff')
+      expect(localStorage.getItem('ai-stocks:layout-preset')).toBe('balanced')
+      setRuntimePresetSources([custom])
+      expect(useLayoutPreset().activePresetKey.value).toBe('balanced')
+      setLayoutPreset(custom.key)
+      expect(useLayoutPreset().activePresetKey.value).toBe(custom.key)
+    }
+  })
+
+  it('后端当前预设的全部可编辑 token 高于内置默认，未选预设不会覆盖', () => {
+    const overrides = {
+      primary: '#345678', success: '#238745', warning: '#ab7300', danger: '#cb4567',
+      marketUp: '#ec5678', marketDown: '#45cd89', border: '#789abc', borderStrong: '#56789a',
+    }
+    const variables = {
+      primary: '--el-color-primary', success: '--el-color-success', warning: '--el-color-warning',
+      danger: '--el-color-danger', marketUp: '--market-up-color', marketDown: '--market-down-color',
+      border: '--app-border-default', borderStrong: '--app-border-strong',
+    }
+    for (const mode of ['light', 'dark'] as const) {
+      isDark.value = mode === 'dark'
+      setRuntimePresetSources([{
+        key: 'custom-all', name: '全部配置', description: '', config: { values: {
+          ...Object.fromEntries(Object.entries(overrides).map(([key, value]) => [`tokens.${mode}.${key}`, value])),
+          [`tokens.${mode}.shadow`]: 'rgba(10, 20, 30, 0.3)',
+          'tokens.shared.cardRadius': 18, 'tokens.shared.controlRadius': 11,
+        } },
+      }])
+      setLayoutPreset('custom-all')
+      for (const key of Object.keys(overrides) as Array<keyof typeof overrides>) {
+        expect(document.documentElement.style.getPropertyValue(variables[key])).toBe(overrides[key])
+      }
+      expect(document.documentElement.style.getPropertyValue('--shell-surface-shadow')).toBe('rgba(10, 20, 30, 0.3)')
+      expect(document.documentElement.style.getPropertyValue('--page-settings-shadow')).toBe('rgba(10, 20, 30, 0.3)')
+      expect(document.documentElement.style.getPropertyValue('--layout-card-radius')).toBe('18px')
+      expect(document.documentElement.style.getPropertyValue('--layout-control-radius')).toBe('11px')
+      setLayoutPreset('balanced')
+      expect(document.documentElement.style.getPropertyValue('--el-color-primary'))
+        .toBe(LAYOUT_PRESETS.balanced.tokens[mode].primary)
+    }
+  })
 })

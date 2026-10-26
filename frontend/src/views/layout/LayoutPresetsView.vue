@@ -30,6 +30,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import {
   getLayoutPreset,
+  DEFAULT_LAYOUT_PRESET,
   getPageLayout,
   setRuntimePresetSources,
   type StyleTokenConfig,
@@ -146,8 +147,7 @@ async function reloadPresets() {
       selectedPresetKey.value = presets.value[0]?.key ?? 'balanced'
     }
     // 同步运行时：让预设编辑/启停/导入即时驱动外观（P11 运行时打通）。
-    const enabledPresets = presets.value.filter((preset) => preset.enabled)
-    setRuntimePresetSources(enabledPresets)
+    setRuntimePresetSources(presets.value)
   } catch (error) {
     loadError.value = getErrorMessage(error, '视觉预设加载失败')
   } finally {
@@ -230,6 +230,8 @@ function presetRowActions(row: LayoutPresetRecord): AppRowAction[] {
       label: row.enabled ? '停用' : '启用',
       type: row.enabled ? 'danger' : 'success',
       permission: 'layout:preset-manage',
+      disabled: row.key === DEFAULT_LAYOUT_PRESET,
+      tooltip: row.key === DEFAULT_LAYOUT_PRESET ? '默认视觉预设承担外观兜底，不能停用' : undefined,
       onClick: () => togglePreset(row),
     },
     {
@@ -429,7 +431,6 @@ const menuPageTitle = useMenuPageTitle()
             </el-form-item>
           </div>
 
-          <el-switch v-model="presetForm.enabled" active-text="启用" inactive-text="停用" />
         </AppForm>
         <template #footer>
           <el-button @click="presetDialog = false">取消</el-button>

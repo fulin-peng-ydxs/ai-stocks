@@ -33,6 +33,7 @@ export interface RuntimePresetDefinition {
   key: string
   name: string
   description: string
+  enabled?: boolean
 }
 export interface RuntimePresetSource extends RuntimePresetDefinition {
   config?: {
@@ -129,6 +130,7 @@ function normalizeRuntimePresetSources(definitions: RuntimePresetSource[]) {
   const overrides: Record<string, Record<string, RuntimePresetValue>> = {}
   const seen = new Set<string>()
   for (const preset of definitions) {
+    if (preset.enabled === false) continue
     const key = preset.key?.trim()
     if (!key || seen.has(key)) continue
     seen.add(key)
@@ -161,6 +163,8 @@ function installRuntimePresetSources(definitions: RuntimePresetSource[], persist
   presetCatalog.value = catalog
   presetOverrides.value = overrides
   activePresetKey.value = resolvePresetKey(preferredPresetKey)
+  // 目录已确认当前选择不可用时，清除旧偏好，避免重新启用后悄悄切回已停用主题。
+  preferredPresetKey = activePresetKey.value
   localStorage.setItem(STORAGE_KEY, activePresetKey.value)
   if (persist) {
     localStorage.setItem(RUNTIME_PRESET_CACHE_KEY, JSON.stringify(definitions))
@@ -358,7 +362,7 @@ export function setLayoutPreset(key: string) {
 export function setPresetCatalog(definitions: RuntimePresetDefinition[]) {
   const byKey = new Map<string, RuntimePresetDefinition>()
   for (const preset of definitions) {
-    if (preset.key) byKey.set(preset.key, preset)
+    if (preset.key && preset.enabled !== false) byKey.set(preset.key, preset)
   }
   const builtIn = LAYOUT_PRESETS[DEFAULT_LAYOUT_PRESET]
   if (!byKey.has(DEFAULT_LAYOUT_PRESET)) {
@@ -370,6 +374,7 @@ export function setPresetCatalog(definitions: RuntimePresetDefinition[]) {
   }
   presetCatalog.value = [...byKey.values()]
   activePresetKey.value = resolvePresetKey(preferredPresetKey)
+  preferredPresetKey = activePresetKey.value
   localStorage.setItem(STORAGE_KEY, activePresetKey.value)
   applyPreset(activePresetKey.value)
 }

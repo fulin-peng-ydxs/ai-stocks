@@ -902,6 +902,7 @@ class LayoutConfigRepo:
             )
             if not marker.empty:
                 self._migrate_visual_preset_split()
+                self._ensure_default_preset_enabled()
                 return 0
             pending_duckdb_layout = (
                 not self._config_storage_migrated() and self._has_pending_duckdb_platform_layout()
@@ -923,7 +924,18 @@ class LayoutConfigRepo:
                 [_SINGLE_BLUE_PRESET_MARKER, '{"applied":true}', datetime.now()],
             )
             self._migrate_visual_preset_split()
+            self._ensure_default_preset_enabled()
             return inserted
+
+    def _ensure_default_preset_enabled(self) -> None:
+        """修复旧客户端写入的默认预设停用状态；保留所有自定义视觉配置。"""
+        if not self._config_storage_migrated():
+            return
+        self.pg.execute(
+            "UPDATE layout_preset SET enabled=true, updated_at=now() "
+            "WHERE key=%s AND enabled=false",
+            [BUILTIN_PRESETS[0]["key"]],
+        )
 
     def _migrate_visual_preset_split(self) -> None:
         """幂等拆分视觉预设，保留页面显式值并迁移已有组件默认。"""
@@ -1068,6 +1080,8 @@ class LayoutConfigRepo:
         _validate_key("preset_key", key)
         if not name:
             raise LayoutConfigValidationError("预设名称不能为空")
+        if key == BUILTIN_PRESETS[0]["key"] and not enabled:
+            raise LayoutConfigValidationError("默认视觉预设承担外观兜底，不能停用")
         cfg = normalize_preset_override(config, schema_version)
         existing = self.get_preset(key)
         if existing and existing["is_builtin"] and not is_builtin:

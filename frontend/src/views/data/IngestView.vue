@@ -4,6 +4,7 @@ import AppForm from '@/components/AppForm.vue'
 import { taskRequestFields } from '@/utils/requestRuntime'
 import { enumText, businessMessage } from '@/utils/displayText'
 import AppFormHelp from '@/components/AppFormHelp.vue'
+import HelpHint from '@/components/HelpHint.vue'
 import { appendTaskLogs, taskLogMessage } from './taskLogs'
 import IntradayTaskScopeFields from '@/components/data/IntradayTaskScopeFields.vue'
 import { buildIntradayIngestParams, createIntradayIngestForm, type IntradayIngestForm } from '@/utils/intradayIngest'
@@ -28,6 +29,7 @@ import AppDetailField from '@/components/AppDetailField.vue'
 import AppDetailFields from '@/components/AppDetailFields.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import AppTabToolbar from '@/components/AppTabToolbar.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
@@ -1266,7 +1268,15 @@ const menuPageTitle = useMenuPageTitle()
             <AppDetailField
               v-for="field in taskRequestFields(logTask.capability.request_runtime)"
               :key="field.label" :label="field.label" :value="field.value"
-            />
+            >
+              <template v-if="field.help" #default>
+                <div class="app-inline-info app-caption-text">
+                  <span>{{ field.value }}</span>
+                  <HelpHint :label="`${field.label}说明`" :text="field.help" />
+                  <AppStatusNotice v-if="field.warning" tone="warning" size="inline" :title="field.warning" />
+                </div>
+              </template>
+            </AppDetailField>
           </AppDetailFields>
           <AppDetailFields
             v-if="correlationResult"

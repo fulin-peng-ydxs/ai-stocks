@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AppForm from '@/components/AppForm.vue'
-import { requestRuntimeText } from '@/utils/requestRuntime'
+import { REQUEST_CONFIG_FINGERPRINT, requestRuntimeText } from '@/utils/requestRuntime'
 import AppTableCard from '@/components/AppTableCard.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
@@ -2552,7 +2552,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                         <AppTableColumn v-if="sourceColVisible('scope')" label="使用范围" prop="scope" role="description" />
                         <AppTableColumn v-if="sourceColVisible('policy')" label="生效请求规则" role="description">
                           <template #default="{ row }">
-                            <span class="source-policy">
+                            <div class="source-policy">
                               <span>{{ row.policy_origin }}</span>
                               <span>{{ row.serial_required ? '会话串行' : '来源网络并发上限' }} {{ row.network_concurrency ?? '未记录' }} · {{ row.rate_limit_per_sec }} 次/秒</span>
                               <span>默认工作并发 {{ row.work_concurrency ?? '未记录' }} · {{ row.rate_group }}<span v-if="row.request_unit"> · {{ row.request_unit }}</span></span>
@@ -2560,8 +2560,12 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                               <span>退避起点 {{ row.retry_backoff_sec }} 秒<span v-if="row.login_timeout_sec"> · 登录超时 {{ row.login_timeout_sec }} 秒</span></span>
                               <span>{{ requestRuntimeText(row.runtime) }}</span>
                               <span v-if="row.runtime?.cooldown_seconds">来源冷却，约 {{ Math.ceil(row.runtime.cooldown_seconds) }} 秒后试探恢复</span>
-                              <span v-if="row.policy_version">配置 {{ row.policy_version }}<span v-if="row.policy_degraded"> · 暂用最近有效配置</span></span>
-                            </span>
+                              <div class="app-inline-info app-caption-text">
+                                <span>{{ REQUEST_CONFIG_FINGERPRINT.label }} {{ row.policy_version || '未记录' }}</span>
+                                <HelpHint label="配置指纹说明" :text="REQUEST_CONFIG_FINGERPRINT.help" />
+                                <AppStatusNotice v-if="row.policy_degraded" tone="warning" size="inline" :title="REQUEST_CONFIG_FINGERPRINT.degradedText" />
+                              </div>
+                            </div>
                           </template>
                         </AppTableColumn>
                         <AppTableColumn v-if="sourceColVisible('status')" label="最近测试结果" role="status">

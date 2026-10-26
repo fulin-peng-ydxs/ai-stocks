@@ -468,7 +468,7 @@ describe('ConfigView system tab', () => {
       up: null, last_test_at: null, last_success_at: null, failure_reason: null,
       network_concurrency: 3, work_concurrency: 7, serial_required: false, rate_limit_per_sec: 2.5,
       timeout_sec: 47, max_attempts: 4, retry_backoff_sec: 1.5,
-      policy_origin: '继承通用配置',
+      policy_origin: '继承通用配置', policy_version: 'f4ecf1e7de96', policy_degraded: true,
     }] })
     const wrapper = await mountView()
     await wrapper.findAll('[role="tab"]').find((node) => node.text() === '数据治理')!.trigger('click')
@@ -478,6 +478,9 @@ describe('ConfigView system tab', () => {
     expect(health.text()).toContain('默认工作并发 7')
     expect(health.text()).toContain('超时 47 秒 · 最多尝试 4 次')
     expect(health.text()).toContain('退避起点 1.5 秒')
+    expect(health.text()).toContain('配置指纹 f4ecf1e7de96')
+    expect(health.find('[aria-label="配置指纹说明"]').exists()).toBe(true)
+    expect(health.find('.app-status-notice--warning').text()).toContain('暂用最近有效配置')
     const hint = health.find('[aria-label="来源规则与测试说明"]')
     expect(hint.element.parentElement?.textContent).toContain('来源规则与测试说明')
     expect(hint.element.parentElement?.textContent).not.toContain('测试全部来源')
