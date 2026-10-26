@@ -276,7 +276,7 @@ const emit = defineEmits<{
   flex: 0 0 auto;
   display: flex;
   justify-content: flex-end;
-  padding: 10px 12px 0;
+  padding: var(--app-space-3);
 }
 
 </style>
