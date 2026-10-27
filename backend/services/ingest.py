@@ -14,6 +14,7 @@ import json
 import threading
 from bisect import bisect_left
 from contextlib import nullcontext
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -63,6 +64,29 @@ _UPDATE_READY_SAMPLE = [
 _UPDATE_READY_RATIO = 0.60
 
 log = get_logger("services.ingest")
+
+
+@dataclass
+class _DailySTMaterial:
+    """主线程读取的已有事实与工作线程取得的原始状态，不在工作线程访问数据库。"""
+
+    stored: pd.DataFrame
+    fetched: tuple[DataSource, pd.DataFrame] | None = None
+    error: Exception | None = None
+
+
+@dataclass
+class _PreparedDaily:
+    """已按单股规则校验的材料；批次原子落库前不登记完成。"""
+
+    code: str
+    start: date
+    end: date
+    frame: pd.DataFrame
+    bar_columns: list[str]
+    st_facts: list[StockSTStatusFact]
+    references: pd.DataFrame
+    source: str
 
 
 class IngestionService:
@@ -375,6 +399,7 @@ class IngestionService:
         fetch_start: date | None = None,
         fetch_end: date | None = None,
         ctx=None,
+        material: _DailySTMaterial | None = None,
     ) -> list[StockSTStatusFact]:
         """Resolve complete daily ST facts, fetching missing facts from baostock.
 
@@ -386,7 +411,7 @@ class IngestionService:
         if not dates and (fetch_start is None or fetch_end is None):
             return []
         if dates:
-            row = self.c.query_df(
+            row = material.stored if material is not None else self.c.query_df(
                 """
                 SELECT trade_date,is_st,source,source_ref,quality
                 FROM stock_st_status_daily
@@ -420,8 +445,11 @@ class IngestionService:
 
         query_start = fetch_start or dates[0]
         query_end = fetch_end or dates[-1]
-        st_source, status_rows = self._fetch_st_status_rows(
-            code, query_start, query_end, ctx=ctx
+        if material is not None and material.error is not None:
+            raise material.error
+        st_source, status_rows = (
+            material.fetched if material is not None and material.fetched is not None
+            else self._fetch_st_status_rows(code, query_start, query_end, ctx=ctx)
         )
         if status_rows is None or status_rows.empty:
             raise DataSourceError(f"{code} {query_start}~{query_end} ST 点时事实为空")
@@ -756,7 +784,9 @@ class IngestionService:
         status_unavailable: bool = False,
         _prefetched=None,
         _fetch_error=None,
-    ) -> int:
+        _st_material: _DailySTMaterial | None = None,
+        _defer_write: bool = False,
+    ) -> int | _PreparedDaily:
         end = eod_dates.cap_range(start, end)
         try:
             if _fetch_error is not None:
@@ -889,6 +919,7 @@ class IngestionService:
                 fetch_start=start,
                 fetch_end=end,
                 ctx=ctx,
+                material=_st_material,
             )
         effective_st_by_date = {
             fact.trade_date: fact.status.is_st for fact in effective_st_facts
@@ -930,39 +961,144 @@ class IngestionService:
             "volume", "amount", "adj_factor", "turnover_rate",
             "adj_factor_clean", "is_st", "is_suspended", "limit_status", "is_one_word",
         ]
-        check_thread_cancel()
-        with self.c.transaction():
-            n = self.repo.upsert_daily_bar(df[bar_cols])
-            if not retained_references.empty:
-                # 局部重采右侧的既有日线也可能切换基准；证据与本次行情原子提交。
-                with self.c.temp_view(retained_references, "factor_boundary") as view:
-                    self.c.execute(
-                        f"UPDATE daily_bar b SET reference_pre_close=r.reference_pre_close, "
-                        f"reference_close=r.reference_close,reference_source=r.reference_source, "
-                        f"adj_factor_clean=NULL FROM {view} r "
-                        "WHERE b.code=? AND b.trade_date=r.trade_date", [code],
-                    )
-            # 有真实成交的行情与停牌互斥；零量/未知量不能推翻旧停牌事实。
-            traded = df.loc[pd.to_numeric(df.volume, errors="coerce").gt(0), "trade_date"].tolist()
-            if traded:
-                old = self.c.query_df("SELECT trade_date FROM stock_suspension WHERE code=? AND trade_date IN (SELECT unnest(?::DATE[]))", [code, traded])
-                if not old.empty:
-                    self.c.execute("DELETE FROM stock_suspension WHERE code=? AND trade_date IN (SELECT unnest(?::DATE[]))", [code, traded])
-                    self.repo.log_update("stock_suspension", used_source, start, end, len(old), "success",
-                        json.dumps({"code": code, "action": "revoke_by_traded_bar", "dates": old.trade_date.astype(str).tolist(), "task_id": getattr(ctx, "tid", None)}, ensure_ascii=False))
-        st_service.upsert_facts(
-            effective_st_facts,
-            change_reason="daily_ingest_st_sync",
-            task_id=getattr(ctx, "tid", None),
+        prepared = _PreparedDaily(
+            code, start, end, df, bar_cols, effective_st_facts, retained_references, used_source,
         )
+        if _defer_write:
+            return prepared
+        self._write_daily_batch([prepared], ctx=ctx)
+        return len(df)
+
+    def _write_daily_batch(self, materials: list[_PreparedDaily], *, ctx=None) -> None:
+        """复用单股校验结果，一批行情、ST、股本市值及来源留痕原子提交。"""
+        if not materials:
+            return
         from backend.services.share_capital import ShareCapitalService
 
-        # 备用源无股本列也需按已存股本刷新计算市值，避免修正原价后派生值陈旧。
-        ShareCapitalService(self.c).merge(df, "sina_daily")
-        # 非默认源（兜底）取的数据登记来源，供审计/排查（默认主源不记录）
-        if n and used_source != self.s.datasource.primary:
-            self._record_provenance(code, "daily_bar", start, end, used_source, n)
-        return n
+        check_thread_cancel()
+        frames = pd.concat([item.frame for item in materials], ignore_index=True)
+        bars = pd.concat([item.frame[item.bar_columns] for item in materials], ignore_index=True)
+        with self.c.transaction():
+            self.repo.upsert_daily_bar(bars)
+            for item in materials:
+                if not item.references.empty:
+                    with self.c.temp_view(item.references, "factor_boundary") as view:
+                        self.c.execute(
+                            "UPDATE daily_bar b SET reference_pre_close=r.reference_pre_close, "
+                            "reference_close=r.reference_close,reference_source=r.reference_source, "
+                            "adj_factor_clean=NULL FROM " + view + " r "
+                            "WHERE b.code=? AND b.trade_date=r.trade_date", [item.code],
+                        )
+            # 成交证据按目标键批量撤销旧停牌；未知量仍不能推翻停牌事实。
+            traded = frames.loc[pd.to_numeric(frames.volume, errors="coerce").gt(0),
+                                ["code", "trade_date"]]
+            if not traded.empty:
+                with self.c.temp_view(traded, "traded_keys") as view:
+                    old = self.c.query_df(
+                        f"SELECT s.code,s.trade_date FROM stock_suspension s JOIN {view} t "
+                        "USING(code,trade_date)"
+                    )
+                    self.c.execute(
+                        f"DELETE FROM stock_suspension s USING {view} t "
+                        "WHERE s.code=t.code AND s.trade_date=t.trade_date"
+                    )
+                for item in materials:
+                    dates = old.loc[old.code.eq(item.code), "trade_date"]
+                    if not dates.empty:
+                        self.repo.log_update(
+                            "stock_suspension", item.source, item.start, item.end, len(dates),
+                            "success", json.dumps({"code": item.code,
+                                "action": "revoke_by_traded_bar", "dates": dates.astype(str).tolist(),
+                                "task_id": getattr(ctx, "tid", None)}, ensure_ascii=False),
+                        )
+            StockSTStatusService(self.c).upsert_facts(
+                [fact for item in materials for fact in item.st_facts],
+                change_reason="daily_ingest_st_sync", task_id=getattr(ctx, "tid", None),
+                _in_transaction=True,
+            )
+            # 备用源无股本列也按已存股本刷新计算市值，保持来源核验口径。
+            ShareCapitalService(self.c).merge(frames, "sina_daily", _in_transaction=True)
+            for item in materials:
+                if item.source != self.s.datasource.primary:
+                    self._record_provenance(item.code, "daily_bar", item.start, item.end,
+                                            item.source, len(item.frame))
+
+    def _dirty_daily_codes(self, codes) -> set[str]:
+        """批次已提交但断点未登记时，续跑仍须完成这些股票的因子收尾。"""
+        if not codes:
+            return set()
+        return set(self.c.query_df(
+            "SELECT DISTINCT code FROM daily_bar WHERE adj_factor_clean IS NULL "
+            "AND code IN (SELECT unnest(?::VARCHAR[]))", [list(codes)],
+        )["code"])
+
+    def _run_daily_parallel(
+        self, codes, starts, end, *, concurrency, ctx, label, on_complete, limits=None,
+    ):
+        """日线三类批任务共用：预读事实、并发取价/状态、主线程校验与批次提交。"""
+        tls = threading.local()
+        source_name = self.src.name
+
+        def prepare(code):
+            start = starts[code]
+            stored = self.c.query_df(
+                "SELECT trade_date,is_st,source,source_ref,quality FROM stock_st_status_daily "
+                "WHERE code=? AND trade_date BETWEEN ? AND ? AND quality='accurate'",
+                [code, start, end],
+            ) if start <= end else pd.DataFrame()
+            return code, _DailySTMaterial(stored)
+
+        def worker(item):
+            code, status = item
+            start = starts[code]
+            if start > end:
+                return None
+            bars = self._fetch_daily_with_fallback(
+                code, start, end, self._thread_source(tls, source_name),
+            )
+            frame = eod_dates.bound_bars(bars[0], start, end)
+            known = set(pd.to_datetime(status.stored.get("trade_date", pd.Series(dtype=object))).dt.date)
+            if frame is not None and not frame.empty and any(
+                pd.Timestamp(day).date() not in known for day in frame.trade_date
+            ):
+                try:
+                    # BaoStock 自身及共享兜底锁继续保证单会话串行；取数与主线程落库重叠。
+                    status.fetched = self._fetch_st_status_rows(code, start, end)
+                except TaskCancelled:
+                    raise
+                except Exception as exc:  # noqa: BLE001 -- 状态失败交回原权威校验，不重复取源
+                    status.error = exc
+            return bars
+
+        def commit(entries):
+            results, prepared = [], []
+            for index, item, bars, error, pending in entries:
+                code, status = item
+                check_thread_cancel()
+                try:
+                    value = (0 if starts[code] > end else self.ingest_one_daily(
+                        code, starts[code], end, (limits or {}).get(code), ctx=ctx,
+                        _prefetched=bars, _fetch_error=error, _st_material=status,
+                        _defer_write=True,
+                    ))
+                    if isinstance(value, _PreparedDaily):
+                        prepared.append(value)
+                        value = len(value.frame)
+                    error = None
+                except TaskCancelled:
+                    raise
+                except Exception as exc:  # noqa: BLE001 -- 单股校验失败不阻止其它材料提交
+                    value, error = None, exc
+                results.append((index, code, value, error, pending))
+            # 批次事务失败直接退出，不推进其中任何成功断点；续跑会重取未提交项。
+            self._write_daily_batch(prepared, ctx=ctx)
+            return results
+
+        self._run_bounded_parallel(
+            codes, worker, concurrency=concurrency, ctx=ctx, wait_label=label,
+            prepare=prepare, transform_batch=commit, batch_size=concurrency,
+            prefetch_next_batch=True, on_complete=on_complete,
+        )
 
     # ── 估值/市值（总市值/总股本，补 G2）──
     def _history_window(self, years: int, ctx=None) -> tuple[date, date]:
@@ -1251,6 +1387,7 @@ class IngestionService:
                 pending, _worker, concurrency=concurrency, ctx=ctx,
                 wait_label="最新日市值补采", on_complete=_complete,
                 transform_batch=_merge_batch, batch_size=concurrency,
+                prefetch_next_batch=True,
             )
         result = {"trade_date": str(trade_date), "ok": ok, "fail": fail, "total_mv_rows": rows}
         log.info("补最新日市值完成: %s", result)
@@ -1560,22 +1697,8 @@ class IngestionService:
                     fail += 1
                     _fail(i, code, e)
         else:  # 并发：线程局部 DataSource（限流按实际来源共享），写入由 DuckDB RLock 串行
-            tls = threading.local()
-            source_name = self.src.name
-
-            def _worker(code: str) -> int:
-                src = self._thread_source(tls, source_name)
-                return self._fetch_daily_with_fallback(code, start, end, src)
-
             def _complete(i, code, value, error, _in_flight):
                 nonlocal total_rows, ok, fail
-                try:
-                    value = _one(code, prefetched=value, fetch_error=error)
-                    error = None
-                except TaskCancelled:
-                    raise
-                except Exception as exc:
-                    error = exc
                 if ctx:
                     ctx.set_phase(
                         "daily_bar", phase_total=n, phase_done=i - 1,
@@ -1591,15 +1714,13 @@ class IngestionService:
                     fail += 1
                     _fail(i, code, error)
 
-            self._run_bounded_parallel(
-                pending, _worker, concurrency=concurrency, ctx=ctx,
-                wait_label="历史补数", on_complete=_complete,
+            self._run_daily_parallel(
+                pending, {code: start for code in pending}, end,
+                concurrency=concurrency, ctx=ctx, label="历史补数",
+                on_complete=_complete, limits=limit_lut,
             )
         # 上次可在行情写入后、因子收尾前中断；即使本轮行情已覆盖也须补完收尾。
-        dirty_codes = set(self.c.query_df(
-            "SELECT DISTINCT code FROM daily_bar WHERE adj_factor_clean IS NULL"
-        )["code"].tolist())
-        updated.update(dirty_codes.intersection(target_codes))
+        updated.update(self._dirty_daily_codes(target_codes))
         factor_result = {"target": 0, "ok": 0, "fail": 0, "rows": 0}
         if updated:
             if ctx:
@@ -1864,11 +1985,9 @@ class IngestionService:
                         ctx.log(f"[{a}/{n_total}] {code} 增量更新失败（补到 {end}，主源+兜底源均未取到）: {e}", "error")
                     self.repo.log_update("daily_bar", self.src.name, None, end, 0, "failed", f"{code}: {e}")
         else:  # 并发：线程局部 DataSource（限流按实际来源共享），写入由 DuckDB RLock 串行
-            tls = threading.local()
-            source_name = self.src.name
-
             # 只加载每股最新日期，不在每个工作线程重复查行情库。工作线程只取源，
-            # ST、清洗、参考价校准和落库由编排线程按原业务契约处理。
+            # 已有ST事实预读、清洗、参考价校准和落库由编排线程按原业务契约处理；
+            # 缺失ST原始材料在工作线程取源，会话仍共享串行锁。
             dates = self.c.query_df(
                 "SELECT code,max(trade_date) d FROM daily_bar "
                 "WHERE code IN (SELECT unnest(?::VARCHAR[])) GROUP BY code", [pending]
@@ -1877,26 +1996,9 @@ class IngestionService:
             starts = {code: (last_dates[code] + timedelta(days=1) if code in last_dates
                             else years_before(end, self.s.datasource.history_years)) for code in pending}
 
-            def _worker(code):
-                if starts[code] > end:
-                    return None
-                return self._fetch_daily_with_fallback(
-                    code, starts[code], end, self._thread_source(tls, source_name))
-
             def _complete(i, code, value, error, in_flight):
                 nonlocal total_rows, ok, fail
                 a = resumed_count + i
-                try:
-                    if starts[code] > end:
-                        value = 0
-                    else:
-                        value = self.ingest_one_daily(
-                            code, starts[code], end, _prefetched=value, _fetch_error=error)
-                    error = None
-                except TaskCancelled:
-                    raise
-                except Exception as exc:
-                    error = exc
                 if error is None:
                     total_rows += value
                     if value:
@@ -1919,9 +2021,9 @@ class IngestionService:
                     )
                     _tick(a, code, 0, in_flight=in_flight)
 
-            self._run_bounded_parallel(
-                pending, _worker, concurrency=concurrency, ctx=ctx,
-                wait_label="并发增量", on_complete=_complete,
+            self._run_daily_parallel(
+                pending, starts, end, concurrency=concurrency, ctx=ctx,
+                label="并发增量", on_complete=_complete,
             )
 
         # ── 缺口收口（DM 口径统一：与质量修复-补采共用 reconcile_gaps，confirm=False 只补不确认）──
@@ -1975,6 +2077,7 @@ class IngestionService:
         except Exception as e:  # noqa: BLE001  收口阶段异常不影响增量主结果
             log.warning("缺口收口阶段异常（不影响增量结果）: %s", e)
 
+        updated.update(self._dirty_daily_codes(basic))
         if updated:
             if ctx:
                 ctx.log(f"↻ 增量刷新干净复权因子（{len(updated)} 只有新行）…")
@@ -3186,22 +3289,8 @@ class IngestionService:
                     fail += 1
                     _fail(i, code, e)
         else:  # 并发：线程局部 DataSource（限流按实际来源共享），写入由 DuckDB RLock 串行
-            tls = threading.local()
-            source_name = self.src.name
-
-            def _worker(code: str) -> int:
-                src = self._thread_source(tls, source_name)
-                return self._fetch_daily_with_fallback(code, start, end, src)
-
             def _complete(i, code, value, error, _in_flight):
                 nonlocal total_rows, ok, fail
-                try:
-                    value = _one(code, prefetched=value, fetch_error=error)
-                    error = None
-                except TaskCancelled:
-                    raise
-                except Exception as exc:
-                    error = exc
                 if ctx:
                     ctx.set_phase(
                         "daily_bar", done=len(done_codes), total=full_total,
@@ -3219,10 +3308,12 @@ class IngestionService:
                     fail += 1
                     _fail(i, code, error)
 
-            self._run_bounded_parallel(
-                target, _worker, concurrency=concurrency, ctx=ctx,
-                wait_label="指定日期采集", on_complete=_complete,
+            self._run_daily_parallel(
+                target, {code: start for code in target}, end,
+                concurrency=concurrency, ctx=ctx, label="指定日期采集",
+                on_complete=_complete, limits=limit_lut,
             )
+        updated.update(self._dirty_daily_codes(live["code"].tolist()))
         if updated:
             if ctx:
                 ctx.log(f"↻ 增量刷新干净复权因子（{len(updated)} 只有新行）…")

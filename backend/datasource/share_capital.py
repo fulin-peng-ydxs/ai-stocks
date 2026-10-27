@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pandas as pd
 import requests
 
@@ -71,8 +73,18 @@ def expand_equity_events(code: str, events: pd.DataFrame, dates) -> pd.DataFrame
     return df
 
 
-def fetch_daily_valuation(code: str, *, timeout: float = 15) -> pd.DataFrame:
-    """同 stock_value_em 接口，区分源端明确空数据与传输失败，并读取全部分页。"""
+def fetch_daily_valuation(
+    code: str, *, start: date | None = None, end: date | None = None, timeout: float = 15,
+) -> pd.DataFrame:
+    """按请求窗口读取完整分页；不传窗口的历史调用保留全历史语义。"""
+    if start is not None and end is not None and start > end:
+        raise ValueError("估值起始日期不得晚于结束日期")
+    condition = f'(SECURITY_CODE="{code.split(".")[0]}")'
+    # 此接口日期常量必须使用单引号；双引号会返回日期参数格式错误。
+    if start is not None:
+        condition += f"(TRADE_DATE>='{start.isoformat()}')"
+    if end is not None:
+        condition += f"(TRADE_DATE<='{end.isoformat()}')"
     rows = []
     page = 1
     while True:
@@ -81,7 +93,7 @@ def fetch_daily_valuation(code: str, *, timeout: float = 15) -> pd.DataFrame:
             params={
                 "reportName": "RPT_VALUEANALYSIS_DET",
                 "columns": "ALL",
-                "filter": f'(SECURITY_CODE="{code.split(".")[0]}")',
+                "filter": condition,
                 "pageSize": 5000,
                 "pageNumber": page,
                 "sortColumns": "TRADE_DATE",

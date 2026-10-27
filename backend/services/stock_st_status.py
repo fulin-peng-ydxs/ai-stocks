@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from uuid import uuid4
@@ -204,6 +205,7 @@ class StockSTStatusService:
         change_reason: str,
         task_id: str | None = None,
         captured_at: datetime | None = None,
+        _in_transaction: bool = False,
     ) -> list[date]:
         """Persist a batch atomically and return dates whose effective fact changed."""
         if not facts:
@@ -229,7 +231,8 @@ class StockSTStatusService:
         ]
         incoming = pd.DataFrame(rows)
 
-        with self.c.transaction(), self.c.temp_view(incoming, "st_status") as view:
+        transaction = nullcontext() if _in_transaction else self.c.transaction()
+        with transaction, self.c.temp_view(incoming, "st_status") as view:
             existing = self.c.query_df(
                 f"""
                 SELECT incoming.code, incoming.trade_date,

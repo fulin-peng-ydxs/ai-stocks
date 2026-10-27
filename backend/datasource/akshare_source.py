@@ -506,7 +506,7 @@ class AKShareSource(DataSource):
         from backend.datasource.share_capital import fetch_daily_valuation
 
         self._last_valuation_prices = (code, {})
-        df = fetch_daily_valuation(code, timeout=self._share_timeout_sec)
+        df = fetch_daily_valuation(code, start=start, end=end, timeout=self._share_timeout_sec)
         if df is None or df.empty or "数据日期" not in df.columns:
             return pd.DataFrame()
         df = df.copy()

@@ -403,8 +403,9 @@ def test_backfill_real_collection_to_ledger_with_batch_scale(market, monkeypatch
 
         def get_daily_bar(self, code, start, end):
             calls.append(code)
-            if len(calls) == 5:
-                # 有界并发初始只有4只，补充第5只前必须已发布首只的完成进度。
+            if len(calls) == 9:
+                # 4只待提交 + 4只下一窗口预取；第9只前必须完成首批并发布进度，
+                # 不允许为了取数/写入重叠而预提交整个股票池。
                 assert any("日线采集 1/96" in msg for _, msg in ctx.events)
             return pd.DataFrame({"code": code, "trade_date": days, "open": 10,
                                  "high": 10, "low": 10, "close": 10, "pre_close": 10,

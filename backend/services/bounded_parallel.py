@@ -21,6 +21,7 @@ def run_bounded_parallel(
     on_tick=None,
     transform_batch=None,
     batch_size: int = 1,
+    prefetch_next_batch: bool = False,
 ) -> None:
     """有界执行可取消采集，不预提交全量任务，也不留下终止后的孤儿写线程。
 
@@ -66,6 +67,11 @@ def run_bounded_parallel(
             return
         if ctx:
             ctx.check_cancel()
+        if prefetch_next_batch:
+            # 只预取下一工作窗口：待提交一批 + 至多 concurrency 个在途单元。
+            # prepare 仍在主线程，工作线程可在本批落库期间继续联网。
+            while len(pending) < concurrency and _submit_one():
+                pass
         with thread_cancel_scope(ctx.check_cancel if ctx else None):
             batch = transform_batch(ready) if transform_batch else ready
         for entry in batch:

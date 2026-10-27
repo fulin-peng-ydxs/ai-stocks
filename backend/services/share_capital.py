@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from datetime import datetime
 
 import numpy as np
@@ -72,14 +73,14 @@ class ShareCapitalService:
         df["total_available_date"] = df.available_date
         return self.merge(df, "verified_notice")
 
-    def merge(self, frame: pd.DataFrame, source: str, *, reported=False) -> int:
+    def merge(self, frame: pd.DataFrame, source: str, *, reported=False,
+              _in_transaction: bool = False) -> int:
         """只接收已有行情日期的有效股本；逐日报告优先，事件比较生效日；冲突不擦除已有有效事实。"""
         if frame is None or frame.empty:
             return 0
         df = frame.copy()
         df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
         df = df.drop_duplicates(["code", "trade_date"], keep="last")
-        codes = df.code.unique().tolist()
         # 每批只读一次目标股票日线，同时获得真实最新日期；避免每个字段重复扫大表。
         # 日常通常只合并一天；按目标日期取价格，最新日单独聚合，避免每股装载十年
         # 行情到 pandas。历史补采同样使用真实目标键，最新投影边界保持不变。
@@ -138,7 +139,9 @@ class ShareCapitalService:
             "total_mv_eligible",
             "_raw_close",
         ]
-        with self.c.transaction(), self.c.temp_view(df[cols], prefix="share_input") as t:
+        # 日线批次调用方已持有同连接事务，股本与行情必须一起提交或回滚。
+        transaction = nullcontext() if _in_transaction else self.c.transaction()
+        with transaction, self.c.temp_view(df[cols], prefix="share_input") as t:
             previous = self.c.query_df(
                 f"SELECT v.code,v.trade_date,s.total_share,s.float_share,m.total_mv,m.float_mv,"
                 f"m.reported_total_mv,m.reported_float_mv,m.reported_total_close,m.reported_float_close FROM {t} v "
