@@ -4,6 +4,48 @@ import { auditControlRows, auditControlRowsTree } from '../../../scripts/check-c
 const audit = (source: string) => auditControlRows([{ file: 'views/Fixture.vue', source }])
 
 describe('操作行消费门禁', () => {
+  it.each([
+    '<el-form-item><el-input-number/><AppSelect/></el-form-item>',
+    '<el-form-item><div><el-input-number/><AppSelect/></div></el-form-item>',
+    '<el-form-item><template v-if="show"><el-input-number/><AppSelect/></template></el-form-item>',
+    '<el-form-item><el-input-number v-if="show"/><AppSelect/></el-form-item>',
+    '<el-form-item><AppControlRow><div><el-input-number/><AppSelect/></div></AppControlRow></el-form-item>',
+  ])('并列输入必须由实际间距容器承接：%s', source => {
+    expect(audit(`<template>${source}</template>`).join()).toContain('并列输入控件')
+  })
+
+  it.each(['AppControlRow', 'AppTabToolbar'])('共享 %s 承接并列输入', tag => {
+    expect(audit(`<template><el-form-item><${tag}><el-input-number/><AppSelect/></${tag}></el-form-item></template>`)).toEqual([])
+  })
+
+  it('共享纵横间距、单控件、互斥分支、分组内部选项和显式日期网格不误报', () => {
+    for (const content of [
+      '<div class="app-cluster-md"><el-input-number/><AppSelect/></div>',
+      '<div class="app-stack-sm"><el-switch/><el-input-number/></div>',
+      '<el-input-number/><AppFormHelp>说明</AppFormHelp>',
+      '<AppSelect v-if="a"/><el-input-number v-else-if="b"/><el-input v-else/>',
+      '<template v-if="a"><el-input/></template><template v-else><AppSelect/></template>',
+      '<el-radio-group><el-radio-button/><el-radio-button/></el-radio-group>',
+    ]) expect(audit(`<template><el-form-item>${content}</el-form-item></template>`)).toEqual([])
+    const grid = '<template><el-form-item><div class="range"><TradeDatePicker/><span>—</span><TradeDatePicker/></div></el-form-item></template>'
+    expect(audit(grid + '<style>.range{display:grid;grid-template-columns:1fr auto 1fr;gap:var(--app-space-2)}</style>')).toEqual([])
+    expect(audit(grid + '<style>.range{display:grid;grid-template-columns:1fr auto 1fr}</style>').join()).toContain('并列输入控件')
+  })
+
+  it.each(['margin-left:8px', 'margin-right:var(--app-space-2)', 'margin-inline-start:8px',
+    'margin:8px', 'margin:0 8px', 'margin:0 0 0 8px'])('拒绝控件用私有 margin 补间距：%s', declaration => {
+    const source = '<template><el-form-item><AppControlRow><el-input-number/><AppSelect class="unit"/></AppControlRow></el-form-item></template>'
+    expect(audit(source + `<style>.unit{${declaration}}</style>`).join()).toContain('水平 margin')
+    expect(audit(`<template><el-form-item><AppSelect style="${declaration}"/></el-form-item></template>`).join()).toContain('水平 margin')
+  })
+
+  it('动态对象和深层选择器也拦截，零值、垂直间距与自动对齐不误报', () => {
+    expect(audit('<template><el-form-item><AppSelect :style="{marginLeft: gap}"/></el-form-item></template>').join()).toContain('水平 margin')
+    expect(audit('<template><el-form-item><AppSelect :style="{[\'margin-inline-start\']: \'8px\'}"/></el-form-item></template>').join()).toContain('水平 margin')
+    expect(audit('<template><el-form-item><AppSelect/></el-form-item></template><style>:deep(.el-select){margin-left:8px}</style>').join()).toContain('水平 margin')
+    expect(audit('<template><el-form-item><AppSelect style="margin-left:auto;margin:8px 0" :style="{marginRight:0}"/></el-form-item></template>')).toEqual([])
+  })
+
   it('真实消费者无逐控件尺寸补偿或局部高度覆盖', () => {
     expect(auditControlRowsTree()).toEqual([])
   })

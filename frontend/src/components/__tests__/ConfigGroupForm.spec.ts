@@ -82,8 +82,14 @@ describe('ConfigGroupForm', () => {
     toggle.vm.$emit('update:modelValue', true)
     await wrapper.vm.$nextTick()
     expect(wrapper.emitted('update-field')?.[0]).toEqual(['ths_board.timeout_sec', 30])
+    await wrapper.setProps({ modelValue: { 'ths_board.timeout_sec': 30 } })
+    const input = wrapper.findComponent({ name: 'ElInputNumber' })
+    expect(input.exists()).toBe(true)
+    expect(input.props('modelValue')).toBe(30)
     toggle.vm.$emit('update:modelValue', false)
     expect(wrapper.emitted('update-field')?.[1]).toEqual(['ths_board.timeout_sec', null])
+    await wrapper.setProps({ modelValue: { 'ths_board.timeout_sec': null } })
+    expect(wrapper.findComponent({ name: 'ElInputNumber' }).exists()).toBe(false)
   })
 
   it('密文不可用时仍提供清除入口，不要求先解密出原值', async () => {

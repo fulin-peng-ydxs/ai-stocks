@@ -4,6 +4,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse as parseVue } from 'vue/compiler-sfc'
 import { baseParse } from '@vue/compiler-dom'
 import postcss from 'postcss'
+import ts from 'typescript'
+import { scriptAst, walkScript } from './design-source.mjs'
 
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const rows = new Set(['AppControlRow', 'AppTabToolbar', 'AppAdvancedSearch', 'StockChartPanelHeader'])
@@ -32,6 +34,40 @@ const fieldBoundaries = new Set(['AppDataTable', 'AppTableColumn', 'el-table', '
   'AppRowActions', 'AppStateBlock', 'AppStatusNotice', 'AppDialog', 'PageDrawer', 'PageDrawerSurface'])
 const classNames = source => [...source.matchAll(/\.([\w-]+)/g)].map(match => match[1])
 const staticAttr = (node, name) => node.props.find(p => p.type === 6 && p.name === name)
+const inputControls = new Set([...controls].filter(tag => !['el-button', 'AppIconButton'].includes(tag)))
+inputControls.add('el-switch')
+const sharedSpacingClasses = new Set(['app-cluster-sm', 'app-cluster-md', 'app-cluster-lg',
+  'app-stack-sm', 'app-stack-md', 'app-stack-lg'])
+const horizontalMargin = /^(?:margin-(?:left|right|inline(?:-start|-end)?)|margin(?:Left|Right|Inline(?:Start|End)?))$/
+
+/** 只计算可同时出现的直接控件；template 不提供布局，互斥分支取最大值。 */
+function simultaneousInputs(children) {
+  const elements = children.filter(node => node.type === 1)
+  const count = node => node.tag === 'template'
+    ? node.props.some(prop => prop.type === 7 && prop.name === 'slot') ? 0 : simultaneousInputs(node.children)
+    : inputControls.has(node.tag) ? 1 : 0
+  let total = 0
+  for (let index = 0; index < elements.length; index++) {
+    const node = elements[index]
+    let amount = count(node)
+    if (node.props.some(prop => prop.type === 7 && prop.name === 'if')) {
+      while (elements[index + 1]?.props.some(prop => prop.type === 7 && ['else-if', 'else'].includes(prop.name))) {
+        amount = Math.max(amount, count(elements[++index]))
+      }
+    }
+    total += amount
+  }
+  return total
+}
+
+function compensatesSpacing(property, value) {
+  const parts = postcss.list.space(value.replace(/!important\s*$/, '').trim())
+  const nonZero = part => !/^(?:auto|0(?:px|rem|em|%)?)$/.test(part)
+  if (property === 'margin') return parts.length === 1 && nonZero(parts[0])
+    || parts.length > 1 && nonZero(parts[1])
+    || parts.length === 4 && nonZero(parts[3])
+  return horizontalMargin.test(property) && parts.some(nonZero)
+}
 
 /** 与构建共用控件尺寸和分段几何门禁；紧凑例外按表格/附属动作角色识别，不按页面放行。 */
 export function auditControlRows(sources) {
@@ -40,22 +76,66 @@ export function auditControlRows(sources) {
     const report = (line, message) => violations.push(`${file}:${line} ${message}`)
     const rowClasses = new Set(['app-control-row', 'app-tab-toolbar', 'app-advanced-search'])
     const controlClasses = new Set()
+    const fieldControlClasses = new Set()
+    let hasFieldInputs = false
     const segmentedClasses = new Set(['page-segmented', 'seg-btn', 'seg-label', 'seg-indicator'])
     const descriptor = file.endsWith('.vue') ? parseVue(source).descriptor : undefined
     const template = descriptor?.template
-    function inspect(node, inRow = false, inField = false, compactRole = false) {
+    const styles = descriptor?.styles ?? (file.endsWith('.css') ? [{ content: source }] : [])
+    // 日期起止范围已使用完整三列网格；必须同时存在轨道和有效 token gap，margin 不能冒充布局。
+    const spacedGrids = new Set()
+    for (const style of styles) postcss.parse(style.content).walkRules(rule => {
+      if (!/^\.[\w-]+$/.test(rule.selector)) return
+      const declarations = new Map(rule.nodes.filter(node => node.type === 'decl').map(node => [node.prop, node.value]))
+      if (declarations.get('display') === 'grid' && declarations.has('grid-template-columns')
+        && /^var\(--[\w-]+\)$/.test(declarations.get('gap') ?? '')) spacedGrids.add(rule.selector.slice(1))
+    })
+    function inspect(node, inRow = false, inField = false, compactRole = false, inFormItem = false) {
       if (node.type !== 1) return
       if (boundaries.has(node.tag)) { inRow = false; compactRole = false }
       compactRole ||= compactRoles.has(node.tag)
       if (fieldBoundaries.has(node.tag)) inField = false
+      if (fieldBoundaries.has(node.tag)) inFormItem = false
+      inFormItem ||= node.tag === 'el-form-item'
       if (['AppForm', 'PageSettingItem'].includes(node.tag)) inField = true
       const ownsRow = rows.has(node.tag) || node.props.some(p =>
         p.type === 7 && p.name === 'bind' && p.arg?.content === 'data-control-row')
       inRow ||= ownsRow
       const classes = (staticAttr(node, 'class')?.value?.content ?? '').split(/\s+/).filter(Boolean)
       if (ownsRow) classes.forEach(c => rowClasses.add(c))
+      if ((inFormItem || inRow) && inputControls.has(node.tag)) {
+        hasFieldInputs = true
+        classes.forEach(c => fieldControlClasses.add(c))
+        for (const prop of node.props) {
+          const line = template.loc.start.line + prop.loc.start.line - 1
+          if (prop.type === 6 && prop.name === 'style') {
+            postcss.parse(`x{${prop.value?.content ?? ''}}`).walkDecls(decl => {
+              if (compensatesSpacing(decl.prop, decl.value)) report(line, '控件不得通过私有水平 margin 补间距；使用共享容器 gap')
+            })
+          }
+          if (prop.type === 7 && prop.name === 'bind' && prop.arg?.content === 'style' && prop.exp) {
+            walkScript(scriptAst(file, `(${prop.exp.content})`), expression => {
+              if (!ts.isPropertyAssignment(expression)) return
+              const key = ts.isComputedPropertyName(expression.name) ? expression.name.expression : expression.name
+              const name = ts.isStringLiteralLike(key) ? key.text : key.getText()
+              if (name === 'margin' || horizontalMargin.test(name)) {
+                const value = expression.initializer
+                if (!ts.isStringLiteralLike(value) && value.getText() !== '0'
+                  || ts.isStringLiteralLike(value) && compensatesSpacing(name, value.text)) {
+                  report(line, '控件不得通过动态水平 margin 补间距；使用共享容器 gap')
+                }
+              }
+            })
+          }
+        }
+      }
       const textCommand = staticAttr(node, 'text') || staticAttr(node, 'link')
       const line = template.loc.start.line + node.loc.start.line - 1
+      if (inFormItem && node.tag !== 'template' && !inputControls.has(node.tag) && !ownsRow
+        && !classes.some(c => sharedSpacingClasses.has(c) || spacedGrids.has(c))
+        && simultaneousInputs(node.children) > 1) {
+        report(line, '同一表单项的并列输入控件必须由 AppControlRow / 共享间距容器承接；template 和私有 margin 不提供间距')
+      }
       if ((inField || !compactRole && !sizeAdapters.has(file)) && !inRow && controls.has(node.tag) && node.tag !== 'AppIconButton' && !textCommand) {
         const size = node.props.find(p => p.type === 6 && p.name === 'size'
           || p.type === 7 && p.name === 'bind' && p.arg?.content === 'size')
@@ -109,15 +189,24 @@ export function auditControlRows(sources) {
         const ownedSlots = rowSlots.get(node.tag)
         const slotOwnsRow = slot && (Array.isArray(ownedSlots)
           ? ownedSlots.includes(slot.arg?.content) : slot.arg?.content === ownedSlots)
-        inspect(child, inRow || !!slotOwnsRow, inField && !['actions', 'header-actions', 'tail'].includes(slot?.arg?.content), compactRole)
+        inspect(child, inRow || !!slotOwnsRow, inField && !['actions', 'header-actions', 'tail'].includes(slot?.arg?.content), compactRole, inFormItem)
       })
     }
     if (template) baseParse(template.content).children.forEach(node => inspect(node))
-    const styles = descriptor?.styles ?? (file.endsWith('.css') ? [{ content: source }] : [])
     for (const style of styles) {
       if (file === 'components/PageSegmented.vue') continue
       postcss.parse(style.content).walkRules(rule => {
         const classes = classNames(rule.selector)
+        if (!shared.has(file) && file !== 'styles/global.css'
+          && (classes.some(c => fieldControlClasses.has(c))
+            || hasFieldInputs && /\.el-(?:input(?:-number)?|select|switch|date-editor)\b/.test(rule.selector))) {
+          rule.walkDecls(decl => {
+            if (compensatesSpacing(decl.prop, decl.value)) {
+              report((style.loc?.start.line ?? 1) + (decl.source?.start?.line ?? 1) - 1,
+                `控件不得通过私有水平 margin 补间距（${rule.selector}）；使用共享容器 gap`)
+            }
+          })
+        }
         const segmentedRule = classes.some(c => segmentedClasses.has(c))
         const segmentedInternal = classes.some(c => ['seg-btn', 'seg-label', 'seg-indicator'].includes(c))
         const rowRule = classes.some(c => rowClasses.has(c))

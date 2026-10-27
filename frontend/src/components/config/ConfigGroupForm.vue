@@ -155,7 +155,7 @@ function collapsed(key: string): boolean {
           </template>
 
           <div class="field-control" :class="`is-${field.type}`">
-            <template v-if="field.nullable">
+            <div v-if="field.nullable" class="app-stack-sm">
               <el-switch
                 :model-value="valueOf(field.path) != null"
                 :aria-label="`${field.label}独立覆盖`"
@@ -168,7 +168,7 @@ function collapsed(key: string): boolean {
                 :controls="field.type === 'int'" :disabled="disabled"
                 @update:model-value="(value: number | undefined) => setValue(field.path, value ?? null)" />
               <span v-else class="field-inherited">当前继承：{{ field.inherited_value ?? '通用配置' }}</span>
-            </template>
+            </div>
             <el-switch
               v-else-if="field.type === 'bool'"
               :model-value="Boolean(valueOf(field.path))"
