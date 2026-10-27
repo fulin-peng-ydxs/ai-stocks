@@ -59,7 +59,9 @@ def normalize_intraday_params(params: dict | None) -> dict:
     return out
 
 
-def sanitize_minutes(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+def sanitize_minutes(
+    frame: pd.DataFrame, *, day_diagnostics: dict | None = None,
+) -> tuple[pd.DataFrame, dict]:
     """开盘占位只置空；其余坏行拒用。诊断随逐日覆盖保存，不能被空响应清除。"""
     if frame is None or frame.empty:
         return pd.DataFrame(columns=BAR_FIELDS), {}
@@ -89,11 +91,19 @@ def sanitize_minutes(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
             )
         )
     )
+    duplicates = out.timestamp.duplicated()
     diagnostics = {
         "invalid_rows": int(invalid.sum()),
         "off_session_rows": int(time_bad.sum()),
-        "duplicate_rows": int(out.timestamp.duplicated().sum()),
+        "duplicate_rows": int(duplicates.sum()),
     }
+    if day_diagnostics is not None:
+        # 全窗口只清洗一次，逐日诊断从同一拒用掩码汇总，避免年度响应每天重做转换。
+        flags = pd.DataFrame({"invalid_rows": invalid, "off_session_rows": time_bad,
+                              "duplicate_rows": duplicates})
+        grouped = flags.groupby(out.timestamp.dt.strftime("%Y-%m-%d")).sum()
+        day_diagnostics.update({day: {key: int(value) for key, value in row.items()}
+                                for day, row in grouped.to_dict("index").items()})
     out = out.loc[~(invalid | time_bad)].sort_values("timestamp")
     return out.drop_duplicates("timestamp", keep="last").reset_index(drop=True), diagnostics
 
@@ -106,3 +116,15 @@ def candidate_rank(rows: list, provider: str, code=None) -> tuple:
     times = {str(row[0])[11:16] for row in rows}
     return (complete_times(times, code), len(times & required_times(code)), len(times),
             provider == ("ths" if is_index(code) else "sina"))
+
+
+def rows_for_day(window: dict, day: str) -> list:
+    """任务内窗口按日索引一次；只保存现有分钟引用，不复制年度行情或持久化索引。"""
+    grouped = window.get("_rows_by_day")
+    if grouped is None or window.get("_indexed_rows") is not window.get("rows"):
+        grouped = {}
+        for row in window.get("rows", []):
+            grouped.setdefault(row[0][:10], []).append(row)
+        window["_rows_by_day"] = grouped
+        window["_indexed_rows"] = window.get("rows")
+    return grouped.get(day, [])

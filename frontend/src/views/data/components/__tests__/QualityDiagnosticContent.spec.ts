@@ -20,6 +20,16 @@ const issue = { id: 168525, code: '000737.SZ', issue_type: 'intraday_partial', s
   }) } as QualityIssue
 
 describe('质量诊断详情', () => {
+  it('等待源更新沿用来源诊断和修复结果映射，不解释为永久不可覆盖', () => {
+    const result = qualityDiagnostic({ ...issue, detail: JSON.stringify({
+      availability: { status: 'deferred', decisions: [{ source: 'ths', request: false,
+        reason: '源端待更新；2026-10-28T01:15:00+08:00 后可复查' }] },
+      last_repair: { outcome: 'deferred' },
+    }) })
+    expect(result.availability).toBe('等待源更新或复查')
+    expect(result.sources[0].reason).toContain('后可复查')
+    expect(result.repairFields[0].value).toBe('等待源更新或复查')
+  })
   it('分区展示覆盖、来源和复检，原始数据默认收起且可完整查看', async () => {
     const original = issue.detail
     const wrapper = mount(QualityDiagnosticContent, { props: { issue }, global: { plugins: [ElementPlus] } })

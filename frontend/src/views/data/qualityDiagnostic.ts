@@ -68,7 +68,8 @@ export function qualityDiagnostic(row: QualityIssue) {
   ] : []
   return { structured: coverageFields.length > 0 || sources.length > 0 || repairFields.length > 0,
     day: text(day), coverageFields, sources, repairFields,
-    availability: enumText({ available: '可尝试补采', needs_verification: '需核验来源', unavailable: '当前来源无法覆盖' },
+    availability: enumText({ available: '可尝试补采', needs_verification: '需核验来源',
+      unavailable: '当前来源无法覆盖', deferred: '等待源更新或复查' },
       availability.status, '状态未识别'),
     // 分项详情已展开，不重复 availability.reason 中拼接的逐来源长说明。
     summary: businessMessage(payload.base_message ?? payload.message, '请查看覆盖情况及来源核验结果'),

@@ -223,11 +223,12 @@ def test_daily_and_quality_repair_share_parallel_source_and_resume(db, monkeypat
     daily.svc = SimpleNamespace(market=db)
     result = async_task._h_intraday_ingest({"codes": codes}, daily)
     assert result["ok"] and result["partial"] == len(codes) * 2
-    assert len(calls) == len(codes) and {row[2] for row in calls} == {"sina"}
+    # 日常任务现已包含主源归档后的定向补齐；本夹具关闭复查间隔，补齐时可重取主源。
+    assert len(calls) == len(codes) * 3 and {row[2] for row in calls} == {"sina", "ths"}
     assert peaks["daily"] == 4
     checked = async_task._h_verify({"scope": "intraday", "codes": codes}, daily)
     assert checked["quality"]["intraday"]["intraday_partial"] == len(codes) * 2
-    assert len(calls) == len(codes)  # 质检扫描只读本地事实，不触发在线取源。
+    assert len(calls) == len(codes) * 3  # 质检扫描只读本地事实，不触发在线取源。
 
     stage = "cancel"
     with pytest.raises(TaskCancelled):

@@ -18,6 +18,7 @@ from backend.services.intraday_contract import (
     INTRADAY_PROVIDERS,
     PROVIDER_LABELS,
     candidate_rank,
+    rows_for_day,
     sanitize_minutes,
 )
 from backend.services.intraday_evidence import SOURCE_REQUEST_LIMIT, window_evidence
@@ -90,7 +91,7 @@ class IntradaySourceService:
                 else:
                     frame = self._fetch_provider(source, code, provider)
                     year_errors = []
-                window = self._frame_to_window(frame, provider)
+                window = frame if isinstance(frame, dict) else self._frame_to_window(frame, provider)
                 window["code"] = code
                 windows[provider] = window
                 self.last_observations[provider] = {
@@ -100,7 +101,7 @@ class IntradaySourceService:
                 }
                 if self.ctx is not None:
                     complete = sum(
-                        candidate_rank([r for r in window["rows"] if r[0][:10] == day], provider, code)[0]
+                        candidate_rank(rows_for_day(window, day), provider, code)[0]
                         for day in dates
                     )
                     self._task_log(
@@ -157,16 +158,26 @@ class IntradaySourceService:
 
     def _fetch_ths_years(self, source, code, dates):
         """跨年目标逐年取全响应；每个请求仍经过同一限流和重试入口。"""
-        frames, errors, years = [], [], []
+        errors, years = [], []
         for year in sorted({int(day[:4]) for day in dates}):
             try:
                 frame = self._fetch_provider(source, code, "ths", request_year=year)
-                frames.append(frame)
+                # 逐年转换一次并合并已取得的窗口，取消或后续年份失败也保留前序有效候选。
+                part = self._frame_to_window(frame, "ths")
                 years.append(year)
-                combined = pd.concat(frames, ignore_index=True)
-                combined.attrs["request_years"] = years.copy()
-                # 后续年份失败或取消前已取得的响应不能丢弃。
-                self.last_windows["ths"] = {**self._frame_to_window(combined, "ths"), "code": code}
+                previous = self.last_windows.get("ths")
+                if previous is not None:
+                    part["rows"] = previous["rows"] + part["rows"]
+                    part["raw_count"] += previous["raw_count"]
+                    for key, choose in (("raw_first", min), ("raw_last", max)):
+                        values = [v for v in (previous.get(key), part.get(key)) if v]
+                        part[key] = choose(values) if values else None
+                    part["day_diagnostics"] = {**previous["day_diagnostics"], **part["day_diagnostics"]}
+                    part["diagnostics"] = {
+                        key: previous["diagnostics"].get(key, 0) + part["diagnostics"].get(key, 0)
+                        for key in set(previous["diagnostics"]) | set(part["diagnostics"])
+                    }
+                self.last_windows["ths"] = {**part, "code": code, "request_years": years.copy()}
             except (redis.RedisError, IntradayServiceUnavailable):
                 raise
             except Exception as exc:  # noqa: BLE001 -- 按年份保留候选与失败，取消必须穿透
@@ -175,11 +186,9 @@ class IntradaySourceService:
                 reason = f"ths/{year}:{type(exc).__name__}: {str(exc)[:200]}"
                 errors.append(reason)
                 self._task_log(f"{code} 同花顺 {year} 年请求失败：{reason}；保留其他年份候选", "warn")
-        if not frames:
+        if not years:
             raise ValueError("同花顺目标年份均请求失败：" + "；".join(errors))
-        combined = pd.concat(frames, ignore_index=True)
-        combined.attrs["request_years"] = years
-        return combined, errors
+        return self.last_windows["ths"], errors
 
     @source_requests.request_budgeted
     def _fetch_provider(
@@ -214,7 +223,7 @@ class IntradaySourceService:
                 return frame
             except (redis.RedisError, IntradayServiceUnavailable):
                 raise
-            except Exception as exc:  # noqa: BLE001 -- 来源故障有限重试并保留具体错误
+            except Exception as exc:  # 来源故障有限重试并保留具体错误
                 if self.ctx:
                     self.ctx.check_cancel()
                 if getattr(exc, "request_attempts_exhausted", False):
@@ -240,12 +249,7 @@ class IntradaySourceService:
                       if raw_count else pd.Series(dtype="datetime64[ns]"))
         raw_first = timestamps.min().strftime("%Y-%m-%d %H:%M:%S") if len(timestamps) else None
         raw_last = timestamps.max().strftime("%Y-%m-%d %H:%M:%S") if len(timestamps) else None
-        if frame is not None and not frame.empty:
-            for day, group in frame.groupby(
-                pd.to_datetime(frame.timestamp, errors="coerce").dt.strftime("%Y-%m-%d")
-            ):
-                _, day_diagnostics[day] = sanitize_minutes(group)
-        frame, diagnostics = sanitize_minutes(frame)
+        frame, diagnostics = sanitize_minutes(frame, day_diagnostics=day_diagnostics)
         rows: list[list] = []
         if frame is not None and not frame.empty:
             for row in frame.itertuples(index=False):
@@ -277,7 +281,7 @@ class IntradaySourceService:
             return any(w.get("rows") for w in windows.values())
         return all(
             any(
-                candidate_rank([r for r in w["rows"] if r[0][:10] == day], p, code)[0]
+                candidate_rank(rows_for_day(w, day), p, code)[0]
                 for p, w in windows.items()
             )
             for day in dates

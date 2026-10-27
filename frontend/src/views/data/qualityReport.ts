@@ -11,7 +11,7 @@ export const checkupIssueLabels = {
 export const intradaySourceLabels: Readonly<Record<string, string>> = { sina: '新浪', eastmoney: '东财', ths: '同花顺' }
 export const intradayRepairLabels: Readonly<Record<string, string>> = {
   resolved: '已解决', improved: '改善但未完整', unchanged: '未改善',
-  unavailable: '当前来源无法覆盖', technical_failure: '请求失败',
+  unavailable: '当前来源无法覆盖', technical_failure: '请求失败', deferred: '等待源更新或复查',
 }
 
 interface CheckupDetailColumn { key: string; label: string; role: AdaptiveColumnRole }
@@ -188,7 +188,9 @@ export function intradayRecoveryAction(row: QualityIssue) {
   const recheck = row.intraday?.can_repair === false
   return {
     label: recheck ? '重新核验' : '补采复检', recheck,
-    tooltip: recheck ? '当前来源尚未提供更完整候选；发起一次来源范围重新核验，结果在任务中心查看'
+    tooltip: row.intraday?.status === 'deferred'
+      ? `${row.intraday.reason}；重新核验会立即请求来源，结果在任务中心查看`
+      : recheck ? '当前来源尚未提供更完整候选；发起一次来源范围重新核验，结果在任务中心查看'
       : (row.intraday?.reason ?? '核验来源并补采，只有复检通过才关闭问题'),
   }
 }

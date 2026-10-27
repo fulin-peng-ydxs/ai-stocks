@@ -2,6 +2,8 @@
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import { taskRequestFields } from '@/utils/requestRuntime'
+import { taskOutcomeDisplay } from '@/utils/taskOutcome'
+import AppHoverInfo from '@/components/AppHoverInfo'
 import { enumText, businessMessage } from '@/utils/displayText'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import HelpHint from '@/components/HelpHint.vue'
@@ -208,11 +210,8 @@ const TASK_TYPE_OPTIONS: { v: TaskType; l: string }[] = [
   'limit_ladder_invalidate', 'limit_ladder_recompute', 'stock_special_trading_day',
 ].map((v) => ({ v: v as TaskType, l: TASK_LABEL[v as TaskType] }))
 const TASK_STATUS_OPTIONS: { v: TaskStatus; l: string }[] = (
-  ['pending', 'running', 'done', 'failed', 'interrupted'] as TaskStatus[]).map((v) => ({ v, l: STATUS_LABEL[v] }))
+  ['pending', 'running', 'done', 'failed', 'interrupted'] as TaskStatus[]).map((v) => ({ v, l: v === 'failed' ? '未完成/失败' : STATUS_LABEL[v] }))
 
-const statusType: Record<TaskStatus, 'success' | 'danger' | 'info' | 'warning'> = {
-  done: 'success', failed: 'danger', running: 'warning', pending: 'info', interrupted: 'danger',
-}
 function isCancellingTask(t: AsyncTask | null | undefined): boolean {
   return !!t && t.status === 'running' && Boolean(t.cancel_requested_at)
 }
@@ -260,10 +259,10 @@ function canResumeTask(t: AsyncTask): boolean {
   return t.status === 'failed' && Boolean(t.capability?.checkpoint)
 }
 function taskStatusLabel(t: AsyncTask): string {
-  return isCancellingTask(t) ? '终止中' : (enumText(STATUS_LABEL, t.status, '状态未识别'))
+  return taskOutcomeDisplay(t).label
 }
 function taskStatusType(t: AsyncTask): 'success' | 'danger' | 'info' | 'warning' {
-  return isCancellingTask(t) ? 'warning' : (statusType[t.status as TaskStatus] ?? 'info')
+  return taskOutcomeDisplay(t).tone
 }
 const updateLogType: Record<string, 'success' | 'danger' | 'info' | 'warning'> = {
   success: 'success', failed: 'danger', partial: 'warning',
@@ -954,7 +953,7 @@ const menuPageTitle = useMenuPageTitle()
               </AppSelect>
               <el-button data-testid="task-reset-filters" :disabled="!hasTaskFilters" @click="resetTaskFilters">重置筛选</el-button>
             </template>
-            <template #description>筛选变更后自动刷新；点击任务行查看运行日志</template>
+            <template #description>按执行状态筛选，等待来源的修复归入“未完成/失败”；点击任务行查看日志</template>
           </AppTabToolbar>
         <div class="panel-table-wrap" data-testid="task-center-panel">
           <AppStateBlock
@@ -1015,18 +1014,22 @@ const menuPageTitle = useMenuPageTitle()
             </AppTableColumn>
             <AppTableColumn label="状态" prop="status" sortable="custom">
               <template #default="{ row }">
-                <el-tag :type="taskStatusType(row)" size="small" effect="dark">
-                  {{ taskStatusLabel(row) }}
-                </el-tag>
+                <AppHoverInfo :content="taskOutcomeDisplay(row).tooltip">
+                  <el-tag :type="taskStatusType(row)" size="small" effect="dark">
+                    {{ taskStatusLabel(row) }}
+                  </el-tag>
+                </AppHoverInfo>
               </template>
             </AppTableColumn>
             <AppTableColumn label="进度">
               <template #default="{ row }">
                 <el-progress :percentage="Math.round((row.progress ?? 0) * 100)" :stroke-width="10"
-                  :status="row.status === 'failed' || row.status === 'interrupted' ? 'exception' : row.status === 'done' ? 'success' : undefined" />
+                  :status="taskOutcomeDisplay(row).progressStatus" />
               </template>
             </AppTableColumn>
-            <AppTableColumn label="信息" prop="message" role="description" single-line />
+            <AppTableColumn label="信息" prop="message" role="description" single-line>
+              <template #default="{ row }">{{ taskOutcomeDisplay(row).message }}</template>
+            </AppTableColumn>
             <AppTableColumn label="截止时间" prop="time" sortable="custom">
               <template #default="{ row }">{{ formatDateTimeSeconds(row.updated_at, '') }}</template>
             </AppTableColumn>
@@ -1244,7 +1247,7 @@ const menuPageTitle = useMenuPageTitle()
     >
       <div v-if="logTask" class="log-meta">
         <el-tag :type="taskStatusType(logTask)" size="small" effect="dark">{{ taskStatusLabel(logTask) }}</el-tag>
-        <span class="lm-msg">{{ businessMessage(logTask.message, '任务执行结果请查看下方日志') }}</span>
+        <span class="lm-msg">{{ taskOutcomeDisplay(logTask).message }}</span>
         <span v-if="taskPhaseText(logTask)" class="lm-phase">{{ taskPhaseText(logTask) }}</span>
         <el-progress :percentage="Math.round((logTask.progress ?? 0) * 100)" :stroke-width="8" style="flex:1" />
         <el-checkbox v-model="autoScroll" size="small">自动滚动</el-checkbox>
@@ -1341,7 +1344,7 @@ const menuPageTitle = useMenuPageTitle()
                            test-id="task-status-default" :options="[
               { label: '全部', value: 'all' },
               { label: '运行中', value: 'active' },
-              { label: '失败项', value: 'failed' },
+              { label: '未完成/失败项', value: 'failed' },
             ]" />
           </PageSettingItem>
         </PageSettingSection>

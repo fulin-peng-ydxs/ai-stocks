@@ -12,6 +12,7 @@ PHASE_LABELS = {
     "board_fund_flow": "板块资金流", "delisted_history": "退市股采集",
     "st_status": "ST 状态采集", "market_index": "市场指数采集",
     "stock_basic": "股票基础资料", "st_status_daily": "ST 逐日事实",
+    "intraday_archive": "分时归档", "intraday_supplement": "分时定向补齐",
 }
 
 

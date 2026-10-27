@@ -14,8 +14,8 @@ import {
 
 describe('taskDisplayLabel', () => {
   it('备用源沿用接口的 fallback 角色，不误判为未识别', () => {
-    expect(SOURCE_ROLE_LABEL.fallback).toBe('备用源')
-    expect(SOURCE_ROLE_LABEL.intraday).toBe('分时源')
+    expect(SOURCE_ROLE_LABEL.fallback).toBe('行情备用接入')
+    expect(SOURCE_ROLE_LABEL.intraday).toBe('分时')
   })
   it('未知任务和质量类型保留原参数，以中文业务名称兜底', () => {
     const params = { issue_type: 'new_internal_issue' }

@@ -250,8 +250,10 @@ export interface QualityIssue {
   ignore_scope: QualityIgnoreScope | null
   ignore_active: boolean
   intraday?: {
-    status: 'available' | 'needs_verification' | 'unavailable'
+    status: 'available' | 'needs_verification' | 'unavailable' | 'deferred'
     can_repair: boolean
+    retryable?: boolean
+    next_retry_at?: string | null
     reason: string
   }
 }

@@ -1344,6 +1344,35 @@ describe('代表性页面四态回归', () => {
     wrapper.unmount()
   })
 
+  it.each([
+    { status: 'available', can_repair: true, label: '补采复检', recheck: false },
+    { status: 'deferred', can_repair: false, label: '重新核验', recheck: true },
+  ])('分时台账在同一修复入口显示 $label 并透传复查策略', async (availability) => {
+    const warning = vi.spyOn(ElMessage, 'warning')
+    const success = vi.spyOn(ElMessage, 'success')
+    const row = { id: 89, code: '603758.SH', issue_type: 'intraday_partial', status: 'open',
+      detail: '{}', severity: 'mid', intraday: { ...availability, reason: '来源暂待更新' } }
+    ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockResolvedValue({
+      list: [row], total: 1, summary: [],
+    })
+    ;(dataApi.fixQualityIssue as ReturnType<typeof vi.fn>).mockResolvedValue({ task_id: 'fix-intraday' })
+    ;(dataApi.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'fix-intraday', task_type: 'fix', status: 'failed', message: '复检未通过',
+      params: { issue_type: 'intraday_partial' },
+      result: { ok: false, total: 1, scope_completed: 0, failed: 0, deferred: 1 },
+    })
+    const wrapper = await mountView(QualityView)
+    const actions = (wrapper.vm as any).qualityRowActions(row)
+    const recovery = actions.filter((action: any) => action.key === 'recover')
+    expect(recovery).toHaveLength(1)
+    expect(recovery[0].label).toBe(availability.label)
+    await recovery[0].onClick()
+    expect(dataApi.fixQualityIssue).toHaveBeenCalledWith(89, availability.recheck)
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('等待源更新或复查 1 条'))
+    expect(success).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('人工退市已解决记录仍能修正并等待写任务完成', async () => {
     ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockResolvedValue({
       list: [{ id: 8, code: '000004.SZ', name: '测试', issue_type: 'history_data_gap', status: 'resolved', detail: '', severity: 'mid' }], total: 1, summary: [],

@@ -166,11 +166,15 @@ def _resume_message(task_type: str, checkpoint: dict) -> str:
     phase = checkpoint.get("phase") or "未记录阶段"
     item = checkpoint.get("current_item") or "未记录位置"
     if task_type == "intraday_ingest":
-        scope = checkpoint.get("intraday_scope") or {}
+        supplement = checkpoint.get("intraday_supplement_checkpoint")
+        current = supplement if supplement else checkpoint
+        scope = current.get("intraday_scope") or {}
         total = len(scope.get("codes") or []) or checkpoint.get("phase_total")
-        done = len(checkpoint.get("intraday_done") or [])
-        failed = len(checkpoint.get("intraday_failed") or {})
+        done = len(current.get("intraday_done") or [])
+        failed = len(current.get("intraday_failed") or {})
         count = f"已成功完成 {done}/{total} 只" if total else f"已成功完成 {done} 只"
+        if supplement:
+            count = "主源已归档，定向补齐" + count
         if failed:
             count += f"，{failed} 只失败待重试"
     else:
@@ -855,6 +859,8 @@ class _IntradayRepairContext:
 
     def __init__(self, ctx, persist_key=None, *, on_progress=None):
         self.ctx, self.tid = ctx, ctx.tid
+        # 有界队列从子上下文获取统计器；不能只转发日志而丢失工作线程的请求观测。
+        self.request_tracker = getattr(ctx, "request_tracker", None)
         self.persist_key = persist_key
         self.on_progress = on_progress
         self.checkpoint = dict(ctx.checkpoint.get(persist_key, {})) if persist_key else {}
@@ -885,10 +891,92 @@ class _IntradayRepairContext:
 
 
 def _h_intraday_ingest(params: dict, ctx: TaskContext) -> dict:
-    """独立分时任务沿用现有 DuckDB 写槽位与 PG 运行态。"""
-    from backend.services.intraday_archive import IntradayArchiveService
+    """主源归档后定向补齐，沿用同一写槽位、整日候选规则及独立阶段检查点。"""
+    import pandas as pd
 
-    return IntradayArchiveService(ctx.svc.market).collect(params, ctx=ctx)
+    from backend.services.intraday_archive import IntradayArchiveService
+    from backend.services.intraday_contract import INTRADAY_ISSUE_TYPES
+
+    archive = IntradayArchiveService(ctx.svc.market)
+    primary = archive.collect(params, ctx=TaskProgressScope(ctx, 0, 0.65))
+    scope = ctx.checkpoint["intraday_scope"]
+    primary_facts, primary_issues = archive.last_scan
+    # 忽略/已解决问题不进入自动补齐；目标日期和代码沿用本任务冻结范围。
+    selected = archive.c.query_df(
+        "SELECT code,trade_date FROM data_quality_issue WHERE status='open' "
+        "AND issue_type IN (SELECT unnest(?::VARCHAR[])) "
+        "AND code IN (SELECT unnest(?::VARCHAR[])) AND trade_date BETWEEN ? AND ?",
+        [list(INTRADAY_ISSUE_TYPES), scope["codes"], scope["start"], scope["end"]],
+    )
+    dates = {code: {str(pd.Timestamp(day).date()) for day in frame.trade_date}
+             for code, frame in selected.groupby("code", sort=False)}
+    for code in ctx.checkpoint.get("intraday_failed", {}):
+        target = primary_facts[primary_facts.code.eq(code)
+                               & primary_facts.trade_date.between(scope["start"], scope["end"])]
+        dates.setdefault(code, set()).update(str(day.date()) for day in target.trade_date)
+    dates = {code: days for code, days in dates.items() if days}
+    if not dates:
+        ctx.progress(1, primary["message"])
+        return primary
+    ctx.log(f"主源归档结束：对 {len(dates)} 个仍有质量缺口的标的尝试备用源；"
+            "完整标的不再取源，源端未就绪时保留缺口并等待复查")
+
+    def report(value, message):
+        checkpoint = ctx.checkpoint.get("intraday_supplement_checkpoint", {})
+        frozen = checkpoint.get("intraday_scope", {})
+        ctx.set_phase("intraday_supplement", phase_done=checkpoint.get("phase_done", 0),
+                      phase_total=len(frozen.get("codes", dates)))
+        ctx.progress(0.65 + 0.35 * value, "定向补齐：" + message)
+
+    supplement_ctx = _IntradayRepairContext(
+        ctx, "intraday_supplement_checkpoint", on_progress=report,
+    )
+    supplement = archive.collect(
+        {"mode": "refetch", "codes": sorted(dates), "date_start": scope["start"],
+         "date_end": scope["end"]},
+        ctx=supplement_ctx, allow_fallback=True, repair_dates=dates,
+    )
+    after_facts, after_issues = archive.last_scan
+    replaced = set(after_facts.code)
+    facts = pd.concat([primary_facts[~primary_facts.code.isin(replaced)], after_facts])
+    issues = [item for item in primary_issues if item["code"] not in replaced] + after_issues
+    facts = facts[facts.code.isin(scope["codes"]) & facts.trade_date.le(pd.Timestamp(scope["end"]))]
+    bad_codes = {item["code"] for item in issues}
+    primary_failed = dict(ctx.checkpoint.get("intraday_failed", {}))
+    failed = {**primary_failed,
+              **supplement_ctx.checkpoint.get("intraday_failed", {})}
+    # 本次实际取得完整候选并通过物理复检后，才把前序来源错误降为警告。
+    fresh_complete = set(supplement_ctx.checkpoint.get("intraday_fresh_complete", []))
+    failed = {code: error for code, error in failed.items()
+              if code in bad_codes or code not in fresh_complete}
+    # 根检查点只表示主源阶段，备用源失败留在子检查点；否则续跑会误跳主源失败标的，
+    # 或因备用源失败把已完成主源重新采集。只有已实际补齐的主源失败项可以收敛。
+    remaining_primary_failed = {code: error for code, error in primary_failed.items() if code in failed}
+    done = set(ctx.checkpoint.get("intraday_done", [])) | (set(primary_failed) - set(remaining_primary_failed))
+    ctx.set_checkpoint(intraday_done=sorted(done), intraday_failed=remaining_primary_failed,
+                       intraday_stats={**ctx.checkpoint.get("intraday_stats", {}),
+                                       "failed": len(remaining_primary_failed)})
+    result = {**primary,
+              **{key: primary.get(key, 0) + supplement.get(key, 0)
+                 for key in ("inserted", "updated", "unchanged", "deferred", "out_of_range")},
+              "ok": not failed, "failed": len(failed),
+              "partial": int(facts.actual_status.eq("partial").sum()),
+              "missing": int(facts.actual_status.eq("missing").sum()),
+              "quality": {kind: sum(item["issue_type"] == kind for item in issues)
+                          for kind in INTRADAY_ISSUE_TYPES},
+              "supplement": supplement,
+              "errors": (primary.get("errors", []) + supplement.get("errors", []))[:100]}
+    availability = {(item["code"], str(item["trade_date"])):
+                    json.loads(item["detail"]).get("availability", {}).get("status")
+                    for item in issues}
+    result["deferred"] = sum(status == "deferred" for status in availability.values())
+    result["out_of_range"] = sum(status == "unavailable" for status in availability.values())
+    result["message"] = (f"分时采集及定向补齐完成：新增 {result['inserted']}、更新 {result['updated']}、"
+                         f"部分 {result['partial']}、缺失 {result['missing']}、"
+                         f"等待源更新或复查 {result['deferred']}、技术失败 {result['failed']}；"
+                         "未完整数据继续保留在质量台账")
+    ctx.progress(1, result["message"])
+    return result
 
 
 def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
@@ -1300,7 +1388,7 @@ def _repair_intraday_stock(c, ctx, code, day):
         return cache[code]
     # 批量已按股票连续分组，只保留当前股票的复检结果。
     cache.clear()
-    archive = IntradayArchiveService(c)
+    archive = getattr(ctx, "_intraday_archive", None) or IntradayArchiveService(c)
     days = sorted(getattr(ctx, "_intraday_groups", {}).get(code, [str(day)]))
     selected_rows = c.query_df(
         "SELECT id,trade_date,issue_type,detail FROM data_quality_issue "
@@ -1311,21 +1399,23 @@ def _repair_intraday_stock(c, ctx, code, day):
     if before is None:
         before = archive._coverage_facts([code])
     before_counts = {str(r.trade_date.date()): int(r.actual_count) for r in before.itertuples()}
-    current = archive.issues([code], facts=before)
-    pending_days = {str(r["trade_date"]) for r in current}.intersection(days)
     result = {"failed": 0, "out_of_range": 0}
     if hasattr(ctx, "_intraday_batch_failed"):
         result = {"failed": int(code in ctx._intraday_batch_failed)}
-    elif pending_days:
-        result = archive.collect(
-            {"mode": "refetch", "codes": [code], "date_start": min(pending_days),
-             "date_end": max(pending_days)}, ctx=_IntradayRepairContext(ctx),
-            allow_fallback=True, repair_dates=pending_days,
-            recheck_source=getattr(ctx, "_intraday_recheck_source", False),
-        )
-    after_facts = archive._coverage_facts([code])
+    else:
+        current = archive.issues([code], facts=before)
+        pending_days = {str(r["trade_date"]) for r in current}.intersection(days)
+        if pending_days:
+            result = archive.collect(
+                {"mode": "refetch", "codes": [code], "date_start": min(pending_days),
+                 "date_end": max(pending_days)}, ctx=_IntradayRepairContext(ctx),
+                allow_fallback=True, repair_dates=pending_days,
+                recheck_source=getattr(ctx, "_intraday_recheck_source", False),
+            )
+    snapshot = getattr(ctx, "_intraday_batch_after", None)
+    after_facts = snapshot[0] if snapshot is not None else archive._coverage_facts([code])
     after_counts = {str(r.trade_date.date()): int(r.actual_count) for r in after_facts.itertuples()}
-    remaining = archive.issues([code], facts=after_facts)
+    remaining = snapshot[1] if snapshot is not None else archive.issues([code], facts=after_facts)
     lookup = {(r["issue_type"], str(r["trade_date"])): r for r in remaining}
     for issue in remaining:
         if str(issue["trade_date"]) not in days:
@@ -1335,6 +1425,7 @@ def _repair_intraday_stock(c, ctx, code, day):
         availability = detail.get("availability", {})
         outcome = ("improved" if after > before_counts.get(str(issue["trade_date"]), 0) else
                    "technical_failure" if result.get("failed") else
+                   "deferred" if availability.get("status") == "deferred" else
                    "unavailable" if availability.get("can_repair") is False else "unchanged")
         detail["last_repair"] = {
             "task_id": ctx.tid, "checked_at": datetime.now().isoformat(), "outcome": outcome,
@@ -1838,6 +1929,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
                   phase_total=phase_total, phase_done=len(done_ids),
                   current_item=None, issue_done_ids=sorted(done_ids))
     processed_ids = set()
+    initial_processed = len(done_ids)
 
     def recover_issue(iid):
         nonlocal resolved, scope_completed, failed, last_msg, last_err
@@ -1848,7 +1940,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
         processed_ids.add(iid)
         last_msg = last_err = ""
         ctx.set_phase("fix_issue", done=len(done_ids), total=phase_total,
-                      phase_total=phase_total, phase_done=len(done_ids),
+                      phase_total=phase_total, phase_done=initial_processed + i - 1,
                       current_item=iid, issue_done_ids=sorted(done_ids))
         ctx.progress(min(0.1 + 0.8 * (i - 1) / n, 0.9), f"恢复 {i}/{n}…")
         try:
@@ -1864,7 +1956,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
             if clean:
                 done_ids.add(iid)
             ctx.set_phase("fix_issue", done=len(done_ids), total=phase_total,
-                          phase_total=phase_total, phase_done=len(done_ids),
+                          phase_total=phase_total, phase_done=initial_processed + i,
                           current_item=iid, issue_done_ids=sorted(done_ids))
             ctx.log(f"[{i}/{n}] {msg}")
         except TaskCancelled:
@@ -1873,7 +1965,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
             failed += 1
             last_err = str(e)
             ctx.set_phase("fix_issue", done=len(done_ids), total=phase_total,
-                          phase_total=phase_total, phase_done=len(done_ids),
+                          phase_total=phase_total, phase_done=initial_processed + i,
                           current_item=iid, issue_done_ids=sorted(done_ids))
             ctx.log(f"[{i}/{n}] 恢复失败 id={iid}: {e}（已退回待处理）", "error")
         ctx.progress(0.1 + 0.8 * i / n,
@@ -1882,6 +1974,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
     if ctx._intraday_groups:
         from backend.services.intraday_archive import IntradayArchiveService
         archive = IntradayArchiveService(c)
+        ctx._intraday_archive = archive
         groups = ctx._intraday_groups
         # 只加载覆盖事实，不持有全市场分钟；同股选中日期共用来源请求。
         ctx.progress(0.1, f"分时恢复：正在核对 {len(groups)} 个标的的本地归档与待修日期")
@@ -1908,15 +2001,22 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
         )
         ctx._intraday_batch_failed = dict(batch_ctx.checkpoint.get("intraday_failed", {}))
 
-        def finish_stock(code, error=None):
+        def finish_stock(code, error=None, snapshot=None):
             if error:
                 ctx._intraday_batch_failed[code] = error
             else:
                 ctx._intraday_batch_failed.pop(code, None)
-            for iid in group_ids.get(code, []):
-                recover_issue(iid)
-            # 复用质量同步，关闭消失问题并承接整日缺失变为分钟不完整等同股问题变化。
-            archive.sync([code])
+            if snapshot is None:
+                after_facts = archive._coverage_facts([code])
+                snapshot = (after_facts, archive.issues([code], facts=after_facts))
+            ctx._intraday_batch_after = snapshot
+            try:
+                for iid in group_ids.get(code, []):
+                    recover_issue(iid)
+                # 归档、逐条复检及台账同步共用同一份落库后事实；忽略规则仍在同步时重读。
+                archive.sync([code], facts=snapshot[0], issues=snapshot[1])
+            finally:
+                ctx._intraday_batch_after = None
             ctx._intraday_batch_before.pop(code, None)
 
         # 兼容旧任务“归档已完成、台账尚未处理”的检查点，先在本地收口再继续网络请求。
@@ -1926,8 +2026,11 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
                 finish_stock(code)
             elif code in archived:
                 # 旧归档检查点只证明当次取源完成，不能让仍待修复的日期永久跳过续跑。
+                after_facts = archive._coverage_facts([code])
+                ctx._intraday_batch_after = (after_facts, archive.issues([code], facts=after_facts))
                 _repair_intraday_stock(c, ctx, code, min(groups[code]))
-                archive.sync([code])
+                archive.sync([code], facts=after_facts, issues=ctx._intraday_batch_after[1])
+                ctx._intraday_batch_after = None
                 closed = c.query_df(
                     "SELECT id FROM data_quality_issue WHERE status='resolved' "
                     "AND id IN (SELECT unnest(?::BIGINT[]))", [group_ids[code]],
@@ -1965,8 +2068,10 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
     if repair_type and n > 1:
         msg += f"，原调度范围完成 {scope_completed}/{n} 条"
     ok = (scope_completed == n)
-    outcomes = {"improved": 0, "unchanged": 0, "unavailable": 0, "technical_failure": failed}
+    outcomes = {"improved": 0, "unchanged": 0, "deferred": 0,
+                "unavailable": 0, "technical_failure": failed}
     retryable = bool(failed)
+    deferred_until = []
     unresolved = c.query_df(
         "SELECT issue_type,detail FROM data_quality_issue WHERE status='open' "
         "AND id IN (SELECT unnest(?::BIGINT[]))", [ids],
@@ -1980,12 +2085,19 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
         outcomes[outcome] = outcomes.get(outcome, 0) + 1
         if outcome != "technical_failure" and detail.get("last_repair", {}).get("technical_failure"):
             outcomes["technical_failure"] += 1
-        retryable |= detail.get("availability", {}).get("can_repair", True)
+        availability = detail.get("availability", {})
+        retryable |= availability.get("retryable", availability.get("can_repair", True))
+        if availability.get("status") == "deferred" and availability.get("next_retry_at"):
+            deferred_until.append(availability["next_retry_at"])
     if ctx._intraday_groups:
         msg += (f"；改善未完整 {outcomes['improved']}、未改善 {outcomes['unchanged']}、"
+                f"等待源更新或复查 {outcomes['deferred']}、"
                 f"当前来源无法覆盖 {outcomes['unavailable']}、技术失败 {outcomes['technical_failure']}")
     return {"message": msg, "ok": ok, "resolved": resolved, "failed": max(failed, outcomes["technical_failure"]), "total": n,
             **outcomes, "retryable": bool(retryable or unresolved.empty or not ctx._intraday_groups),
+            # 混有立即可重试问题时不延后整批；全部剩余问题都在等待时才提示调度延后。
+            "next_retry_at": (min(deferred_until) if len(deferred_until) == len(unresolved)
+                              and deferred_until else None),
             "scope_completed": scope_completed, "related_stage_errors": getattr(ctx, "related_stage_errors", {})}
 
 

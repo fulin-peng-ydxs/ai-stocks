@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 import pandas as pd
 
 from backend.common.exceptions import DataSourceError
+from backend.config.request_snapshot import get_request_settings
 from backend.datasource.base import SINA_INTRADAY_REQUEST_LIMIT
 from backend.services import eod_dates
 from backend.services.intraday_contract import PROVIDER_LABELS, required_times
@@ -62,13 +63,17 @@ class IntradayEvidence:
 
     def __init__(self, client):
         self.c = client
+        self.now = eod_dates.shanghai_now()
+        self._cutoff = eod_dates.time_cutoff()
         self.calendar_ready = True
         try:
             self.session = str(eod_dates.latest_open_day(client, eod_dates.shanghai_now().date()))
+            self.latest_closed = str(eod_dates.latest_open_day(client, self._cutoff))
         except DataSourceError:
             # 旧异常记录可能先于日历存在；只读台账可查看，不能据此认定窗口不可覆盖。
             self.calendar_ready = False
             self.session = str(eod_dates.shanghai_now().date())
+            self.latest_closed = self.session
 
     def load(self, codes=None) -> dict:
         where, args = (
@@ -121,11 +126,30 @@ class IntradayEvidence:
 
     def assess(self, code, day, missing, states, *, allow_fallback=True, recheck=False):
         """只有成功响应范围证据能拒绝取源；固定八日、空响应、异常均不能证明永久不可得。"""
-        providers, observations, blocked, decisions = [], [], [], []
+        now = eod_dates.shanghai_now()
+        refresh_calendar = now.date() != self.now.date() or not self.calendar_ready
+        if refresh_calendar:
+            # 长任务跨交易会话后不能沿用旧会话的跳过证据；目标范围仍由任务检查点冻结。
+            try:
+                self.session = str(eod_dates.latest_open_day(self.c, now.date()))
+                self.calendar_ready = True
+            except DataSourceError:
+                self.calendar_ready = False
+        cutoff = eod_dates.time_cutoff()
+        if cutoff != self._cutoff or refresh_calendar:
+            try:
+                self.latest_closed = str(eod_dates.latest_open_day(self.c, cutoff))
+            except DataSourceError:
+                self.calendar_ready = False
+            self._cutoff = cutoff
+        self.now = now
+        recheck_interval = get_request_settings().intraday.source_recheck_interval_sec
+        providers, observations, blocked, decisions, deferred = [], [], [], [], []
         unknown = False
         expected = required_times(code)
         required = missing or sorted(expected)
         for provider in providers_for(code, allow_fallback):
+            retry_at = None
             state = states.get((code, provider), {})
             evidence = state.get("evidence", {})
             observed = evidence.get("observed_at")
@@ -195,6 +219,24 @@ class IntradayEvidence:
                 source_reason = (f"最近响应 {evidence['first']}～{evidence['last']}，"
                                  f"已达到本次 {evidence['request_limit']} 条，未覆盖待补分钟")
             elif (
+                (day >= self.latest_closed or evidence["last"] < f"{day} 15:00:00")
+                and recheck_interval > 0
+                and missing
+                and evidence.get("required_counts", {}).get(day, 0) <= len(expected) - len(missing)
+                and 0 <= self.now.timestamp() - pd.Timestamp(observed).timestamp()
+                < recheck_interval
+            ):
+                # 最新日仍可能补发，只延后重复请求，不把等待源更新解释为永久不可覆盖。
+                retry_at = (pd.Timestamp(observed) + pd.Timedelta(seconds=recheck_interval))
+                retry_at = retry_at.tz_convert(eod_dates.SHANGHAI).isoformat()
+                reason_code = ("source_not_ready" if evidence["last"] < f"{day} 15:00:00"
+                               else "recheck_deferred")
+                deferred.append((retry_at, reason_code))
+                source_reason = (f"源端待更新，最近响应截至 {evidence['last']}"
+                                 if reason_code == "source_not_ready"
+                                 else "最近响应未提供更好的整日候选")
+                source_reason += f"；{retry_at} 后可复查，人工重新核验可立即请求"
+            elif (
                 day < self.session
                 and evidence["last"] >= f"{day} 15:00:00"
                 and day in evidence.get("missing_by_day", {})
@@ -224,9 +266,12 @@ class IntradayEvidence:
                     else "最近响应有补采机会"
                 )
             decisions.append({"source": provider, "request": provider in providers,
-                              "reason": source_reason})
-        status = ("needs_verification" if unknown else "available") if providers else "unavailable"
+                              "reason": source_reason, "next_retry_at": retry_at})
+        status = (("needs_verification" if unknown else "available") if providers
+                  else "deferred" if deferred else "unavailable")
         reason = (
+            "来源暂待更新或复查，问题继续保留，可在复查时间到达后重试"
+            if not providers and deferred else
             "最近有效响应未提供更完整的整日候选，保留问题，可手动重新核验"
             if not providers and "source_missing_minutes" in blocked
             else "当前来源响应未覆盖缺失分钟，保留历史问题，可手动重新核验"
@@ -242,9 +287,12 @@ class IntradayEvidence:
         return {
             "status": status,
             "can_repair": bool(providers),
+            "retryable": bool(providers or deferred),
+            "next_retry_at": min((item[0] for item in deferred), default=None),
             "providers": providers,
             "reason": reason,
-            "reason_code": blocked[0] if blocked else status,
+            "reason_code": (deferred[0][1] if not providers and deferred else
+                            blocked[0] if blocked else status),
             "sources": observations,
             "decisions": decisions,
         }

@@ -297,6 +297,12 @@ def _install_http_policy(default_timeout=None):
                     check_thread_cancel()
                     if outcome["failed"]:
                         response.raise_for_status()
+                    if response.status_code in (400, 403, 404, 405, 410, 422):
+                        # 确定的 HTTP 拒绝不由语义层原样放大；401 留给来源刷新，429 走共享冷却。
+                        raise SourceRequestError(
+                            f"{group} HTTP {response.status_code}，本次请求已停止；"
+                            "请核查来源地址、权限或响应协议"
+                        )
                     return response
             except SourceRequestError:
                 raise
@@ -305,7 +311,8 @@ def _install_http_policy(default_timeout=None):
             except requests.RequestException as exc:
                 if attempt + 1 >= policy.attempts:
                     raise SourceRequestError(
-                        f"{group} HTTP请求已尝试 {policy.attempts} 次，技术失败"
+                        f"{group} HTTP请求已尝试 {policy.attempts} 次，技术失败："
+                        f"{type(exc).__name__}: {str(exc)[:300]}"
                     ) from exc
                 if budget is not None and budget.get(budget_key, 0) >= policy.attempts:
                     raise SourceRequestError(f"{group} 同一请求的语义与网络尝试预算已耗尽") from exc

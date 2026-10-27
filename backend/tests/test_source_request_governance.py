@@ -445,6 +445,66 @@ def test_physical_retry_exhaustion_cannot_be_multiplied_by_sdk_wrapper(monkeypat
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize("status", [400, 403, 404, 405, 410, 422])
+def test_definitive_http_rejection_does_not_repeat_semantic_attempts(monkeypatch, status):
+    import requests
+
+    from backend.common.exceptions import SourceRequestError
+    from backend.datasource.akshare_source import AKShareSource  # noqa: F401
+    from backend.datasource.base import with_retry
+
+    cfg = Settings()
+    monkeypatch.setattr(rp, "get_effective_settings", lambda: cfg)
+
+    @contextmanager
+    def slot(*args, **kwargs):
+        yield {}
+
+    monkeypatch.setattr(rt, "request_slot", slot)
+    calls = []
+
+    def send(*args, **kwargs):
+        calls.append(1)
+        response = requests.Response()
+        response.status_code = status
+        response._content = b"{}"
+        response._content_consumed = True
+        return response
+
+    monkeypatch.setattr(rp, "_HTTP_SEND", send)
+
+    class Source:
+        name = "akshare"
+
+        @with_retry()
+        def fetch(self):
+            return requests.get("https://finance.sina.com.cn/test")
+
+    with pytest.raises(SourceRequestError, match=f"HTTP {status}"):
+        Source().fetch()
+    assert len(calls) == 1
+
+
+def test_401_response_remains_available_for_source_credential_refresh(monkeypatch):
+    import requests
+
+    from backend.datasource.akshare_source import AKShareSource  # noqa: F401
+
+    monkeypatch.setattr(rp, "get_effective_settings", lambda: Settings())
+
+    @contextmanager
+    def slot(*args, **kwargs):
+        yield {}
+
+    monkeypatch.setattr(rt, "request_slot", slot)
+    response = requests.Response()
+    response.status_code = 401
+    response._content = b"{}"
+    response._content_consumed = True
+    monkeypatch.setattr(rp, "_HTTP_SEND", lambda *args, **kwargs: response)
+    assert requests.get("https://q.10jqka.com.cn/test").status_code == 401
+
+
 def test_config_batch_failure_rolls_back_before_version_notification(monkeypatch):
     from backend.storage.app_config import AppConfigRepo
 

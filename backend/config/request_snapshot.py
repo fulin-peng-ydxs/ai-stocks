@@ -70,6 +70,7 @@ def get_request_settings():
             # 版本只由请求策略决定，不对 Cookie、密钥或其它敏感配置计算可见摘要。
             data = {
                 "datasource": settings.datasource.model_dump(),
+                "intraday": settings.intraday.model_dump(),
                 "ths_board": settings.ths_board.model_dump(exclude={"login_cookie"}),
             }
             version = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()[:12]

@@ -40,6 +40,7 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "datasource.socket_timeout_sec", "label": "请求超时(秒)", "type": "number", "min": 1, "desc": "每次网络尝试的连接和读取超时；不是整个任务的时长上限。下一次请求读取新值，在途请求不变。"},
         {"path": "datasource.max_retries", "label": "最多尝试次数", "type": "int", "min": 1, "max": 10, "desc": "包含首次请求；3 表示首次加最多两次重试。一次多接口业务操作可能包含多个请求。"},
         {"path": "datasource.retry_backoff_sec", "label": "重试初始等待(秒)", "type": "number", "min": 0, "max": 60, "desc": "指数退避起点；2 秒表示依次等待 2、4、8……秒。"},
+        {"path": "intraday.source_recheck_interval_sec", "label": "分时来源复查间隔(秒)", "type": "int", "min": 0, "max": 86400, "desc": "最新交易日成功响应未提供更好整日候选时，延后再次取源；默认900秒，0关闭。技术失败不受此间隔限制，人工重新核验可绕过。"},
     ]},
     {"key": "cost", "label": "回测成本", "desc": "控制回测成交记账时使用的默认交易成本。", "fields": [
         {"path": "backtest.cost.commission_rate", "label": "佣金率", "type": "number", "min": 0, "max": 0.1, "desc": "买卖双边计入的佣金比例。"},
@@ -357,7 +358,7 @@ class AppConfigRepo:
 
     @staticmethod
     def _invalidate_requests(paths):
-        if any(path.startswith(("datasource.", "ths_board.")) for path in paths):
+        if any(path.startswith(("datasource.", "ths_board.", "intraday.")) for path in paths):
             from backend.config.request_snapshot import invalidate_request_settings
             invalidate_request_settings()
 

@@ -39,6 +39,11 @@ def request_settings(monkeypatch):
         "backend.services.intraday_source.get_effective_settings",
         lambda: SimpleNamespace(datasource=settings),
     )
+    # 原有编排回归关闭最新日复查间隔；间隔、到期和人工绕过由专用证据用例覆盖。
+    monkeypatch.setattr(
+        "backend.services.intraday_evidence.get_request_settings",
+        lambda: SimpleNamespace(intraday=SimpleNamespace(source_recheck_interval_sec=0)),
+    )
     return settings
 
 
@@ -138,6 +143,25 @@ def test_complete_primary_skips_backup_with_explicit_log():
     assert calls == ["sina"]
     for name in ("同花顺",):
         assert any(f"{name}：跳过" in m and "全部目标日" in m for m, _ in q.ctx.logs)
+
+
+def test_ths_year_response_is_normalized_once_per_year(monkeypatch):
+    """跨年窗口逐年清洗一次，汇总和候选构建不能再转换全部年度响应。"""
+    q = _service()
+    converted = []
+    original = q._frame_to_window
+
+    def convert(frame, provider):
+        converted.append(len(frame))
+        return original(frame, provider)
+
+    monkeypatch.setattr(q, "_frame_to_window", convert)
+    monkeypatch.setattr(q, "_fetch_provider", lambda source, code, provider, request_year=None:
+                        _frame(date(request_year, 9, 10)))
+    result = q.fetch_window("600000.SH", ["2025-09-10", DAY],
+                            allow_fallback=True, providers=("ths",))
+    assert converted == [240, 240]
+    assert result["request_years"] == [2025, 2026] and len(result["rows"]) == 480
 
 
 def test_source_responses_are_not_read_from_or_written_to_redis():

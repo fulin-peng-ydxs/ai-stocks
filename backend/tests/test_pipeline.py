@@ -824,3 +824,27 @@ def test_known_unavailable_repair_stops_self_retry_but_keeps_failure_dependents(
                   ['{"retryable":false,"unavailable":1,"technical_failure":0}'])
         assert enqueue_terminal_events("unavailable_intraday", client=c) == 1
         assert c.query_df("SELECT trigger_kind FROM scheduled_trigger_event").trigger_kind.tolist() == ["dependency"]
+
+
+def test_deferred_intraday_retry_respects_source_recheck_time():
+    """用户已启用的自身重试不能在来源复查时间前空跑，不影响普通失败依赖。"""
+    import json
+    from datetime import UTC, datetime, timedelta
+
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        svc = ScheduledJobService(c)
+        job = svc.create(
+            name="分时等待来源", task_type="fix", params={"issue_type": "intraday_partial"},
+            freq_type="daily", freq_config={"time": "16:00"}, trading_day_only=False,
+            retry_config={"enabled": True, "condition": "failure", "max_retries": 2,
+                          "delay": {"value": 1, "unit": "second"}}, enabled=False,
+        )
+        c.execute("UPDATE scheduled_job SET enabled=true WHERE id=?", [job["id"]])
+        due = datetime.now(UTC).astimezone() + timedelta(minutes=15)
+        _insert_terminal_task(c, tid="deferred_intraday", job_id=job["id"], status="failed")
+        c.execute("UPDATE async_task SET result=? WHERE id='deferred_intraday'",
+                  [json.dumps({"retryable": True, "next_retry_at": due.isoformat()})])
+        assert enqueue_terminal_events("deferred_intraday", client=c) == 1
+        event = c.query_df("SELECT due_at FROM scheduled_trigger_event").iloc[0, 0]
+        assert pd.Timestamp(event) == pd.Timestamp(due.astimezone().replace(tzinfo=None))

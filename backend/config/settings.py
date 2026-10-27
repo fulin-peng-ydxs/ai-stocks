@@ -96,6 +96,7 @@ class IntradayConfig(BaseModel):
     enabled: bool = True
     supported_trade_days: int = Field(default=8, ge=1, le=30)
     cache_ttl_sec: int = Field(default=43_200, ge=60, le=86_400)
+    source_recheck_interval_sec: int = Field(default=900, ge=0, le=86_400)
 
 
 class UniverseConfig(BaseModel):

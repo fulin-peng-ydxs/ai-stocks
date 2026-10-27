@@ -3,6 +3,7 @@ import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import { businessMessage, enumText } from '@/utils/displayText'
+import { taskOutcomeDisplay } from '@/utils/taskOutcome'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppActionHint from '@/components/AppActionHint.vue'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
@@ -22,7 +23,7 @@ import {
   markDelisted, getDelistingInfo, createTask, getTask,
   ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, sortQualityIssueTypes, SEVERITY_LABEL, ISSUE_STATUS_LABEL, ISSUE_LAYER, LAYER_LABEL,
   RECOVER_ACTION_LABEL,
-  type DataQuality, type QualityIssue, type QualityIgnoreScope, type CheckupIssueItem, type CheckupReport,
+  type AsyncTask, type DataQuality, type QualityIssue, type QualityIgnoreScope, type CheckupIssueItem, type CheckupReport,
 } from '@/api/data'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppDatePicker from '@/components/AppDatePicker.vue'
@@ -222,7 +223,7 @@ async function resetQueryFilters(): Promise<void> {
 }
 
 // 轮询任务到终态后回调（完成即自动刷新列表，闭环4）。返回任务结果供按真实结果提示。
-async function waitTask(taskId: string): Promise<{ status: string; message: string; result?: Record<string, any> | null }> {
+async function waitTask(taskId: string): Promise<AsyncTask> {
   let timeoutWarned = false
   for (;;) {
     try {
@@ -230,7 +231,7 @@ async function waitTask(taskId: string): Promise<{ status: string; message: stri
       // 保留 task_id 并继续轮询，避免用户重复提交实际仍在运行的写任务。
       const t = await getTask(taskId, { silent: true })
       if (['done', 'failed', 'interrupted'].includes(t.status)) {
-        return { status: t.status, message: t.message, result: t.result }
+        return t
       }
     } catch (error) {
       if (!isTimeoutError(error)) throw error
@@ -252,11 +253,10 @@ async function fixOne(row: QualityIssue) {
     const { task_id } = await fixQualityIssue(row.id, action?.recheck ?? false)
     ElMessage.info(`正在${action?.label ?? RECOVER_ACTION_LABEL[row.issue_type] ?? '恢复'}：${row.code}…`)
     const t = await waitTask(task_id)
-    // 以任务结果(result.ok)而非仅任务状态判定成败：恢复中途失败的任务仍是 done，但 ok=false、
-    // 问题已退回待处理——此时必须给警告而非"成功"（修复"日志失败却弹成功、状态卡修复中"）。
+    // 执行终态与实际解决分开；等待来源的修复提示原因，不能弹出“恢复成功”。
     const succeeded = t.status === 'done' && (t.result?.ok ?? false)
     if (succeeded) ElMessage.success(businessMessage(t.message, '恢复完成'))
-    else ElMessage.warning(businessMessage(t.message, '恢复未完成，问题已退回待处理'))
+    else ElMessage.warning(taskOutcomeDisplay(t).message)
     await load()
   } catch { row.status = 'open' } finally { busyId.value = null }
 }

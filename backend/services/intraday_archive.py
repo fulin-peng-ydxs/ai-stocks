@@ -20,6 +20,7 @@ from backend.services.intraday_contract import (
     candidate_rank,
     normalize_intraday_params,
     required_times,
+    rows_for_day,
 )
 from backend.services.intraday_evidence import IntradayEvidence, missing_ranges
 from backend.services.intraday_subjects import is_index, providers_for
@@ -51,6 +52,15 @@ class IntradayArchiveService:
         self._boundary_loaded = False
         self._boundary = None
         self._indices = None
+        self.last_scan = None
+        self._evidence = None
+
+    @property
+    def evidence(self):
+        """同一服务复用会话日历；证据状态仍实时加载，时钟和请求配置按判断刷新。"""
+        if self._evidence is None:
+            self._evidence = IntradayEvidence(self.c)
+        return self._evidence
 
     @property
     def index_codes(self):
@@ -288,19 +298,27 @@ class IntradayArchiveService:
         return frozen
 
     def _ensure_expected(self, code, scope):
-        start = scope.get("starts", {}).get(code, scope["start"])
-        expected_sql, args = self._coverage_sql([code], start_override=start)
-        self.c.execute(
-            "INSERT INTO stock_intraday_coverage(code,trade_date) "
-            f"SELECT code,trade_date FROM ({expected_sql}) "
-            "WHERE trade_date BETWEEN ? AND ? ON CONFLICT DO NOTHING",
-            args + [start, scope["end"]],
-        )
-        return self.c.query_df(
-            f"SELECT trade_date,status,point_count FROM ({expected_sql}) "
-            "WHERE trade_date BETWEEN ? AND ? ORDER BY trade_date",
-            args + [start, scope["end"]],
-        )
+        return self._ensure_expected_batch([code], scope)[code]
+
+    def _ensure_expected_batch(self, codes, scope):
+        """有界批次准备覆盖行，不逐股重复展开同一日历和监控范围。"""
+        starts = {code: scope.get("starts", {}).get(code, scope["start"]) for code in codes}
+        start = min(starts.values())
+        expected_sql, args = self._coverage_sql(codes, start_override=start)
+        targets = pd.DataFrame({"code": codes, "start_day": list(starts.values())})
+        with self.c.temp_view(targets, prefix="intraday_targets") as view:
+            sql = (f"SELECT e.* FROM ({expected_sql}) e JOIN {view} t ON t.code=e.code "
+                   "WHERE e.trade_date BETWEEN CAST(t.start_day AS DATE) AND ?")
+            self.c.execute(
+                "INSERT INTO stock_intraday_coverage(code,trade_date) "
+                f"SELECT code,trade_date FROM ({sql}) ON CONFLICT DO NOTHING", args + [scope["end"]],
+            )
+            rows = self.c.query_df(
+                f"SELECT code,trade_date,status,point_count FROM ({sql}) ORDER BY code,trade_date",
+                args + [scope["end"]],
+            )
+        grouped = {code: frame for code, frame in rows.groupby("code", sort=False)}
+        return {code: grouped.get(code, rows.iloc[:0]) for code in codes}
 
     def write_day(self, code: str, day: str, candidates: list[dict], *, error="", task_id=None):
         """选整日最优候选；事实、修订、覆盖和溯源原子提交，不混用两源分钟。"""
@@ -308,7 +326,7 @@ class IntradayArchiveService:
             raise ValueError("尚未收盘的分钟不得归档")
         options = []
         for window in candidates:
-            rows = [r for r in window["rows"] if r[0][:10] == day]
+            rows = rows_for_day(window, day)
             if rows:
                 options.append({**window, "rows": rows})
         best = max(options, key=lambda w: candidate_rank(w["rows"], w["source"], code), default=None)
@@ -443,7 +461,7 @@ class IntradayArchiveService:
             if ctx:
                 ctx.flush()
 
-        evidence = IntradayEvidence(self.c)
+        evidence = self.evidence
         states = evidence.load(scope["codes"])
         done = set(ctx.checkpoint.get("intraday_done", [])) if ctx else set()
         stats = dict(ctx.checkpoint.get("intraday_stats", {})) if ctx else {}
@@ -456,6 +474,7 @@ class IntradayArchiveService:
             "missing",
             "failed",
             "out_of_range",
+            "deferred",
         ):
             stats.setdefault(key, 0)
         if ctx:
@@ -481,14 +500,25 @@ class IntradayArchiveService:
             ctx.flush()
         errors = []
         failed_codes = dict(ctx.checkpoint.get("intraday_failed", {})) if ctx else {}
+        fresh_complete = set(ctx.checkpoint.get("intraday_fresh_complete", [])) if ctx else set()
         items = [(index, code) for index, code in enumerate(scope["codes"]) if code not in done]
         already_done = len(done)
+        if ctx:
+            ctx.set_phase("intraday_archive", phase_done=already_done, phase_total=len(scope["codes"]))
+        expected_batch = {}
+        positions = {code: position for position, (_, code) in enumerate(items)}
 
         def prepare(item):
             index, code = item
             if ctx:
                 ctx.check_cancel()
-            expected = self._ensure_expected(code, scope)
+            if code not in expected_batch:
+                position = positions[code]
+                expected_batch.clear()
+                expected_batch.update(self._ensure_expected_batch(
+                    [c for _, c in items[position:position + 128]], scope,
+                ))
+            expected = expected_batch.pop(code)
             if repair_dates is not None:
                 selected_dates = repair_dates.get(code, set()) if isinstance(repair_dates, dict) else repair_dates
                 expected = expected[expected.trade_date.map(lambda d: str(_day(d)) in selected_dates)]
@@ -514,11 +544,15 @@ class IntradayArchiveService:
                 lambda d: decisions[str(_day(d))]["can_repair"]
             )]
             unavailable = pending[~pending.index.isin(available.index)]
+            deferred = unavailable[unavailable.trade_date.map(
+                lambda d: decisions[str(_day(d))]["status"] == "deferred"
+            )]
             if ctx:
                 ctx.log(
                     f"[{index + 1}/{len(scope['codes'])}] {code}：应查 {len(expected)} 日，"
                     f"已完整跳过 {len(expected) - len(pending)} 日，待取源 {len(available)} 日，"
-                    f"当前来源无法覆盖 {len(unavailable)} 日"
+                    f"等待源更新或复查 {len(deferred)} 日，"
+                    f"当前来源无法覆盖 {len(unavailable) - len(deferred)} 日"
                 )
                 ctx.flush()
                 if allow_fallback:
@@ -538,7 +572,7 @@ class IntradayArchiveService:
                 )
             return {"index": index, "code": code, "expected": expected, "pending": pending,
                         "actual_times": actual_times, "decisions": decisions, "available": available,
-                        "unavailable": unavailable}
+                        "unavailable": unavailable, "deferred": deferred}
 
         def fetch(plan):
             code, available, decisions = plan["code"], plan["available"], plan["decisions"]
@@ -575,7 +609,8 @@ class IntradayArchiveService:
             available, unavailable = plan["available"], plan["unavailable"]
             candidates, technical_error, observations = value
             stats["skipped"] += len(plan["expected"]) - len(pending)
-            stats["out_of_range"] += len(unavailable)
+            stats["deferred"] += len(plan["deferred"])
+            stats["out_of_range"] += len(unavailable) - len(plan["deferred"])
             outcomes = {"inserted": 0, "updated": 0, "unchanged": 0, "missing": 0}
             if technical_error and len(errors) < 100:
                 errors.append({"code": code, "reason": technical_error})
@@ -590,12 +625,14 @@ class IntradayArchiveService:
                 for row in unavailable.itertuples():
                     day = str(_day(row.trade_date))
                     old_count = len(required_times(code) & actual_times.get(day, set()))
-                    if any(len(required_times(code) & {r[0][11:16] for r in w["rows"]
-                                                if r[0][:10] == day}) > old_count for w in candidates):
+                    if any(len(required_times(code) & {r[0][11:16] for r in rows_for_day(w, day)})
+                           > old_count for w in candidates):
                         improved.append(row.Index)
                 if improved:
                     available = pd.concat([available, unavailable.loc[improved]])
-                    stats["out_of_range"] -= len(improved)
+                    deferred_improved = len(set(improved) & set(plan["deferred"].index))
+                    stats["deferred"] -= deferred_improved
+                    stats["out_of_range"] -= len(improved) - deferred_improved
                 for row in available.itertuples():
                     if ctx:
                         ctx.check_cancel()
@@ -624,17 +661,19 @@ class IntradayArchiveService:
                 [target_days, code, scope.get("starts", {}).get(code, scope["start"]), scope["end"]],
             ).iloc[0]
             targets_complete = int(cover.target_complete_days) == len(target_days)
+            candidate_complete = bool(target_days) and all(
+                any(candidate_rank(rows_for_day(w, str(day)), w["source"], code)[0]
+                    for w in candidates) for day in target_days
+            )
+            if candidate_complete:
+                fresh_complete.add(code)
             if technical_error and targets_complete:
                 # 消费质量层的实际事实复检，不能仅凭覆盖标记把来源错误降为警告。
                 target_facts = self._coverage_facts([code])
                 target_facts = target_facts[target_facts.trade_date.dt.date.isin(target_days)]
                 targets_complete = not self.issues([code], facts=target_facts)
                 # 区间重采全部请求失败时，旧完整归档不能冒充本次取源成功。
-                targets_complete = targets_complete and all(
-                    any(candidate_rank([r for r in w["rows"] if r[0][:10] == str(day)],
-                                       w["source"], code)[0] for w in candidates)
-                    for day in target_days
-                )
+                targets_complete = targets_complete and candidate_complete
             if not technical_error or targets_complete:
                 done.add(code)
                 failed_codes.pop(code, None)
@@ -648,12 +687,15 @@ class IntradayArchiveService:
             stats["failed"] = len(failed_codes)
             # 修复入口逐股复检和回写台账；收口成功后才持久化归档完成检查点。
             if on_stock_complete:
-                on_stock_complete(code, failed_codes.get(code))
+                target_facts = self._coverage_facts([code])
+                on_stock_complete(code, failed_codes.get(code),
+                                  (target_facts, self.issues([code], facts=target_facts)))
             if ctx:
                 ctx.set_checkpoint(
                     intraday_done=sorted(done),
                     intraday_stats=stats,
                     intraday_failed=failed_codes,
+                    intraday_fresh_complete=sorted(fresh_complete),
                     phase_done=index + 1,
                 )
                 message = (
@@ -702,7 +744,8 @@ class IntradayArchiveService:
             "indices": sum(is_index(c) for c in scope["codes"]),
             "quality": quality,
             "message": f"分时采集完成：新增 {stats['inserted']}、更新 {stats['updated']}、"
-            f"部分 {stats['partial']}、缺失 {stats['missing']}、当前来源无法覆盖 {stats['out_of_range']}、技术失败 {stats['failed']}",
+            f"部分 {stats['partial']}、缺失 {stats['missing']}、等待源更新或复查 {stats['deferred']}、"
+            f"当前来源无法覆盖 {stats['out_of_range']}、技术失败 {stats['failed']}",
         }
 
     def _coverage_facts(self, codes=None):
@@ -749,7 +792,7 @@ class IntradayArchiveService:
 
     def issues(self, codes=None, *, facts=None):
         rows = self._coverage_facts(codes) if facts is None else facts
-        evidence = IntradayEvidence(self.c) if not rows.empty else None
+        evidence = self.evidence if not rows.empty else None
         states = evidence.load(codes) if evidence else {}
         result = []
         for row in rows.itertuples():
@@ -785,7 +828,8 @@ class IntradayArchiveService:
                                  "covered_count": int(row.expected_count),
                                  "missing_times": missing, "missing_ranges": ranges},
                     "availability": availability,
-                    "reason_code": availability["reason_code"] if availability["reason_code"] in ("window_truncated", "outside_observed_window")
+                    "reason_code": availability["reason_code"] if availability["reason_code"] in (
+                        "window_truncated", "outside_observed_window", "source_not_ready", "recheck_deferred")
                                    else "source_missing_minutes" if any(
                                        x["source"] == row.source for x in availability["sources"]
                                    ) else "needs_verification",
@@ -857,16 +901,17 @@ class IntradayArchiveService:
         )
         return pd.concat([frame, monitors], ignore_index=True).drop_duplicates()
 
-    def sync(self, codes=None, *, progress=None):
+    def sync(self, codes=None, *, progress=None, facts=None, issues=None):
+        """同步质量台账；同一写任务可复用刚落库的复检结果，独立扫描始终重读物理事实。"""
         from backend.services.data_report import DataIntegrityReport
 
         self._boundary_loaded = False
         if progress:
             progress(0, "分时归档覆盖事实")
-        facts = self._coverage_facts(codes)
+        facts = self._coverage_facts(codes) if facts is None else facts
         if progress:
             progress(0.4, "分钟完整性与来源证据")
-        rows = self.issues(codes, facts=facts)
+        rows = self.issues(codes, facts=facts) if issues is None else issues
         previous_repairs = self.c.query_df(
             "SELECT code,trade_date,issue_type,json_extract(CASE WHEN json_valid(detail) THEN detail "
             "ELSE '{}' END,'$.last_repair') last_repair FROM data_quality_issue "
@@ -927,6 +972,8 @@ class IntradayArchiveService:
                         f"FROM {view} f WHERE c.code=f.code AND c.trade_date=f.trade_date"
                     )
             DataIntegrityReport(self.c)._upsert_scan_issues(rows, INTRADAY_ISSUE_TYPES, codes=codes)
+        # 只保留覆盖摘要与问题，不持有分钟明细；同一任务后续阶段复用本轮扫描结果。
+        self.last_scan = (facts, rows)
         if progress:
             progress(1, "分时检查完成")
         return {

@@ -148,5 +148,8 @@ it('分时恢复动作消费后端可修复性，其他质量类型保持原入�
   expect(intradayRecoveryAction(issue)).toMatchObject({ label: '重新核验', recheck: true })
   issue.intraday.can_repair = true
   expect(intradayRecoveryAction(issue)).toMatchObject({ label: '补采复检', recheck: false })
+  issue.intraday = { status: 'deferred', can_repair: false, reason: '16:15后可复查' }
+  expect(intradayRecoveryAction(issue)?.tooltip).toContain('16:15后可复查')
+  expect(intradayRecoveryAction(issue)?.tooltip).toContain('立即请求')
   expect(intradayRecoveryAction({ issue_type: 'capital_gap' } as any)).toBeNull()
 })

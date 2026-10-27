@@ -57,6 +57,7 @@ intraday:
   enabled: true
   supported_trade_days: 8      # 数据管理采集的源端近期交易日窗口
   cache_ttl_sec: 43200         # 数据库逐股逐日归档查询缓存 12 小时
+  source_recheck_interval_sec: 900 # 最新日无更好候选/源端未就绪时的复查间隔；0关闭，人工重新核验可绕过
   # 请求限流、超时、重试和退避统一使用 datasource 的系统生效配置
 
 # ── 标的范围 ──

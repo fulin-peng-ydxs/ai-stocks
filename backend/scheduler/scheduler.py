@@ -1048,12 +1048,22 @@ def _insert_trigger_event(
     message: str | None = None,
     batch_time: datetime | None = None,
     dispatch_order: int = 0,
+    not_before: str | None = None,
 ) -> str:
     attempt = int(source.get("execution_attempt") or 1)
     raw = f"{source['id']}|{attempt}|{target['id']}|{trigger_kind}|{retry_count}"
     event_id = "evt_" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
     now = batch_time or datetime.now()
     due_at = now + timedelta(seconds=_delay_seconds(delay))
+    if not_before:
+        try:
+            earliest = datetime.fromisoformat(not_before)
+            # 运行态沿用本机无时区时间；带时区业务证据先转换到同一本机时间再比较。
+            if earliest.tzinfo is not None:
+                earliest = earliest.astimezone().replace(tzinfo=None)
+            due_at = max(due_at, earliest)
+        except (TypeError, ValueError):
+            log.warning("任务返回无效复查时间，沿用调度重试间隔")
     client.execute(
         "INSERT INTO scheduled_trigger_event "
         "(id, chain_id, source_task_id, source_attempt, source_status, target_job_id, "
@@ -1121,6 +1131,7 @@ def enqueue_terminal_events(task_id: str, *, client=None) -> int:
                     retry_count=next_retry,
                     batch_time=batch_time, dispatch_order=len(dependents),
                     delay=retry.get("delay") or {"value": 0, "unit": "minute"},
+                    not_before=result.get("next_retry_at"),
                 )
             else:
                 _insert_trigger_event(
