@@ -264,6 +264,12 @@ const emit = defineEmits<{
   font-variant-numeric: tabular-nums;
 }
 
+/* 固定列与普通单元格分别绘制，背景逐格渐变可能留下不同步的中间帧。
+ * 整行状态即时切换；单元格内按钮等控件仍使用各自的交互反馈。 */
+.app-data-table :deep(.el-table--enable-row-transition .el-table__body td.el-table__cell) {
+  transition: none;
+}
+
 .app-data-table :deep(th .caret-wrapper) {
   flex: 0 0 auto;
 }

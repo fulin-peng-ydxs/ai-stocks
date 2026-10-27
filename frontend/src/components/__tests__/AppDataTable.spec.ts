@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { defineComponent, h } from 'vue'
+import { compileStyle, parse } from '@vue/compiler-sfc'
 import ElementPlus from 'element-plus'
 import AppDataTable from '@/components/AppDataTable.vue'
 import appDataTableSource from '@/components/AppDataTable.vue?raw'
@@ -40,6 +42,43 @@ const AppPaginationStub = defineComponent({
 })
 
 describe('AppDataTable', () => {
+  it('普通列与左右固定列即时切换行底色，不覆盖单元格内部控件的过渡', () => {
+    const vendorStyle = document.createElement('style')
+    vendorStyle.textContent = readFileSync('node_modules/element-plus/theme-chalk/el-table.css', 'utf8')
+    const fixture = document.createElement('div')
+    fixture.setAttribute('data-v-table-test', '')
+    fixture.innerHTML = `<div class="el-table el-table--enable-row-transition">
+      <table class="el-table__body"><tbody><tr class="el-table__row">
+        <td class="el-table__cell el-table-fixed-column--left">左侧</td>
+        <td class="el-table__cell">正文</td>
+        <td class="el-table__cell el-table-fixed-column--right"><button style="transition: opacity .1s">更多</button></td>
+      </tr></tbody></table></div>`
+    const sharedStyle = document.createElement('style')
+    const styles = parse(appDataTableSource).descriptor.styles
+    sharedStyle.textContent = styles.map(style => compileStyle({
+      source: style.content, filename: 'AppDataTable.vue',
+      id: 'data-v-table-test', scoped: style.scoped,
+    }).code).join('\n')
+    document.head.append(vendorStyle)
+    document.body.append(fixture)
+    try {
+      const cells = [...fixture.querySelectorAll('td')]
+      // 库默认确实存在渐变；回归必须能检测到未覆盖的旧行为。
+      expect(cells.map(cell => getComputedStyle(cell).transition)).toEqual(Array(3).fill('background-color .25s 1ms'))
+      document.head.append(sharedStyle)
+      fixture.className = 'app-data-table'
+      for (const state of ['el-table__row', 'el-table__row hover-row', 'el-table__row current-row']) {
+        fixture.querySelector('tr')!.className = state
+        expect(cells.map(cell => getComputedStyle(cell).transition)).toEqual(['none', 'none', 'none'])
+      }
+      expect(getComputedStyle(fixture.querySelector('button')!).transition).toBe('opacity .1s')
+    } finally {
+      fixture.remove()
+      vendorStyle.remove()
+      sharedStyle.remove()
+    }
+  })
+
   it('嵌入表默认限高，显式高度、上限及完整展开可动态覆盖且不影响主表', async () => {
     const wrapper = mount(AppDataTable, {
       props: { data: [], embedded: true },

@@ -879,14 +879,16 @@ const menuPageTitle = useMenuPageTitle()
             <AppFormHelp>“完成后”包含成功和失败；人工终止不会触发</AppFormHelp>
           </el-form-item>
           <el-form-item label="触发延迟" required>
-            <el-input-number v-model="form.dependency_delay_value" data-testid="schedule-dependency-delay" :min="0" :precision="0" />
-            <AppSelect
-              v-model="form.dependency_delay_unit"
-              data-testid="schedule-dependency-delay-unit"
-              class="delay-unit-select"
-            >
-              <el-option v-for="item in DELAY_UNIT_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
-            </AppSelect>
+            <AppControlRow>
+              <el-input-number v-model="form.dependency_delay_value" data-testid="schedule-dependency-delay" :min="0" :precision="0" />
+              <AppSelect
+                v-model="form.dependency_delay_unit"
+                data-testid="schedule-dependency-delay-unit"
+                class="delay-unit-select"
+              >
+                <el-option v-for="item in DELAY_UNIT_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
+              </AppSelect>
+            </AppControlRow>
           </el-form-item>
         </template>
 
@@ -903,14 +905,16 @@ const menuPageTitle = useMenuPageTitle()
             </AppFormHelp>
           </el-form-item>
           <el-form-item label="重试延迟" required>
-            <el-input-number v-model="form.retry_delay_value" data-testid="schedule-retry-delay" :min="0" :precision="0" />
-            <AppSelect
-              v-model="form.retry_delay_unit"
-              data-testid="schedule-retry-delay-unit"
-              class="delay-unit-select"
-            >
-              <el-option v-for="item in DELAY_UNIT_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
-            </AppSelect>
+            <AppControlRow>
+              <el-input-number v-model="form.retry_delay_value" data-testid="schedule-retry-delay" :min="0" :precision="0" />
+              <AppSelect
+                v-model="form.retry_delay_unit"
+                data-testid="schedule-retry-delay-unit"
+                class="delay-unit-select"
+              >
+                <el-option v-for="item in DELAY_UNIT_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
+              </AppSelect>
+            </AppControlRow>
           </el-form-item>
           <el-form-item label="最大重试" required>
             <el-input-number v-model="form.max_retries" data-testid="schedule-max-retries" :min="1" :max="20" :precision="0" />
@@ -966,7 +970,7 @@ const menuPageTitle = useMenuPageTitle()
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .page-head-actions { display: flex; gap: var(--app-space-2); align-items: center; }
-.delay-unit-select { width: 96px; margin-left: var(--space-2); }
+.delay-unit-select { width: 96px; }
 .blk-head { display: flex; justify-content: space-between; align-items: center; }
 .form-section-divider { margin: var(--app-space-4) 0 14px; }
 </style>
