@@ -75,7 +75,7 @@ async function quickSubmit(): Promise<void> {
     confirmationOpen.value = false
     notifyTradeDisciplineChanged({ ruleId, tradeDate, source: 'quick' })
     await refreshSummary(tradeDate)
-    ElMessage.success(result.idempotent ? '该交易日已完成打卡' : '已记录今日无操作')
+    ElMessage.success(result.idempotent ? '本规则在该交易日已完成打卡' : '已记录本规则今日无操作')
   } catch (error) {
     if (getErrorStatus(error) === 409) {
       confirmationOpen.value = false
@@ -170,7 +170,7 @@ async function quickSubmit(): Promise<void> {
           <strong class="app-section-title">{{ pendingRule?.rule_name }}</strong>
           <span class="app-caption-text">交易日 · <time :datetime="quickTradeDate">{{ quickTradeDate }}</time></span>
         </div>
-        <p class="quick-confirm-outcome app-body-text">确认今日没有买卖操作，也没有应买未买或应卖未卖；系统将根据已有持仓自动核对全部有效规则。</p>
+        <p class="quick-confirm-outcome app-body-text">确认本规则今日没有买卖操作，也没有应买未买或应卖未卖；系统将根据已有持仓核对本规则，其他规则的打卡状态不变。</p>
 
         <p v-if="actionErrorRuleId === pendingRule?.rule_id" class="quick-rule-error" role="alert">{{ actionErrorMessage }}</p>
       </div>

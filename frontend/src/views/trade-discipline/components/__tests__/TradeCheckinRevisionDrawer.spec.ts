@@ -51,6 +51,21 @@ function mountDrawer(canSubmit = true) {
 }
 
 describe('TradeCheckinRevisionDrawer', () => {
+  it('历史标签使用保存的ST快照，不显示成未知或套用外层旧值', async () => {
+    getRevision.mockResolvedValue({ ...revision, operations: [{ ...revision.operations[0],
+      is_st: true, selection_facts: { is_st: false, st_as_of_date: '2026-08-22',
+        loss_status: null, st_risk_status: null } }] })
+    const wrapper = mountDrawer()
+    try {
+      await flushPromises()
+      const tag = wrapper.get('[data-testid="revision-operation-snapshot"] .el-table__body-wrapper')
+        .findComponent({ name: 'StockStatusTag' })
+      expect(tag.props('isSt')).toBe(false)
+      expect(tag.props('asOfDate')).toBe('2026-08-22')
+      expect(wrapper.get('[data-testid="revision-operation-snapshot"] .el-table__body-wrapper').text())
+        .not.toContain('ST状态未知')
+    } finally { wrapper.unmount() }
+  })
   it('按历史修订展示分类检查项和当时的核对结果，不读取后续规则', async () => {
     getRevision.mockImplementation(async (_id: string, revisionNo: number) => ({
       ...revision, revision_no: revisionNo,

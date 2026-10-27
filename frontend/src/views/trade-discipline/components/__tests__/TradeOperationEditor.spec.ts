@@ -15,6 +15,24 @@ const version: RuleVersionDetail = {
 }
 
 describe('TradeOperationEditor', () => {
+  it.each([false, true, null])('保存后和关联成交按核验快照回显ST（%s）', async isSt => {
+    const operation = { event_id: 'saved', stock_code: '600000.SH', stock_name_snapshot: '浦发银行',
+      side: 'buy' as const, stock_rule_id: 'stock-1', action_rule_id: 'buy-1',
+      price: '10', quantity: '100', amount: '1000', fee: '0', operated_at: '2026-10-23T10:00:00',
+      note: null, display_order: 1, is_st: true, st_as_of_date: '2026-10-26',
+      selection_facts: { is_st: isSt, st_as_of_date: '2026-10-23', loss_status: null, st_risk_status: null } }
+    const wrapper = mount(TradeOperationEditor, { props: { modelValue: [operation], version,
+      tradeDate: '2026-10-23', automatic: true, disabled: true },
+      global: { plugins: [ElementPlus], stubs: { StockOptionSelect: true }, directives: { permission: {} } } })
+    try {
+      await wrapper.get('[data-testid="operation-card-toggle"]').trigger('click')
+      const selector = wrapper.findComponent({ name: 'StockOptionSelect' })
+      expect(selector.props('modelValue')).toMatchObject({ is_st: isSt, st_as_of_date: '2026-10-23' })
+      await wrapper.setProps({ modelValue: [{ ...operation, linked: true }] })
+      expect(selector.props('modelValue')).toMatchObject({ is_st: isSt, st_as_of_date: '2026-10-23' })
+      expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    } finally { wrapper.unmount() }
+  })
   it.each(['buy', 'sell'] as const)('%s 买卖核对独立成章，显示规则正文并保留核对值与只读约束', async side => {
     const selected = `${side}-1`
     const withContent = { ...version, action_rules: version.action_rules.map(rule => ({ ...rule,

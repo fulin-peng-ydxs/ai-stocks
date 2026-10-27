@@ -78,7 +78,7 @@ describe('TradeDisciplineQuickCard', () => {
       expect(actions[0].text()).toBe('今日无操作')
       await actions[0].trigger('click')
       expect(wrapper.find('[data-testid="quick-peak-positions"]').exists()).toBe(false)
-      expect(wrapper.text()).toContain('自动核对全部有效规则')
+      expect(wrapper.text()).toContain('核对本规则，其他规则的打卡状态不变')
     }
     await actions.at(-1)!.trigger('click')
     expect(quickSubmit).not.toHaveBeenCalled()
@@ -91,7 +91,7 @@ describe('TradeDisciplineQuickCard', () => {
     const wrapper = await mountCard(true)
     await wrapper.get('.quick-rule-actions button.el-button--primary').trigger('click')
     expect(wrapper.find('[data-testid="quick-peak-positions"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('根据已有持仓自动核对')
+    expect(wrapper.text()).toContain('根据已有持仓核对本规则')
     await wrapper.get('[data-testid="quick-confirm"]').trigger('click')
     await flushPromises()
     expect(quickSubmit).toHaveBeenCalledWith('rule-1', '2026-08-22')
@@ -166,5 +166,39 @@ describe('TradeDisciplineQuickCard', () => {
     expect(wrapper.emitted('navigate')?.at(-1)).toEqual([{
       tab: 'checkin', ruleId: 'rule-1', tradeDate: '2026-08-22',
     }])
+  })
+
+  it('两套规则逐套确认，首次完成后另一套保留独立入口和确认上下文', async () => {
+    const first = pendingSummary.rules[0]!
+    const second = { ...first, rule_id: 'rule-2', rule_name: '分红纪律' }
+    const confirmed = { checkin_id: 'ledger:2026-08-22', current_revision_no: 1,
+      status: 'submitted', assessment: 'complied', no_operation: true }
+    getSummary.mockResolvedValue({ ...pendingSummary, total: 2, pending: 2, rules: [first, second] })
+    await useTradeDisciplineSummary().refreshSummary('2026-08-22')
+    const wrapper = await mountCard()
+    try {
+      expect(wrapper.text()).toContain('0/2')
+      await wrapper.findAll('.quick-rule-row')[0]!.get('button.el-button--primary').trigger('click')
+      expect(wrapper.text()).toContain('其他规则的打卡状态不变')
+      getSummary.mockResolvedValue({ ...pendingSummary, total: 2, completed: 1, pending: 1,
+        rules: [{ ...first, ...confirmed }, second] })
+      await wrapper.get('[data-testid="quick-confirm"]').trigger('click')
+      await flushPromises()
+      const rows = wrapper.findAll('.quick-rule-row')
+      expect(rows[0]!.text()).toContain('查看记录')
+      expect(rows[0]!.text()).not.toContain('今日无操作')
+      expect(rows[1]!.text()).toContain('待打卡')
+      expect(wrapper.text()).toContain('1/2')
+      expect(wrapper.text()).not.toContain('全部完成')
+      await rows[1]!.get('button.el-button--primary').trigger('click')
+      expect(wrapper.get('.quick-confirm-context strong').text()).toBe('分红纪律')
+      getSummary.mockResolvedValue({ ...pendingSummary, total: 2, completed: 2, pending: 0,
+        rules: [{ ...first, ...confirmed }, { ...second, ...confirmed }] })
+      await wrapper.get('[data-testid="quick-confirm"]').trigger('click')
+      await flushPromises()
+      expect(quickSubmit.mock.calls).toEqual([['rule-1', '2026-08-22'], ['rule-2', '2026-08-22']])
+      expect(wrapper.text()).toContain('2/2')
+      expect(wrapper.text()).toContain('全部完成')
+    } finally { wrapper.unmount() }
   })
 })

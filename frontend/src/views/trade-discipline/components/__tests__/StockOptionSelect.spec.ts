@@ -10,6 +10,20 @@ vi.mock('@/api/tradeDiscipline', () => ({
 }))
 
 describe('StockOptionSelect', () => {
+  it('同一股票回填ST事实时同步下拉候选，false不显示未知标签', async () => {
+    const selected = { code: '600000.SH', name: '浦发银行', board: null, industry: null }
+    const wrapper = mount(StockOptionSelect, { props: { modelValue: selected },
+      global: { plugins: [ElementPlus] } })
+    try {
+      await wrapper.setProps({ modelValue: { ...selected, is_st: false, st_as_of_date: '2026-10-23' } })
+      const tags = wrapper.findAllComponents({ name: 'StockStatusTag' })
+      expect(tags.every(tag => tag.props('isSt') === false)).toBe(true)
+      expect(wrapper.text()).not.toContain('ST状态未知')
+      expect(searchStocks).not.toHaveBeenCalled()
+      await wrapper.setProps({ modelValue: { ...selected, is_st: true, st_as_of_date: '2026-10-26' } })
+      expect(wrapper.findAllComponents({ name: 'StockStatusTag' }).every(tag => tag.props('isSt') === true)).toBe(true)
+    } finally { wrapper.unmount() }
+  })
   afterEach(() => {
     vi.useRealTimers()
     vi.clearAllMocks()

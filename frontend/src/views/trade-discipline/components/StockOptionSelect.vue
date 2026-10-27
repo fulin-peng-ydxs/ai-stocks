@@ -20,8 +20,10 @@ let requestSeq = 0
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 watch(() => props.modelValue, (value) => {
-  if (value && !options.value.some((item) => item.code === value.code)) {
-    options.value = [value, ...options.value]
+  if (value) {
+    const index = options.value.findIndex((item) => item.code === value.code)
+    if (index === -1) options.value = [value, ...options.value]
+    else options.value[index] = value
   }
 }, { immediate: true })
 

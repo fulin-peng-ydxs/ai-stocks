@@ -44,10 +44,120 @@ beforeEach(() => {
   vi.clearAllMocks()
   api.context.mockResolvedValue(context())
   api.history.mockResolvedValue({ total: 0, list: [] })
-  api.preview.mockResolvedValue({ assessment: 'complied', events: [], positions: [], evaluations: [], peak_positions: 0 })
+  api.preview.mockResolvedValue({ trade_date: '2026-10-23', assessment: 'complied', events: [], positions: [],
+    rules: [version], omissions: [], evaluations: [], peak_positions: 0 })
   api.submit.mockResolvedValue({})
 })
 describe('账户日结简化填报', () => {
+  it('已提交预览完整展示两套规则及各自遗漏，默认没有禁用编辑表单', async () => {
+    const second = { ...version, rule_id: 'second', name: '投资-股息分红' }
+    const snapshot: NonNullable<LedgerContext['snapshot']> = {
+      trade_date: '2026-10-23', events: [], positions: [], opening_positions: [],
+      rules: [version, second], omissions: [
+        { kind: 'missed_buy', stock_code: '600356.SH', stock_name: '恒丰纸业', rule_id: 'r' },
+        { kind: 'missed_sell', stock_code: '600873.SH', stock_name: '梅花生物', rule_id: 'second' },
+      ], evaluations: ['r', 'second'].map(rule_id => ({ rule_id, rule_name: rule_id,
+        assessment: 'breached', complete: true, issues: [], warnings: [] })),
+      assessment: 'breached', complete: true, peak_positions: 2, buy_amount: '0', sell_amount: '0',
+      fee: '0', net_outflow: '0', cash: null, realized_pnl: null, review_note: null,
+    }
+    api.context.mockResolvedValue(context({ rules: [version, second], snapshot, current_revision_no: 2 }))
+    const wrapper = mountWorkspace()
+    try {
+      await flushPromises()
+      const groups = wrapper.findAll('[data-testid="ledger-rule-record"]')
+      expect(groups).toHaveLength(2)
+      expect(groups[0]!.text()).toContain('恒丰纸业')
+      expect(groups[0]!.text()).not.toContain('梅花生物')
+      expect(groups[1]!.text()).toContain('投资-股息分红')
+      expect(groups[1]!.text()).toContain('应卖未卖')
+      expect(groups[1]!.text()).toContain('梅花生物')
+      expect(groups.every(group => group.text().includes('未履约'))).toBe(true)
+      expect(wrapper.findComponent(TradeOperationEditor).exists()).toBe(false)
+      expect(wrapper.find('textarea').exists()).toBe(false)
+      await wrapper.findAll('button').find(button => button.text() === '修正最新记录')!.trigger('click')
+      expect(wrapper.findComponent(TradeOperationEditor).props('disabled')).toBe(false)
+      await wrapper.findAll('button').find(button => button.text() === '取消修正')!.trigger('click')
+      await flushPromises()
+      expect(wrapper.findComponent(TradeOperationEditor).exists()).toBe(false)
+      expect(wrapper.findAll('[data-testid="ledger-rule-record"]')).toHaveLength(2)
+      expect(api.submit).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+  })
+  it('遗漏和持仓调整选股保留接口ST状态，不在父组件重建时丢失', async () => {
+    const wrapper = mountWorkspace()
+    const stock = { code: '600356.SH', name: '恒丰纸业', board: '主板', industry: '造纸',
+      is_st: false, st_as_of_date: '2026-10-23' }
+    try {
+      await flushPromises()
+      for (const label of ['添加遗漏事项', '记录持仓调整']) {
+        await wrapper.findAll('button').find(button => button.text() === label)!.trigger('click')
+      }
+      const selectors = wrapper.findAllComponents({ name: 'StockOptionSelect' })
+      for (const selector of selectors) selector.vm.$emit('update:modelValue', stock)
+      await flushPromises()
+      expect(selectors).toHaveLength(2)
+      for (const selector of selectors) expect(selector.props('modelValue')).toEqual(stock)
+      expect(api.submit).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+  })
+
+  it('重新打开遗漏按交易日回填ST状态，切换日期清除旧结果', async () => {
+    const snapshot: NonNullable<LedgerContext['snapshot']> = {
+      trade_date: '2026-10-23', events: [], positions: [], opening_positions: [],
+      omissions: [{ kind: 'missed_buy', stock_code: '600356.SH', stock_name: '恒丰纸业', rule_id: 'r' }],
+      rules: [version], assessment: 'breached', complete: true, peak_positions: 0,
+      buy_amount: '0', sell_amount: '0', fee: '0', net_outflow: '0', cash: null,
+      realized_pnl: null, review_note: null, evaluations: [],
+    }
+    const stock = { code: '600356.SH', name: '恒丰纸业', board: null, industry: null,
+      is_st: false, st_as_of_date: '2026-10-23' }
+    api.context.mockResolvedValue(context({ snapshot, stock_options: [stock] }))
+    const wrapper = mountWorkspace()
+    try {
+      await flushPromises()
+      expect(wrapper.findComponent({ name: 'StockOptionSelect' }).exists()).toBe(false)
+      await wrapper.findAll('button').find(button => button.text() === '修正最新记录')!.trigger('click')
+      expect(wrapper.findComponent({ name: 'StockOptionSelect' }).props('modelValue')).toEqual(stock)
+      api.context.mockResolvedValue(context({ trade_date: '2026-10-26',
+        snapshot: { ...snapshot, trade_date: '2026-10-26' },
+        stock_options: [{ ...stock, is_st: true, st_as_of_date: '2026-10-26' }] }))
+      await wrapper.setProps({ tradeDate: '2026-10-26' })
+      await flushPromises()
+      await wrapper.findAll('button').find(button => button.text() === '修正最新记录')!.trigger('click')
+      expect(wrapper.findComponent({ name: 'StockOptionSelect' }).props('modelValue')).toMatchObject({
+        is_st: true, st_as_of_date: '2026-10-26',
+      })
+    } finally { wrapper.unmount() }
+  })
+  it('部分规则快捷确认后，未确认项显示待打卡且可继续填写当日记录', async () => {
+    const second = { ...version, rule_id: 'second', name: '分红纪律' }
+    const partial: NonNullable<LedgerContext['snapshot']> = {
+      trade_date: '2026-10-23', events: [], positions: [], opening_positions: [], omissions: [],
+      rules: [version, second], confirmed_rule_ids: ['r'], assessment: null, complete: false,
+      peak_positions: 0, buy_amount: '0', sell_amount: '0', fee: '0', net_outflow: '0',
+      cash: null, realized_pnl: null, review_note: null,
+      evaluations: [
+        { rule_id: 'r', rule_name: version.name, assessment: 'complied', complete: true,
+          confirmed: true, issues: [], warnings: [] },
+        { rule_id: 'second', rule_name: second.name, assessment: null, complete: false,
+          confirmed: false, issues: [], warnings: [] },
+      ],
+    }
+    api.context.mockResolvedValue(context({ snapshot: partial, rules: [version, second],
+      latest_trade_date: '2026-10-23', current_revision_no: 1 }))
+    const wrapper = mountWorkspace({ preferredRuleId: 'second' })
+    try {
+      await flushPromises()
+      expect(wrapper.text()).toContain('待打卡')
+      expect(wrapper.findComponent(TradeOperationEditor).exists()).toBe(false)
+      await wrapper.findAll('button').find(button => button.text() === '继续填写当日记录')!.trigger('click')
+      expect(wrapper.findComponent(TradeOperationEditor).props('disabled')).toBe(false)
+      expect(wrapper.findComponent(TradeOperationEditor).props('version').rule_id).toBe('second')
+      expect(api.submit).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+  })
+
   it.each(['代码', '股票名称'])('持仓%s跳转个股详情，集合去重且保留持仓日期的返回入口', async column => {
     const position = { stock_code: '600873.SH', stock_name: '梅花生物', quantity: '400',
       available_quantity: '400', cost: '4000', market_value: '4000', unrealized_pnl: '0',
@@ -455,13 +565,15 @@ describe('账户日结简化填报', () => {
       expect(wrapper.find('.app-table-column--action').exists()).toBe(false)
       await wrapper.findAll('button').find(node => node.text() === '2026-10-23')!.trigger('click')
       await flushPromises()
-      const tables = wrapper.findAllComponents({ name: 'AppDataTable' })
-      const details = tables.find(table => table.props('embedded'))!
-      expect(details.findAll('th.is-right').map(node => node.text())).toEqual(['数量', '金额', '费用'])
+      const records = wrapper.findComponent({ name: 'TradeLedgerRecord' })
+      const tables = records.findAllComponents({ name: 'AppDataTable' })
+      const details = tables[0]!
+      expect(details.findAll('th.is-right').map(node => node.find('.app-table-column-header__label').text()))
+        .toEqual(['成交价', '数量', '金额', '费用'])
       const typeHeader = details.findAll('th').find(node => node.text() === '变动类型')!
       expect(typeHeader.classes()).toContain('is-center')
-      expect(details.text()).toContain('资金流入')
-      expect(details.text()).toContain('持仓调整·买入')
+      expect(records.get('[data-testid="ledger-record-adjustments"]').text()).toContain('资金流入')
+      expect(records.get('[data-testid="ledger-record-adjustments"]').text()).toContain('持仓调整·买入')
       expect(details.find('.app-table-column--action').exists()).toBe(false)
       expect(api.submit).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }

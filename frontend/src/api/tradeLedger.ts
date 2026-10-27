@@ -1,5 +1,5 @@
 import http from './client'
-import type { CheckinAssessment, CheckinOperation, RuleVersionDetail } from './tradeDiscipline'
+import type { CheckinAssessment, CheckinOperation, RuleVersionDetail, StockOption } from './tradeDiscipline'
 
 export interface LedgerPosition {
   market_value?: string | null
@@ -33,8 +33,12 @@ export interface LedgerEvent extends CheckinOperation {
   action_matches?: boolean
   issues?: string[]
   warnings?: string[]
+  primary_issues?: string[]
+  primary_warnings?: string[]
 }
 export interface LedgerRuleCheck {
+  issues?: string[]
+  warnings?: string[]
   rule_id: string
   stock_rule_id: string
   action_rule_id: string
@@ -52,6 +56,7 @@ export interface LedgerOmission {
   stock_name?: string
 }
 export interface LedgerSnapshot {
+  confirmed_rule_ids?: string[]
   operation_count?: number
   trade_date: string
   revision_no?: number
@@ -71,9 +76,10 @@ export interface LedgerSnapshot {
   realized_pnl: string | null
   review_note: string | null
   evaluations: { rule_id: string; rule_name: string; assessment: CheckinAssessment | null;
-    complete: boolean; issues: string[]; warnings: string[] }[]
+    complete: boolean; confirmed?: boolean; issues: string[]; warnings: string[] }[]
 }
 export interface LedgerContext {
+  stock_options?: StockOption[]
   trade_date: string
   account_revision: number
   initialized_on: string | null
@@ -142,6 +148,7 @@ export function withdrawLedger(tradeDate: string, accountRevision: number): Prom
   })
 }
 export interface LedgerHistoryRow {
+  stock_options?: StockOption[]
   trade_date: string
   current_revision_no: number
   withdrawn?: boolean

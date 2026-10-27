@@ -1,6 +1,7 @@
 import type { CheckinOperation, ChecklistCategory, ConditionFact, DraftStockRule, StockChecklistItem, StockChecklistResult } from '@/api/tradeDiscipline'
 import { decimalToMinorUnits } from './fixedDecimal'
 import { formatMoney } from './money'
+import { operationSTStatus } from './tradeDisciplineOperations'
 
 export const conditionFilterOptions = [
   { label: '不限', value: 'any' }, { label: '排除', value: 'exclude' }, { label: '仅限', value: 'only' },
@@ -183,7 +184,8 @@ function stockConditionIssues(rule: DraftStockRule | undefined, operation: Check
     if (price === null && includeUnknown) warnings.push('成交价未记录，无法核对股价条件')
     else if (price !== null && ((low !== null && price < low) || (high !== null && price > high))) warnings.push('成交价不符合股价条件')
   }
-  const st = operation.is_st === true ? 'yes' : operation.is_st === false ? 'no' : 'unknown'
+  const { is_st: isSt } = operationSTStatus(operation)
+  const st = isSt === true ? 'yes' : isSt === false ? 'no' : 'unknown'
   for (const [filter, fact, label] of [
     [rule.st_filter, st, 'ST状态'],
     [rule.loss_filter, operation.loss_status, '亏损状态'],

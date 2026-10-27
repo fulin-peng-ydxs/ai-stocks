@@ -517,7 +517,7 @@ def quick_no_operation(body: QuickNoOperationBody) -> ApiResponse:
         str(result["checkin_id"]),
         CHECKIN_SUBMIT,
     )
-    message = "该交易日已完成打卡" if result.get("idempotent") else "已记录无操作履约"
+    message = "本规则在该交易日已完成打卡" if result.get("idempotent") else "已记录本规则无操作履约"
     return ok(result, msg=message)
 
 

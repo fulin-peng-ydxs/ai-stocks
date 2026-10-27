@@ -2237,6 +2237,11 @@
   },
   "styleDelegates": [
     {
+      "tags": ["TradeLedgerEventTable"],
+      "owner": "components/trade-discipline/TradeLedgerEventTable.vue",
+      "reason": "交易账本只读明细的具名领域适配；表格、语义列、ST标签及字体尺寸均委托已有共享入口，不覆盖基础控件样式"
+    },
+    {
       "tags": [
         "ElContainer",
         "ElAside",

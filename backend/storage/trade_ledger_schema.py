@@ -64,7 +64,7 @@ COMMENT ON COLUMN trade_discipline_ledger_revision.account_id IS '同一归属�
 COMMENT ON COLUMN trade_discipline_ledger_revision.revision_no IS '当日日结修订号';
 COMMENT ON COLUMN trade_discipline_ledger_revision.request_id IS '幂等请求标识，同账户不可跨日期复用';
 COMMENT ON COLUMN trade_discipline_ledger_revision.payload_hash IS '请求内容摘要，防止同幂等键覆盖不同内容';
-COMMENT ON COLUMN trade_discipline_ledger_revision.snapshot IS '有序成交及调整、期初期末持仓、资金、规则版本、遗漏事项、核验来源及计算结果';
+COMMENT ON COLUMN trade_discipline_ledger_revision.snapshot IS '有序成交及调整、持仓、资金、规则版本、遗漏及计算结果；confirmed_rule_ids为已确认规则，evaluations.confirmed区分待打卡，缺失沿用旧整日确认口径';
 """,
 }
 

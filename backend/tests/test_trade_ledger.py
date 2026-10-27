@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from backend.common.exceptions import ConflictError, ValidationError
+from backend.common.exceptions import ConflictError, NotFoundError, ValidationError
 from backend.services.trade_ledger import assessment, calculate_day, prepare_opening
 from backend.services.trade_ledger_service import TradeLedgerService
 from backend.storage.trade_ledger_repository import TradeLedgerRepository
@@ -246,6 +246,189 @@ def ledger(pg, market, *, owner=TEST_OWNER):
 def submit_payload(context, events):
     return {"request_id": uuid4().hex, "expected_account_revision": context["account_revision"],
             "expected_revision": context["current_revision_no"], "events": events, "omissions": []}
+
+
+def _quick_rules(service):
+    from backend.tests.test_trade_discipline_t3 import _rule_payload
+
+    ids = []
+    for name in ("快捷第一套", "快捷第二套"):
+        rid = service.discipline.create_rule(_rule_payload(name))["id"]
+        service.discipline.publish_rule(rid, expected_revision=1)
+        ids.append(rid)
+    return ids
+
+
+def test_quick_confirms_only_selected_rule_then_merges_without_double_posting(pg, market):
+    dates = _seed_market(market)
+    service = ledger(pg, market)
+    first, second = _quick_rules(service)
+    service.initialize(dates[0], [{"stock_code": "600000.SH", "quantity": "100",
+                                  "cost_price": "10", "rule_id": first,
+                                  "stock_rule_id": "stock-1"}], "9000", 0)
+    assert not service.quick_no_operation(first, dates[0])["idempotent"]
+    summary = service.summary(dates[0])
+    states = {row["rule_id"]: row for row in summary["rules"]}
+    assert (summary["completed"], summary["pending"]) == (1, 1)
+    assert states[first]["assessment"] == "complied"
+    assert states[second]["checkin_id"] is None
+    assert states[second]["assessment"] is states[second]["no_operation"] is None
+    original = service.context(dates[0])["snapshot"]
+    assert original["confirmed_rule_ids"] == [first]
+    assert original["assessment"] is None and not original["complete"]
+    assert service.repo.history(assessment="pending")["total"] == 1
+    assert service.quick_no_operation(first, dates[0])["idempotent"]
+    assert service.context(dates[0])["current_revision_no"] == 1
+    assert not service.quick_no_operation(second, dates[0])["idempotent"]
+    current = service.context(dates[0])
+    assert current["current_revision_no"] == 2
+    assert current["snapshot"]["positions"] == original["positions"]
+    assert current["snapshot"]["cash"] == "9000.00"
+    assert current["snapshot"]["events"] == []
+    assert current["snapshot"]["assessment"] == "complied"
+    assert service.summary(dates[0])["completed"] == 2
+    assert {r["status"] for r in service.summary(dates[0])["rules"]} == {"submitted"}
+    assert service.revisions(dates[0], 1)["snapshot"] == original
+
+
+@pytest.mark.parametrize("same_rule", [False, True])
+def test_quick_concurrent_confirmations_are_atomic_and_idempotent(pg, market, same_rule):
+    from concurrent.futures import ThreadPoolExecutor
+
+    dates = _seed_market(market)
+    service = ledger(pg, market)
+    first, second = _quick_rules(service)
+    service.initialize(dates[0], [], "10000", 0)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(
+            lambda rid: ledger(pg, market).quick_no_operation(rid, dates[0]),
+            [first, first if same_rule else second],
+        ))
+    assert sum(row["idempotent"] for row in results) == int(same_rule)
+    assert service.summary(dates[0])["completed"] == (1 if same_rule else 2)
+    assert service.context(dates[0])["current_revision_no"] == (1 if same_rule else 2)
+
+
+def test_quick_rule_validation_does_not_confirm_or_block_other_rule(pg, market):
+    dates = _seed_market(market)
+    service = ledger(pg, market)
+    first, second = _quick_rules(service)
+    # 第一套缺少持仓成本，资金上限核对不完整；第二套仍可独立确认。
+    service.initialize(dates[0], [{"stock_code": "600000.SH", "quantity": "100",
+                                  "rule_id": first, "stock_rule_id": "stock-1"}], None, 0)
+    with pytest.raises(ConflictError, match="本规则已有持仓"):
+        service.quick_no_operation(first, dates[0])
+    assert service.context(dates[0])["snapshot"] is None
+    service.quick_no_operation(second, dates[0])
+    assert service.summary(dates[0])["completed"] == 1
+    with pytest.raises(ConflictError, match="本规则已有持仓"):
+        service.quick_no_operation(first, dates[0])
+    assert service.context(dates[0])["current_revision_no"] == 1
+    with pytest.raises(NotFoundError):
+        service.quick_no_operation("foreign-rule", dates[0])
+
+
+def test_partial_quick_can_continue_formal_submit_and_withdraw(pg, market):
+    dates = _seed_market(market)
+    service = ledger(pg, market)
+    first, second = _quick_rules(service)
+    service.initialize(dates[0], [], "100000", 0)
+    service.quick_no_operation(first, dates[0])
+    operation = dict(_operation(dates[0]), event_id="after-quick", rule_id=second)
+    saved = service.submit(dates[0], submit_payload(service.context(dates[0]), [operation]))
+    assert saved["confirmed_rule_ids"] == sorted([first, second])
+    assert len(saved["positions"]) == 1 and saved["positions"][0]["quantity"] == "1000"
+    assert service.summary(dates[0])["completed"] == 2
+    with pytest.raises(ConflictError, match="已有成交"):
+        service.quick_no_operation(second, dates[0])
+    assert service.quick_no_operation(first, dates[0])["idempotent"]
+    service.withdraw(dates[0], service.context(dates[0])["account_revision"])
+    assert service.summary(dates[0])["completed"] == 0
+    service.quick_no_operation(second, dates[0])
+    assert service.summary(dates[0])["completed"] == 1
+    assert service.context(dates[0])["snapshot"]["confirmed_rule_ids"] == [second]
+
+
+def test_quick_uninitialized_foreign_and_older_pending_date_are_closed(pg, market):
+    dates = _seed_market(market)
+    service = ledger(pg, market)
+    first, second = _quick_rules(service)
+    with pytest.raises(ConflictError, match="初始化"):
+        service.quick_no_operation(first, dates[0])
+    service.initialize(dates[0], [], None, 0)
+    foreign = ledger(pg, market, owner=f"foreign_{uuid4().hex}")
+    try:
+        with pytest.raises(ConflictError, match="初始化"):
+            foreign.quick_no_operation(first, dates[0])
+    finally:
+        pg.execute("DELETE FROM trade_discipline_account WHERE tenant_id=%s AND owner_user_id=%s",
+                   list(foreign.repo.owner))
+    service.quick_no_operation(first, dates[0])
+    service.quick_no_operation(first, dates[1])
+    with pytest.raises(ConflictError, match="最新交易日"):
+        service.quick_no_operation(second, dates[0])
+
+
+def test_legacy_snapshot_without_confirmation_fields_keeps_original_completion(pg, market):
+    dates = _seed_market(market)
+    service = ledger(pg, market)
+    first, second = _quick_rules(service)
+    service.initialize(dates[0], [], None, 0)
+    saved = service.submit(dates[0], submit_payload(service.context(dates[0]), []))
+    legacy = {key: value for key, value in saved.items()
+              if key not in {"confirmed_rule_ids", "submission_source", "revision_no"}}
+    for evaluation in legacy["evaluations"]:
+        evaluation.pop("confirmed")
+    # 用不可变新修订模拟升级前格式，不改写真实历史或任何非本例归属。
+    with service.repo.transaction() as conn:
+        service.repo.account(conn, lock=True)
+        service.repo.save(conn, dates[0], 2, uuid4().hex, "legacy-fixture", legacy)
+    assert service.summary(dates[0])["completed"] == 2
+    for rid in (first, second):
+        assert service.quick_no_operation(rid, dates[0])["idempotent"]
+    assert service.context(dates[0])["current_revision_no"] == 2
+
+
+def test_context_batches_daily_st_display_for_saved_omissions_and_adjustments(pg, market, monkeypatch):
+    from backend.services.stock_st_status import StockSTStatusService
+    from backend.tests.test_st_status_pipeline import _fact
+
+    dates = _seed_market(market)
+    market.execute("INSERT INTO stock_basic(code,name,board) VALUES ('600001.SH','第二只','主板')")
+    StockSTStatusService(market).upsert_facts([
+        _fact("600000.SH", dates[0], False), _fact("600001.SH", dates[0], True),
+        _fact("600000.SH", dates[1], True),
+    ], change_reason="test_display")
+    service = ledger(pg, market)
+    first, second = _quick_rules(service)
+    context = service.initialize(dates[0], [], None, 0)
+    content = submit_payload(context, [{
+        "event_id": "display-dividend", "kind": "cash", "adjustment_type": "dividend",
+        "stock_code": "600001.SH", "amount": "100", "note": "分红", "display_order": 1,
+        "operated_at": f"{dates[0]}T10:00:00+08:00",
+    }])
+    content["omissions"] = [{"kind": "missed_buy", "stock_code": "600000.SH", "rule_id": rid}
+                            for rid in (first, second)]
+    saved = service.submit(dates[0], content)
+    calls = []
+    original = service.discipline._st_statuses
+
+    def read_statuses(trade_date, codes):
+        calls.append((trade_date, codes))
+        return original(trade_date, codes)
+
+    monkeypatch.setattr(service.discipline, "_st_statuses", read_statuses)
+    loaded = service.context(dates[0])
+    options = {row["code"]: row for row in loaded["stock_options"]}
+    assert calls == [(dates[0], ["600000.SH", "600001.SH"])]
+    assert options["600000.SH"]["is_st"] is False
+    assert options["600001.SH"]["is_st"] is True
+    assert options["600000.SH"]["st_as_of_date"] == dates[0].isoformat()
+    assert options["600000.SH"]["name"] == "浦发银行"
+    assert loaded["snapshot"] == {key: value for key, value in saved.items() if key != "revision_no"}
+    assert service.repo.day(dates[0])["snapshot"] == loaded["snapshot"]
+    assert service.revisions(dates[0], 1)["stock_options"] == loaded["stock_options"]
+    assert service.context(dates[1])["stock_options"] == []
 
 
 def test_real_service_initialization_idempotency_amendment_and_latest_day(pg, market):

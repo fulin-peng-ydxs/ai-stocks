@@ -16,7 +16,7 @@ import {
   multiplyToMinorUnits,
 } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
-import { operationFinancialFields, missingOperationFinancialField } from '@/utils/tradeDisciplineOperations'
+import { operationFinancialFields, missingOperationFinancialField, operationSTStatus } from '@/utils/tradeDisciplineOperations'
 import { formatDateTimeMinutes } from '@/utils/dateTime'
 import { actionSubtypeLabel } from '@/utils/tradeDisciplineRuleTypes'
 import {
@@ -401,7 +401,7 @@ defineExpose({ expandOperation, validate })
           <div class="operation-grid">
             <el-form-item label="股票" required class="operation-field operation-field--stock">
               <StockOptionSelect
-                :model-value="operation.stock_code ? { code: operation.stock_code, name: operation.stock_name_snapshot, board: null, industry: null, is_st: operation.is_st, st_as_of_date: operation.st_as_of_date } : null"
+                :model-value="operation.stock_code ? { code: operation.stock_code, name: operation.stock_name_snapshot, board: null, industry: null, ...operationSTStatus(operation) } : null"
                 :disabled="disabled || operation.linked"
                 :trade-date="tradeDate"
                 @update:model-value="selectStock(index, $event)"
@@ -411,7 +411,7 @@ defineExpose({ expandOperation, validate })
               <AppDatePicker :model-value="operation.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" format="YYYY-MM-DD HH:mm" :disabled="disabled || operation.linked" @update:model-value="update(index, { operated_at: $event })" />
             </el-form-item>
             <el-form-item v-if="automatic" label="同时间顺序" required class="operation-field operation-field--order">
-              <el-input-number :model-value="operation.display_order" :min="1" :precision="0" :controls="false" :disabled="disabled || operation.linked" @update:model-value="update(index, { display_order: $event ?? 1 })" />
+              <el-input-number class="app-control-width-fill" :model-value="operation.display_order" :min="1" :precision="0" :controls="false" :disabled="disabled || operation.linked" @update:model-value="update(index, { display_order: $event ?? 1 })" />
             </el-form-item>
             <el-form-item v-if="!automatic || version.rule_id" label="选股规则" required class="operation-field operation-field--rule">
               <AppSelect

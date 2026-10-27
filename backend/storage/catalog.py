@@ -1038,7 +1038,7 @@ _PG_TABLE_META["scheduled_job"]["relations"] = ["dependency_job_id → scheduled
 for _ledger_table, _ledger_purpose in {
     "trade_discipline_account": "保存真实期初持仓、可空期初现金及账户并发修订号。",
     "trade_discipline_ledger_day": "保存账户交易日的有效修订指针，撤回保留历史。",
-    "trade_discipline_ledger_revision": "保存不可变有序成交及调整、持仓和自动履约结果。",
+    "trade_discipline_ledger_revision": "保存不可变有序成交及调整、持仓、逐规则确认范围和自动履约结果；未确认规则不计作完成。",
 }.items():
     _PG_TABLE_META[_ledger_table]["purpose"] = _ledger_purpose
     _PG_TABLE_META[_ledger_table]["source"] = "用户真实成交及期初输入，服务端统一记账与规则核对"

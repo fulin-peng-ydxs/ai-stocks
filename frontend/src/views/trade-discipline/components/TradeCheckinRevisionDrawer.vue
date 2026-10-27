@@ -20,6 +20,7 @@ import { formatDecimalString } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
 import { actionSubtypeLabel } from '@/utils/tradeDisciplineRuleTypes'
 import { conditionFactLabel, holdingCountWarning } from '@/utils/tradeDisciplineConditions'
+import { operationSTStatus } from '@/utils/tradeDisciplineOperations'
 import {
   checkinAssessmentLabel,
   checkinViolationItemsText,
@@ -178,8 +179,8 @@ watch(
               <span class="app-inline-info app-inline-info--nowrap">
                 <span>{{ row.stock_code }} · {{ row.stock_name_snapshot }}</span>
                 <StockStatusTag
-                  :is-st="row.is_st"
-                  :as-of-date="row.st_as_of_date || detail?.trade_date"
+                  :is-st="operationSTStatus(row).is_st"
+                  :as-of-date="operationSTStatus(row).st_as_of_date || detail?.trade_date"
                   context-label="交易日"
                   show-unknown
                 />

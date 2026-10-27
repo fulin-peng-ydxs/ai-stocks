@@ -13,6 +13,16 @@ const operation: CheckinOperation = {
 }
 
 describe('交易纪律选股条件', () => {
+  it.each([false, true, null])('ST条件优先读取服务端快照（%s），不被旧顶层字段覆盖', isSt => {
+    const saved = { ...operation, is_st: true, selection_facts: { is_st: isSt,
+      st_as_of_date: '2026-10-23', loss_status: null, st_risk_status: null } }
+    const warnings = stockConditionWarnings(rule, saved)
+    expect(warnings.filter(warning => warning.startsWith('ST状态'))).toEqual(
+      isSt === null ? ['ST状态未知，无法核对'] : isSt ? ['ST状态不符合选股条件'] : [],
+    )
+    expect(saved.is_st).toBe(true)
+    expect(saved.selection_facts.is_st).toBe(isSt)
+  })
   it('人工事实按买入规则预填，不限、缺失规则与卖出不预填', () => {
     expect(manualConditionDefaults(rule, 'buy')).toEqual({ loss_status: 'no', st_risk_status: 'yes' })
     expect(manualConditionDefaults({ ...rule, loss_filter: 'any', st_risk_filter: undefined }, 'buy'))
