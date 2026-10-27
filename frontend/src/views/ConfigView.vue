@@ -2555,7 +2555,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                             <div class="source-policy">
                               <span>{{ row.policy_origin }}</span>
                               <span>{{ row.serial_required ? '会话串行' : '来源网络并发上限' }} {{ row.network_concurrency ?? '未记录' }} · {{ row.rate_limit_per_sec }} 次/秒</span>
-                              <span>默认工作并发 {{ row.work_concurrency ?? '未记录' }} · {{ row.rate_group }}<span v-if="row.request_unit"> · {{ row.request_unit }}</span></span>
+                              <span>{{ row.source === 'ths_board' ? '成分工作并发' : '默认工作并发' }} {{ row.work_concurrency ?? '未记录' }} · {{ row.rate_group }}<span v-if="row.request_unit"> · {{ row.request_unit }}</span></span>
+                              <span v-if="row.bar_work_concurrency != null">指数工作并发 {{ row.bar_work_concurrency }}</span>
                               <span>超时 {{ row.timeout_sec }} 秒 · 最多尝试 {{ row.max_attempts }} 次</span>
                               <span>退避起点 {{ row.retry_backoff_sec }} 秒<span v-if="row.login_timeout_sec"> · 登录超时 {{ row.login_timeout_sec }} 秒</span></span>
                               <span>{{ requestRuntimeText(row.runtime) }}</span>

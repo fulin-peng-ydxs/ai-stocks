@@ -8,7 +8,7 @@ import {
 describe('配置面板折叠候选层级', () => {
   it('板块成分工作并发登记在已有采集规则分区，来源网络参数继续复用请求覆盖', () => {
     expect(CONFIG_SYSTEM_GROUP_SECTIONS.ths_board.find(section => section.key === 'collection')?.fieldPaths)
-      .toEqual(['ths_board.member_concurrency', 'ths_board.member_update_interval_days'])
+      .toEqual(['ths_board.member_concurrency', 'ths_board.bar_concurrency', 'ths_board.member_update_interval_days'])
     expect(CONFIG_SYSTEM_GROUP_SECTIONS.datasource.find(section => section.key === 'source-ths_board')?.fieldPaths)
       .toContain('datasource.sources.ths_board.network_concurrency')
   })

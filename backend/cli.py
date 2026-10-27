@@ -819,7 +819,7 @@ def build_parser() -> argparse.ArgumentParser:
                          help="只采概念或行业板块")
     p_board.add_argument("--limit", type=int, help="只取字典前 N 个板块（小批量验证）")
     p_board.add_argument("--concurrency", type=int, choices=range(1, 17),
-                         help="成分采集工作并发数，默认读取板块专属配置；不改变来源总频率")
+                         help="成分/指数工作并发数，默认读取各阶段专属配置；不改变来源总频率")
     p_board.add_argument("--start", help="指数采集开始日 YYYY-MM-DD（仅增量模式；留空按最新水位）")
     p_board.add_argument("--end", help="指数采集结束日 YYYY-MM-DD（留空=开始日）")
     p_board.add_argument("--force-members", action="store_true",

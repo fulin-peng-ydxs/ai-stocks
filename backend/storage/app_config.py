@@ -59,6 +59,7 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "audit.retention_days", "label": "审计保留期/默认查询窗口(天)", "type": "int", "min": 7, "max": 365, "desc": "审计页未选择时间时默认查询最近多少天，同时用于自动清理超期审计日志。"},
     ]},
     {"key": "ths_board", "label": "同花顺板块", "desc": "板块来源的特殊频率限制、采集规则和访问凭据；同花顺股票分钟不使用本组Cookie。", "fields": [
+        {"path": "ths_board.bar_concurrency", "label": "指数采集并发数", "type": "int", "min": 1, "max": 16, "desc": "同时处理的板块指数上限，默认8；每线程独立会话，单板块内按年顺序取数，主线程校验日期、落库和维护断点。任务显式并发参数优先；阶段开始时确定。"},
         {"path": "ths_board.member_concurrency", "label": "成分采集并发数", "type": "int", "min": 1, "max": 16, "desc": "同时处理的板块上限，默认8；每线程独立会话，单板块按双排序顺序翻页，主线程统一落库。任务显式并发参数优先；任务开始时确定。"},
         {"path": "ths_board.min_interval_sec", "label": "请求间隔(秒)", "type": "number", "min": 0.05, "max": 30, "desc": "板块接口最小请求起始间隔，与通用来源频率取更严格限制；不影响同花顺股票分钟接口。"},
         {"path": "ths_board.timeout_sec", "nullable": True, "label": "请求超时(秒)", "type": "number", "min": 1, "max": 120, "desc": "旧显式覆盖；关闭单独设置后继承通用请求超时。"},

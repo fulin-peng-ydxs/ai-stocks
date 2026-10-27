@@ -4080,7 +4080,7 @@ class IngestionService:
                     # 全量回填：源端可用起始年到今天（实测 `d.` 域仅近 3 年、2021-2023 404，故 2024 起）
                     result["bar"] = svc.ingest_board_bar(
                         _d(2024, 1, 1), end=update_target, board_codes=board_codes,
-                        board_type=board_type, ctx=ctx)
+                        board_type=board_type, ctx=ctx, concurrency=concurrency)
                 else:
                     # 显式区间尊重调用方输入；自动增量按每个板块最大交易日续采，避免固定短窗口
                     # 在任务中断超过窗口后留下永久缺口。
@@ -4091,7 +4091,7 @@ class IngestionService:
                                                          board_type=board_type,
                                                          probe_ready=not explicit_start and not force_current_day,
                                                          resume_from_latest=not bool(explicit_start),
-                                                         ctx=ctx)
+                                                         ctx=ctx, concurrency=concurrency)
                     update_target = _d.fromisoformat(result["bar"]["end"])
                     if "fund" in steps:
                         fund_snapshot_date = update_target

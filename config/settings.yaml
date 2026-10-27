@@ -212,6 +212,7 @@ mail:
 # 历史显式覆盖保留；置 null 后恢复继承。Cookie仅用于板块登录页。
 ths_board:
   min_interval_sec: 0.125    # 板块最小请求起始间隔，与来源频率取更严格值
+  bar_concurrency: 8        # 指数按板块并发；主线程落库与维护断点
   member_concurrency: 8     # 成分按板块并发，每个工作线程使用独立会话
   timeout_sec: null          # 继承 datasource.socket_timeout_sec
   max_retries: null          # 继承 datasource.max_retries（包含首次）

@@ -46,7 +46,7 @@ SOURCE_DEFINITIONS = (
         "ths_board",
         "同花顺板块",
         "ths_board",
-        "板块字典、成分、指数和资金流；成分按板块并发、每线程独立会话与动态v",
+        "板块字典、成分、指数和资金流；成分和指数按板块并发、每线程独立会话与动态v",
         "board",
     ),
     ("intraday_sina", "新浪分时", "sina", "个股分时常规主源；指数修复备用；1分钟窗口", "intraday"),
@@ -174,6 +174,7 @@ def source_status(do_ping: bool = True, *, repo=None, source: str | None = None)
                 settings.ths_board.member_concurrency if group == "ths_board"
                 else s.update_concurrency
             ),
+            "bar_work_concurrency": settings.ths_board.bar_concurrency if group == "ths_board" else None,
             "runtime": runtimes[group],
             "policy_version": snapshot_status["version"],
             "policy_degraded": snapshot_status["degraded"],

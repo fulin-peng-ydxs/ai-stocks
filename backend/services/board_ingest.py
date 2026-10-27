@@ -152,6 +152,52 @@ class BoardIngestService:
         else:
             self._member_interval_days = member_interval_days
 
+    def _work_concurrency(self, stage: str, concurrency: int | None, ctx) -> int:
+        """成分与指数共用并发校验和观测；任务覆盖优先，阶段默认值彼此独立。"""
+        default = getattr(get_effective_settings().ths_board, f"{stage}_concurrency")
+        requested = default if concurrency is None else concurrency
+        if isinstance(requested, bool) or not isinstance(requested, int) or not 1 <= requested <= 16:
+            label = {"member": "成分", "bar": "指数"}[stage]
+            raise ValueError(f"板块{label}采集并发数必须为1~16的整数")
+        tracker = getattr(ctx, "request_tracker", None)
+        if tracker:
+            tracker.meta.update(
+                work_concurrency=requested, default_concurrency=default,
+                concurrency_origin="task" if concurrency is not None else "default",
+            )
+        return requested
+
+    def _run_board_units(self, items, fetch, complete, *, concurrency: int, ctx, label: str):
+        """共享有界取源入口：每线程独立会话，主线程收口，取消后等待在途退出再释放。"""
+        workers = min(concurrency, max(1, len(items)))
+        local = threading.local()
+        sources: list[ThsBoardSource] = []
+        source_lock = threading.Lock()
+
+        def worker(item):
+            if workers == 1:
+                source = self.src
+            else:
+                if not hasattr(local, "source"):
+                    factory = self._source_factory or self.src.fork
+                    local.source = factory()
+                    with source_lock:
+                        sources.append(local.source)
+                source = local.source
+            return fetch(source, item)
+
+        if ctx:
+            ctx.log(f"{label}：待采 {len(items)} 个板块，工作并发 {workers}；"
+                    "来源总频率、在途上限与冷却共享，主线程统一落库")
+        try:
+            run_bounded_parallel(
+                items, worker, concurrency=workers, ctx=ctx,
+                wait_label=label, on_complete=complete,
+            )
+        finally:
+            for source in sources:
+                source.close()
+
     def _log_update(self, table_name: str, date_start: date | None, date_end: date | None,
                     row_count: int, status: str, detail: str = "") -> None:
         """写 data_update_log（对齐现有采集的更新留痕，供数据概览/运维查看板块采集进度）。"""
@@ -329,19 +375,7 @@ class BoardIngestService:
         并发数缺省读取 ths_board.member_concurrency；工作线程只取源，主线程落库并维护断点。
         每线程独立来源会话，同一板块仍顺序执行双排序分页，来源总频率和冷却继续共享。
         """
-        default_concurrency = get_effective_settings().ths_board.member_concurrency
-        requested_concurrency = concurrency if concurrency is not None else default_concurrency
-        if (isinstance(requested_concurrency, bool)
-                or not isinstance(requested_concurrency, int)
-                or not 1 <= requested_concurrency <= 16):
-            raise ValueError("板块成分采集并发数必须为1~16的整数")
-        tracker = getattr(ctx, "request_tracker", None)
-        if tracker:
-            tracker.meta.update(
-                work_concurrency=requested_concurrency,
-                default_concurrency=default_concurrency,
-                concurrency_origin="task" if concurrency is not None else "default",
-            )
+        requested_concurrency = self._work_concurrency("member", concurrency, ctx)
         sdate = snapshot_date or _asia_date()
         # 读取板块清单
         types = _board_types(board_type)
@@ -404,23 +438,8 @@ class BoardIngestService:
                           current_item=None, member_done_codes=sorted(done_codes))
         items = [(str(b.board_code), str(b.board_type))
                  for b in df_boards.itertuples(index=False)]
-        work_concurrency = min(requested_concurrency, max(1, n_total))
-        local = threading.local()
-        worker_sources: list[ThsBoardSource] = []
-        source_lock = threading.Lock()
-
-        def fetch(item):
+        def fetch(source, item):
             code, current_type = item
-            if work_concurrency == 1:
-                source = self.src
-            else:
-                if not hasattr(local, "source"):
-                    # 不在取源线程中构造服务或访问DuckDB；独立会话避免v刷新/缓存相互干扰。
-                    factory = self._source_factory or self.src.fork
-                    local.source = factory()
-                    with source_lock:
-                        worker_sources.append(local.source)
-                source = local.source
             return source.get_board_members(code, current_type)
 
         def complete(i, item, material, error, pending):
@@ -457,18 +476,9 @@ class BoardIngestService:
                     ctx.set_phase("board_members", done=len(done_codes), total=phase_total,
                                   phase_total=phase_total, phase_done=resumed_members + i,
                                   current_item=code, member_done_codes=sorted(done_codes))
-        if ctx:
-            ctx.log(f"板块成分：待采 {n_total} 个板块，工作并发 {work_concurrency}；"
-                    "来源总频率、在途上限与冷却共享，主线程统一落库")
-        try:
-            run_bounded_parallel(
-                items, fetch, concurrency=work_concurrency, ctx=ctx,
-                wait_label="板块成分", on_complete=complete,
-            )
-        finally:
-            # 共享队列已等待在途工作安全退出，之后才关闭各工作线程自己的连接池。
-            for source in worker_sources:
-                source.close()
+        self._run_board_units(
+            items, fetch, complete, concurrency=requested_concurrency, ctx=ctx, label="板块成分",
+        )
         if skipped_codes and ctx:
             ctx.log(f"成分：{len(skipped_codes)} 个板块未达更新间隔（{self._member_interval_days} 天），跳过")
         # 更新留痕（聚合：一次运行一条日志，避免逐板块刷屏）
@@ -563,7 +573,8 @@ class BoardIngestService:
                          board_type: str | None = None,
                          probe_ready: bool = False,
                          resume_from_latest: bool = False,
-                         ctx: object | None = None) -> dict:
+                         ctx: object | None = None,
+                         concurrency: int | None = None) -> dict:
         """板块指数日线：幂等 upsert 原值。end 缺省=今天。返回 {"rows": n, "boards": n}。
 
         ctx：任务上下文，逐板块打实时日志（对齐现有采集「指数 X 完成」模式）。
@@ -572,6 +583,7 @@ class BoardIngestService:
         probe_ready：仅每日增量（ingest_board update 分支）传 True——截止日=今天时
         先抽样探测源端当日数据是否就绪，未就绪回退到上一交易日继续采集；backfill/
         缺口重采不传，尊重调用方意图直接采。"""
+        requested_concurrency = self._work_concurrency("bar", concurrency, ctx)
         if resume_from_latest and start is not None:
             raise ValueError("按板块最新日期续采时不得指定统一起始日期")
         if not resume_from_latest and start is None:
@@ -621,17 +633,20 @@ class BoardIngestService:
             if ctx:
                 ctx.log(f"指数：{resumed_done} 个板块上次已完成，本次跳过")
         board_starts: dict[str, date] = {}
+        missing_bar_codes: set[str] = set()
         if resume_from_latest and len(df_boards):
-            scope = [str(x) for x in df_boards["board_code"].tolist()]
+            pending_codes = [str(x) for x in df_boards["board_code"].tolist()]
             latest = self.c.query_df(
                 f"SELECT board_code, max(trade_date) AS d FROM board_bar "
-                f"WHERE board_code IN ({_in_placeholders(len(scope))}) GROUP BY board_code",
-                scope,
+                f"WHERE board_code IN ({_in_placeholders(len(pending_codes))}) GROUP BY board_code",
+                pending_codes,
             )
             latest_map = dict(zip(latest["board_code"].astype(str), latest["d"]))
             pending: list[bool] = []
             for code in df_boards["board_code"].astype(str):
                 last = latest_map.get(code)
+                if last is None or pd.isna(last):
+                    missing_bar_codes.add(code)
                 board_start = end if last is None or pd.isna(last) else pd.Timestamp(last).date() + timedelta(days=1)
                 board_starts[code] = board_start
                 pending.append(board_start <= end)
@@ -663,6 +678,9 @@ class BoardIngestService:
                 if ctx:
                     ctx.log(msg, "warn")
                 end = fallback_end
+                # 从未采到指数的板块只请求实际截止日；退级后不能沿用原目标日造成逆序空区间。
+                for code in missing_bar_codes.intersection(board_starts):
+                    board_starts[code] = end
                 if start is not None:
                     start = min(start, end)
                 fallback = True
@@ -671,14 +689,24 @@ class BoardIngestService:
                           bar_scope=scope, bar_done_codes=sorted(done_codes),
                           phase_total=phase_total, phase_done=len(done_codes), current_item=None)
         resumed_bars = len(done_codes)
-        for i, (_, b) in enumerate(df_boards.iterrows(), 1):
-            code, board_type = str(b["board_code"]), str(b["board_type"])
-            if ctx:
-                ctx.check_cancel()
-                ctx.set_phase("board_bar", done=len(done_codes), total=phase_total,
-                              phase_total=phase_total, phase_done=resumed_bars + i - 1,
-                              current_item=code, bar_done_codes=sorted(done_codes))
+        items = [(str(b.board_code), str(b.board_type))
+                 for b in df_boards.itertuples(index=False)]
+
+        def fetch(source, item):
+            code, current_type = item
+            board_start = board_starts.get(code, start)
+            assert board_start is not None
+            if board_start > end:
+                return None
+            # 单板块内仍顺序取年度数据；日期已在主线程统一收敛。
+            return source.get_board_bar(code, current_type, board_start, end)
+
+        def complete(i, item, material, error, pending):
+            nonlocal total_rows, boards
+            code, _ = item
             try:
+                if error is not None:
+                    raise error
                 board_start = board_starts.get(code, start)
                 assert board_start is not None
                 if board_start > end:
@@ -687,14 +715,15 @@ class BoardIngestService:
                         ctx.set_phase("board_bar", done=len(done_codes), total=phase_total,
                                       phase_total=phase_total, phase_done=resumed_bars + i,
                                       current_item=code, bar_done_codes=sorted(done_codes))
-                    continue
-                df = self.src.get_board_bar(code, board_type, board_start, end)
+                    return
+                df = material
                 failed_years = list(df.attrs.get("failed_years") or [])
                 df = eod_dates.bound_bars(df, board_start, end)
                 if df.empty:
                     if ctx:
                         ctx.log(f"指数 {i}/{n_total} {code}：无数据")
                 else:
+                    df = df.copy()
                     df["board_code"] = code
                     self._upsert_board_bar(df)
                     total_rows += len(df)
@@ -712,6 +741,8 @@ class BoardIngestService:
                                   bar_done_codes=sorted(done_codes))
                 if ctx:
                     ctx.log(f"指数 {i}/{n_total} {code}：{len(df)} 行")
+            except TaskCancelled:
+                raise
             except Exception as e:  # noqa: BLE001
                 log.warning("板块 %s 指数取数失败: %s", code, e)
                 failed.append(f"{code}: {e}")
@@ -721,6 +752,9 @@ class BoardIngestService:
                     ctx.set_phase("board_bar", done=len(done_codes), total=phase_total,
                                   phase_total=phase_total, phase_done=resumed_bars + i,
                                   current_item=code, bar_done_codes=sorted(done_codes))
+        self._run_board_units(
+            items, fetch, complete, concurrency=requested_concurrency, ctx=ctx, label="板块指数",
+        )
         status = "partial" if failed else "success"
         # 新鲜度透出：成功不代表源端已发截止日（源端分板块陆续发布），汇总里给出已出截止日的覆盖数，
         # 避免「成功 480 板块」掩盖「大部分停在昨天」；缺口仍由质检扫描兜底发现。

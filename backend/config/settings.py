@@ -277,6 +277,7 @@ class ThsBoardConfig(BaseModel):
     """
 
     min_interval_sec: float = Field(default=0.125, ge=0.05, le=30)  # 来源合计最多8次/秒
+    bar_concurrency: int = Field(default=8, ge=1, le=16)  # 指数按板块并发，年度请求仍顺序执行
     member_concurrency: int = Field(default=8, ge=1, le=16)  # 按板块并发取成分，写入仍串行
     timeout_sec: float | None = Field(default=None, ge=1, le=120)           # 单请求超时（秒）
     max_retries: int | None = Field(default=None, ge=1, le=10)  # 旧显式覆盖；None继承通用

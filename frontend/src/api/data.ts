@@ -466,6 +466,7 @@ export interface SourceStatus {
   concurrency?: number
   network_concurrency?: number
   work_concurrency?: number
+  bar_work_concurrency?: number | null
   rate_group?: string
   request_unit?: string
   policy_version?: string

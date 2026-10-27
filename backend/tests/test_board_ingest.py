@@ -1376,3 +1376,195 @@ def test_board_task_passes_concurrency_to_collection_entry(monkeypatch):
     assert captured['force_members'] is True
     assert captured['board_codes'] == ['309121']
     assert captured['ctx'] is ctx
+
+
+class _BarCtx(_MemberCtx):
+    def check_cancel(self):
+        if self.cancel_after_commit and self.checkpoint.get('bar_done_codes'):
+            raise TaskCancelled()
+
+
+def test_parallel_bar_market_scale_bounds_and_main_thread_writes(tmp_path, monkeypatch):
+    """481板块走完整服务，源端越界行被拦截，线程会话隔离且只有主线程落库。"""
+    import threading
+    import time
+    from backend.config.settings import Settings
+
+    settings = Settings()
+    settings.ths_board.member_concurrency = 2
+    settings.ths_board.bar_concurrency = 4
+    monkeypatch.setattr('backend.services.board_ingest.get_effective_settings', lambda: settings)
+    codes = [str(320000+i) for i in range(481)]
+    end = date(2026, 8, 7)
+    start = end-timedelta(days=1)
+    main_thread = threading.get_ident()
+    barrier = threading.Barrier(4)
+    sources = []
+    lock = threading.Lock()
+    calls = []
+
+    class Source:
+        def __init__(self):
+            self.thread = None
+            self.closed = False
+
+        def get_board_bar(self, code, board_type, request_start, request_end):
+            if self.thread is None:
+                self.thread = threading.get_ident()
+                barrier.wait(timeout=10)
+            assert self.thread == threading.get_ident() != main_thread
+            assert request_start == start and request_end == end
+            with lock:
+                calls.append(code)
+            time.sleep(0.001)
+            return _bar_df([start-timedelta(days=1), start, end, end+timedelta(days=1)])
+
+        def close(self):
+            assert threading.get_ident() == main_thread
+            self.closed = True
+
+    def factory():
+        source = Source()
+        with lock:
+            sources.append(source)
+        return source
+
+    svc, c = _make_service(tmp_path, _FakeSource({}), source_factory=factory)
+    c.executemany('INSERT INTO board_dict(board_code,name,board_type,has_bar) VALUES (?,?,?,true)',
+                  [[code,code,'concept'] for code in codes])
+    upsert = svc._upsert_board_bar
+
+    def write(frame):
+        assert threading.get_ident() == main_thread
+        upsert(frame)
+
+    monkeypatch.setattr(svc, '_upsert_board_bar', write)
+    ctx = _BarCtx()
+    result = svc.ingest_board_bar(start, end=end, ctx=ctx)
+    assert result['failed'] == []
+    assert result['rows'] == 962 and result['boards'] == result['at_end'] == 481
+    assert len(calls) == 481 and set(calls) == set(codes)
+    assert len(sources) == len({s.thread for s in sources}) == 4
+    assert all(s.closed for s in sources)
+    dates = c.query_df('SELECT DISTINCT trade_date FROM board_bar ORDER BY trade_date')
+    assert [pd.Timestamp(value).date() for value in dates['trade_date']] == [start,end]
+    assert ctx.checkpoint['bar_done_codes'] == sorted(codes)
+    assert ctx.checkpoint['phase_done'] == ctx.checkpoint['phase_total'] == 481
+    assert ctx.request_tracker.meta['default_concurrency'] == 4
+    assert ctx.request_tracker.meta['work_concurrency'] == 4
+
+
+def test_parallel_bar_cancel_partial_year_resume_and_resource_cleanup(tmp_path):
+    """取消无孤儿落库；失败年份可保留成功行但不登记完成，续跑补齐后才成功。"""
+    import threading
+
+    codes = ['309121','309122','309123']
+    end = date(2026,8,7)
+    material = {code:_bar_df([end]) for code in codes}
+    svc,c = _make_service(tmp_path,_FakeSource({},bar=material))
+    c.executemany('INSERT INTO board_dict(board_code,name,board_type,has_bar) VALUES (?,?,?,true)',
+                  [[code,code,'concept'] for code in codes])
+    barrier = threading.Barrier(2)
+    closed = []
+
+    class Source(_FakeSource):
+        def get_board_bar(self,*args):
+            barrier.wait(timeout=5)
+            return super().get_board_bar(*args)
+
+        def close(self):
+            closed.append(id(self))
+
+    svc._source_factory = lambda: Source({},bar=material)
+    first = _BarCtx(cancel_after_commit=True)
+    with pytest.raises(TaskCancelled):
+        svc.ingest_board_bar(end,end=end,ctx=first,concurrency=2)
+    committed = first.checkpoint['bar_done_codes']
+    assert len(committed) == 1
+    assert c.query_df('SELECT DISTINCT board_code FROM board_bar')['board_code'].tolist() == committed
+    assert len(closed) == 2
+    assert c.query_df("SELECT * FROM data_update_log WHERE status='failed'").empty
+    pending = sorted(set(codes)-set(committed))
+    partial = pending[0]
+
+    class PartialSource(_FakeSource):
+        def get_board_bar(self,code,*args):
+            frame = material[code].copy()
+            if code == partial:
+                frame.attrs['failed_years'] = [2025]
+            return frame
+
+    svc._source_factory = lambda: PartialSource({})
+    resumed = _BarCtx(first.checkpoint)
+    result = svc.ingest_board_bar(end,end=end,ctx=resumed,concurrency=2)
+    assert result['failed'] == [f'{partial}: years [2025]']
+    assert resumed.checkpoint['bar_done_codes'] == sorted(set(codes)-{partial})
+    assert c.query_df('SELECT count(*) AS n FROM board_bar WHERE board_code=?',[partial]).iloc[0]['n'] == 1
+    assert resumed.checkpoint['phase_done'] == resumed.checkpoint['phase_total'] == 3
+    # 只剩一个板块时复用主会话，仍走同一落库/断点逻辑。
+    last = _BarCtx(resumed.checkpoint)
+    result = svc.ingest_board_bar(end,end=end,ctx=last,concurrency=2)
+    assert result['failed'] == [] and result['boards'] == 1
+    assert last.checkpoint['bar_done_codes'] == codes
+    assert c.query_df('SELECT count(*) AS n FROM board_bar').iloc[0]['n'] == 3
+
+
+def test_incremental_bar_scope_signature_survives_watermark_query(tmp_path):
+    """空响应也保留尝试断点；同范围续跑不重发，改范围或截止日必须重新取源。"""
+    calls = []
+
+    class Source(_FakeSource):
+        def get_board_bar(self,code,*args):
+            calls.append(code)
+            return _EMPTY_BAR_DF.copy()
+
+    svc,c = _make_service(tmp_path,Source({}))
+    _two_boards(c)
+    end = date(2026,8,7)
+    ctx = _BarCtx()
+    svc.ingest_board_bar(None,end=end,resume_from_latest=True,ctx=ctx,concurrency=2)
+    assert isinstance(ctx.checkpoint['bar_scope'],str)
+    assert sorted(calls) == ['309121','881121']
+    svc.ingest_board_bar(None,end=end,resume_from_latest=True,ctx=ctx,concurrency=2)
+    assert len(calls) == 2
+    svc.ingest_board_bar(None,end=end,resume_from_latest=True,ctx=ctx,
+                         board_codes=['309121'],concurrency=2)
+    assert calls[-1] == '309121' and len(calls) == 3
+    svc.ingest_board_bar(None,end=date(2026,8,10),resume_from_latest=True,ctx=ctx,concurrency=2)
+    assert len(calls) == 5
+
+
+def test_parallel_bar_readiness_fallback_precedes_worker_requests(tmp_path,monkeypatch,fund_clock):
+    """日期统一退级后才派发线程；水位已到退级日的板块不向源端发送逆序区间。"""
+    fund_clock('2026-10-20T16:00:00')
+    today = date(2026,10,20)
+    previous = date(2026,10,19)
+    calls = []
+
+    class Source(_FakeSource):
+        def get_board_bar(self,code,board_type,start,end):
+            calls.append((code,start,end))
+            return _bar_df([previous,today])
+
+    svc,c = _make_service(tmp_path,Source({}))
+    _two_boards(c)
+    c.execute('INSERT INTO board_bar(board_code,trade_date,close) VALUES (?,?,1)',
+              ['309121',previous])
+    monkeypatch.setattr(svc,'_probe_bar_ready',lambda boards,end:(0,2))
+    monkeypatch.setattr(svc,'_previous_open_day',lambda end:previous)
+    ctx = _BarCtx()
+    result = svc.ingest_board_bar(None,end=today,probe_ready=True,resume_from_latest=True,
+                                  ctx=ctx,concurrency=2)
+    assert calls == [('881121',previous,previous)]
+    assert result['fallback'] is True and result['end'] == previous.isoformat()
+    assert result['rows'] == 1 and result['at_end'] == 2
+    assert ctx.checkpoint['bar_done_codes'] == ['309121','881121']
+    assert ctx.checkpoint['bar_target_end'] == previous.isoformat()
+    assert ctx.checkpoint['phase_done'] == ctx.checkpoint['phase_total'] == 2
+
+
+@pytest.mark.parametrize('concurrency',[0,17,True,1.5,'8'])
+def test_bar_concurrency_rejects_invalid_values(tmp_path,concurrency):
+    svc,_ = _make_service(tmp_path,_FakeSource({}))
+    with pytest.raises(ValueError,match='指数采集并发数'):
+        svc.ingest_board_bar(date(2026,8,7),concurrency=concurrency)

@@ -1527,10 +1527,12 @@ def test_ths_board_config_overridable(client, monkeypatch):
     s = Settings()
     assert s.ths_board.min_interval_sec == 0.125
     assert s.ths_board.member_concurrency == 8
+    assert s.ths_board.bar_concurrency == 8
     assert s.ths_board.timeout_sec is None
     assert s.ths_board.max_retries is None
     assert s.ths_board.retry_backoff_sec is None
     from backend.storage.app_config import WHITELIST
+    assert "ths_board.bar_concurrency" in WHITELIST
     assert "ths_board.min_interval_sec" in WHITELIST
     assert "ths_board.timeout_sec" in WHITELIST
     assert "ths_board.max_retries" in WHITELIST
@@ -1583,7 +1585,7 @@ def test_board_update_uses_latest_open_day(client, monkeypatch, eod_session):
 
     def fake_ingest_board_bar(self, start, end=None, board_codes=None,
                               board_type=None, probe_ready=False,
-                              resume_from_latest=False, ctx=None):
+                              resume_from_latest=False, ctx=None, concurrency=None):
         captured["bar_type"] = board_type
         captured["probe_ready"] = probe_ready
         captured["start"] = start
@@ -1716,7 +1718,7 @@ def test_ingest_board_only_selects_tables(client, monkeypatch, eod_session):
                         called.__setitem__("members", 1) or {}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_bar",
                         lambda self, start, end=None, board_codes=None, board_type=None,
-                        probe_ready=False, resume_from_latest=False, ctx=None:
+                        probe_ready=False, resume_from_latest=False, ctx=None, concurrency=None:
                         called.__setitem__("bar", 1) or {"rows": 0, "boards": 0, "end": end.isoformat()}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow",
                         lambda self, snapshot_date=None, periods=None, board_codes=None,

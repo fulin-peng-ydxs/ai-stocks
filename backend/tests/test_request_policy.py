@@ -55,6 +55,7 @@ def test_board_source_overrides_are_not_reported_as_legacy(monkeypatch):
 
     row = data_sources.source_status(False, repo=Repo(), source="ths_board")["sources"][0]
     assert row["network_concurrency"] == row["work_concurrency"] == 8
+    assert row["bar_work_concurrency"] == settings.ths_board.bar_concurrency
     assert row["rate_limit_per_sec"] == 8
     assert row["serial_required"] is False
     assert row["policy_origin"] == "来源单独配置 + 板块频率限制"
