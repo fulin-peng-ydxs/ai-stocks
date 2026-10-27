@@ -165,7 +165,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
   flex-direction: column;
   gap: var(--app-space-2);
 }
-.rule-master__tools { display: grid; flex: none; }
+.rule-master__tools { display: grid; grid-template-columns: minmax(0, 1fr); flex: none; }
 .rule-master__create { width: 100%; }
 .rule-master__region { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; }
 .rule-master__list {

@@ -121,6 +121,18 @@ export function auditControlRows(sources) {
         const segmentedRule = classes.some(c => segmentedClasses.has(c))
         const segmentedInternal = classes.some(c => ['seg-btn', 'seg-label', 'seg-indicator'].includes(c))
         const rowRule = classes.some(c => rowClasses.has(c))
+        // 共享行默认靠左排列；Grid 隐式列会按内容收缩，必须显式声明轨道。
+        const gridRow = rule.selector.split(',').some(selector => {
+          const target = selector.trim().match(/(?:^|[>+~\s])((?:\.[\w-]+)+)$/)?.[1]
+          return target && classNames(target).some(c => rowClasses.has(c))
+        })
+        if (gridRow && rule.nodes.some(node => node.type === 'decl'
+          && node.prop === 'display' && ['grid', 'inline-grid'].includes(node.value))
+          && !rule.nodes.some(node => node.type === 'decl'
+            && ['grid', 'grid-template', 'grid-template-columns'].includes(node.prop))) {
+          report((style.loc?.start.line ?? 1) + (rule.source?.start?.line ?? 1) - 1,
+            `Grid 操作行必须显式声明列轨道，避免默认靠左排列造成隐式列收缩（${rule.selector}）`)
+        }
         const controlRule = classes.some(c => controlClasses.has(c))
           || rowRule && /\.(?:el-(?:input|select|button|segmented)|page-segmented|seg-btn)\b/.test(rule.selector)
         if (!rowRule && !controlRule && !segmentedRule) return

@@ -7,6 +7,19 @@ describe('操作行消费门禁', () => {
   it('真实消费者无逐控件尺寸补偿或局部高度覆盖', () => {
     expect(auditControlRowsTree()).toEqual([])
   })
+  it('Grid 操作行声明列轨道，避免隐式列按内容收缩；不限制内部普通网格', () => {
+    const template = '<template><AppControlRow class="tools"><div class="inner" /></AppControlRow></template>'
+    for (const display of ['grid', 'inline-grid']) {
+      expect(audit(`${template}<style>.tools {display:${display}}</style>`)).toHaveLength(1)
+      expect(audit(`${template}<style>@media (max-width:900px) {.tools {display:${display}}}</style>`))
+        .toHaveLength(1)
+      for (const columns of ['minmax(0, 1fr)', 'repeat(auto-fit, minmax(240px, 1fr))']) {
+        expect(audit(`${template}<style>.tools {display:${display};grid-template-columns:${columns}}</style>`))
+          .toEqual([])
+      }
+    }
+    expect(audit(`${template}<style>.tools .inner {display:grid}</style>`)).toEqual([])
+  })
   it('拒绝静态/动态 size、内联高度、未知样式和整包绑定', () => {
     for (const props of ['size="small"', ':size="mode"', 'style="height:24px"',
       ':style="{ minHeight: h }"', ':style="privateStyle"', 'v-bind="props"']) {
