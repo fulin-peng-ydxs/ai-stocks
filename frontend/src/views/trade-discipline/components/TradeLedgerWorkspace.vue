@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import type { TableSortChange } from '@/composables/useTableSort'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppTabToolbar from '@/components/AppTabToolbar.vue'
 import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
 import AppControlItem from '@/components/AppControlItem.vue'
 import AppForm from '@/components/AppForm.vue'
@@ -446,21 +447,26 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
 <template>
   <AppWorkspacePane class="ledger-workspace" data-testid="trade-ledger-workspace" :title="mode === 'checkin' ? '今日打卡' : mode === 'positions' ? '现有持仓' : '历史记录'" :header-visible="false" padding="standard" :scroll="mode === 'history' ? 'delegated' : 'body'" fill>
     <template v-if="mode !== 'history'" #toolbar>
-      <AppControlItem :label="mode === 'positions' ? '查看日期' : '交易日'">
-        <TradeDatePicker :model-value="tradeDate" :disabled="busy" @update:model-value="$event && emit('request-date-change', $event)" />
-      </AppControlItem>
-      <AppControlRow v-if="!loading && initialized && context?.initialized_on && tradeDate >= context.initialized_on" class="ledger-summary" aria-live="polite">
-        <strong>{{ mode === 'positions' ? '已提交持仓' : preview ? '填写后预计持仓' : context?.snapshot ? '当日收盘持仓' : '期初持仓' }} {{ positionCount }} 只</strong>
-        <span v-if="mode === 'checkin' && shown">当日峰值 {{ shown.peak_positions }} 只</span>
-        <span v-if="mode === 'checkin' && shown">买入 {{ formatMoney(shown.buy_amount) }} · 卖出 {{ formatMoney(shown.sell_amount) }} · 费用 {{ formatMoney(shown.fee) }}</span>
-        <el-tag v-if="mode === 'checkin' && shown" :type="shown.assessment ? checkinAssessmentTagType(shown.assessment) : 'info'">{{ label(shown.assessment) }}</el-tag>
-      </AppControlRow>
-      <template v-if="mode === 'checkin' && context?.snapshot">
-        <span class="app-caption-text">r{{ context.current_revision_no }}</span>
-        <el-button v-if="!editing && canSubmit && context.can_edit" v-permission="'trade-discipline:checkin-submit'" @click="startAmend">{{ context.snapshot.evaluations.some(result => result.confirmed === false) ? '继续填写当日记录' : '修正最新记录' }}</el-button>
-        <el-button v-if="editing && context.can_edit" :disabled="busy" type="danger" plain @click="load">取消修正</el-button>
-        <el-button v-if="canSubmit && context.can_edit && !editing" v-permission="'trade-discipline:checkin-submit'" type="danger" plain :disabled="busy" :loading="busy" @click="withdraw">撤回最新日结</el-button>
-      </template>
+      <AppTabToolbar class="app-control-width-fill" :label="mode === 'positions' ? '持仓查看操作' : '当日记录操作'">
+        <template #actions>
+          <AppControlItem :label="mode === 'positions' ? '查看日期' : '交易日'">
+            <TradeDatePicker :model-value="tradeDate" :disabled="busy" @update:model-value="$event && emit('request-date-change', $event)" />
+          </AppControlItem>
+          <template v-if="mode === 'checkin' && context?.snapshot && !editing && canSubmit && context.can_edit">
+            <el-button v-permission="'trade-discipline:checkin-submit'" :disabled="busy" @click="startAmend">{{ context.snapshot.evaluations.some(result => result.confirmed === false) ? '继续填写当日记录' : '修正最新记录' }}</el-button>
+            <el-button v-permission="'trade-discipline:checkin-submit'" type="danger" plain :disabled="busy" :loading="busy" @click="withdraw">撤回最新日结</el-button>
+          </template>
+        </template>
+        <template v-if="!loading && initialized && context?.initialized_on && tradeDate >= context.initialized_on" #description>
+          <AppControlRow class="ledger-summary" justify="end" aria-live="polite">
+            <strong>{{ mode === 'positions' ? '已提交持仓' : preview ? '填写后预计持仓' : context?.snapshot ? '当日收盘持仓' : '期初持仓' }} {{ positionCount }} 只</strong>
+            <span v-if="mode === 'checkin' && shown">当日峰值 {{ shown.peak_positions }} 只</span>
+            <span v-if="mode === 'checkin' && shown">买入 {{ formatMoney(shown.buy_amount) }} · 卖出 {{ formatMoney(shown.sell_amount) }} · 费用 {{ formatMoney(shown.fee) }}</span>
+            <el-tag v-if="mode === 'checkin' && shown" :type="shown.assessment ? checkinAssessmentTagType(shown.assessment) : 'info'">{{ label(shown.assessment) }}</el-tag>
+            <span v-if="mode === 'checkin' && context?.snapshot" class="app-caption-text">r{{ context.current_revision_no }}</span>
+          </AppControlRow>
+        </template>
+      </AppTabToolbar>
     </template>
     <AppStateBlock v-if="loading" state="loading" title="正在加载交易账本…" />
     <AppStateBlock v-else-if="error && !context" state="error" title="交易账户加载失败" :description="error" retry @retry="load" />
@@ -539,86 +545,90 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
           <AppStatusNotice v-if="!context?.can_edit" tone="info" title="历史记录只读。需要纠正较早记录时，请先从最新日结逐日撤回。" />
           <TradeLedgerRecord v-if="context?.snapshot && !editing" :snapshot="context.snapshot" :stock-options="context.stock_options" />
           <AppForm v-else label-position="top" :disabled="disabled" class="ledger-checkin-form">
-            <div class="ledger-entry-context">
-              <AppControlRow v-if="showEntryControls">
-                <AppControlItem>
-                  <template #label>
-                    <span class="app-body-text">操作适用规则</span>
-                    <HelpHint text="一笔实际成交只记一次，履约结果由系统核对。" label="操作适用规则说明" />
-                  </template>
-                  <AppSelect v-model="selectedRule" aria-label="操作适用规则" :disabled="disabled" :empty-values="[null, undefined]" class="app-control-width-medium" @change="addRule">
-                    <el-option v-for="rule in rules" :key="rule.rule_id" :label="rule.name" :value="rule.rule_id" />
-                    <el-option label="未按任何已设规则操作" value="" />
-                  </AppSelect>
-                </AppControlItem>
-              </AppControlRow>
-              <AppControlRow v-if="showEntryControls && linkableTrades.length" data-testid="ledger-link-trade-row">
-                <AppControlItem>
-                  <template #label>
-                    <span class="app-body-text">关联已有成交</span>
-                    <HelpHint text="将其他规则下的已录成交添加到当前选择的规则，只新增规则核对，不重复记账。" label="关联已有成交说明" />
-                  </template>
-                  <AppSelect v-model="linkedTradeId" aria-label="选择要关联的成交" width="wide" placeholder="选择已录入股票的成交" :disabled="disabled">
-                    <el-option v-for="event in linkableTrades" :key="event.event_id" :label="`${event.stock_name_snapshot || event.stock_code} · ${event.side === 'buy' ? '买入' : '卖出'}${event.operated_at ? ` · ${event.operated_at.slice(11, 19)}` : ''}`" :value="event.event_id" />
-                  </AppSelect>
-                </AppControlItem>
-                <el-button :disabled="disabled || !linkedTradeId" @click="linkExistingTrade">添加到当前规则</el-button>
-              </AppControlRow>
-            </div>
             <div class="ledger-checkin-layout">
-            <div class="ledger-primary">
-            <section v-for="rule in activeEntryRules" :key="rule.rule_id" class="ledger-section">
-              <TradeOperationEditor border-placement="panel" :section-title="rule.name" :ref="editor => setOperationEditor(rule.rule_id, editor)" :model-value="groupOperations(rule.rule_id)" :version="rule" :trade-date="tradeDate" :disabled="disabled" automatic :condition-panel-defaults="conditionPanelDefaults" @update:model-value="updateGroup(rule.rule_id, $event)" />
-            </section>
-            </div>
-            <aside class="ledger-supplements" aria-label="遗漏与账户调整">
-            <TradeDisciplineSectionPanel :show-body="omissions.length > 0" class="ledger-section" border-placement="panel" title="漏买漏卖" description="只记录应买未买、应卖未卖；实际成交违规由系统归集。">
-              <template #actions><el-button v-if="!disabled && rules.length" v-permission="'trade-discipline:checkin-submit'" @click="addOmission">添加遗漏事项</el-button></template>
-              <AppControlRow v-for="(item, index) in omissions" :key="index" align="start" class="ledger-entry-grid" data-testid="ledger-omission-row">
-                <el-form-item label="事项" required><AppSelect v-model="item.kind"><el-option label="应买未买" value="missed_buy" /><el-option label="应卖未卖" value="missed_sell" /></AppSelect></el-form-item>
-                <el-form-item label="股票" required><StockOptionSelect :model-value="stockOption(item.stock_code, item.stock_name)" :trade-date="tradeDate" :disabled="disabled" @update:model-value="selectWorkspaceStock(item, $event)" /></el-form-item>
-                <el-form-item label="对应规则" required><AppSelect v-model="item.rule_id"><el-option v-for="rule in rules" :key="rule.rule_id" :label="rule.name" :value="rule.rule_id" /></AppSelect></el-form-item>
-                <el-form-item v-if="!disabled" label="操作" class="ledger-entry-action"><el-button type="danger" plain @click="omissions.splice(index, 1)">删除</el-button></el-form-item>
-              </AppControlRow>
-            </TradeDisciplineSectionPanel>
-            <TradeDisciplineSectionPanel :show-body="adjustments.length > 0" class="ledger-section" border-placement="panel" title="持仓与资金调整" description="转入转出、送转股、分红等非买卖变动；普通买卖在成交中记录。">
-              <template #actions><el-button v-if="!disabled" @click="addAdjustment('position')">记录持仓调整</el-button><el-button v-if="!disabled" @click="addAdjustment('cash')">记录资金变动</el-button></template>
-              <section v-for="(item, index) in adjustments" :key="item.event_id" class="ledger-adjustment">
-                <AppControlRow justify="between" class="ledger-adjustment-head"><strong class="app-body-text">{{ item.kind === 'position' ? '持仓调整' : '资金变动' }} {{ index + 1 }}</strong><AppIconButton v-if="!disabled" :label="`删除调整 ${index + 1}`" tone="danger" @click="events = events.filter(e => e.event_id !== item.event_id)"><Delete /></AppIconButton></AppControlRow>
-              <AppControlRow align="start" class="ledger-entry-grid ledger-adjustment-fields" data-testid="ledger-adjustment-row">
-                <el-form-item label="实际时间" required><AppDatePicker v-model="item.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" :disabled="disabled" /></el-form-item>
-                <template v-if="item.kind === 'position'">
-                  <el-form-item label="调整类别" required><AppSelect v-model="item.adjustment_type" @change="changePositionType(item)"><el-option label="转入转出" value="transfer" /><el-option label="送股" value="bonus" /><el-option label="拆并股" value="split" /><el-option label="核对修正" value="correction" /></AppSelect></el-form-item>
-                  <el-form-item label="股票" required><StockOptionSelect :model-value="stockOption(item.stock_code, item.stock_name_snapshot)" :trade-date="tradeDate" :disabled="disabled" @update:model-value="selectWorkspaceStock(item, $event)" /></el-form-item>
-                  <el-form-item v-if="item.adjustment_type !== 'bonus'" label="变动" required><AppSelect v-model="item.side" @change="item.amount = null; item.cost_price = null"><el-option label="增加" value="buy" /><el-option label="减少" value="sell" /></AppSelect></el-form-item>
-                  <el-form-item label="数量" required><FixedDecimalInput v-model="item.quantity" :scale="4" :integer-digits="16" /></el-form-item>
-                  <el-form-item v-if="item.side === 'buy' && !['split', 'bonus'].includes(item.adjustment_type || '')" label="成本价（元/股，选填）"><FixedDecimalInput :model-value="item.cost_price ?? null" :scale="4" :integer-digits="16" clearable @update:model-value="item.cost_price = $event; item.amount = null" /><AppFormHelp>增加总成本：{{ costTotal(item.cost_price, item.quantity, item.amount) }}。</AppFormHelp></el-form-item>
-                  <el-form-item v-if="hasStockGroups" label="所属规则分组"><AppSelect :model-value="item.rule_id ? JSON.stringify([item.rule_id, item.stock_rule_id]) : ''" clearable placeholder="暂不分配" @update:model-value="item.rule_id = $event ? JSON.parse($event)[0] : null; item.stock_rule_id = $event ? JSON.parse($event)[1] : ''"><el-option-group v-for="rule in rules" :key="rule.rule_id" :label="rule.name"><el-option v-for="group in rule.stock_rules.filter(r => r.enabled)" :key="group.detail_id!" :label="`${rule.name} · ${group.name}`" :value="JSON.stringify([rule.rule_id, group.detail_id])" /></el-option-group></AppSelect></el-form-item>
-                </template>
-                <template v-else>
-                  <el-form-item label="变动类别" required><AppSelect v-model="item.adjustment_type" @change="changeCashType(item)"><el-option label="入金" value="deposit" /><el-option label="出金" value="withdrawal" /><el-option label="分红" value="dividend" /><el-option label="其他调整" value="other" /></AppSelect></el-form-item>
-                  <el-form-item v-if="item.adjustment_type === 'other'" label="方向" required><AppSelect v-model="item.direction"><el-option label="流入" value="in" /><el-option label="流出" value="out" /></AppSelect></el-form-item>
-                  <el-form-item label="金额" required><FixedDecimalInput v-model="item.amount" /></el-form-item>
-                  <el-form-item v-if="item.adjustment_type === 'dividend'" label="分红股票" required><StockOptionSelect :model-value="stockOption(item.stock_code, item.stock_name_snapshot)" :trade-date="tradeDate" :disabled="disabled" @update:model-value="selectWorkspaceStock(item, $event)" /></el-form-item>
-                </template>
-                <el-form-item label="原因" required class="ledger-entry-note"><el-input v-model="item.note" maxlength="8000" /></el-form-item>
-              </AppControlRow>
-                  <AppFormHelp v-if="item.adjustment_type === 'bonus'">填写增加的股数，送股不增加总成本。</AppFormHelp>
-                  <AppFormHelp v-if="item.adjustment_type === 'split'">拆并股保持总成本不变，按增加或减少的股数填报；未选分组时按同股原数量分摊。</AppFormHelp>
-              </section>
-            </TradeDisciplineSectionPanel>
-            <TradeDisciplineSectionPanel border-placement="panel" title="复盘备注" description="选填，可记录当日复盘想法。">
-              <el-input v-model="reviewNote" aria-label="复盘备注（选填）" type="textarea" :rows="2" maxlength="8000" />
-            </TradeDisciplineSectionPanel>
-            </aside>
+              <div class="ledger-primary">
+                <TradeDisciplineSectionPanel title="实际成交" border-placement="panel" data-testid="ledger-trades-panel">
+                  <template #actions>
+                    <div class="ledger-entry-context">
+                      <AppControlRow v-if="showEntryControls">
+                        <AppControlItem>
+                          <template #label>
+                            <span class="app-body-text">操作适用规则</span>
+                            <HelpHint text="一笔实际成交只记一次，履约结果由系统核对。" label="操作适用规则说明" />
+                          </template>
+                          <AppSelect v-model="selectedRule" aria-label="操作适用规则" :disabled="disabled" :empty-values="[null, undefined]" class="app-control-width-medium" @change="addRule">
+                            <el-option v-for="rule in rules" :key="rule.rule_id" :label="rule.name" :value="rule.rule_id" />
+                            <el-option label="未按任何已设规则操作" value="" />
+                          </AppSelect>
+                        </AppControlItem>
+                      </AppControlRow>
+                      <AppControlRow v-if="showEntryControls && linkableTrades.length" data-testid="ledger-link-trade-row">
+                        <AppControlItem>
+                          <template #label>
+                            <span class="app-body-text">关联已有成交</span>
+                            <HelpHint text="将其他规则下的已录成交添加到当前选择的规则，只新增规则核对，不重复记账。" label="关联已有成交说明" />
+                          </template>
+                          <AppSelect v-model="linkedTradeId" aria-label="选择要关联的成交" width="wide" placeholder="选择已录入股票的成交" :disabled="disabled">
+                            <el-option v-for="event in linkableTrades" :key="event.event_id" :label="`${event.stock_name_snapshot || event.stock_code} · ${event.side === 'buy' ? '买入' : '卖出'}${event.operated_at ? ` · ${event.operated_at.slice(11, 19)}` : ''}`" :value="event.event_id" />
+                          </AppSelect>
+                        </AppControlItem>
+                        <el-button :disabled="disabled || !linkedTradeId" @click="linkExistingTrade">添加到当前规则</el-button>
+                      </AppControlRow>
+                    </div>
+                  </template>
+                  <div class="ledger-section">
+                    <section v-for="rule in activeEntryRules" :key="rule.rule_id" class="ledger-section">
+                      <TradeOperationEditor border-placement="none" :section-title="rule.name" :ref="editor => setOperationEditor(rule.rule_id, editor)" :model-value="groupOperations(rule.rule_id)" :version="rule" :trade-date="tradeDate" :disabled="disabled" automatic :condition-panel-defaults="conditionPanelDefaults" @update:model-value="updateGroup(rule.rule_id, $event)" />
+                    </section>
+                  </div>
+                </TradeDisciplineSectionPanel>
+                <TradeDisciplineSectionPanel v-if="shown && editing" class="ledger-assessment" border-placement="panel" :title="preview ? '预计核对结果' : '已保存的核对结果'" aria-live="polite">
+                  <TradeLedgerRecord :snapshot="shown" :stock-options="[...selectedStocks.values()]" :show-account-details="false" border-placement="none" />
+                </TradeDisciplineSectionPanel>
+              </div>
+              <aside class="ledger-supplements" aria-label="遗漏与账户调整">
+              <TradeDisciplineSectionPanel :show-body="omissions.length > 0" class="ledger-section" border-placement="panel" title="漏买漏卖" description="只记录应买未买、应卖未卖；实际成交违规由系统归集。">
+                <template #actions><el-button v-if="!disabled && rules.length" v-permission="'trade-discipline:checkin-submit'" @click="addOmission">添加遗漏事项</el-button></template>
+                <AppControlRow v-for="(item, index) in omissions" :key="index" align="start" class="ledger-entry-grid" data-testid="ledger-omission-row">
+                  <el-form-item :label="`事项 ${index + 1}`" required><AppSelect v-model="item.kind"><el-option label="应买未买" value="missed_buy" /><el-option label="应卖未卖" value="missed_sell" /></AppSelect></el-form-item>
+                  <el-form-item label="股票" required><StockOptionSelect :model-value="stockOption(item.stock_code, item.stock_name)" :trade-date="tradeDate" :disabled="disabled" @update:model-value="selectWorkspaceStock(item, $event)" /></el-form-item>
+                  <el-form-item label="对应规则" required><AppSelect v-model="item.rule_id"><el-option v-for="rule in rules" :key="rule.rule_id" :label="rule.name" :value="rule.rule_id" /></AppSelect></el-form-item>
+                  <el-form-item v-if="!disabled" label="操作" class="ledger-entry-action"><el-button type="danger" plain @click="omissions.splice(index, 1)">删除</el-button></el-form-item>
+                </AppControlRow>
+              </TradeDisciplineSectionPanel>
+              <TradeDisciplineSectionPanel :show-body="adjustments.length > 0" class="ledger-section" border-placement="panel" title="持仓与资金调整" description="转入转出、送转股、分红等非买卖变动；普通买卖在成交中记录。">
+                <template #actions><el-button v-if="!disabled" @click="addAdjustment('position')">记录持仓调整</el-button><el-button v-if="!disabled" @click="addAdjustment('cash')">记录资金变动</el-button></template>
+                <section v-for="(item, index) in adjustments" :key="item.event_id" class="ledger-adjustment">
+                  <AppControlRow justify="between" class="ledger-adjustment-head"><strong class="app-body-text">{{ item.kind === 'position' ? '持仓调整' : '资金变动' }} {{ index + 1 }}</strong><AppIconButton v-if="!disabled" :label="`删除调整 ${index + 1}`" tone="danger" @click="events = events.filter(e => e.event_id !== item.event_id)"><Delete /></AppIconButton></AppControlRow>
+                <AppControlRow align="start" class="ledger-entry-grid ledger-adjustment-fields" data-testid="ledger-adjustment-row">
+                  <el-form-item label="实际时间" required><AppDatePicker v-model="item.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" :disabled="disabled" /></el-form-item>
+                  <template v-if="item.kind === 'position'">
+                    <el-form-item label="调整类别" required><AppSelect v-model="item.adjustment_type" @change="changePositionType(item)"><el-option label="转入转出" value="transfer" /><el-option label="送股" value="bonus" /><el-option label="拆并股" value="split" /><el-option label="核对修正" value="correction" /></AppSelect></el-form-item>
+                    <el-form-item label="股票" required><StockOptionSelect :model-value="stockOption(item.stock_code, item.stock_name_snapshot)" :trade-date="tradeDate" :disabled="disabled" @update:model-value="selectWorkspaceStock(item, $event)" /></el-form-item>
+                    <el-form-item v-if="item.adjustment_type !== 'bonus'" label="变动" required><AppSelect v-model="item.side" @change="item.amount = null; item.cost_price = null"><el-option label="增加" value="buy" /><el-option label="减少" value="sell" /></AppSelect></el-form-item>
+                    <el-form-item label="数量" required><FixedDecimalInput v-model="item.quantity" :scale="4" :integer-digits="16" /></el-form-item>
+                    <el-form-item v-if="item.side === 'buy' && !['split', 'bonus'].includes(item.adjustment_type || '')" label="成本价（元/股，选填）"><FixedDecimalInput :model-value="item.cost_price ?? null" :scale="4" :integer-digits="16" clearable @update:model-value="item.cost_price = $event; item.amount = null" /><AppFormHelp>增加总成本：{{ costTotal(item.cost_price, item.quantity, item.amount) }}。</AppFormHelp></el-form-item>
+                    <el-form-item v-if="hasStockGroups" label="所属规则分组"><AppSelect :model-value="item.rule_id ? JSON.stringify([item.rule_id, item.stock_rule_id]) : ''" clearable placeholder="暂不分配" @update:model-value="item.rule_id = $event ? JSON.parse($event)[0] : null; item.stock_rule_id = $event ? JSON.parse($event)[1] : ''"><el-option-group v-for="rule in rules" :key="rule.rule_id" :label="rule.name"><el-option v-for="group in rule.stock_rules.filter(r => r.enabled)" :key="group.detail_id!" :label="`${rule.name} · ${group.name}`" :value="JSON.stringify([rule.rule_id, group.detail_id])" /></el-option-group></AppSelect></el-form-item>
+                  </template>
+                  <template v-else>
+                    <el-form-item label="变动类别" required><AppSelect v-model="item.adjustment_type" @change="changeCashType(item)"><el-option label="入金" value="deposit" /><el-option label="出金" value="withdrawal" /><el-option label="分红" value="dividend" /><el-option label="其他调整" value="other" /></AppSelect></el-form-item>
+                    <el-form-item v-if="item.adjustment_type === 'other'" label="方向" required><AppSelect v-model="item.direction"><el-option label="流入" value="in" /><el-option label="流出" value="out" /></AppSelect></el-form-item>
+                    <el-form-item label="金额" required><FixedDecimalInput v-model="item.amount" /></el-form-item>
+                    <el-form-item v-if="item.adjustment_type === 'dividend'" label="分红股票" required><StockOptionSelect :model-value="stockOption(item.stock_code, item.stock_name_snapshot)" :trade-date="tradeDate" :disabled="disabled" @update:model-value="selectWorkspaceStock(item, $event)" /></el-form-item>
+                  </template>
+                  <el-form-item label="原因" required class="ledger-entry-note"><el-input v-model="item.note" maxlength="8000" /></el-form-item>
+                </AppControlRow>
+                    <AppFormHelp v-if="item.adjustment_type === 'bonus'">填写增加的股数，送股不增加总成本。</AppFormHelp>
+                    <AppFormHelp v-if="item.adjustment_type === 'split'">拆并股保持总成本不变，按增加或减少的股数填报；未选分组时按同股原数量分摊。</AppFormHelp>
+                </section>
+              </TradeDisciplineSectionPanel>
+              <TradeDisciplineSectionPanel border-placement="panel" title="复盘备注" description="选填，可记录当日复盘想法。">
+                <el-input v-model="reviewNote" aria-label="复盘备注（选填）" type="textarea" :rows="2" maxlength="8000" />
+              </TradeDisciplineSectionPanel>
+              </aside>
             </div>
           </AppForm>
-          <section v-if="shown && editing" class="ledger-section" aria-live="polite">
-            <h4 class="app-section-title">{{ preview ? '预计核对结果' : '已保存的核对结果' }}</h4>
-            <TradeLedgerRecord :snapshot="shown" :stock-options="[...selectedStocks.values()]" :show-account-details="false" />
-          </section>
           <AppStatusNotice v-if="previewError" tone="warning" :title="previewError" />
-
         </template>
       </template>
     </template>
@@ -655,6 +665,7 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
     <template v-if="mode === 'history' || showEntryControls" #footer>
       <AppPagination v-if="mode === 'history'" :current-page="page" :page-size="pageSize" :total="total" @current-change="page = $event; loadHistory()" @size-change="page = 1; emit('page-size-change', $event)" />
       <template v-else>
+        <el-button v-if="editing && context?.snapshot && context.can_edit" :disabled="busy" @click="load">取消修正</el-button>
         <el-button v-permission="'trade-discipline:checkin-submit'" type="primary" :loading="busy" :disabled="previewBusy || (!!context?.snapshot && !dirty())" @click="save">{{ context?.snapshot ? '提交修正' : '提交当日记录' }}</el-button>
       </template>
     </template>
@@ -677,13 +688,15 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
 
 <style scoped>
 .ledger-workspace { min-width: 0; }
-.ledger-summary { flex: none; }
 .ledger-filter-card { flex: none; }
 .ledger-section { display: grid; gap: var(--app-space-3); }
 .ledger-entry-grid { margin-bottom: var(--app-space-3); }
 .ledger-checkin-form { display: grid; gap: var(--app-space-4); width: 100%; min-width: 0; }
 .ledger-checkin-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--app-space-5); align-items: start; }
-.ledger-primary, .ledger-supplements { display: flex; flex-direction: column; min-width: 0; gap: var(--app-space-4); }
+.ledger-primary { display: contents; }
+.ledger-supplements { display: flex; flex-direction: column; min-width: 0; gap: var(--app-space-4); }
+/* 单栏先完成成交与补充填写，再查看结果；宽屏将结果接在左栏成交之后。 */
+.ledger-assessment { order: 1; }
 .ledger-supplements { container: ledger-supplements / inline-size; }
 .ledger-entry-context { display: grid; gap: var(--app-space-2); }
 .ledger-checkin-form .ledger-section { margin-bottom: 0; }
@@ -694,7 +707,6 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
 .ledger-entry-grid.ledger-adjustment-fields > :deep(.el-form-item.ledger-entry-note) { flex-basis: 100%; }
 .ledger-entry-grid > :deep(.el-form-item:not(.ledger-entry-action)) { flex: 1 1 180px; min-width: 0; }
 .ledger-entry-grid > :deep(.el-form-item .el-select), .ledger-entry-grid > :deep(.el-form-item .el-date-editor), .ledger-entry-grid > :deep(.el-form-item .el-input-number) { width: 100%; }
-.ledger-summary { min-width: 0; }
 .ledger-opening { max-width: calc(var(--app-control-width-wide) * 4); }
 .ledger-opening-head { margin-bottom: var(--app-space-5); }
 .ledger-opening-head h3 { margin: 0 0 var(--app-space-2); }
@@ -710,6 +722,7 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
 .ledger-opening-confirm :deep(.el-checkbox__label) { white-space: normal; }
 @container app-viewport (min-width: 1600px) {
   .ledger-checkin-layout { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  .ledger-primary { display: flex; flex-direction: column; min-width: 0; gap: var(--app-space-4); }
 }
 @container ledger-supplements (max-width: 760px) {
   .ledger-entry-grid.ledger-adjustment-fields > :deep(.el-form-item:not(.ledger-entry-action)) { flex-basis: calc((100% - var(--app-space-2)) / 2); }

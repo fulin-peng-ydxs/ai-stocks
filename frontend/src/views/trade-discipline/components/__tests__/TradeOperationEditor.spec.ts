@@ -15,6 +15,20 @@ const version: RuleVersionDetail = {
 }
 
 describe('TradeOperationEditor', () => {
+  it.each([undefined, 'panel', 'none'] as const)('边界模式 %s 复用共享分区，新增成交行为一致', async borderPlacement => {
+    const wrapper = mount(TradeOperationEditor, {
+      props: { modelValue: [], version, tradeDate: '2026-10-23', automatic: true, borderPlacement },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
+    })
+    try {
+      const panel = wrapper.get('[data-testid="checkin-operation-section"]')
+      expect(panel.classes().includes('is-panel-bordered')).toBe(borderPlacement === 'panel')
+      expect(panel.classes().includes('is-borderless')).toBe(borderPlacement === 'none')
+      await wrapper.get('button[aria-label="添加买入操作"]').trigger('click')
+      expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toMatchObject([{ side: 'buy' }])
+    } finally { wrapper.unmount() }
+  })
+
   it.each([false, true, null])('保存后和关联成交按核验快照回显ST（%s）', async isSt => {
     const operation = { event_id: 'saved', stock_code: '600000.SH', stock_name_snapshot: '浦发银行',
       side: 'buy' as const, stock_rule_id: 'stock-1', action_rule_id: 'buy-1',

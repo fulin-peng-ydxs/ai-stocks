@@ -3,15 +3,15 @@ import AppControlRow from '@/components/AppControlRow.vue'
 withDefaults(defineProps<{
   title: string
   description?: string
-  /** 主内容分区可将标题、动作与正文一起纳入边框，避免正文重复套框。 */
-  borderPlacement?: 'body' | 'panel'
+  /** panel 统一外框；嵌入已有分区时用 none，避免重复边框与内距。 */
+  borderPlacement?: 'body' | 'panel' | 'none'
   /** 空分区可只保留标题和动作；既有消费者默认继续展示正文。 */
   showBody?: boolean
 }>(), { showBody: true, borderPlacement: 'body' })
 </script>
 
 <template>
-  <section class="trade-discipline-section-panel" :class="{ 'is-header-only': showBody === false, 'is-panel-bordered': borderPlacement === 'panel', 'app-surface': borderPlacement === 'panel' }">
+  <section class="trade-discipline-section-panel" :class="{ 'is-header-only': showBody === false, 'is-panel-bordered': borderPlacement === 'panel', 'is-borderless': borderPlacement === 'none', 'app-surface': borderPlacement === 'panel' }">
     <header class="trade-discipline-section-panel__head">
       <div>
         <h4 class="app-section-title">{{ title }}</h4>
@@ -30,7 +30,8 @@ withDefaults(defineProps<{
   min-width: 0;
 }
 .trade-discipline-section-panel.is-panel-bordered { padding: var(--layout-card-padding, var(--app-space-4)); }
-.is-panel-bordered .trade-discipline-section-panel__body { padding: 0; border: 0; background: transparent; }
+.is-panel-bordered .trade-discipline-section-panel__body,
+.is-borderless .trade-discipline-section-panel__body { padding: 0; border: 0; background: transparent; }
 .trade-discipline-section-panel__head {
   display: flex;
   align-items: flex-start;

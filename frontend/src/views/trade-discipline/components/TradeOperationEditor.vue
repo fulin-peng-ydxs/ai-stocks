@@ -42,7 +42,7 @@ import {
 
 const props = defineProps<{
   sectionTitle?: string
-  borderPlacement?: 'body' | 'panel'
+  borderPlacement?: 'body' | 'panel' | 'none'
   conditionPanelDefaults?: StockConditionPanelDefaults
   modelValue: CheckinOperation[]
   version: RuleVersionDetail
