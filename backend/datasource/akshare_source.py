@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import threading
 from datetime import date, timedelta
+from typing import ClassVar
 
 import akshare as ak
 import pandas as pd
@@ -247,8 +248,11 @@ def index_to_sina_symbol(index_code: str) -> str:
 
 class AKShareSource(DataSource):
     name = "akshare"
-    # 新浪日线/指数/日历/列表 + 东财市值（valuation 单只历史）
-    capabilities = {"daily", "index", "calendar", "stock_list", "valuation", "share_capital", "intraday_1m"}
+    # 新浪行情 + 东财逐股历史及单日全市场估值。
+    capabilities: ClassVar[set[str]] = {
+        "daily", "index", "calendar", "stock_list", "valuation", "valuation_batch",
+        "share_capital", "intraday_1m",
+    }
 
     def __init__(self) -> None:
         # 读"生效配置"(YAML ⊕ 前端 app_config 覆盖)，让前端改「请求限流/超时/重试」
@@ -502,25 +506,41 @@ class AKShareSource(DataSource):
         列：code, trade_date, total_mv, float_mv, total_share, float_share。
         来源 stock_value_em（东财，与被封的 push2his 不同 endpoint，可用）。
         """
-        code6 = code.split(".")[0]
         from backend.datasource.share_capital import fetch_daily_valuation
 
         self._last_valuation_prices = (code, {})
         df = fetch_daily_valuation(code, start=start, end=end, timeout=self._share_timeout_sec)
+        out = self._valuation_frame(df, to_full_code(code.split(".")[0]), start, end)
+        if not out.empty and "CLOSE_PRICE" in df:
+            self._last_valuation_prices = (code, dict(zip(
+                out.trade_date, out.valuation_close, strict=True,
+            )))
+        return out
+
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec, source_group="eastmoney")
+    def get_valuation_batch(self, codes: list[str], trade_date: date) -> pd.DataFrame:
+        """与逐股估值消费同一报告和字段；完整分页后按本次目标代码裁剪。"""
+        from backend.datasource.share_capital import fetch_daily_valuation_day
+
+        df = fetch_daily_valuation_day(trade_date, timeout=self._share_timeout_sec)
+        if df.empty:
+            return pd.DataFrame()
+        df = df[df.SECUCODE.isin(codes)].copy()
+        return self._valuation_frame(df, df.SECUCODE, trade_date, trade_date)
+
+    @staticmethod
+    def _valuation_frame(df, code, start, end):
+        """两种取数方式统一字段、单位和日期过滤，保留同次来源价格。"""
         if df is None or df.empty or "数据日期" not in df.columns:
             return pd.DataFrame()
         df = df.copy()
+        df["code"] = code
         df["trade_date"] = pd.to_datetime(df["数据日期"]).dt.date
         mask = (df["trade_date"] >= start) & (df["trade_date"] <= end)
         df = df[mask]
-        # 保留同次市值响应的价格证据，区分股本差异与行情源价格差异。
-        if "CLOSE_PRICE" in df:
-            self._last_valuation_prices = (code, dict(zip(
-                df.trade_date, pd.to_numeric(df.CLOSE_PRICE, errors="coerce"), strict=True,
-            )))
         return pd.DataFrame(
             {
-                "code": to_full_code(code6),
+                "code": df["code"],
                 "trade_date": df["trade_date"],
                 "total_mv": pd.to_numeric(df["总市值"], errors="coerce"),
                 "float_mv": pd.to_numeric(df["流通市值"], errors="coerce"),

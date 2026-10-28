@@ -239,6 +239,10 @@ class DataSource(ABC):
         """每日估值/市值。列：code,trade_date,total_mv,float_mv,total_share,float_share。"""
         raise NotImplementedError(f"{self.name} 不支持 valuation 能力")
 
+    def get_valuation_batch(self, codes: list[str], trade_date: date) -> pd.DataFrame:
+        """同日多标的估值快照；仅声明 valuation_batch 的来源可用。"""
+        raise NotImplementedError(f"{self.name} 不支持 valuation_batch 能力")
+
     def get_share_capital(self, code: str, dates) -> pd.DataFrame:
         """对应行情日的历史股本，含生效/公告日及总市值可补算标记。"""
         raise NotImplementedError(f"{self.name} 不支持逐日股本能力")
@@ -263,7 +267,7 @@ class DataSource(ABC):
         raise NotImplementedError(f"{self.name} 不支持 intraday_1m 能力")
 
     # ── 能力声明（供编排层按能力选源，见 IngestionService._source_for）──
-    # 约定能力名：daily/index/calendar/stock_list/valuation/basic_dates/industry/delisted/
+    # 约定能力名：daily/index/calendar/stock_list/valuation/valuation_batch/basic_dates/industry/delisted/
     # adj_factor/st_status
     def supports(self, capability: str) -> bool:
         """是否支持某能力。"""

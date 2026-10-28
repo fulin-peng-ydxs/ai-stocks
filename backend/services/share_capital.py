@@ -142,11 +142,15 @@ class ShareCapitalService:
         # 日线批次调用方已持有同连接事务，股本与行情必须一起提交或回滚。
         transaction = nullcontext() if _in_transaction else self.c.transaction()
         with transaction, self.c.temp_view(df[cols], prefix="share_input") as t:
+            bounds = [df.trade_date.min(), df.trade_date.max()]
             previous = self.c.query_df(
                 f"SELECT v.code,v.trade_date,s.total_share,s.float_share,m.total_mv,m.float_mv,"
                 f"m.reported_total_mv,m.reported_float_mv,m.reported_total_close,m.reported_float_close FROM {t} v "
-                "LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
-                "LEFT JOIN daily_metrics m USING(code,trade_date)"
+                "LEFT JOIN (SELECT * FROM stock_share_capital_daily "
+                "WHERE trade_date BETWEEN ? AND ?) s USING(code,trade_date) "
+                "LEFT JOIN (SELECT * FROM daily_metrics "
+                "WHERE trade_date BETWEEN ? AND ?) m USING(code,trade_date)",
+                bounds * 2,
             )
             for field in ("total", "float"):
                 names = [
@@ -351,16 +355,19 @@ class ShareCapitalService:
         return result
 
     def _log_changes(self, previous, source):
+        bounds = [previous.trade_date.min(), previous.trade_date.max()]
         with self.c.temp_view(previous, prefix="capital_previous") as previous_view:
             changed = self.c.query_df(
                 f"SELECT count(*) n,min(p.trade_date) lo,max(p.trade_date) hi FROM {previous_view} p "
-                "LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
-                "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE "
+                "LEFT JOIN (SELECT * FROM stock_share_capital_daily "
+                "WHERE trade_date BETWEEN ? AND ?) s USING(code,trade_date) "
+                "LEFT JOIN (SELECT * FROM daily_metrics "
+                "WHERE trade_date BETWEEN ? AND ?) m USING(code,trade_date) WHERE "
                 "p.total_share IS DISTINCT FROM s.total_share OR p.float_share IS DISTINCT FROM s.float_share "
                 "OR p.total_mv IS DISTINCT FROM m.total_mv OR p.float_mv IS DISTINCT FROM m.float_mv"
                 + "".join(f" OR p.{col} IS DISTINCT FROM m.{col}" for col in
                           ("reported_total_mv", "reported_float_mv", "reported_total_close", "reported_float_close")
-                          if col in previous)
+                          if col in previous), bounds * 2,
             ).iloc[0]
         if changed.n:
             # 修订与数据同事务提交；读取端用现有日志指纹识别新输入，幂等补采不刷版本。
@@ -381,6 +388,8 @@ class ShareCapitalService:
             )
 
     def _merge_market_values(self, df, share_view, source, reported):
+        # 显式日期边界让小批增量裁剪历史行组；键关联仍决定实际读写对象。
+        bounds = [df.trade_date.min(), df.trade_date.max()]
         # 先保全旧接口值，随后写入本次接口证据；计算值绝不归档为接口值。
         for field in ("total", "float"):
             col = f"{field}_mv"
@@ -412,8 +421,10 @@ class ShareCapitalService:
                 f"SELECT v.code,v.trade_date,CASE WHEN {valid} THEN s.{field}_share*v._raw_close "
                 f"ELSE m.reported_{col} END,CASE WHEN {valid} THEN {self._computed_source(field)} "
                 f"ELSE m.reported_{col}_source END FROM {share_view} v "
-                "LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
-                "LEFT JOIN daily_metrics m USING(code,trade_date) "
+                "LEFT JOIN (SELECT * FROM stock_share_capital_daily "
+                "WHERE trade_date BETWEEN ? AND ?) s USING(code,trade_date) "
+                "LEFT JOIN (SELECT * FROM daily_metrics "
+                "WHERE trade_date BETWEEN ? AND ?) m USING(code,trade_date) "
                 f"ON CONFLICT (code,trade_date) DO UPDATE SET {col}=excluded.{col}, "
-                f"{col}_source=excluded.{col}_source"
+                f"{col}_source=excluded.{col}_source", bounds * 2,
             )

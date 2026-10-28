@@ -1268,6 +1268,47 @@ class IngestionService:
             return self._collect_capital_one(code, source, trade_date, trade_date)
 
         val_src = self._source_for("valuation")
+        prefetched = {}
+        # 单日全市场材料很小；小范围沿用逐股请求，缺漏和快照异常均可回退。
+        if n >= 32 and getattr(val_src, "supports", lambda _: False)("valuation_batch"):
+            try:
+                if ctx:
+                    ctx.check_cancel()
+                    ctx.log(f"最新日市值：分页获取 {trade_date} 来源快照，随后逐股校验与补漏")
+                with thread_cancel_scope(ctx.check_cancel if ctx else None):
+                    snapshot = val_src.get_valuation_batch(pending, trade_date)
+                if snapshot is not None and not snapshot.empty:
+                    if (not snapshot.code.isin(pending).all()
+                            or not pd.to_datetime(snapshot.trade_date).dt.date.eq(trade_date).all()
+                            or snapshot.duplicated(["code", "trade_date"]).any()):
+                        raise DataSourceError("最新日市值快照标的、日期或唯一性异常")
+                    prefetched = {code: group for code, group in snapshot.groupby("code", sort=False)}
+                if ctx:
+                    ctx.log(f"最新日市值快照已取得 {len(prefetched)}/{n} 只；"
+                            f"未覆盖 {n - len(prefetched)} 只继续逐股补采")
+            except TaskCancelled:
+                raise
+            except Exception as exc:  # noqa: BLE001 -- 批量传输失败不能省掉逐股兜底
+                prefetched = {}
+                log.warning("最新日市值快照不可用，改用逐股取源: %s", exc)
+                if ctx:
+                    ctx.log(f"最新日市值快照不可用，继续逐股补采：{exc}", "warn")
+        tls = threading.local()
+        source_name = val_src.name
+
+        def _worker(code: str) -> pd.DataFrame:
+            if code in prefetched:
+                frame = prefetched[code].copy()
+                frame.attrs["source_valuation_prices"] = (
+                    code, dict(zip(frame.trade_date, frame.valuation_close, strict=True)),
+                )
+            else:
+                src = self._thread_source(tls, source_name)
+                frame = src.get_valuation(code, trade_date, trade_date)
+                if frame is not None:
+                    frame.attrs["source_valuation_prices"] = getattr(src, "_last_valuation_prices", None)
+            return frame
+
         if concurrency <= 1:
             src = val_src
             for i, code in enumerate(pending, 1):
@@ -1276,7 +1317,18 @@ class IngestionService:
                     ctx.set_phase("valuation_latest", phase_total=n, phase_done=i - 1, current_item=code,
                                   valuation_latest_done_codes=sorted(done_latest))
                 try:
-                    rows += _one(code, src); ok += 1
+                    if code in prefetched:
+                        frame = _worker(code)
+                        entry = self._complete_capital_material(
+                            [(i, code, (frame, frame.attrs.get("source_valuation_prices")), None, 0)],
+                            src, _one,
+                        )[0]
+                        if entry[3] is not None:
+                            raise entry[3]
+                        rows += entry[2]
+                    else:
+                        rows += _one(code, src)
+                    ok += 1
                     done_latest.add(code)
                 except Exception as e:  # noqa: BLE001
                     fail += 1; log.warning("%s 补最新日市值失败: %s", code, e)
@@ -1291,16 +1343,6 @@ class IngestionService:
                         ctx.log(f"最新日市值补采进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
                         ctx.flush()
         else:
-            tls = threading.local()
-            source_name = val_src.name
-
-            def _worker(code: str) -> int:
-                src = self._thread_source(tls, source_name)
-                frame = src.get_valuation(code, trade_date, trade_date)
-                if frame is not None:
-                    frame.attrs["source_valuation_prices"] = getattr(src, "_last_valuation_prices", None)
-                return frame
-
             def _merge_batch(entries):
                 from backend.services.capital_quality import CapitalQualityService
                 frames, normalized = [], []

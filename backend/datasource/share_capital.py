@@ -85,8 +85,16 @@ def fetch_daily_valuation(
         condition += f"(TRADE_DATE>='{start.isoformat()}')"
     if end is not None:
         condition += f"(TRADE_DATE<='{end.isoformat()}')"
+    return _fetch_valuation_pages(condition, code, timeout=timeout)
+
+
+def _fetch_valuation_pages(
+    condition, label, *, timeout, sort_column="TRADE_DATE", require_count=False,
+):
+    """逐股与单日全市场复用分页口径；分页期间变动的快照必须拒绝。"""
     rows = []
     page = 1
+    expected_pages = expected_count = None
     while True:
         response = requests.get(
             "https://datacenter-web.eastmoney.com/api/data/v1/get",
@@ -96,7 +104,7 @@ def fetch_daily_valuation(
                 "filter": condition,
                 "pageSize": 5000,
                 "pageNumber": page,
-                "sortColumns": "TRADE_DATE",
+                "sortColumns": sort_column,
                 "sortTypes": "-1",
                 "source": "WEB",
                 "client": "WEB",
@@ -107,16 +115,26 @@ def fetch_daily_valuation(
         payload = response.json()
         result = payload.get("result")
         if result is None:
-            if payload.get("code") == 9201:
+            if payload.get("code") == 9201 and not rows:
                 return pd.DataFrame()
-            raise ValueError(f"{code} 估值接口异常: {payload.get('message')}")
+            raise ValueError(f"{label} 估值接口异常: {payload.get('message')}")
+        pages = int(result.get("pages") or 1)
+        count = result.get("count")
+        if require_count and (count is None or int(count) < 0):
+            raise ValueError(f"{label} 估值快照缺少有效分页总数")
+        if page == 1:
+            expected_pages, expected_count = pages, count
+        elif pages != expected_pages or count != expected_count:
+            raise ValueError(f"{label} 估值分页快照发生变化")
+        if pages < 1 or pages > 100:
+            raise ValueError(f"{label} 估值分页范围异常")
         rows.extend(result.get("data") or [])
-        if page >= int(result.get("pages") or 1):
-            if result.get("count") is not None and len(rows) != int(result["count"]):
-                raise ValueError(f"{code} 源端分页总数与返回行数不一致")
+        if page >= pages:
+            if count is not None and len(rows) != int(count):
+                raise ValueError(f"{label} 源端分页总数与返回行数不一致")
             break
         if not result.get("data") or page >= 100:
-            raise ValueError(f"{code} 估值分页不完整")
+            raise ValueError(f"{label} 估值分页不完整")
         page += 1
     return pd.DataFrame(rows).rename(
         columns={
@@ -127,6 +145,26 @@ def fetch_daily_valuation(
             "FREE_SHARES_A": "流通股本",
         }
     )
+
+
+def fetch_daily_valuation_day(day: date, *, timeout: float = 15) -> pd.DataFrame:
+    """取同一交易日的完整来源快照，缺漏股票由消费方继续逐股补采。"""
+    frame = _fetch_valuation_pages(
+        f"(TRADE_DATE='{day.isoformat()}')", str(day), timeout=timeout,
+        sort_column="SECURITY_CODE", require_count=True,
+    )
+    if frame.empty:
+        return frame
+    if not {"SECUCODE", "数据日期"}.issubset(frame.columns):
+        raise ValueError("单日估值快照缺少标的或日期")
+    dates = pd.to_datetime(frame["数据日期"], errors="coerce").dt.date
+    valid_codes = frame.SECUCODE.astype("string").str.fullmatch(r"\d{6}\.(SH|SZ|BJ)").fillna(False)
+    if not dates.eq(day).all() or not valid_codes.all():
+        raise ValueError("单日估值快照标的或日期异常")
+    frame["数据日期"] = dates
+    if frame.duplicated(["SECUCODE", "数据日期"]).any():
+        raise ValueError("单日估值快照存在重复记录，分页不完整")
+    return frame
 
 
 def fetch_sina_float_shares(code: str, dates, *, timeout: float = 15) -> pd.DataFrame:
