@@ -111,9 +111,13 @@ class TradeDisciplineService:
 
     def _prepare_draft(self, payload: dict[str, Any]) -> dict[str, Any]:
         name, normalized = normalize_rule_name(payload.get("name"))
+        restriction = payload.get("restrict_financial_report_months", False)
+        if not isinstance(restriction, bool):
+            raise ValidationError("限制财报月份交易必须为布尔值")
         prepared: dict[str, Any] = {
             "name": name,
             "normalized_name": normalized,
+            "restrict_financial_report_months": restriction,
             "capital": self._money(payload.get("capital")),
             "max_positions": position_count(
                 payload.get("max_positions"), label="最大同时持仓数", minimum=1
@@ -297,10 +301,12 @@ class TradeDisciplineService:
                 ),
             )
         )
-        return data.get("name"), data.get("capital"), data.get("max_positions"), stocks, actions
+        return (data.get("name"), data.get("capital"), data.get("max_positions"),
+                data.get("restrict_financial_report_months", False), stocks, actions)
 
     def _next_trade_date(self, occurred_at: Any) -> date:
-        action_date = occurred_at.astimezone(SHANGHAI).date()
+        action_date = (occurred_at.astimezone(SHANGHAI).date()
+                       if isinstance(occurred_at, datetime) else occurred_at)
         df = self.market.query_df(
             "SELECT trade_date FROM trade_calendar WHERE is_open AND trade_date > ? "
             "ORDER BY trade_date LIMIT 1",
@@ -450,6 +456,7 @@ class TradeDisciplineService:
                 "normalized_name": version["normalized_name"],
                 "capital": version["capital"],
                 "max_positions": version.get("max_positions"),
+                "restrict_financial_report_months": version.get("restrict_financial_report_months", False),
                 "stock_rules": version["stock_rules"],
                 "action_rules": version["action_rules"],
             }
@@ -626,6 +633,7 @@ class TradeDisciplineService:
                     "name": name,
                     "capital": source_data.get("capital"),
                     "max_positions": source_data.get("max_positions"),
+                    "restrict_financial_report_months": source_data.get("restrict_financial_report_months", False),
                     "stock_rules": source_data["stock_rules"],
                     "action_rules": source_data["action_rules"],
                 }

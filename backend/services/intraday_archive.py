@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from datetime import UTC, date, datetime
 from uuid import uuid4
 
@@ -901,7 +902,7 @@ class IntradayArchiveService:
         )
         return pd.concat([frame, monitors], ignore_index=True).drop_duplicates()
 
-    def sync(self, codes=None, *, progress=None, facts=None, issues=None):
+    def sync(self, codes=None, *, progress=None, facts=None, issues=None, _in_transaction=False):
         """同步质量台账；同一写任务可复用刚落库的复检结果，独立扫描始终重读物理事实。"""
         from backend.services.data_report import DataIntegrityReport
 
@@ -943,7 +944,7 @@ class IntradayArchiveService:
         ]
         if progress:
             progress(0.8, "回写分时覆盖与质量台账")
-        with self.c.transaction():
+        with nullcontext() if _in_transaction else self.c.transaction():
             expected_sql, args = self._coverage_sql(codes)
             self.c.execute(
                 "INSERT INTO stock_intraday_coverage(code,trade_date) "

@@ -15,7 +15,7 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import { decimalToMinorUnits, formatMinorUnits } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
-import { conditionFilterOptions, stockConditionFields, stockConditionSummary, normalizeChecklist, stockRuleHasContent, checklistCategory, type ConditionSection, type ConditionSectionsState } from '@/utils/tradeDisciplineConditions'
+import { financialReportMonthRestrictionText, conditionFilterOptions, stockConditionFields, stockConditionSummary, normalizeChecklist, stockRuleHasContent, checklistCategory, type ConditionSection, type ConditionSectionsState } from '@/utils/tradeDisciplineConditions'
 import { actionSubtypeLabel, builtinActionSubtypeOptions } from '@/utils/tradeDisciplineRuleTypes'
 import FixedDecimalInput from '@/views/trade-discipline/components/FixedDecimalInput.vue'
 import StockRuleChecklistEditor from '@/components/trade-discipline/StockRuleChecklistEditor.vue'
@@ -165,7 +165,7 @@ function groupedActionRules(side: ActionType) {
 }
 
 function emptyPayload(): RuleDraftPayload {
-  return { name: null, capital: null, max_positions: null, stock_rules: [], action_rules: [] }
+  return { name: null, capital: null, max_positions: null, restrict_financial_report_months: false, stock_rules: [], action_rules: [] }
 }
 
 function clonePayload(source: RuleDraftPayload | RuleVersionDetail | null): RuleDraftPayload {
@@ -174,6 +174,7 @@ function clonePayload(source: RuleDraftPayload | RuleVersionDetail | null): Rule
     name: source.name ?? null,
     capital: source.capital,
     max_positions: source.max_positions ?? null,
+    restrict_financial_report_months: source.restrict_financial_report_months ?? false,
     stock_rules: source.stock_rules.map((item, index) => ({
       detail_id: item.detail_id ?? null,
       name: item.name ?? null,
@@ -252,6 +253,7 @@ function normalizedPayload(): RuleDraftPayload {
     name: form.value.name?.trim() || null,
     capital: form.value.capital === '' ? null : form.value.capital,
     max_positions: form.value.max_positions ?? null,
+    restrict_financial_report_months: form.value.restrict_financial_report_months ?? false,
     stock_rules: form.value.stock_rules.map((item, index) => ({
       ...item,
       name: item.name?.trim() || null,
@@ -652,6 +654,11 @@ defineExpose({
             </div>
           </el-form-item>
         </div>
+
+        <el-form-item>
+          <el-checkbox v-model="form.restrict_financial_report_months" data-testid="rule-financial-report-restriction">限制财报月份交易</el-checkbox>
+          <AppFormHelp>{{ financialReportMonthRestrictionText }}</AppFormHelp>
+        </el-form-item>
 
         <section class="detail-group">
           <header><div><h4 class="app-section-title">选股规则</h4><p>仅启用项参与发布校验和资金汇总</p></div><el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" @click="addStockRule">添加选股规则</el-button></header>

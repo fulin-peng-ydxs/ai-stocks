@@ -11,7 +11,9 @@ from zoneinfo import ZoneInfo
 from backend.common.exceptions import ValidationError
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
-CALCULATION_VERSION = "ledger-v3"
+CALCULATION_VERSION = "ledger-v4"
+FINANCIAL_REPORT_MONTHS = (4, 8, 10)
+FINANCIAL_REPORT_PRECEDING_MONTHS = (3, 7, 9)
 CENT = Decimal("0.01")
 
 
@@ -130,6 +132,7 @@ def calculate_day(
     opening_cash: str | None = None,
     rules: list[dict[str, Any]] | None = None,
     omissions: list[dict[str, Any]] | None = None,
+    next_trade_date: date | None = None,
 ) -> dict[str, Any]:
     """从日初重新计算整日，修正时替换有效快照而非叠加旧修订的影响。
 
@@ -188,6 +191,15 @@ def calculate_day(
     output = []
     rules = rules or []
     rule_map = {rule["rule_id"]: rule for rule in rules}
+    # 清仓期限必须由已入库的下一真实交易日确定；纯计算也拒绝缺失或越月日历。
+    clear_by_close = False
+    if (trade_date.month in FINANCIAL_REPORT_PRECEDING_MONTHS
+            and any(r.get("restrict_financial_report_months", False) for r in rules)):
+        if (next_trade_date is None or next_trade_date <= trade_date
+                or next_trade_date.year != trade_date.year
+                or next_trade_date.month not in (trade_date.month, trade_date.month + 1)):
+            raise ValidationError("财报月份清仓核对缺少有效的下一交易日，请补齐交易日历")
+        clear_by_close = next_trade_date.month in FINANCIAL_REPORT_MONTHS
     rule_peaks = {rid: len(held_codes(rid)) for rid in rule_map}
     daily_issues: dict[str, list[str]] = {r["rule_id"]: [] for r in rules}
     daily_warnings: dict[str, list[str]] = {r["rule_id"]: [] for r in rules}
@@ -202,14 +214,41 @@ def calculate_day(
         # 期初超限单独记录；其后仅新增股票导致只数上升时归到该笔，原股票加仓不重复计数。
         if limit is not None and count > limit and (previous_count is None or count > previous_count):
             issues.append(f"本规则持仓{count}只，超过上限{limit}只")
-        for stock_rule in rule.get("stock_rules", []):
-            if (not stock_rule.get("enabled", True) or stock_rule.get("max_capital") is None
-                    or stock_rule_ids is not None and stock_rule["detail_id"] not in stock_rule_ids):
+        restricted = rule.get("restrict_financial_report_months", False)
+        if restricted and trade_date.month in FINANCIAL_REPORT_MONTHS:
+            # 禁持按数量裁决，不要求成本/行情；期初留仓和新增持仓分别归集。
+            if count:
+                issues.append(f"{trade_date.month}月为财报禁持月份，本规则仍有持仓，须保持空仓")
+            return issues, warnings
+        half_capital = restricted and trade_date.month in FINANCIAL_REPORT_PRECEDING_MONTHS
+        stock_rules = {s["detail_id"]: s for s in rule.get("stock_rules", [])
+                       if s.get("enabled", True)}
+        if half_capital:
+            unmatched = {p.get("stock_rule_id") for p in positions
+                         if p.get("rule_id") == rule["rule_id"] and Decimal(p["quantity"]) > 0
+                         and (stock_rule_ids is None or p.get("stock_rule_id") in stock_rule_ids)
+                         and p.get("stock_rule_id") not in stock_rules}
+            if unmatched:
+                warnings.append("财报月份前月持仓分组无法匹配有效资金分配，半仓限制待核对")
+        for stock_rule in stock_rules.values():
+            sid = stock_rule["detail_id"]
+            if stock_rule_ids is not None and sid not in stock_rule_ids:
                 continue
-            value = cost_for(rule["rule_id"], stock_rule["detail_id"])
+            maximum = stock_rule.get("max_capital")
+            if maximum is None or (half_capital and Decimal(str(maximum)) <= 0):
+                if half_capital and any(p.get("rule_id") == rule["rule_id"]
+                                       and p.get("stock_rule_id") == sid
+                                       and Decimal(p["quantity"]) > 0 for p in positions):
+                    warnings.append(f"{stock_rule['name']}缺少有效资金分配，半仓限制待核对")
+                continue
+            value = cost_for(rule["rule_id"], sid)
             if value is None:
                 warnings.append(f"{stock_rule['name']}持仓成本未完整录入，资金占用待核对")
-            elif value > Decimal(str(stock_rule["max_capital"])):
+            elif half_capital and value * 2 > Decimal(str(maximum)):
+                # 比较时不把一半预算四舍五入到分，避免奇数分预算被多放行半分。
+                issues.append(f"{stock_rule['name']}持仓成本{money(value)}元，"
+                              f"超过财报月份前月资金上限（分配资金{maximum}元的50%）")
+            elif not half_capital and value > Decimal(str(maximum)):
                 issues.append(f"{stock_rule['name']}持仓成本{money(value)}元，超过资金上限")
         return issues, warnings
 
@@ -376,6 +415,12 @@ def calculate_day(
         output.append(event)
 
     positions = [p for p in positions if Decimal(p["quantity"]) > 0]
+    if clear_by_close:
+        for rule in rules:
+            if rule.get("restrict_financial_report_months", False) and held_codes(rule["rule_id"]):
+                daily_issues[rule["rule_id"]].append(
+                    "今日为财报月份前最后一个交易日，本规则当日结束后仍有持仓，未按要求清仓"
+                )
     evaluations = []
     omissions = omissions or []
     for rule in rules:

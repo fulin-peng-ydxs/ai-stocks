@@ -15,6 +15,7 @@ from backend.common.exceptions import ConflictError, NotFoundError, ValidationEr
 from backend.services.trade_discipline_conditions import condition_violations, condition_warnings
 from backend.services.trade_discipline_service import TradeDisciplineService
 from backend.services.trade_ledger import (
+    FINANCIAL_REPORT_PRECEDING_MONTHS,
     SHANGHAI,
     calculate_day,
     decimal_value,
@@ -394,11 +395,16 @@ class TradeLedgerService:
                 if row:
                     raise ConflictError("该成交已记入其他交易日，请勿重复记账")
             before = previous["snapshot"] if previous else None
+            # 月末判定与规则生命周期复用同一个真实交易日历入口，每次核对只查询一次。
+            next_trade_date = None
+            if (trade_date.month in FINANCIAL_REPORT_PRECEDING_MONTHS
+                    and any(r.get("restrict_financial_report_months", False) for r in rules)):
+                next_trade_date = self.discipline._next_trade_date(trade_date)
             result = calculate_day(
                 before["positions"] if before else account["opening_positions"], events, trade_date,
                 opening_cash=before["cash"] if before else (
                     None if account["opening_cash"] is None else str(account["opening_cash"])
-                ), rules=rules, omissions=omissions,
+                ), rules=rules, omissions=omissions, next_trade_date=next_trade_date,
             )
             result.update(rules=json_value(rules), trade_date=trade_date.isoformat(),
                           review_note=self.discipline._optional_text(payload.get("review_note"), "复盘备注"),

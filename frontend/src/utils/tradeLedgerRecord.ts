@@ -18,6 +18,7 @@ export function ledgerOperationsForRule(events: LedgerEvent[], ruleId: string): 
 export interface LedgerRuleRecord {
   ruleId: string
   name: string
+  restrictFinancialReportMonths?: boolean
   versionNo?: number
   confirmed: boolean
   assessment: CheckinAssessment | null
@@ -33,6 +34,7 @@ export function ledgerRuleRecords(snapshot: LedgerSnapshot): LedgerRuleRecord[] 
   const groups: LedgerRuleRecord[] = snapshot.rules.map(rule => {
     const result = evaluations.get(rule.rule_id)
     return { ruleId: rule.rule_id, name: rule.name, versionNo: rule.version_no,
+      restrictFinancialReportMonths: rule.restrict_financial_report_months ?? false,
       confirmed: result?.confirmed ?? (snapshot.confirmed_rule_ids?.includes(rule.rule_id) ?? true),
       assessment: result?.assessment ?? null, issues: result?.issues ?? [], warnings: result?.warnings ?? [],
       trades: ledgerOperationsForRule(snapshot.events, rule.rule_id),

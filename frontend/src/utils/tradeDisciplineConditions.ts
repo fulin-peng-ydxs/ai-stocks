@@ -210,3 +210,6 @@ export function holdingCountWarning(limit?: number | null, actual?: number | nul
   if (actual == null) return '尚未记录当日最大同时持仓数'
   return actual > limit ? `当日最大同时持仓 ${actual} 只，超过本套规则上限 ${limit} 只；请核对履约自评` : ''
 }
+
+/** 规则编辑、当日核对和历史快照共用同一条财报月份限制说明。 */
+export const financialReportMonthRestrictionText = '3、7、9月，各选股规则持仓成本不超过其分配资金的50%，并在该月最后一个交易日结束前清仓；4、8、10月保持空仓。'

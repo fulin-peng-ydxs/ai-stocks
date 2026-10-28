@@ -35,14 +35,15 @@ class CollectionQualityBatch:
         return {domain: None if codes is None else sorted(codes)
                 for domain, codes in self.scopes.items()}
 
-    def finish(self, client, ctx=None) -> dict:
+    def finish(self, client, ctx=None, *, _in_transaction=False) -> dict:
         """使用落库事实检查；源请求失败本身不转换为数据质量问题。"""
         from backend.services.data_report import DataIntegrityReport
 
         report = DataIntegrityReport(client)
         result = {}
         for index, (domain, scope) in enumerate(self.scopes.items()):
-            label = {"stock": "个股", "market_index": "市场指数", "board": "板块"}.get(domain, domain)
+            label = {"stock": "个股", "market_index": "市场指数", "board": "板块",
+                     "intraday": "分时"}.get(domain, domain)
             if ctx:
                 ctx.check_cancel()
                 ctx.set_phase("validate", phase_total=len(self.scopes), phase_done=index,
@@ -58,11 +59,17 @@ class CollectionQualityBatch:
             kwargs = {"progress": progress} if progress else {}
             if domain == "stock":
                 result[domain] = report.scan_quality_issues(
-                    codes=codes, include_intraday=False, **kwargs)
+                    codes=codes, include_intraday=False,
+                    **({"_in_transaction": True} if _in_transaction else {}), **kwargs)
             elif domain == "market_index":
                 result[domain] = report.scan_market_index_quality(codes=codes, **kwargs)
             elif domain == "board":
                 result[domain] = report.scan_board_quality(codes=codes, **kwargs)
+            elif domain == "intraday":
+                from backend.services.intraday_archive import IntradayArchiveService
+
+                result[domain] = IntradayArchiveService(client).sync(
+                    codes, **({"_in_transaction": True} if _in_transaction else {}), **kwargs)
             else:
                 raise ValueError(f"未知采集质检范围: {domain}")
         return result

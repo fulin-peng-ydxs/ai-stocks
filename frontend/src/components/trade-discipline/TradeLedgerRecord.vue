@@ -9,6 +9,7 @@ import type { StockOption } from '@/api/tradeDiscipline'
 import type { LedgerSnapshot } from '@/api/tradeLedger'
 import { checkinAssessmentLabel, checkinAssessmentTagType } from '@/utils/tradeDisciplineAssessment'
 import { ledgerRuleRecords } from '@/utils/tradeLedgerRecord'
+import { financialReportMonthRestrictionText } from '@/utils/tradeDisciplineConditions'
 import TradeLedgerEventTable from './TradeLedgerEventTable.vue'
 
 const props = withDefaults(defineProps<{
@@ -30,6 +31,7 @@ const stocks = computed(() => new Map((props.stockOptions ?? []).map(stock => [s
       :description="`${group.versionNo ? `v${group.versionNo} · ` : ''}实际成交 ${group.trades.filter(item => !item.linked).length} 笔${group.trades.some(item => item.linked) ? ` · 关联核对 ${group.trades.filter(item => item.linked).length} 笔` : ''} · 漏买漏卖 ${group.omissions.length} 项`">
       <template #actions><el-tag :type="!group.ruleId ? 'danger' : group.assessment ? checkinAssessmentTagType(group.assessment) : 'info'">{{ !group.ruleId ? '未按规则操作' : !group.confirmed ? '待打卡' : group.assessment ? checkinAssessmentLabel(group.assessment) : '待核对' }}</el-tag></template>
       <div class="ledger-record__content">
+        <p v-if="group.ruleId" class="app-caption-text">财报月份交易限制：{{ group.restrictFinancialReportMonths ? financialReportMonthRestrictionText : '未启用' }}</p>
         <AppStatusNotice v-if="!group.confirmed" size="compact" title="本规则尚未确认打卡" description="没有买卖操作，也需要单独确认。" />
         <p v-for="issue in group.issues" :key="issue" class="app-body-text">{{ issue }}</p>
         <p v-for="warning in group.warnings" :key="warning" class="app-caption-text">待核对：{{ warning }}</p>

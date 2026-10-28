@@ -101,6 +101,7 @@ export interface DraftActionRule {
 }
 
 export interface RuleDraft {
+  restrict_financial_report_months?: boolean
   max_positions?: number | null
   rule_id: string
   draft_revision: number
@@ -113,6 +114,7 @@ export interface RuleDraft {
 }
 
 export interface RuleVersionDetail {
+  restrict_financial_report_months?: boolean
   max_positions?: number | null
   rule_id: string
   version_no: number
@@ -129,6 +131,7 @@ export interface TradeDisciplineRuleDetail extends TradeDisciplineRule {
 }
 
 export interface RuleDraftPayload {
+  restrict_financial_report_months?: boolean
   max_positions?: number | null
   name: string | null
   capital: string | null

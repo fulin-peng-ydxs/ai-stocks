@@ -284,11 +284,13 @@ class TradeDisciplineRepository:
             cur.execute(
                 "INSERT INTO trade_discipline_rule_draft "
                 "(rule_id,tenant_id,owner_user_id,draft_revision,proposed_name,normalized_name,"
-                "capital,source_version_no,max_positions) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "capital,source_version_no,max_positions,restrict_financial_report_months) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                 "ON CONFLICT (tenant_id,owner_user_id,rule_id) DO UPDATE SET "
                 "draft_revision=EXCLUDED.draft_revision, proposed_name=EXCLUDED.proposed_name, "
                 "normalized_name=EXCLUDED.normalized_name, capital=EXCLUDED.capital, "
                 "max_positions=EXCLUDED.max_positions, "
+                "restrict_financial_report_months=EXCLUDED.restrict_financial_report_months, "
                 "source_version_no=EXCLUDED.source_version_no, updated_at=now()",
                 [
                     rule_id,
@@ -299,6 +301,7 @@ class TradeDisciplineRepository:
                     draft.get("capital"),
                     source_version_no,
                     draft.get("max_positions"),
+                    draft.get("restrict_financial_report_months", False),
                 ],
             )
             for table in (
@@ -408,8 +411,8 @@ class TradeDisciplineRepository:
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO trade_discipline_rule_version "
-                "(rule_id,tenant_id,owner_user_id,version_no,name,normalized_name,capital,max_positions) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                "(rule_id,tenant_id,owner_user_id,version_no,name,normalized_name,capital,max_positions,"
+                "restrict_financial_report_months) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 [
                     rule_id,
                     *self.owner,
@@ -418,6 +421,7 @@ class TradeDisciplineRepository:
                     draft["normalized_name"],
                     draft["capital"],
                     draft.get("max_positions"),
+                    draft.get("restrict_financial_report_months", False),
                 ],
             )
             for item in draft["stock_rules"]:

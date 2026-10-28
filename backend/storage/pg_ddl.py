@@ -25,8 +25,6 @@ import json
 import os
 import secrets
 
-from backend.storage.trade_ledger_schema import LEDGER_DDL, LEDGER_PK
-
 from backend.auth.constants import (
     ASSET_PUBLIC_PUBLISH_RESOURCE_CODES,
     ASSET_TENANT_PUBLISH_RESOURCE_CODES,
@@ -39,6 +37,7 @@ from backend.auth.constants import (
 from backend.auth.security import hash_password
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
+from backend.storage.trade_ledger_schema import LEDGER_DDL, LEDGER_PK
 
 log = get_logger("storage.pg_ddl")
 
@@ -395,6 +394,7 @@ CREATE TABLE IF NOT EXISTS trade_discipline_rule_version (
     CHECK (btrim(name) <> '' AND btrim(normalized_name) <> ''),
     CHECK (capital > 0),
     max_positions INTEGER CHECK (max_positions > 0),
+    restrict_financial_report_months BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY (tenant_id, owner_user_id, rule_id, version_no),
     FOREIGN KEY (tenant_id, owner_user_id, rule_id)
         REFERENCES trade_discipline_rule (tenant_id, owner_user_id, id) ON DELETE RESTRICT
@@ -468,6 +468,7 @@ CREATE TABLE IF NOT EXISTS trade_discipline_rule_draft (
     CHECK (capital IS NULL OR capital >= 0),
     CHECK (source_version_no IS NULL OR source_version_no > 0),
     max_positions INTEGER CHECK (max_positions > 0),
+    restrict_financial_report_months BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY (tenant_id, owner_user_id, rule_id),
     FOREIGN KEY (tenant_id, owner_user_id, rule_id)
         REFERENCES trade_discipline_rule (tenant_id, owner_user_id, id) ON DELETE CASCADE,
@@ -1439,6 +1440,14 @@ _STAGE6_VISIBILITY_INDEXES: tuple[str, ...] = (
      "ON backtest_run (visibility, tenant_id, owner_user_id)"),
 )
 
+_TRADE_DISCIPLINE_FINANCIAL_REPORT_UPGRADES = """
+-- 每套纪律版本独立保存开关；旧规则保持关闭，不改写历史日结快照。
+ALTER TABLE trade_discipline_rule_version ADD COLUMN IF NOT EXISTS restrict_financial_report_months BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE trade_discipline_rule_draft ADD COLUMN IF NOT EXISTS restrict_financial_report_months BOOLEAN NOT NULL DEFAULT FALSE;
+COMMENT ON COLUMN trade_discipline_rule_version.restrict_financial_report_months IS '限制财报月份交易：3/7/9月各选股分组成本不超过分配资金的一半，月末最后交易日清仓，4/8/10月禁止持仓；默认关闭';
+COMMENT ON COLUMN trade_discipline_rule_draft.restrict_financial_report_months IS '财报月份交易限制草稿开关，发布后按版本生效；默认关闭';
+"""
+
 _TRADE_DISCIPLINE_CONDITION_UPGRADES = """
 ALTER TABLE trade_discipline_rule_version ADD COLUMN IF NOT EXISTS max_positions INTEGER CHECK (max_positions > 0);
 ALTER TABLE trade_discipline_rule_draft ADD COLUMN IF NOT EXISTS max_positions INTEGER CHECK (max_positions > 0);
@@ -1932,6 +1941,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
         client.execute(idx_sql)
     for upgrade_sql in _TASK_RUNTIME_UPGRADES:
         client.execute(upgrade_sql)
+    client.execute(_TRADE_DISCIPLINE_FINANCIAL_REPORT_UPGRADES)
     client.execute(_TRADE_DISCIPLINE_CONDITION_UPGRADES)
     client.execute(_TRADE_DISCIPLINE_CHECKLIST_UPGRADES)
     client.execute(_TRADE_DISCIPLINE_VIOLATION_ITEMS_UPGRADES)

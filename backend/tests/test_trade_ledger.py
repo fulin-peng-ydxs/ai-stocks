@@ -631,7 +631,7 @@ def test_split_preserves_cost_and_allocates_quantity_across_groups(side, delta, 
     assert [p["cost"] for p in result["positions"]] == ["1000.00", None]
     assert result["cash"] == "500.00"
     assert result["buy_amount"] == result["sell_amount"] == "0.00"
-    assert result["calculation_version"] == "ledger-v3"
+    assert result["calculation_version"] == "ledger-v4"
 
 
 def test_split_keeps_new_bought_shares_unavailable_and_rejects_zero_position():
@@ -739,7 +739,7 @@ def test_rule_scoped_limits_preview_save_amend_and_history(pg, market):
     assert [r["peak_positions"] for r in preview["evaluations"]] == [1, 1]
     saved = service.submit(dates[0], content)
     assert saved["evaluations"] == preview["evaluations"]
-    assert saved["calculation_version"] == "ledger-v3"
+    assert saved["calculation_version"] == "ledger-v4"
     original = service.revisions(dates[0], 1)["snapshot"]
     events.append(dict(_operation(dates[0]), event_id="scoped-extra", rule_id=rule_ids[0],
                        stock_code="600002.SH", display_order=3))

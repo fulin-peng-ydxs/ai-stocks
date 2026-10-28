@@ -61,3 +61,59 @@ def test_ledger_api_actual_record_and_private_read(client, pg, market, monkeypat
     finally:
         _remove_user(pg, identity)
         _remove_user(pg, readonly)
+
+
+def test_financial_report_restriction_api_persistence_evaluation_and_private_scope(client, pg, market, monkeypatch):  # noqa: F811
+    from datetime import date
+
+    from backend.tests.test_trade_discipline_t3 import _rule_payload
+
+    target = date(2027, 8, 2)
+    market.execute("INSERT INTO stock_basic(code,name,board) VALUES ('600000.SH','测试股票','主板')")
+    market.execute("INSERT INTO trade_calendar VALUES (?, TRUE)", [target])
+    market.execute("INSERT INTO daily_bar(code,trade_date) VALUES ('600000.SH', ?)", [target])
+    monkeypatch.setattr("backend.services.trade_discipline_service.get_client", lambda: market)
+    owner = _make_user(pg, ["trade-discipline:view", "trade-discipline:rule-manage",
+                            "trade-discipline:checkin-view", "trade-discipline:checkin-submit"])
+    reader = _make_user(pg, ["trade-discipline:view", "trade-discipline:checkin-view"])
+    headers, other_headers = _auth(owner[0], owner[1]), _auth(reader[0], reader[1])
+    try:
+        payload = dict(_rule_payload(), restrict_financial_report_months=True)
+        invalid = client.post("/api/trade-discipline/rules", json=dict(payload, restrict_financial_report_months="true"), headers=headers)
+        assert invalid.status_code == 422
+        created = client.post("/api/trade-discipline/rules", json=payload, headers=headers)
+        assert created.status_code == 200, created.text
+        rid = created.json()["data"]["id"]
+        path = f"/api/trade-discipline/rules/{rid}"
+        loaded = client.get(path, headers=headers)
+        assert loaded.json()["data"]["draft"]["restrict_financial_report_months"] is True
+        assert client.get(path, headers=other_headers).status_code == 404
+        assert client.put(f"{path}/draft", json=dict(payload, expected_revision=1), headers=other_headers).status_code == 403
+        published = client.post(f"{path}/publish", json={"expected_revision": 1}, headers=headers)
+        assert published.status_code == 200, published.text
+        assert published.json()["data"]["effective_from_trade_date"] == target.isoformat()
+        assert client.get(path, headers=headers).json()["data"]["latest_version"]["restrict_financial_report_months"] is True
+        initialized = client.post("/api/trade-discipline/ledger/initialize", json={
+            "trade_date": str(target), "expected_revision": 0, "cash": None,
+            "positions": [{"stock_code": "600000.SH", "quantity": "100", "rule_id": rid,
+                           "stock_rule_id": "stock-1"}],
+        }, headers=headers)
+        assert initialized.status_code == 200, initialized.text
+        content = {"trade_date": str(target), "request_id": uuid4().hex,
+                   "expected_account_revision": 1, "expected_revision": 0,
+                   "events": [], "omissions": []}
+        preview = client.post("/api/trade-discipline/ledger/preview", json=content, headers=headers)
+        saved = client.post("/api/trade-discipline/ledger/days", json=content, headers=headers)
+        assert preview.status_code == saved.status_code == 200, (preview.text, saved.text)
+        result = saved.json()["data"]
+        assert result["assessment"] == "breached"
+        assert result["rules"][0]["restrict_financial_report_months"] is True
+        assert result["evaluations"] == preview.json()["data"]["evaluations"]
+        assert "禁持" in result["evaluations"][0]["issues"][0]
+        assert client.post("/api/trade-discipline/ledger/days", json=content, headers=headers).json()["data"]["idempotent"]
+        quick = client.post("/api/trade-discipline/checkins/quick-no-operation", json={"rule_id": rid, "trade_date": str(target)}, headers=headers)
+        assert quick.status_code == 409
+        assert client.get("/api/trade-discipline/ledger/history", headers=other_headers).json()["data"]["total"] == 0
+    finally:
+        _remove_user(pg, owner)
+        _remove_user(pg, reader)

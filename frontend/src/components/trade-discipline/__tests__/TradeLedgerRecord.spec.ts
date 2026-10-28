@@ -13,6 +13,20 @@ const snapshot: LedgerSnapshot = { trade_date: '2026-10-26', events: [], positio
   buy_amount: '0', sell_amount: '0', fee: '0', net_outflow: '0', cash: null, realized_pnl: null, review_note: null }
 
 describe('账本只读记录', () => {
+  it('财报月份限制与违规依据按日结快照展示，旧快照缺字段按未启用', async () => {
+    const value: LedgerSnapshot = { ...snapshot,
+      rules: [{ ...snapshot.rules[0], restrict_financial_report_months: true }],
+      evaluations: [{ ...snapshot.evaluations[0], issues: ['8月为财报禁持月份，本规则仍有持仓，须保持空仓'] }],
+    }
+    const wrapper = mount(TradeLedgerRecord, { props: { snapshot: value }, global: { plugins: [ElementPlus] } })
+    expect(wrapper.text()).toContain('财报月份交易限制：3、7、9月')
+    expect(wrapper.text()).toContain('8月为财报禁持月份')
+    expect(wrapper.text()).toContain('未履约')
+    await wrapper.setProps({ snapshot })
+    expect(wrapper.text()).toContain('财报月份交易限制：未启用')
+    wrapper.unmount()
+  })
+
   it.each([true, false])('遗漏股票保留按交易日查询的ST身份（%s），独立和嵌入模式均不生成禁用输入框', async isSt => {
     const wrapper = mount(TradeLedgerRecord, { props: { snapshot, stockOptions: [{ code: '600356.SH',
       name: '恒丰纸业', board: null, industry: null, is_st: isSt, st_as_of_date: '2026-10-26' }] },

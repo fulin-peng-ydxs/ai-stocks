@@ -18,6 +18,7 @@ import json
 import re
 import threading
 from bisect import bisect_right
+from contextlib import nullcontext
 from datetime import UTC, date, datetime, timedelta, timezone
 
 import pandas as pd
@@ -798,7 +799,7 @@ class DataIntegrityReport:
     # ── 市场级四层质检（写 data_quality_issue，DM-D20 统一口径）──
     def scan_quality_issues(
         self, gap_window_days: int = GAP_WINDOW_DAYS, *, codes=None, include_intraday=True,
-        progress=None,
+        progress=None, _in_transaction=False,
     ) -> dict:
         """四层统一质检：L2 字段契约 / L3 正确性 / L4 覆盖鲜活。
 
@@ -810,6 +811,7 @@ class DataIntegrityReport:
         verify 占用异步写任务全局槽位，避免其他数据任务并发写。
         codes=None 为全量；显式对象范围同时约束计算、忽略对账和台账收敛。
         采集收尾 include_intraday=False，分时由自己的归档批次单独检查。
+        人工存续期修正可复用外层事务，使日期与关联台账原子生效。
         """
         from backend.dataquality.checker import SCAN_ISSUE_TYPES
 
@@ -870,7 +872,7 @@ class DataIntegrityReport:
         issue_rows = ab_rows + price_volume_rows + adj_rows + rows + st_rows + capital_rows + history_rows
         # 仅台账替换使用短事务：失败回滚保留旧问题，计算期间不锁住轮询。
         tick(0.80, "回写质量台账")
-        with self.c.transaction():
+        with nullcontext() if _in_transaction else self.c.transaction():
             reconcile_legacy_issues(self.c, codes=codes)
             CapitalQualityService(self.c).reclassify_legacy(codes)
             self._upsert_scan_issues(issue_rows, tuple(t for t in SCAN_ISSUE_TYPES
@@ -878,7 +880,9 @@ class DataIntegrityReport:
         from backend.services.intraday_archive import IntradayArchiveService
         tick(0.90, "分时归档检查" if include_intraday else "汇总台账")
         minute_progress = {"progress": lambda p, msg: tick(0.9 + 0.09 * p, msg)} if progress else {}
-        intraday_counts = IntradayArchiveService(self.c).sync(codes, **minute_progress) if include_intraday else None
+        intraday_counts = IntradayArchiveService(self.c).sync(
+            codes, **({"_in_transaction": True} if _in_transaction else {}), **minute_progress,
+        ) if include_intraday else None
         active_rows = self.c.query_df(
             f"SELECT issue_type, count(*) AS n FROM data_quality_issue WHERE status='open' "
             f"AND issue_type IN ({','.join('?' * len(SCAN_ISSUE_TYPES))}) {scope} GROUP BY issue_type",

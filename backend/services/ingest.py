@@ -3610,7 +3610,9 @@ class IngestionService:
             lo = max(item_lo, start) if start else item_lo
             stored_hi = pd.Timestamp(item["hi"]).date()
             delist = None if pd.isna(item.get("delist_date")) else pd.Timestamp(item["delist_date"]).date()
-            natural_hi = min(market_hi or stored_hi, delist) if delist else (market_hi or stored_hi)
+            # delist_date 为摘牌日，已不属于交易存续期；不能强求当天 ST。
+            natural_hi = (min(market_hi or stored_hi, delist - timedelta(days=1))
+                          if delist else (market_hi or stored_hi))
             hi = min(natural_hi, end) if end else natural_hi
             if hi < lo:
                 done_codes.add(code)
@@ -3920,6 +3922,8 @@ class IngestionService:
             ctx.log(f"子任务：上市/退市日采集开始，源 {dates_src.name}")
             ctx.flush()
         df = dates_src.get_basic_dates()  # code,name,list_date,delist_date,is_delisted
+        if df is None or df.empty:
+            raise DataSourceError(f"{dates_src.name} 基础资料响应为空，保留已有资料并等待重试")
         # 行业映射（证监会行业）
         try:
             if ctx:
@@ -3930,6 +3934,8 @@ class IngestionService:
             ind_map = dict(zip(ind["code"], ind["industry"]))
             if ctx:
                 ctx.log(f"子任务：行业信息采集完成，获得 {len(ind_map)} 条行业映射")
+        except TaskCancelled:
+            raise
         except Exception as e:  # noqa: BLE001
             log.warning("行业获取失败，industry 置空: %s", e)
             if ctx:
@@ -3950,17 +3956,33 @@ class IngestionService:
                     "price_limit_pct": limit,
                 }
             )
+        if not rows:
+            raise DataSourceError(f"{dates_src.name} 基础资料未覆盖目标板块，保留已有资料并等待重试")
         out = pd.DataFrame(rows)
         # 行业源漏返或请求失败不代表原行业失效，禁止把已知分类清空。
-        existing_industry = self.c.query_df("SELECT code,industry FROM stock_basic")
+        existing_industry = self.c.query_df(
+            "SELECT code,industry,list_date,delist_date FROM stock_basic")
         industry_by_code = dict(zip(existing_industry["code"], existing_industry["industry"]))
         out["industry"] = out["industry"].where(
             out["industry"].notna(), out["code"].map(industry_by_code))
         if ctx:
             ctx.check_cancel()
         include_collection_scope(self, "stock", out["code"].tolist())
-        n = self.repo.upsert_stock_basic(out)
-        self.repo.log_update("stock_basic", dates_src.name, None, None, n, "success", "补上市/退市日+行业")
+        with self.c.transaction():
+            n = self.repo.upsert_stock_basic(out)
+            # 比较落库后的有效日期，人工覆盖保护仍由 repository 统一执行。
+            # 仅存续期发生变化的标的增加分时复检，普通行业刷新不扫描全市场分钟。
+            with self.c.temp_view(existing_industry, prefix="previous_stock_lifecycle") as previous:
+                changed = self.c.query_df(
+                    f"SELECT b.code FROM stock_basic b LEFT JOIN {previous} p ON p.code=b.code "
+                    "WHERE b.code IN (SELECT unnest(?::VARCHAR[])) AND "
+                    "(p.code IS NULL OR b.list_date IS DISTINCT FROM CAST(p.list_date AS DATE) "
+                    "OR b.delist_date IS DISTINCT FROM CAST(p.delist_date AS DATE))",
+                    [out.code.tolist()],
+                )["code"].tolist()
+            include_collection_scope(self, "intraday", changed)
+            self.repo.log_update(
+                "stock_basic", dates_src.name, None, None, n, "success", "补上市/退市日+行业")
         log.info("%s 补全基础信息 %d 只（含退市股+行业）", dates_src.name, n)
         if ctx:
             ctx.set_phase(

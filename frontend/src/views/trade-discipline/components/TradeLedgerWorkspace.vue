@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { financialReportMonthRestrictionText } from '@/utils/tradeDisciplineConditions'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -677,6 +678,7 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
         <el-collapse-item v-for="rule in detailSnapshot?.rules ?? []" :key="rule.rule_id" :name="rule.rule_id">
           <template #title><span>{{ rule.name }} · v{{ rule.version_no }}</span></template>
           <p>资金预算 {{ formatMoney(rule.capital) }} · 持股上限 {{ rule.max_positions ?? '不限' }}</p>
+          <p>财报月份交易限制：{{ rule.restrict_financial_report_months ? financialReportMonthRestrictionText : '未启用' }}</p>
           <p v-for="stockRule in rule.stock_rules" :key="stockRule.detail_id!">{{ stockRule.name }}：{{ stockRule.content }} {{ stockRule.checklist_items?.map(i => i.text).join('；') }}</p>
           <p v-for="actionRule in rule.action_rules" :key="actionRule.detail_id!">{{ actionRule.name }}：{{ actionRule.content }}</p>
           <TradeOperationEditor v-if="detailRuleIds.includes(rule.rule_id) && detailSnapshot" :model-value="ledgerOperationsForRule(detailSnapshot.events, rule.rule_id)" :version="rule" :trade-date="detailSnapshot.trade_date" :condition-panel-defaults="conditionPanelDefaults" automatic disabled />

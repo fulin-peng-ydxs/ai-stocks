@@ -119,6 +119,7 @@ class ActionRuleBody(StrictBody):
 
 
 class RuleDraftBody(StrictBody):
+    restrict_financial_report_months: Annotated[bool, Field(strict=True)] = False
     max_positions: Annotated[int, Field(strict=True, gt=0, le=2147483647)] | None = None
     name: str | None = None
     capital: MoneyDecimal | None = None

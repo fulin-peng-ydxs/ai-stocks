@@ -59,6 +59,7 @@ FIELD_LABELS: dict[str, str] = {
     "opening_cash": "期初现金",
     "withdrawn": "已撤回",
     "max_positions": "最大同时持仓数",
+    "restrict_financial_report_months": "限制财报月份交易",
     "peak_positions": "当日最大同时持仓数",
     "price_min": "股价下限",
     "price_max": "股价上限",

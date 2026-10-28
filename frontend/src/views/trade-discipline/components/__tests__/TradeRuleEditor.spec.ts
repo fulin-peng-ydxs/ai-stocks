@@ -72,6 +72,39 @@ function latestLeaveResolver(wrapper: ReturnType<typeof mount>): (allowLeave: bo
 }
 
 describe('TradeRuleEditor', () => {
+  it('财报月开关兼容旧规则，参与未保存保护并在失败后保留选值', async () => {
+    const wrapper = await mountEditor()
+    const checkbox = () => wrapper.get('[data-testid="rule-financial-report-restriction"] input')
+    expect((checkbox().element as HTMLInputElement).checked).toBe(false)
+    await checkbox().setValue(true)
+    expect((wrapper.vm as any).isDirty()).toBe(true)
+    api.save.mockRejectedValueOnce(new Error('保存失败'))
+    await (wrapper.vm as any).saveDraft()
+    expect(api.save).toHaveBeenLastCalledWith('rule-1', expect.objectContaining({ restrict_financial_report_months: true }))
+    expect((checkbox().element as HTMLInputElement).checked).toBe(true)
+    expect((wrapper.vm as any).isDirty()).toBe(true)
+    await (wrapper.vm as any).saveDraft()
+    expect((checkbox().element as HTMLInputElement).checked).toBe(true)
+    expect((wrapper.vm as any).isDirty()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('财报月开关按正式版本回显，查看权限不能修改', async () => {
+    const value: any = detail()
+    value.draft = null
+    value.latest_version.restrict_financial_report_months = true
+    value.effective_version.restrict_financial_report_months = true
+    api.get.mockResolvedValue(value)
+    const wrapper = await mountEditor(false)
+    const checkbox = wrapper.get('[data-testid="rule-financial-report-restriction"] input')
+    expect((checkbox.element as HTMLInputElement).checked).toBe(true)
+    expect((checkbox.element as HTMLInputElement).disabled).toBe(true)
+    expect(wrapper.text()).toContain('3、7、9月')
+    expect(wrapper.text()).toContain('4、8、10月保持空仓')
+    expect(api.save).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('发布失败自动展开空检查项所在规则与分类，外层收起后保留分类展开状态', async () => {
     const value: any = detail()
     value.draft.stock_rules[0].checklist_items = [{ item_id: 'blank', category: 'risk', text: '', display_order: 1 }]
