@@ -13,6 +13,7 @@ function group(pageKey: string, slotId: string, label: string, fields: string[][
 }
 
 export const SEARCH_GROUPS = {
+  board: group('board', 'head', '榜单搜索', [['boards', '上市板块'], ['keyword', '代码 / 名称'], ['relatedBoards', '行业 / 概念走势']], ['boards', 'keyword']),
   stocks: group('stocks', 'filter', '个股搜索', [['boards', '上市板块'], ['status', '股票状态'], ['membership', '所属行业 / 概念'], ['keyword', '代码 / 名称']], ['boards', 'keyword']),
   users: group('user-manage', 'head', '用户搜索', [['tenant', '租户'], ['role', '角色'], ['status', '状态'], ['keyword', '账号 / 邮箱']], ['status', 'keyword']),
   audit: group('audit-log', 'filters', '审计搜索', [['date', '时间范围'], ['event', '事件类型'], ['result', '结果'], ['status', '状态'], ['tenant', '租户'], ['resource', '资源码'], ['actor', '处理人'], ['target', '目标对象']], ['date', 'actor']),

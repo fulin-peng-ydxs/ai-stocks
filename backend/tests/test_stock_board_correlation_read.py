@@ -568,6 +568,43 @@ def test_current_result_replaces_history_and_missing_snapshot_still_fails_closed
         assert missing["unavailable_reason"] == "as_of_mismatch"
 
 
+def test_ranked_search_uses_visible_history_and_never_future_or_membership(monkeypatch, market):
+    from backend.services.ranked_stock_result import ranked_page
+
+    _seed_summary(market)
+    _seed_history(market, date(2026, 8, 25), board_code="HISTORY")
+    _seed_history(market, date(2026, 8, 29), board_code="FUTURE")
+    market.execute("INSERT INTO stock_basic (code,name,board) VALUES "
+                   "('000001.SZ','测试股','主板')")
+    market.execute("INSERT INTO board_dict (board_code,name,board_type) VALUES "
+                   "('MEMBER_ONLY','仅累计归属','concept')")
+    market.execute("INSERT INTO board_member (board_code,code) VALUES "
+                   "('MEMBER_ONLY','000001.SZ')")
+    monkeypatch.setattr(
+        "backend.services.stock_st_status.StockSTStatusService.status_map",
+        lambda _self, _day, codes: {code: False for code in codes},
+    )
+    monkeypatch.setattr(
+        StockBoardCorrelationService, "_enqueue_first_load_tasks",
+        lambda *_args: pytest.fail("全榜搜索不得创建首次计算任务"),
+    )
+    board = pd.DataFrame([{"code": "000001.SZ", "rank": 8, "total_score": 90}])
+    for keyword, expected in [("HISTORY", 1), ("FUTURE", 0), ("仅累计归属", 0)]:
+        total, rows = ranked_page(
+            market, date(2026, 8, 28), board, page=1, page_size=50,
+            related_board_keyword=keyword,
+        )
+        assert total == len(rows) == expected
+        if rows:
+            assert rows[0]["rank"] == 8
+    # 缺少当日状态也不能使用旧/未来冠军，搜索不得触发补算。
+    total, rows = ranked_page(
+        market, date(2026, 8, 27), board, page=1, page_size=50,
+        related_board_keyword="HISTORY",
+    )
+    assert (total, rows) == (0, [])
+
+
 def test_history_fallback_scales_to_1024_stocks_with_90_snapshots_in_three_queries():
     from backend.devtools.benchmark_stock_board_correlation_read import seed_read_fixture
 

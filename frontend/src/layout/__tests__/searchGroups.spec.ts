@@ -4,6 +4,7 @@ import { SEARCH_GROUPS } from '../searchGroups'
 import { getPageEntry } from '../pageRegistry'
 
 const sources: Record<keyof typeof SEARCH_GROUPS, [string, string?]> = {
+  board: ['BoardView.vue'],
   stocks: ['StocksView.vue'], users: ['system/UserManageView.vue'],
   audit: ['system/AuditLogView.vue'], quality: ['data/QualityView.vue'],
   indicators: ['ConfigView.vue'], assets: ['data/OverviewView.vue'],

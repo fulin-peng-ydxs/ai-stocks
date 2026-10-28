@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ElementPlus, { ElMessage } from 'element-plus'
-import { computed, reactive, ref, type Component } from 'vue'
+import { computed, provide, reactive, ref, type Component } from 'vue'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useStockSet } from '@/stores/stockSet'
@@ -201,6 +201,8 @@ import TrainingView from '@/views/TrainingView.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AssetSearchDrawer from '@/components/asset-search/AssetSearchDrawer.vue'
 import RankedStockWorkbench from '@/components/ranked-stock/RankedStockWorkbench.vue'
+import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
+import { SEARCH_COMPONENT_VALUE } from '@/layout/searchContext'
 
 const router = createRouter({
   history: createMemoryHistory(),
@@ -365,36 +367,79 @@ describe('代表性页面四态回归', () => {
     screen.unmount()
   })
 
-  it('每日榜单按上市板块和代码名称筛选，并通过服务端翻页', async () => {
+  it('每日榜单三个条件接入高级搜索，独立查询、翻页、摘要清除和重置闭环', async () => {
     ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
       run_date: '2024-12-31', page: 1, page_size: 50, total: 100, count: 0, list: [],
     })
-    const wrapper = await mountView(BoardView)
+    const commonFields = ref<string[]>()
+    const wrapper = await mountView(BoardView, {}, {
+      LayoutHost: {
+        setup() {
+          provide(SEARCH_COMPONENT_VALUE, (_slot, field) => field === 'commonFields' ? commonFields.value : undefined)
+          return {}
+        },
+        template: stubs.LayoutHost.template,
+      },
+    })
+    const advanced = wrapper.getComponent(AppAdvancedSearch)
+    expect(advanced.props('group')).toBe('board')
+    expect(advanced.findAll('[data-search-field]')).toHaveLength(3)
+    expect(advanced.get('[data-search-field="boards"]').isVisible()).toBe(true)
+    expect(advanced.get('[data-search-field="keyword"]').isVisible()).toBe(true)
+    expect(advanced.get('[data-search-field="relatedBoards"]').isVisible()).toBe(false)
+    const search = wrapper.get('input[placeholder="代码 / 名称"]')
+    const related = wrapper.get('input[placeholder="行业 / 概念走势"]')
+    expect(related.attributes('maxlength')).toBe('50')
+    const relatedElement = related.element
     const vm = wrapper.vm as unknown as {
-      keyword: string
       onListedBoardsChange: (value: string[]) => void
-      searchKeyword: () => void
       changePage: (value: number) => void
     }
-
+    const initialCalls = vi.mocked(boardApi.runBoardProfile).mock.calls.length
+    await advanced.get('[data-search-toggle]').trigger('click')
+    expect(vi.mocked(boardApi.runBoardProfile).mock.calls).toHaveLength(initialCalls)
     vm.onListedBoardsChange(['gem'])
     await flushPromises()
-    expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
-      page: 1,
-      listed_boards: ['gem'],
-    }))
-
-    vm.keyword = '平安'
-    vm.searchKeyword()
+    await search.setValue('科技')
+    await search.trigger('keydown', { key: 'Enter' })
+    await related.setValue('人工智能')
+    await related.trigger('keydown', { key: 'Enter' })
     await flushPromises()
     expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
-      page: 1,
-      keyword: '平安',
+      page: 1, listed_boards: ['gem'], keyword: '科技', related_board_keyword: '人工智能',
     }))
-
     vm.changePage(2)
     await flushPromises()
-    expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
+    expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
+      page: 2, keyword: '科技', related_board_keyword: '人工智能',
+    }))
+    const calls = vi.mocked(boardApi.runBoardProfile).mock.calls.length
+    await advanced.get('[data-search-toggle]').trigger('click')
+    expect(advanced.get('.app-advanced-search__summary').text()).toContain('人工智能')
+    commonFields.value = ['keyword', 'relatedBoards']
+    await wrapper.vm.$nextTick()
+    expect(advanced.get('[data-search-field="relatedBoards"]').isVisible()).toBe(true)
+    expect(advanced.get('[data-search-field="boards"]').isVisible()).toBe(false)
+    expect(wrapper.get('input[placeholder="行业 / 概念走势"]').element).toBe(relatedElement)
+    expect((related.element as HTMLInputElement).value).toBe('人工智能')
+    expect(advanced.get('.app-advanced-search__summary').text()).toContain('创业板')
+    expect(vi.mocked(boardApi.runBoardProfile).mock.calls).toHaveLength(calls)
+    commonFields.value = undefined
+    await wrapper.vm.$nextTick()
+    await advanced.get('.app-advanced-search__summary .el-tag__close').trigger('click')
+    await flushPromises()
+    expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
+      page: 1, listed_boards: ['gem'], keyword: '科技', related_board_keyword: undefined,
+    }))
+    await wrapper.get('[data-testid="board-reset-filters"]').trigger('click')
+    await flushPromises()
+    expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
+      page: 1, keyword: undefined, related_board_keyword: undefined,
+      listed_boards: ['main', 'star', 'gem'],
+    }))
+    expect((search.element as HTMLInputElement).value).toBe('')
+    expect((related.element as HTMLInputElement).value).toBe('')
+    wrapper.unmount()
   })
 
   it('每日榜单导出当前筛选条件下的全部结果而不是当前页', async () => {
@@ -406,6 +451,14 @@ describe('代表性页面四态回归', () => {
       }],
     })
     const wrapper = await mountView(BoardView)
+    const search = wrapper.get('input[placeholder="代码 / 名称"]')
+    await search.setValue('科技')
+    await search.trigger('keydown', { key: 'Enter' })
+    await wrapper.get('[data-search-toggle]').trigger('click')
+    const related = wrapper.get('input[placeholder="行业 / 概念走势"]')
+    await related.setValue('人工智能')
+    await related.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
     ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       run_date: '2024-12-31', page: 1, page_size: 2, total: 2, count: 2,
       list: [
@@ -426,6 +479,8 @@ describe('代表性页面四态回归', () => {
     expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
       run_date: '2024-12-31',
       listed_boards: ['main', 'star', 'gem'],
+      keyword: '科技',
+      related_board_keyword: '人工智能',
       export_all: true,
     }))
     expect(csvUtils.downloadCsv).toHaveBeenCalledWith(

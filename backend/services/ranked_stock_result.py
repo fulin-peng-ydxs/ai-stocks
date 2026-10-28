@@ -61,8 +61,9 @@ def ranked_page(
     page_size: int,
     listed_boards: list[str] | None = None,
     keyword: str = "",
+    related_board_keyword: str = "",
 ) -> tuple[int, list[dict]]:
-    """按名称/代码和上市板块过滤评分结果，保留快照的全市场排名后分页。
+    """按股票、走势板块名称和上市板块过滤，保留快照的全市场排名后分页。
 
     PG 评分快照与 DuckDB 股票基础信息分别读取后在服务层合并，不做跨库 JOIN。
     仅对当前页装配 ST 状态等扩展字段，避免分页后仍对全量股票做二次查询。
@@ -85,6 +86,16 @@ def ranked_page(
         }
     selected_labels = set(listed_board_labels(listed_boards))
     normalized_keyword = keyword.strip().casefold()
+    normalized_related_keyword = related_board_keyword.strip().casefold()
+    related_by_code = {}
+    if normalized_related_keyword:
+        from backend.services.stock_board_correlation import StockBoardCorrelationService
+
+        # 与表格共用按业务日读取及样本不足历史回退口径，不以累计所属板块替代走势冠军。
+        # 搜索扫描全榜时只读已有结果，避免一次输入为全市场创建首次计算任务。
+        related_by_code = StockBoardCorrelationService(market).get_related_boards(
+            codes, run_date, schedule_missing=False,
+        )
 
     matched_indexes: list[int] = []
     for index, row in board.iterrows():
@@ -92,8 +103,23 @@ def ranked_page(
         info = basic_by_code.get(code, {"name": "", "board": ""})
         if selected_labels and info["board"] not in selected_labels:
             continue
-        if normalized_keyword and normalized_keyword not in f"{code} {info['name']}".casefold():
+        if normalized_keyword and not any(
+            normalized_keyword in text.casefold() for text in (code, info["name"])
+        ):
             continue
+        if normalized_related_keyword:
+            summary = related_by_code.get(code) or {}
+            names = []
+            if not summary.get("unavailable_reason"):
+                names = [
+                    winner.get("name", "")
+                    for kind in ("industry", "concept")
+                    if (winner := summary.get(kind))
+                ]
+            if not any(
+                normalized_related_keyword in str(text or "").casefold() for text in names
+            ):
+                continue
         matched_indexes.append(index)
 
     total = len(matched_indexes)

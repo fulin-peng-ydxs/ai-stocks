@@ -109,6 +109,7 @@ def board_run(body: dict) -> ApiResponse:
     """按可见评分方案读取榜单；快照缺失或 stale 时物化到方案 owner 的共享缓存槽。
 
     body: {profile_ref | profile_id, run_date?, page?, page_size?, listed_boards?, keyword?,
+           related_board_keyword?,
            export_all?, force?}
     force 仅允许方案 owner（需 board:compute）或 system 管理员执行。
     """
@@ -143,6 +144,7 @@ def board_run(body: dict) -> ApiResponse:
     ):
         return err(400, "listed_boards 只支持 main、star、gem")
     keyword = str(body.get("keyword") or "").strip()[:50]
+    related_board_keyword = str(body.get("related_board_keyword") or "").strip()[:50]
     export_all = bool(body.get("export_all"))
     if run_date is None:
         return ok({
@@ -217,6 +219,7 @@ def board_run(body: dict) -> ApiResponse:
             page_size=max(len(board), 1) if export_all else page_size,
             listed_boards=listed_boards,
             keyword=keyword,
+            related_board_keyword=related_board_keyword,
         )
     except STStatusNotReadyError as exc:
         return ok({

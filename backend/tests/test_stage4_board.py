@@ -291,6 +291,20 @@ def test_board_run_reads_fresh_public_snapshot_only(
         assert data["list"][0]["groups"][0]["is_default"] is True
         assert data["list"][0]["related_boards"]["industry"]["name"] == "测试行业"
 
+        # 普通读取与导出共享独立的股票/走势条件，取交集并保留原全市场排名。
+        for export_all in (False, True):
+            filtered = client.post(
+                "/api/board/run",
+                json={"profile_id": preset_id, "run_date": _PUB_DATE,
+                      "keyword": "测试榜一", "related_board_keyword": "测试行业",
+                      "listed_boards": ["main"],
+                      "export_all": export_all},
+                headers=_auth(uid, tid),
+            ).json()["data"]
+            assert filtered["total"] == 1
+            assert filtered["list"][0]["code"] == "600099.SH"
+            assert filtered["list"][0]["rank"] == 1
+
         c.execute(
             "UPDATE stock_board_correlation SET as_of_date=DATE '2099-01-02' "
             "WHERE code='600099.SH'"
@@ -313,6 +327,14 @@ def test_board_run_reads_fresh_public_snapshot_only(
         ).json()["data"]["list"][0]["related_boards"]
         assert historical["industry"] is None
         assert historical["unavailable_reason"] == "first_load_pending"
+        filtered = client.post(
+            "/api/board/run",
+            json={"profile_id": preset_id, "run_date": _PUB_DATE,
+                  "related_board_keyword": "测试行业"},
+            headers=_auth(uid, tid),
+        ).json()["data"]
+        assert filtered["total"] == 0
+        assert filtered["list"] == []
     finally:
         _rm_user(pg, uid, tid, rid)
 

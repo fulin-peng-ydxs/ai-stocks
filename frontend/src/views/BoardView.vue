@@ -14,6 +14,7 @@ import { browseBoardProfiles, listBoardProfiles, runBoardProfile } from '@/api/b
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
+import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
@@ -120,6 +121,7 @@ const BOARD_LISTED_KEYS = BOARD_LISTED_OPTIONS.map((item) => item.value)
 const listedBoards = ref<string[]>([...BOARD_LISTED_KEYS])
 const listedBoardsDirty = ref(false)
 const keyword = ref('')
+const relatedBoardKeyword = ref('')
 const syncingRunDate = ref(false)
 const settingsOpen = ref(false)
 const { dataMax, ensureLoaded: ensureTradeDatesLoaded } = useTradeDates()
@@ -457,6 +459,7 @@ watch(defaultListedBoards, (value) => {
 
 function searchKeyword(): void {
   keyword.value = keyword.value.trim()
+  relatedBoardKeyword.value = relatedBoardKeyword.value.trim()
   reloadFromFirstPage()
 }
 
@@ -464,6 +467,7 @@ function resetStockFilters(): void {
   listedBoards.value = [...defaultListedBoards.value]
   listedBoardsDirty.value = false
   keyword.value = ''
+  relatedBoardKeyword.value = ''
   reloadFromFirstPage()
 }
 
@@ -499,6 +503,7 @@ async function loadBoard(force: boolean, background = false): Promise<boolean> {
       page_size: pageSize.value,
       listed_boards: listedBoards.value,
       keyword: keyword.value || undefined,
+      related_board_keyword: relatedBoardKeyword.value || undefined,
       ...(force ? { force: true } : {}),
     })
     if (sequence !== loadSequence) return false
@@ -607,6 +612,7 @@ async function exportCsv(): Promise<void> {
       run_date: runDate.value || undefined,
       listed_boards: listedBoards.value,
       keyword: keyword.value || undefined,
+      related_board_keyword: relatedBoardKeyword.value || undefined,
       export_all: true,
     })
     if (res.business_code === 'ST_STATUS_NOT_READY') {
@@ -659,7 +665,7 @@ const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
-  <LayoutHost :layout="boardEffective">
+  <LayoutHost :layout="boardEffective" :component-value-of="componentValueOf">
     <template #action>
     <div class="lh-action">
     <div class="page-head">
@@ -713,53 +719,80 @@ const menuPageTitle = useMenuPageTitle()
 
     <!-- 筛选条件（独立一行居左，与全站列表页 filter-card 规范一致；操作按钮留页头） -->
     <el-card shadow="never" class="filter-card">
-      <AppControlRow class="filter-row">
-        <span class="lbl">评分规则</span>
-        <AssetProfileSelect
-          ref="boardSelectRef"
-          :model-value="profileRef"
-          asset-label="评分方案"
-          :fetch-mine="fetchMineBoardProfiles"
-          :browse="browseBoard"
-          :copy-item="copyAnyBoardProfile"
-          copy-permission="score-profile:save"
-          view-permission="board:view"
-          placeholder="请选择评分方案"
-          select-loaded
-          :default-item-key="defaultItemKey"
-          test-id="board-profile-select"
-          class="app-control-width-wide"
-          @update:model-value="onProfileSelect"
-          @loaded="onProfileLoaded"
-          @ready="onProfilesReady"
-          @load-failed="onProfilesLoadFailed"
-          @copied-item="onProfileCopied"
-          @set-default="onSetDefault"
-        />
-        <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" />
-        <AppFilterSelect
-          :model-value="listedBoards"
-          :options="BOARD_LISTED_OPTIONS"
-          :visible-tag-count="2"
-          all-selected-label="全部板块"
-          placeholder="上市板块"
-          aria-label="按上市板块筛选"
-          data-testid="board-listed-boards"
-          @change="onListedBoardsChange"
-        />
-        <AppSearchInput
-          v-model="keyword"
-          class="app-control-width-long"
-          placeholder="代码 / 名称"
-          data-testid="board-stock-keyword"
-          @search="searchKeyword"
-        />
-        <el-button
-          data-testid="board-reset-filters"
-          :disabled="!keyword && isSameSelectedFilter(listedBoards, defaultListedBoards)"
-          @click="resetStockFilters"
-        >重置筛选</el-button>
-      </AppControlRow>
+      <AppAdvancedSearch
+        group="board"
+        :states="{
+          boards: { value: listedBoards, options: BOARD_LISTED_OPTIONS, active: !isSameSelectedFilter(listedBoards, BOARD_LISTED_KEYS), clear: () => onListedBoardsChange([]) },
+          keyword: { value: keyword, clear: () => { keyword = ''; searchKeyword() } },
+          relatedBoards: { value: relatedBoardKeyword, clear: () => { relatedBoardKeyword = ''; searchKeyword() } },
+        }"
+      >
+        <template #context>
+          <AssetProfileSelect
+            ref="boardSelectRef"
+            :model-value="profileRef"
+            asset-label="评分方案"
+            :fetch-mine="fetchMineBoardProfiles"
+            :browse="browseBoard"
+            :copy-item="copyAnyBoardProfile"
+            copy-permission="score-profile:save"
+            view-permission="board:view"
+            placeholder="请选择评分方案"
+            select-loaded
+            :default-item-key="defaultItemKey"
+            test-id="board-profile-select"
+            class="app-control-width-wide"
+            @update:model-value="onProfileSelect"
+            @loaded="onProfileLoaded"
+            @ready="onProfilesReady"
+            @load-failed="onProfilesLoadFailed"
+            @copied-item="onProfileCopied"
+            @set-default="onSetDefault"
+          />
+          <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" />
+        </template>
+        <template #boards>
+          <AppFilterSelect
+            :model-value="listedBoards"
+            :options="BOARD_LISTED_OPTIONS"
+            :visible-tag-count="2"
+            all-selected-label="全部板块"
+            placeholder="上市板块"
+            aria-label="按上市板块筛选"
+            data-testid="board-listed-boards"
+            @change="onListedBoardsChange"
+          />
+        </template>
+        <template #keyword>
+          <AppSearchInput
+            v-model="keyword"
+            class="app-control-width-long"
+            placeholder="代码 / 名称"
+            aria-label="搜索股票代码或名称"
+            maxlength="50"
+            data-testid="board-stock-keyword"
+            @search="searchKeyword"
+          />
+        </template>
+        <template #relatedBoards>
+          <AppSearchInput
+            v-model="relatedBoardKeyword"
+            class="app-control-width-long"
+            placeholder="行业 / 概念走势"
+            aria-label="搜索行业走势或概念走势"
+            maxlength="50"
+            data-testid="board-related-keyword"
+            @search="searchKeyword"
+          />
+        </template>
+        <template #commands>
+          <el-button
+            data-testid="board-reset-filters"
+            :disabled="!keyword && !relatedBoardKeyword && isSameSelectedFilter(listedBoards, defaultListedBoards)"
+            @click="resetStockFilters"
+          >重置筛选</el-button>
+        </template>
+      </AppAdvancedSearch>
     </el-card>
 
     </div>
@@ -951,10 +984,6 @@ const menuPageTitle = useMenuPageTitle()
   align-items: center;
   gap: var(--app-space-2);
   flex-wrap: wrap;
-}
-.ops .lbl {
-  color: var(--el-text-color-regular);
-  font-size: var(--app-font-size-table);
 }
 .score {
   color: var(--app-danger-text);

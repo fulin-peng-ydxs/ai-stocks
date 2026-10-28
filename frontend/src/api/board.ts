@@ -56,6 +56,7 @@ export function runBoardProfile(body: {
   page_size?: number
   listed_boards?: string[]
   keyword?: string
+  related_board_keyword?: string
   export_all?: boolean
   force?: boolean
 }): Promise<{
