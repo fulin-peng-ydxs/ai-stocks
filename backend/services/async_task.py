@@ -934,7 +934,7 @@ def _h_intraday_ingest(params: dict, ctx: TaskContext) -> dict:
     supplement = archive.collect(
         {"mode": "refetch", "codes": sorted(dates), "date_start": scope["start"],
          "date_end": scope["end"]},
-        ctx=supplement_ctx, allow_fallback=True, repair_dates=dates,
+        ctx=supplement_ctx, allow_fallback=True, repair_dates=dates, defer_recent=True,
     )
     after_facts, after_issues = archive.last_scan
     replaced = set(after_facts.code)
@@ -966,9 +966,16 @@ def _h_intraday_ingest(params: dict, ctx: TaskContext) -> dict:
                           for kind in INTRADAY_ISSUE_TYPES},
               "supplement": supplement,
               "errors": (primary.get("errors", []) + supplement.get("errors", []))[:100]}
+    # 台账解释使用质检修复口径；采集结果单独按定向补齐口径计算等待数，
+    # 不能把采集阶段的复查间隔扩散到后续独立 fix 任务。
+    evidence = archive.evidence
+    states = evidence.load(sorted({item["code"] for item in issues})) if issues else {}
     availability = {(item["code"], str(item["trade_date"])):
-                    json.loads(item["detail"]).get("availability", {}).get("status")
-                    for item in issues}
+                    evidence.assess(
+                        item["code"], str(item["trade_date"]),
+                        json.loads(item["detail"]).get("coverage", {}).get("missing_times", []),
+                        states, defer_recent=True,
+                    )["status"] for item in issues}
     result["deferred"] = sum(status == "deferred" for status in availability.values())
     result["out_of_range"] = sum(status == "unavailable" for status in availability.values())
     result["message"] = (f"分时采集及定向补齐完成：新增 {result['inserted']}、更新 {result['updated']}、"

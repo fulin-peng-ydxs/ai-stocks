@@ -494,7 +494,9 @@ class IngestionService:
             ctx.log(f"{code} 补采 ST/逐日交易状态 {start}~{end}（{st_source.name}）")
             ctx.flush()
         lock = session_lock(_BAO_FALLBACK_LOCK, "baostock") if st_source.name == "baostock" else nullcontext()
-        with thread_cancel_scope(ctx.check_cancel if ctx else None), lock:
+        from backend.datasource.observability import measure
+
+        with measure("st_fetch"), thread_cancel_scope(ctx.check_cancel if ctx else None), lock:
             rows = st_source.get_st_status(code, start, end)
         return st_source, rows
 
@@ -1222,12 +1224,10 @@ class IngestionService:
     def ingest_valuation_latest(self, trade_date: date | None = None,
                                 codes: list[str] | None = None,
                                 concurrency: int | None = None, ctx=None) -> dict:
-        """补『最新交易日』的市值：对当日仍缺 total_mv/float_mv 的在市股，逐只取最新市值。
+        """按当日股本、市值及来源差异选择目标，批量取源后分块合并，漏返仍逐股补齐。
 
-        治 P1：ingest_valuation 整股跳过已有 total_mv 的票 → 已采票的新交易日永远补不到。
-        这里不靠它，直接对"当日有日线但市值字段不完整"的在市股逐只 _valuation_one(code, 当日, 当日)，
-        用东财单只 stock_value_em 取真实总市值（准、稳，与 reconcile_gaps 收口同口径）。
-        codes 给定时仅补这些票；concurrency 同 ingest_valuation（默认配置值，>1 并发提速）。
+        不沿用历史估值的整股跳过口径；已存在历史数据的新交易日仍要处理。
+        codes 限定本轮范围，concurrency 只控制需要逐股联网的工作窗口。
         """
         if trade_date is None:
             r = self.repo.c.query_df("SELECT max(trade_date) AS d FROM daily_bar")
@@ -1248,19 +1248,27 @@ class IngestionService:
         if codes:
             sql += f" AND b.code IN ({','.join('?' * len(codes))})"
             params += list(codes)
-        include_collection_scope(self, "stock", self.repo.c.query_df(sql, params)["code"].tolist())
+        eligible = self.repo.c.query_df(sql, params)["code"].tolist()
+        include_collection_scope(self, "stock", eligible)
         pending = self.repo.c.query_df(
             sql + f" AND ({ShareCapitalService.review_predicate()})", params
         )["code"].tolist()
         concurrency = concurrency if concurrency is not None else self.s.datasource.update_concurrency
         ok = fail = rows = 0
         done_latest = set(ctx.checkpoint.get("valuation_latest_done_codes") or []) if (ctx and ctx.checkpoint) else set()
+        # 合并已提交、衍生维护未完成的批次仍须续跑，不能因四字段已齐而跳过。
+        checkpoint = ctx.checkpoint if ctx else {}
+        if checkpoint.get("valuation_latest_date") == str(trade_date):
+            pending = sorted(set(pending) | (set(checkpoint.get("valuation_latest_pending_codes", []))
+                                             & set(eligible)))
         pending = [c for c in pending if c not in done_latest]
         n = len(pending)
-        log.info("补最新日市值：%s 有 %d 只在市股缺市值字段，逐只取最新市值", trade_date, n)
+        log.info("补最新日股本市值：%s 有 %d 只待补采或复查，批量优先、漏返逐股补采", trade_date, n)
         if ctx:
             ctx.set_phase("valuation_latest", phase_total=n, phase_done=0, current_item=None,
-                          valuation_latest_done_codes=sorted(done_latest))
+                          valuation_latest_done_codes=sorted(done_latest),
+                          valuation_latest_date=str(trade_date),
+                          valuation_latest_pending_codes=pending)
             ctx.log(f"子任务：最新日市值补采开始，交易日 {trade_date}，待补 {n} 只")
             ctx.flush()
 
@@ -1309,7 +1317,7 @@ class IngestionService:
                     frame.attrs["source_valuation_prices"] = getattr(src, "_last_valuation_prices", None)
             return frame
 
-        if concurrency <= 1:
+        if concurrency <= 1 and not prefetched:
             src = val_src
             for i, code in enumerate(pending, 1):
                 if ctx:
@@ -1317,19 +1325,11 @@ class IngestionService:
                     ctx.set_phase("valuation_latest", phase_total=n, phase_done=i - 1, current_item=code,
                                   valuation_latest_done_codes=sorted(done_latest))
                 try:
-                    if code in prefetched:
-                        frame = _worker(code)
-                        entry = self._complete_capital_material(
-                            [(i, code, (frame, frame.attrs.get("source_valuation_prices")), None, 0)],
-                            src, _one,
-                        )[0]
-                        if entry[3] is not None:
-                            raise entry[3]
-                        rows += entry[2]
-                    else:
-                        rows += _one(code, src)
+                    rows += _one(code, src)
                     ok += 1
                     done_latest.add(code)
+                except TaskCancelled:
+                    raise
                 except Exception as e:  # noqa: BLE001
                     fail += 1; log.warning("%s 补最新日市值失败: %s", code, e)
                     if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
@@ -1393,14 +1393,13 @@ class IngestionService:
                 ShareCapitalHistoryService(self.c).rebuild_many(codes_in_batch)
                 return results
 
-            def _complete(i, code, value, error, _in_flight):
+            processed = 0
+
+            def _complete(i, code, value, error, _in_flight, *, publish=True):
                 nonlocal rows, ok, fail
-                if ctx:
-                    ctx.set_phase(
-                        "valuation_latest", phase_total=n, phase_done=i - 1,
-                        current_item=code,
-                        valuation_latest_done_codes=sorted(done_latest),
-                    )
+                nonlocal processed
+                processed += 1
+                i = processed
                 if error is None:
                     rows += value
                     ok += 1
@@ -1410,7 +1409,7 @@ class IngestionService:
                     log.warning("%s 补最新日市值失败: %s", code, error)
                     if ctx:
                         ctx.log(f"{code} 最新日市值补采失败（{trade_date}）：{error}", "warn")
-                if ctx:
+                if ctx and publish:
                     ctx.set_phase("valuation_latest", phase_total=n, phase_done=i, current_item=code,
                                   valuation_latest_done_codes=sorted(done_latest))
                 if i % 20 == 0 or i == n:
@@ -1425,8 +1424,29 @@ class IngestionService:
                         )
                         ctx.flush()
 
+            # 已完整取回的单日快照无需再投递逐股 Future；64只一块沿用同一合并、
+            # 多来源复查及落表入口。提交及衍生维护结束后才按块保存成功断点。
+            cached = [code for code in pending if code in prefetched]
+            for offset in range(0, len(cached), 64):
+                if ctx:
+                    ctx.check_cancel()
+                selected = cached[offset:offset + 64]
+                entries = [(offset + i, code, _worker(code), None, 0)
+                           for i, code in enumerate(selected, 1)]
+                from backend.datasource.observability import measure
+
+                with measure("valuation_merge"), thread_cancel_scope(ctx.check_cancel if ctx else None):
+                    completed = _merge_batch(entries)
+                for entry in completed:
+                    _complete(*entry, publish=False)
+                if ctx:
+                    ctx.set_phase("valuation_latest", phase_total=n, phase_done=processed,
+                                  current_item=selected[-1],
+                                  valuation_latest_done_codes=sorted(done_latest))
+                    ctx.check_cancel()
             self._run_bounded_parallel(
-                pending, _worker, concurrency=concurrency, ctx=ctx,
+                [code for code in pending if code not in prefetched],
+                _worker, concurrency=concurrency, ctx=ctx,
                 wait_label="最新日市值补采", on_complete=_complete,
                 transform_batch=_merge_batch, batch_size=concurrency,
                 prefetch_next_batch=True,

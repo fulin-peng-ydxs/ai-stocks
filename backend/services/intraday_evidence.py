@@ -124,8 +124,9 @@ class IntradayEvidence:
                 ],
             )
 
-    def assess(self, code, day, missing, states, *, allow_fallback=True, recheck=False):
-        """只有成功响应范围证据能拒绝取源；固定八日、空响应、异常均不能证明永久不可得。"""
+    def assess(self, code, day, missing, states, *, allow_fallback=True, recheck=False,
+               defer_recent=False):
+        """共享来源证据；仅采集定向补齐显式暂缓近期无改善响应，质检修复默认立即复查。"""
         now = eod_dates.shanghai_now()
         refresh_calendar = now.date() != self.now.date() or not self.calendar_ready
         if refresh_calendar:
@@ -219,7 +220,8 @@ class IntradayEvidence:
                 source_reason = (f"最近响应 {evidence['first']}～{evidence['last']}，"
                                  f"已达到本次 {evidence['request_limit']} 条，未覆盖待补分钟")
             elif (
-                (day >= self.latest_closed or evidence["last"] < f"{day} 15:00:00")
+                defer_recent
+                and (day >= self.latest_closed or evidence["last"] < f"{day} 15:00:00")
                 and recheck_interval > 0
                 and missing
                 and evidence.get("required_counts", {}).get(day, 0) <= len(expected) - len(missing)

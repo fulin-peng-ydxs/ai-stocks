@@ -19,6 +19,7 @@ class RequestTracker:
         self.lock = threading.RLock()
         self.states = {}
         self.counts = Counter()
+        self.sources = {}
         self.started = time.monotonic()
         self.phase_started = self.started
         self.phase = object()  # 首次快照也建立基线，续跑历史完成量不计作本轮吞吐。
@@ -59,6 +60,8 @@ class RequestTracker:
                 "completed": done,
                 "elapsed_seconds": round(now - self.started, 3),
                 "eta_seconds": round(max(0, eta)) if eta is not None else None,
+                "sources": {source: {key: round(value, 3) for key, value in values.items()}
+                            for source, values in self.sources.items()},
                 **self.meta,
             }
 
@@ -111,3 +114,24 @@ def record(**values):
     scope = _SCOPE.get()
     if scope:
         scope[0].add(**values)
+
+
+def record_source(source, **values):
+    """来源维度只聚合固定额度组，不逐股票、URL或请求增长。"""
+    from backend.config.source_registry import SOURCE_GROUPS
+
+    scope = _SCOPE.get()
+    if scope:
+        source = source if source in SOURCE_GROUPS else "other"
+        with scope[0].lock:
+            scope[0].sources.setdefault(source, Counter()).update(values)
+
+
+@contextmanager
+def measure(name):
+    """记录已命名处理步骤的累计耗时；不与网络线程时长相加当作墙钟。"""
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        record(**{f"{name}_seconds": time.monotonic() - started})

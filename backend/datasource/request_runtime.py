@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from backend.common.exceptions import SourceRequestError
 from backend.common.logging import get_logger
-from backend.datasource.observability import record, work_state
+from backend.datasource.observability import record, record_source, work_state
 
 log = get_logger("datasource.request_runtime")
 _HOST = socket.gethostname()
@@ -24,7 +24,6 @@ local now=tonumber(t[1])+tonumber(t[2])/1000000
 local cool=tonumber(redis.call('HGET',KEYS[3],'cooldown_until') or '0')
 if cool>now then return math.min(1000,math.ceil((cool-now)*1000)) end
 local cap=tonumber(ARGV[2])
-if cool>0 then cap=1 end
 if redis.call('HLEN',KEYS[1])>=cap then return 100 end
 local last=tonumber(redis.call('GET',KEYS[2]) or '0')
 local delay=tonumber(ARGV[1])-(now-last)
@@ -44,18 +43,15 @@ redis.call('HDEL',KEYS[1],ARGV[1])
 redis.call('HINCRBYFLOAT',KEYS[2],'network_seconds',ARGV[2])
 local t=redis.call('TIME')
 local now=tonumber(t[1])+tonumber(t[2])/1000000
-if ARGV[3]=='1' then
- redis.call('HINCRBY',KEYS[2],'failures',1)
- local n=redis.call('HINCRBY',KEYS[2],'consecutive_failures',1)
- if n>=tonumber(ARGV[4]) or tonumber(ARGV[6])>0 then
-  local until_time=now+math.max(tonumber(ARGV[5]),tonumber(ARGV[6]))
-  local existing=tonumber(redis.call('HGET',KEYS[2],'cooldown_until') or '0')
-  redis.call('HSET',KEYS[2],'cooldown_until',math.max(existing,until_time))
- end
-else
- local cool=tonumber(redis.call('HGET',KEYS[2],'cooldown_until') or '0')
- if cool<=now then redis.call('HSET',KEYS[2],'consecutive_failures',0,'cooldown_until',0) end
+if ARGV[3]=='1' then redis.call('HINCRBY',KEYS[2],'failures',1) end
+local cool=tonumber(redis.call('HGET',KEYS[2],'cooldown_until') or '0')
+local retry_after=tonumber(ARGV[4])
+if retry_after>0 then
+ redis.call('HSET',KEYS[2],'cooldown_until',math.max(cool,now+retry_after))
+elseif cool<=now then
+ redis.call('HSET',KEYS[2],'cooldown_until',0)
 end
+redis.call('HDEL',KEYS[2],'consecutive_failures')
 redis.call('EXPIRE',KEYS[2],86400)
 return 0
 """
@@ -93,7 +89,8 @@ def session_lock(lock, group):
     from backend.datasource.base import check_thread_cancel
     from backend.datasource.request_policy import request_policy
 
-    deadline = time.monotonic() + request_policy(group).wait_timeout
+    started = time.monotonic()
+    deadline = started + request_policy(group).wait_timeout
     acquired = False
     try:
         with work_state("source_wait"):
@@ -104,6 +101,9 @@ def session_lock(lock, group):
                     raise SourceRequestError(f"{group} 等待本机会话超时")
                 acquired = lock.acquire(timeout=min(0.1, remaining))
             check_thread_cancel()
+        waited = time.monotonic() - started
+        record(session_wait_seconds=waited)
+        record_source(group, session_wait_seconds=waited)
         yield
     finally:
         if acquired:
@@ -161,9 +161,11 @@ def request_slot(group, policy, *, client=None, check=None):
                     policy_version=status["version"], policy_degraded=status["degraded"]
                 )
         record(wait_seconds=waited, requests=1)
+        record_source(group, wait_seconds=waited, requests=1)
         client.hincrbyfloat(keys[2], "wait_seconds", waited)
         client.hdel(keys[4], token)
         network_started = time.monotonic()
+        # 普通请求/SDK失败只计数并交给原有限重试；仅HTTP显式限流信号共同冷却。
         result = {"failed": False, "retry_after": 0.0}
         try:
             with work_state("network"):
@@ -176,6 +178,7 @@ def request_slot(group, policy, *, client=None, check=None):
         finally:
             elapsed = time.monotonic() - network_started
             record(network_seconds=elapsed, failures=int(result["failed"]))
+            record_source(group, network_seconds=elapsed, failures=int(result["failed"]))
             try:
                 client.eval(
                     _FINISH,
@@ -185,8 +188,6 @@ def request_slot(group, policy, *, client=None, check=None):
                     token,
                     elapsed,
                     int(result["failed"]),
-                    policy.failure_threshold,
-                    policy.cooldown,
                     result["retry_after"],
                 )
             except Exception:  # noqa: BLE001 -- 释放失败不覆盖原始网络异常

@@ -114,7 +114,6 @@ export const CONFIG_SYSTEM_GROUP_SECTIONS: Record<string, ConfigFieldSection[]> 
         'datasource.network_concurrency',
         'datasource.request_wait_timeout_sec',
         'datasource.cooldown_sec',
-        'datasource.failure_threshold',
         'datasource.max_response_mb',
         'datasource.socket_timeout_sec',
         'datasource.max_retries',

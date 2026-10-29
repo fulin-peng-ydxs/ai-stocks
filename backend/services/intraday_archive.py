@@ -423,9 +423,9 @@ class IntradayArchiveService:
 
     def collect(
         self, params=None, *, ctx=None, allow_fallback=False, recheck_source=False, repair_dates=None,
-        on_stock_complete=None,
+        on_stock_complete=None, defer_recent=False,
     ):
-        """统一归档入口；备用源开关仅由质检修复传入，不属于公开任务参数。"""
+        """共享归档入口；来源复查间隔仅由采集定向补齐启用，不属于公开任务参数。"""
         params = normalize_intraday_params(params)
         if not get_settings().intraday.enabled:
             raise ValueError("分时数据功能当前未启用")
@@ -539,6 +539,7 @@ class IntradayArchiveService:
                     code, str(_day(row.trade_date)),
                     sorted(required_times(code) - actual_times.get(str(_day(row.trade_date)), set())),
                     states, allow_fallback=allow_fallback, recheck=recheck_source,
+                    defer_recent=defer_recent,
                 ) for row in pending.itertuples()
             }
             available = pending[pending.trade_date.map(

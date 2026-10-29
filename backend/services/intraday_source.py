@@ -252,18 +252,12 @@ class IntradaySourceService:
         frame, diagnostics = sanitize_minutes(frame, day_diagnostics=day_diagnostics)
         rows: list[list] = []
         if frame is not None and not frame.empty:
-            for row in frame.itertuples(index=False):
-                rows.append(
-                    [
-                        pd.Timestamp(row.timestamp).strftime("%Y-%m-%d %H:%M:%S"),
-                        None if pd.isna(row.open) else float(row.open),
-                        float(row.high),
-                        float(row.low),
-                        float(row.close),
-                        float(row.volume),
-                        float(row.amount),
-                    ]
-                )
+            # 年度响应可含数万点；沿用清洗结果逐列转换，避免逐分钟构造Timestamp。
+            # 所有数值仍为float，开盘占位仍为None，行序与逐日诊断保持一致。
+            values = frame[["open", "high", "low", "close", "volume", "amount"]]
+            values = values.astype(float).astype(object).where(values.notna(), None)
+            values.insert(0, "timestamp", frame.timestamp.dt.strftime("%Y-%m-%d %H:%M:%S"))
+            rows = values.to_numpy().tolist()
         return {
             "request_years": frame.attrs.get("request_years", []) if frame is not None else [],
             "raw_count": raw_count, "raw_first": raw_first, "raw_last": raw_last,

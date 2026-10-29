@@ -40,7 +40,7 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "datasource.socket_timeout_sec", "label": "请求超时(秒)", "type": "number", "min": 1, "desc": "每次网络尝试的连接和读取超时；不是整个任务的时长上限。下一次请求读取新值，在途请求不变。"},
         {"path": "datasource.max_retries", "label": "最多尝试次数", "type": "int", "min": 1, "max": 10, "desc": "包含首次请求；3 表示首次加最多两次重试。一次多接口业务操作可能包含多个请求。"},
         {"path": "datasource.retry_backoff_sec", "label": "重试初始等待(秒)", "type": "number", "min": 0, "max": 60, "desc": "指数退避起点；2 秒表示依次等待 2、4、8……秒。"},
-        {"path": "intraday.source_recheck_interval_sec", "label": "分时来源复查间隔(秒)", "type": "int", "min": 0, "max": 86400, "desc": "最新交易日成功响应未提供更好整日候选时，延后再次取源；默认900秒，0关闭。技术失败不受此间隔限制，人工重新核验可绕过。"},
+        {"path": "intraday.source_recheck_interval_sec", "label": "分时采集补齐复查间隔(秒)", "type": "int", "min": 0, "max": 86400, "desc": "仅用于分时采集任务的定向补齐：近期成功响应未提供更好整日候选时暂缓重复取源；默认900秒，0关闭。质检单条、批量、定时修复及失败重试不受此间隔限制。"},
     ]},
     {"key": "cost", "label": "回测成本", "desc": "控制回测成交记账时使用的默认交易成本。", "fields": [
         {"path": "backtest.cost.commission_rate", "label": "佣金率", "type": "number", "min": 0, "max": 0.1, "desc": "买卖双边计入的佣金比例。"},
@@ -97,8 +97,7 @@ _datasource_fields = next(g["fields"] for g in CONFIG_GROUPS if g["key"] == "dat
 _datasource_fields.extend([
     {"path": "datasource.network_concurrency", "label": "每来源网络并发上限", "type": "int", "min": 1, "max": 16, "desc": "来源跨线程、跨进程共享的真实网络在途上限；任务工作并发不能突破，会话串行来源固定为1。"},
     {"path": "datasource.request_wait_timeout_sec", "label": "等待来源额度上限(秒)", "type": "number", "min": 1, "max": 3600, "desc": "包括来源冷却、频率和网络槽等待，超过后该工作单元可失败重试；等待支持取消。"},
-    {"path": "datasource.cooldown_sec", "label": "来源冷却时间(秒)", "type": "number", "min": 1, "max": 600, "desc": "限流响应或连续技术失败后跨进程共同冷却；到期仅允许单请求试探恢复。"},
-    {"path": "datasource.failure_threshold", "label": "连续失败冷却阈值", "type": "int", "min": 1, "max": 20, "desc": "网络错误或5xx达到阈值后暂缓该来源；明确空结果不计技术失败。"},
+    {"path": "datasource.cooldown_sec", "label": "限流冷却兜底时间(秒)", "type": "number", "min": 1, "max": 600, "desc": "仅429缺少有效Retry-After时使用；有效服务端提示按1～600秒共同等待，到期恢复配置并发。普通5xx、超时和断连只执行当前请求的有限重试。"},
     {"path": "datasource.max_response_mb", "label": "单次响应容量上限(MiB)", "type": "int", "min": 1, "max": 128, "desc": "读取响应时执行容量保护；超过后应缩小分页或区间，不进入重复请求。"},
 ])
 for _group, _definition in SOURCE_GROUPS.items():

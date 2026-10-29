@@ -6,6 +6,14 @@ import {
 } from '../configPanel'
 
 describe('配置面板折叠候选层级', () => {
+  it('请求保护保留限流并发与冷却兜底，不再展示失效的连续失败阈值', () => {
+    const paths = CONFIG_SYSTEM_GROUP_SECTIONS.datasource.find(section => section.key === 'request')?.fieldPaths
+    expect(paths).toEqual(expect.arrayContaining([
+      'datasource.rate_limit_per_sec', 'datasource.network_concurrency',
+      'datasource.cooldown_sec', 'datasource.max_retries',
+    ]))
+    expect(paths).not.toContain('datasource.failure_threshold')
+  })
   it('板块成分工作并发登记在已有采集规则分区，来源网络参数继续复用请求覆盖', () => {
     expect(CONFIG_SYSTEM_GROUP_SECTIONS.ths_board.find(section => section.key === 'collection')?.fieldPaths)
       .toEqual(['ths_board.member_concurrency', 'ths_board.bar_concurrency', 'ths_board.member_update_interval_days'])
