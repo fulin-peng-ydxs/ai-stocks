@@ -24,6 +24,10 @@ describe('TradeOperationEditor', () => {
       const panel = wrapper.get('[data-testid="checkin-operation-section"]')
       expect(panel.classes().includes('is-panel-bordered')).toBe(borderPlacement === 'panel')
       expect(panel.classes().includes('is-borderless')).toBe(borderPlacement === 'none')
+      expect(panel.classes()).not.toContain('is-grouped')
+      await wrapper.setProps({ sectionTitle: '趋势纪律' })
+      expect(panel.classes()).toContain('is-grouped')
+      expect(panel.get('h4').text()).toBe('趋势纪律')
       await wrapper.get('button[aria-label="添加买入操作"]').trigger('click')
       expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toMatchObject([{ side: 'buy' }])
     } finally { wrapper.unmount() }

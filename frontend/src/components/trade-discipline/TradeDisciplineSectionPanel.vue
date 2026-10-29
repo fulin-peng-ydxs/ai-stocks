@@ -7,11 +7,13 @@ withDefaults(defineProps<{
   borderPlacement?: 'body' | 'panel' | 'none'
   /** 空分区可只保留标题和动作；既有消费者默认继续展示正文。 */
   showBody?: boolean
+  /** 规则分组使用圆点标题和正文缩进，与分组内的买卖方向区分层级。 */
+  grouped?: boolean
 }>(), { showBody: true, borderPlacement: 'body' })
 </script>
 
 <template>
-  <section class="trade-discipline-section-panel" :class="{ 'is-header-only': showBody === false, 'is-panel-bordered': borderPlacement === 'panel', 'is-borderless': borderPlacement === 'none', 'app-surface': borderPlacement === 'panel' }">
+  <section class="trade-discipline-section-panel" :class="{ 'is-grouped': grouped, 'is-header-only': showBody === false, 'is-panel-bordered': borderPlacement === 'panel', 'is-borderless': borderPlacement === 'none', 'app-surface': borderPlacement === 'panel' }">
     <header class="trade-discipline-section-panel__head">
       <div>
         <h4 class="app-section-title">{{ title }}</h4>
@@ -53,6 +55,18 @@ withDefaults(defineProps<{
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }
+.is-grouped { padding-block: var(--app-space-2); }
+.is-grouped .app-section-title { display: flex; align-items: center; gap: var(--app-space-2); }
+.is-grouped .app-section-title::before {
+  content: '';
+  flex: none;
+  width: var(--app-space-control-gap);
+  height: var(--app-space-control-gap);
+  border-radius: 50%;
+  background: var(--el-color-primary);
+}
+.is-grouped .trade-discipline-section-panel__head p,
+.is-grouped .trade-discipline-section-panel__body { padding-left: calc(var(--app-space-control-gap) + var(--app-space-2)); }
 @container app-viewport (max-width: 760px) {
   .trade-discipline-section-panel__head { align-items: stretch; flex-direction: column; }
 }

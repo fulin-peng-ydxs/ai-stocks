@@ -910,10 +910,14 @@ describe('StockDetailView 三图数据协调', () => {
     workspace.vm.$emit('activeBarChange', small)
     await nextTick()
     expect(values()).toMatchObject({ 总市值: '900.00 万', 流通市值: '500.00 万', 总股本: '1.00亿股', 流通股: '8,000.00万股' })
-    expect(summary.props('summary').metrics.slice(10, 12)).toMatchObject([
-      { label: '总股本', hint: expect.stringContaining('对应交易日的总股本') },
-      { label: '流通股', hint: expect.stringContaining('对应交易日的流通 A 股股本') },
-    ])
+    const hints = summary.props('summary').metrics.filter((metric: { hint?: string }) => metric.hint)
+    expect(hints).toHaveLength(1)
+    expect(hints[0]).toMatchObject({
+      label: '总市值',
+      hint: expect.stringContaining('缺失不回填最新值'),
+    })
+    expect(hints[0].hint).toContain('周、月、年线取最后交易日')
+    expect(hints[0].hint).toContain('同日股本 × 未复权收盘价')
     workspace.vm.$emit('activeBarChange', large)
     await nextTick()
     expect(values()).toMatchObject({ 总市值: '20.00 亿', 流通市值: '10.00 亿', 总股本: '2.00亿股', 流通股: '9,000.00万股' })
