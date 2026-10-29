@@ -95,7 +95,7 @@ _REQUEST_FIELDS = [
 ]
 _datasource_fields = next(g["fields"] for g in CONFIG_GROUPS if g["key"] == "datasource")
 _datasource_fields.extend([
-    {"path": "datasource.network_concurrency", "label": "每来源网络并发上限", "type": "int", "min": 1, "max": 16, "desc": "来源跨线程、跨进程共享的真实网络在途上限；任务工作并发不能突破，会话串行来源固定为1。"},
+    {"path": "datasource.network_concurrency", "label": "每来源网络并发上限", "type": "int", "min": 1, "max": 16, "desc": "来源跨线程、跨进程共享的真实网络在途上限；任务工作并发不能突破。BaoStock每进程会话串行，批量取源至多四路独立进程，且不超过任务工作并发；将该来源并发设为2或1，可分别恢复两路或单会话路径。"},
     {"path": "datasource.request_wait_timeout_sec", "label": "等待来源额度上限(秒)", "type": "number", "min": 1, "max": 3600, "desc": "包括来源冷却、频率和网络槽等待，超过后该工作单元可失败重试；等待支持取消。"},
     {"path": "datasource.cooldown_sec", "label": "限流冷却兜底时间(秒)", "type": "number", "min": 1, "max": 600, "desc": "仅429缺少有效Retry-After时使用；有效服务端提示按1～600秒共同等待，到期恢复配置并发。普通5xx、超时和断连只执行当前请求的有限重试。"},
     {"path": "datasource.max_response_mb", "label": "单次响应容量上限(MiB)", "type": "int", "min": 1, "max": 128, "desc": "读取响应时执行容量保护；超过后应缩小分页或区间，不进入重复请求。"},

@@ -6,7 +6,7 @@ baostock 优势（探针实测）：
 - query_history_k_data_plus 可取**退市股历史日线**，含 preclose/turn/tradestatus/isST。
 
 代码格式：baostock 用 'sh.600000' / 'sz.000001'（点分隔）。
-登录态为进程级；本类惰性 login，析构/close 时 logout。
+登录态为进程级；本类惰性 login，显式 close 时 logout，析构只做非阻塞连接清理。
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from backend.common.timeutil import fmt_date, to_date
 from backend.config import get_settings
 from backend.config.request_snapshot import get_request_settings as get_effective_settings
 from backend.datasource.akshare_source import classify_board
+from backend.datasource.baostock_executor import pooled_operation
 from backend.datasource.base import DataSource, rate_limited, with_retry
 
 log = get_logger("datasource.baostock")
@@ -279,10 +280,20 @@ class BaostockSource(DataSource):
                 self._logged_in = False
 
     def __del__(self):
+        # GC可能恰好发生在看门狗日志中；析构若等会话锁，会反过来阻塞断线解挂。
+        # 未登录无需清理；已登录也只在锁空闲时关闭连接，不在析构中发送logout请求。
+        if not getattr(self, "_logged_in", False):
+            return
+        acquired = False
         try:
-            self.close()
-        except Exception:  # noqa: BLE001
+            acquired = _SESSION_LOCK.acquire(blocking=False)
+            if acquired:
+                self._invalidate_login()
+        except Exception:  # noqa: BLE001, S110 -- 析构中不得记录日志并触发递归GC/锁等待
             pass
+        finally:
+            if acquired:
+                _SESSION_LOCK.release()
 
     # ── 基础信息（上市/退市日 + 退市股清单）──
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
@@ -300,10 +311,12 @@ class BaostockSource(DataSource):
             columns={"code_full": "code", "code_name": "name"}
         )
 
+    @pooled_operation
     def get_basic_dates(self) -> pd.DataFrame:
         """全市场（含退市）上市/退市日期表。列：code,name,list_date,delist_date,is_delisted。"""
         return self._query_basic()
 
+    @pooled_operation
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
     def get_industry(self) -> pd.DataFrame:
         """全市场行业分类（证监会行业）。列：code(带后缀), industry。"""
@@ -316,17 +329,20 @@ class BaostockSource(DataSource):
         df["industry"] = df["industry"].replace("", None)
         return df[["code", "industry"]]
 
+    @pooled_operation
     def get_delisted_list(self) -> pd.DataFrame:
         df = self._query_basic()
         out = df[df["is_delisted"]][["code", "name", "delist_date"]].copy()
         return out.reset_index(drop=True)
 
+    @pooled_operation
     def get_stock_list(self) -> pd.DataFrame:
         df = self._query_basic()
         live = df[~df["is_delisted"]][["code", "name"]].copy()
         live["code6"] = live["code"].apply(lambda c: c.split(".")[0])
         return live[["code", "code6", "name"]].reset_index(drop=True)
 
+    @pooled_operation
     def get_stock_info(self, code: str) -> pd.DataFrame:
         df = self._query_basic()
         row = df[df["code"] == code]
@@ -364,12 +380,10 @@ class BaostockSource(DataSource):
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
     @rate_limited(_MIN_INTERVAL, start_to_start=True)
     def _st_data(self, code: str, start: date, end: date) -> pd.DataFrame:
-        """Fetch only the three columns required by the ST identity timeline.
+        """只取日期、交易状态和ST；实际查询在_query_frame内保护本进程会话。
 
-        ST 取数在生产路径上已被 `_BAO_FALLBACK_LOCK` 全进程串行（见 ingest._fetch_st_status_rows），
-        此处限流只用于守住请求速率：若仍按调用结束记时，间隔之外再叠加一次往返耗时，会把实际
-        速率压到配置值以下，而串行已经限住了并发，重复叠加没有额外防封收益。其余 baostock
-        方法不经该锁，保持默认的结束记时。
+        批量取源可由共享执行器的独立进程调用，所有进程仍在request_slot共用频率与网络额度。
+        with_retry在单次查询锁外退避，不能在业务层重新锁住整个重试序列。
         """
         import baostock as bs
 
@@ -384,6 +398,7 @@ class BaostockSource(DataSource):
             )
         )
 
+    @pooled_operation
     def get_daily_bar(self, code: str, start: date, end: date, adjust: str = "") -> pd.DataFrame:
         raw = self._k_data(code, start, end, "3")  # 3=不复权
         if raw is None or raw.empty:
@@ -432,6 +447,7 @@ class BaostockSource(DataSource):
         out.loc[zero_vol, "turnover_rate"] = out.loc[zero_vol, "turnover_rate"].fillna(0.0)
         return out.reset_index(drop=True)
 
+    @pooled_operation
     def get_st_status(self, code: str, start: date, end: date) -> pd.DataFrame:
         """读取 baostock 的逐日 isST 字段，包含停牌返回行。
 
@@ -460,6 +476,7 @@ class BaostockSource(DataSource):
         ).sort_values("trade_date").reset_index(drop=True)
 
     # ── 指数 ──
+    @pooled_operation
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
     @rate_limited(_MIN_INTERVAL)
     def get_index_bar(self, index_code: str, start: date, end: date) -> pd.DataFrame:
@@ -494,6 +511,7 @@ class BaostockSource(DataSource):
         )
 
     # ── 交易日历 ──
+    @pooled_operation
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
     def get_trade_calendar(self, start: date, end: date) -> pd.DataFrame:
         import baostock as bs
@@ -511,7 +529,7 @@ class BaostockSource(DataSource):
 
 def shared_baostock() -> "BaostockSource":
     """进程级单例 baostock 源（复用登录会话）。所有 get_source('baostock') 经此返回同一实例，
-    避免每个任务/每只股重登 ~6s；会话型，调用方仍经 _BAO_FALLBACK_LOCK 串行使用。"""
+    避免每个任务/每只股重登 ~6s；会话型，SDK查询由进程内_SESSION_LOCK保护，业务作用域可通过公共执行器复用独立进程。"""
     global _SHARED
     with _SESSION_LOCK:
         if _SHARED is None:

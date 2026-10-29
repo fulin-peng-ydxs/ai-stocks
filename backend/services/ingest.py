@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import threading
 from bisect import bisect_left
-from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
@@ -36,7 +35,6 @@ from backend.datasource.base import (
     get_source,
     thread_cancel_scope,
 )
-from backend.datasource.request_runtime import session_lock
 from backend.limit_ladder.rules import (
     PointInTimeSTStatus,
     STStatusQuality,
@@ -55,8 +53,6 @@ from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import get_client
 from backend.storage.repository import MarketRepository
 
-# baostock 是会话型 API，并发不安全；兜底取数全进程串行（兜底本就罕见，几乎不影响整体速度）。
-_BAO_FALLBACK_LOCK = threading.Lock()
 _UPDATE_READY_SAMPLE = [
     "000001.SZ", "000002.SZ", "000063.SZ", "000333.SZ", "300750.SZ",
     "600000.SH", "600519.SH", "601318.SH", "688981.SH",
@@ -234,7 +230,10 @@ class IngestionService:
                     f"日历是「已知的未来」故按固定窗口回看补缺口、终点尝试延至下一自然年末，"
                     f"与日线按已入库最新日+1 增量不同口径）")
             ctx.flush()
-        df = self.src.get_trade_calendar(start, cal_end)
+        from backend.datasource.baostock_executor import execution_scope
+
+        with execution_scope(tracker=getattr(ctx, "request_tracker", None)):
+            df = self.src.get_trade_calendar(start, cal_end)
         n = self.repo.upsert_trade_calendar(df)
         readiness = inspect_trade_calendar(self.c)
         detail = calendar_readiness_detail(readiness)
@@ -488,15 +487,17 @@ class IngestionService:
     def _fetch_st_status_rows(
         self, code: str, start: date, end: date, *, ctx=None
     ) -> tuple[DataSource, pd.DataFrame]:
-        """Fetch one raw ST interval while respecting Baostock's global session lock."""
+        """读取完整ST区间；SDK逐次锁会话，退避不占用其它股票的会话机会。"""
         st_source = self._source_for("st_status")
         if ctx:
             ctx.log(f"{code} 补采 ST/逐日交易状态 {start}~{end}（{st_source.name}）")
             ctx.flush()
-        lock = session_lock(_BAO_FALLBACK_LOCK, "baostock") if st_source.name == "baostock" else nullcontext()
         from backend.datasource.observability import measure
 
-        with measure("st_fetch"), thread_cancel_scope(ctx.check_cancel if ctx else None), lock:
+        # BaostockSource._query_frame 已保护登录、查询、游标及失效清理。
+        # 此处不能再锁住包含重试退避的整个 get_st_status，否则一股重试会挡住全队列。
+        with measure("st_fetch"), thread_cancel_scope(ctx.check_cancel if ctx else None):
+            check_thread_cancel()
             rows = st_source.get_st_status(code, start, end)
         return st_source, rows
 
@@ -528,8 +529,7 @@ class IngestionService:
         """
         primary_error = None
         try:
-            lock = session_lock(_BAO_FALLBACK_LOCK, "baostock") if primary.name == "baostock" else nullcontext()
-            with thread_cancel_scope(ctx.check_cancel if ctx else None), lock:
+            with thread_cancel_scope(ctx.check_cancel if ctx else None):
                 df = primary.get_daily_bar(code, start, end)
         except DataSourceError as e:
             primary_error = e
@@ -552,7 +552,7 @@ class IngestionService:
                 ctx.log(msg, "error")
                 ctx.flush()
             raise DataSourceError(msg)
-        with thread_cancel_scope(ctx.check_cancel if ctx else None), session_lock(_BAO_FALLBACK_LOCK, "baostock"):
+        with thread_cancel_scope(ctx.check_cancel if ctx else None):
             try:
                 if ctx:
                     ctx.log(f"{code} 主源无数据，开始请求兜底源 {bao.name}（{start}~{end}）", "warn")
@@ -582,10 +582,9 @@ class IngestionService:
         local = local[["trade_date", "close"]].copy()
         local["trade_date"] = pd.to_datetime(local["trade_date"]).dt.date
         try:
-            with session_lock(_BAO_FALLBACK_LOCK, "baostock"):
-                reference = backup.get_daily_bar(
-                    code, local.trade_date.min(), local.trade_date.max()
-                )
+            reference = backup.get_daily_bar(
+                code, local.trade_date.min(), local.trade_date.max()
+            )
         except TaskCancelled:
             raise
         except Exception as exc:
@@ -1035,37 +1034,40 @@ class IngestionService:
         )["code"])
 
     def _run_daily_parallel(
-        self, codes, starts, end, *, concurrency, ctx, label, on_complete, limits=None,
+        self, codes, starts, end, *, concurrency, ctx, label, on_complete, limits=None, source=None, ends=None,
     ):
-        """日线三类批任务共用：预读事实、并发取价/状态、主线程校验与批次提交。"""
+        """日线各类批任务共用：预读事实、并发取价/状态、主线程校验与批次提交。"""
         tls = threading.local()
-        source_name = self.src.name
+        source_name = (source or self.src).name
+        ends = ends or {}
 
         def prepare(code):
             start = starts[code]
+            item_end = ends.get(code, end)
             stored = self.c.query_df(
                 "SELECT trade_date,is_st,source,source_ref,quality FROM stock_st_status_daily "
                 "WHERE code=? AND trade_date BETWEEN ? AND ? AND quality='accurate'",
-                [code, start, end],
-            ) if start <= end else pd.DataFrame()
+                [code, start, item_end],
+            ) if start <= item_end else pd.DataFrame()
             return code, _DailySTMaterial(stored)
 
         def worker(item):
             code, status = item
             start = starts[code]
-            if start > end:
+            item_end = ends.get(code, end)
+            if start > item_end:
                 return None
             bars = self._fetch_daily_with_fallback(
-                code, start, end, self._thread_source(tls, source_name),
+                code, start, item_end, self._thread_source(tls, source_name),
             )
-            frame = eod_dates.bound_bars(bars[0], start, end)
+            frame = eod_dates.bound_bars(bars[0], start, item_end)
             known = set(pd.to_datetime(status.stored.get("trade_date", pd.Series(dtype=object))).dt.date)
             if frame is not None and not frame.empty and any(
                 pd.Timestamp(day).date() not in known for day in frame.trade_date
             ):
                 try:
-                    # BaoStock 自身及共享兜底锁继续保证单会话串行；取数与主线程落库重叠。
-                    status.fetched = self._fetch_st_status_rows(code, start, end)
+                    # SDK每进程会话互斥；独立进程只取得原始状态，主线程继续校验和落库。
+                    status.fetched = self._fetch_st_status_rows(code, start, item_end)
                 except TaskCancelled:
                     raise
                 except Exception as exc:  # noqa: BLE001 -- 状态失败交回原权威校验，不重复取源
@@ -1076,10 +1078,11 @@ class IngestionService:
             results, prepared = [], []
             for index, item, bars, error, pending in entries:
                 code, status = item
+                item_end = ends.get(code, end)
                 check_thread_cancel()
                 try:
-                    value = (0 if starts[code] > end else self.ingest_one_daily(
-                        code, starts[code], end, (limits or {}).get(code), ctx=ctx,
+                    value = (0 if starts[code] > item_end else self.ingest_one_daily(
+                        code, starts[code], item_end, (limits or {}).get(code), ctx=ctx,
                         _prefetched=bars, _fetch_error=error, _st_material=status,
                         _defer_write=True,
                     ))
@@ -1096,11 +1099,14 @@ class IngestionService:
             self._write_daily_batch(prepared, ctx=ctx)
             return results
 
-        self._run_bounded_parallel(
-            codes, worker, concurrency=concurrency, ctx=ctx, wait_label=label,
-            prepare=prepare, transform_batch=commit, batch_size=concurrency,
-            prefetch_next_batch=True, on_complete=on_complete,
-        )
+        from backend.datasource.baostock_executor import execution_scope
+
+        with execution_scope(concurrency, tracker=getattr(ctx, "request_tracker", None)):
+            self._run_bounded_parallel(
+                codes, worker, concurrency=concurrency, ctx=ctx, wait_label=label,
+                prepare=prepare, transform_batch=commit, batch_size=concurrency,
+                prefetch_next_batch=True, on_complete=on_complete,
+            )
 
     # ── 估值/市值（总市值/总股本，补 G2）──
     def _history_window(self, years: int, ctx=None) -> tuple[date, date]:
@@ -3393,36 +3399,44 @@ class IngestionService:
         return result
 
     def refresh_price_references(self, codes, ctx=None):
-        """定向重新获取独立参考价，不改原始行情；不允许隐式全市场联网。"""
+        """并行取得各股独立参考价，主线程按原同日收盘校验及事务写入。"""
         if not codes:
             raise ValueError("参考价复核必须明确指定股票范围")
+        from backend.datasource.baostock_executor import execution_scope
+        from backend.datasource.baostock_source import BaostockSource
+
+        source = self._bao_source()
         result = {"updated": 0, "unmatched": 0, "errors": {}}
-        for code in codes:
+
+        def prepare(code):
             if ctx:
                 ctx.check_cancel()
                 ctx.log(f"{code} 重新获取来源参考价并核对同日收盘")
             local = self.c.query_df(
                 "SELECT trade_date,close FROM daily_bar WHERE code=? ORDER BY trade_date", [code]
             )
+            bounds = ((None, None) if local.empty
+                      else tuple(pd.to_datetime(local.trade_date).dt.date.iloc[[0, -1]]))
+            return code, local, *bounds
+
+        def worker(item):
+            code, local, lo, hi = item
+            return None if local.empty else source.get_daily_bar(code, lo, hi)
+
+        def complete(_i, item, reference, error, _pending):
+            code, local, lo, hi = item
             if local.empty:
-                continue
-            lo, hi = pd.to_datetime(local.trade_date).dt.date.iloc[[0, -1]]
+                return
             try:
-                source = self._bao_source()
-                with session_lock(_BAO_FALLBACK_LOCK, "baostock"):
-                    reference = source.get_daily_bar(code, lo, hi)
+                if error is not None:
+                    raise error
                 if reference is None or reference.empty:
                     raise DataSourceError("参考价来源为空")
                 reference = reference[["trade_date", "pre_close", "close"]].copy()
                 reference.trade_date = pd.to_datetime(reference.trade_date).dt.date
                 local.trade_date = pd.to_datetime(local.trade_date).dt.date
-                joined = local.merge(
-                    reference,
-                    on="trade_date",
-                    how="left",
-                    suffixes=("", "_reference"),
-                    validate="one_to_one",
-                )
+                joined = local.merge(reference, on="trade_date", how="left",
+                                     suffixes=("", "_reference"), validate="one_to_one")
                 valid = pd.to_numeric(joined.pre_close, errors="coerce").gt(0) & joined.close.sub(
                     joined.close_reference
                 ).abs().le(0.011)
@@ -3436,19 +3450,10 @@ class IngestionService:
                                 [source.name, code],
                             )
                     self.repo.log_update(
-                        "daily_bar",
-                        f"{source.name}:reference_refresh",
-                        lo,
-                        hi,
-                        len(matched),
+                        "daily_bar", f"{source.name}:reference_refresh", lo, hi, len(matched),
                         "partial" if (~valid).any() else "success",
-                        json.dumps(
-                            {
-                                "code": code,
-                                "unmatched": int((~valid).sum()),
-                                "task_id": getattr(ctx, "tid", None),
-                            }
-                        ),
+                        json.dumps({"code": code, "unmatched": int((~valid).sum()),
+                                    "task_id": getattr(ctx, "tid", None)}),
                     )
                 result["updated"] += len(matched)
             except TaskCancelled:
@@ -3457,6 +3462,13 @@ class IngestionService:
                 result["errors"][code] = str(exc)
                 if ctx:
                     ctx.log(f"{code} 参考价复核失败：{exc}", "warn")
+
+        with execution_scope(tracker=getattr(ctx, "request_tracker", None)) as executor:
+            concurrency = executor.workers if isinstance(source, BaostockSource) else 1
+            self._run_bounded_parallel(
+                list(codes), worker, concurrency=concurrency, ctx=ctx,
+                wait_label="参考价取源", prepare=prepare, on_complete=complete,
+            )
         return result
 
     def rebuild_price_factors(self, codes: list[str] | None = None, ctx=None) -> dict:
@@ -3588,8 +3600,8 @@ class IngestionService:
         """Backfill canonical ST facts from baostock and publish their daily projection.
 
         With no date range each selected security uses its listing-to-latest-market span,
-        bounded by delisting when applicable. The operation is serial because baostock owns a
-        process-global session. A source failure never falls back to the current name and is
+        bounded by delisting when applicable. Source requests use the shared BaoStock executor;
+        facts and checkpoints remain on the coordinator. A source failure never falls back to the current name and is
         returned as a resumable per-code failure. This source task reports changed dates but
         never mutates downstream result lifecycle state.
         """
@@ -3621,86 +3633,97 @@ class IngestionService:
             ctx.log(
                 f"▶ 开始 ST 状态刷新：{total} 只，已完成 {completed_before} 只，"
                 f"本轮待处理 {len(target)} 只，源 {source.name}，"
-                f"范围 {'指定区间' if start or end else '各股上市日至市场最新日'}（串行）"
+                f"范围 {'指定区间' if start or end else '各股上市日至市场最新日'}"
             )
             ctx.flush()
-        for index, item in enumerate(target, completed_before + 1):
+        from backend.datasource.baostock_executor import current_executor
+        from backend.datasource.baostock_source import BaostockSource
+
+        executor = current_executor()
+        parallel = isinstance(source, BaostockSource) and executor is not None and executor.workers > 1
+        concurrency = executor.workers if parallel else 1
+        if ctx:
+            ctx.log(f"ST状态取源并发：{concurrency}；事实和断点由编排线程逐股提交，最后统一核验发布")
+
+        def prepare(item):
             code = str(item["code"])
             item_lo = pd.Timestamp(item["lo"]).date()
             lo = max(item_lo, start) if start else item_lo
             stored_hi = pd.Timestamp(item["hi"]).date()
             delist = None if pd.isna(item.get("delist_date")) else pd.Timestamp(item["delist_date"]).date()
-            # delist_date 为摘牌日，已不属于交易存续期；不能强求当天 ST。
             natural_hi = (min(market_hi or stored_hi, delist - timedelta(days=1))
                           if delist else (market_hi or stored_hi))
             hi = min(natural_hi, end) if end else natural_hi
+            expected = []
+            if hi >= lo:
+                expected = [pd.Timestamp(value).date() for value in self.repo.c.query_df(
+                    "SELECT trade_date FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ? "
+                    "ORDER BY trade_date", [code, lo, hi],
+                )["trade_date"].tolist()]
+                if market_hi is not None and hi == market_hi and hi not in expected:
+                    expected.append(hi)
+            return code, lo, hi, expected
+
+        def worker(item):
+            code, lo, hi, _expected = item
+            return source.get_st_status(code, lo, hi) if parallel and hi >= lo else None
+
+        def complete(i, item, raw, error, _pending):
+            nonlocal rows, ok, fail
+            index = completed_before + i
+            code, lo, hi, expected = item
             if hi < lo:
                 done_codes.add(code)
                 ok += 1
                 if ctx:
                     ctx.set_checkpoint(st_done_codes=sorted(done_codes))
-                continue
+                return
             if ctx:
                 ctx.check_cancel()
-                ctx.set_phase(
-                    "st_status", phase_total=total, phase_done=index - 1, current_item=code
-                )
-            changed_for_code: list[date] = []
+                ctx.set_phase("st_status", phase_total=total, phase_done=index - 1, current_item=code)
+            changed_for_code = []
             try:
-                expected = [
-                    pd.Timestamp(value).date()
-                    for value in self.repo.c.query_df(
-                        "SELECT trade_date FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ? "
-                        "ORDER BY trade_date",
-                        [code, lo, hi],
-                    )["trade_date"].tolist()
-                ]
-                if market_hi is not None and hi == market_hi and hi not in expected:
-                    expected.append(hi)
+                if error is not None:
+                    raise error
+                material = ({"material": _DailySTMaterial(
+                    pd.DataFrame(), fetched=(source, raw),
+                )} if parallel else {})
                 facts = self._accurate_st_facts(
-                    code,
-                    expected,
-                    force=True,
-                    fetch_start=lo,
-                    fetch_end=hi,
-                    ctx=ctx,
+                    code, expected, force=True, fetch_start=lo, fetch_end=hi, ctx=ctx, **material,
                 )
                 touched_dates.update(fact.trade_date for fact in facts)
                 changed_for_code = st_service.upsert_facts(
-                    facts,
-                    change_reason="baostock_st_refresh",
-                    task_id=getattr(ctx, "tid", None),
+                    facts, change_reason="baostock_st_refresh", task_id=getattr(ctx, "tid", None),
                 )
                 changed_dates.update(changed_for_code)
                 rows += len(facts)
                 ok += 1
                 done_codes.add(code)
                 if ctx:
-                    ctx.set_checkpoint(
-                        st_done_codes=sorted(done_codes),
-                        st_changed_dates=sorted(str(day) for day in changed_dates),
-                    )
-            except Exception as exc:  # noqa: BLE001 - per-code resumable boundary
+                    ctx.set_checkpoint(st_done_codes=sorted(done_codes),
+                                       st_changed_dates=sorted(str(day) for day in changed_dates))
+            except TaskCancelled:
+                raise
+            except Exception as exc:  # noqa: BLE001 -- 单股源失败保留重试资格，禁止发布全市场投影
                 if ctx and changed_for_code:
-                    # Facts may already be committed when checkpoint persistence fails. Preserve
-                    # their dates so a resumed task still reports every affected source date.
-                    ctx.set_checkpoint(
-                        st_done_codes=sorted(done_codes),
-                        st_changed_dates=sorted(str(day) for day in changed_dates),
-                    )
+                    ctx.set_checkpoint(st_done_codes=sorted(done_codes),
+                                       st_changed_dates=sorted(str(day) for day in changed_dates))
                 fail += 1
                 failures.append({"code": code, "error": str(exc)[:500]})
                 log.warning("%s ST 状态刷新失败: %s", code, exc)
                 if ctx:
                     ctx.log(f"{code} ST 状态刷新失败：{exc}", "warn")
             if ctx and (index % 20 == 0 or index == total):
-                ctx.set_phase(
-                    "st_status", phase_total=total, phase_done=index, current_item=code
-                )
+                ctx.set_phase("st_status", phase_total=total, phase_done=index, current_item=code)
                 ctx.progress(min(0.08 + 0.84 * index / max(total, 1), 0.92),
                              f"ST 状态 {index}/{total}（成功{ok} 失败{fail}）")
                 ctx.log(f"ST 状态进度 {index}/{total}：成功{ok} 失败{fail}，读取 {rows} 行")
                 ctx.flush()
+
+        self._run_bounded_parallel(
+            target, worker, concurrency=concurrency, ctx=ctx, wait_label="ST专项取源",
+            prepare=prepare, on_complete=complete,
+        )
 
         changed = sorted(changed_dates)
         touched = sorted(touched_dates)
@@ -4039,45 +4062,94 @@ class IngestionService:
         covered_codes = self._history_start_covered_codes(start)
         ok, skip, fail, total_rows = 0, 0, 0, 0
         total = len(dl)
-        for i, (_, r) in enumerate(dl.iterrows(), 1):
-            code = r["code"]
-            if ctx:
-                ctx.check_cancel()
-                ctx.set_phase("delisted_history", phase_total=total, phase_done=i - 1,
-                              current_item=code)
-            if code in covered_codes:
-                skip += 1
-                if ctx and (i % 20 == 0 or i == total):
-                    ctx.log(f"退市股灌入进度 {i}/{total}：成功{ok} 跳过{skip} 失败{fail}，累计 {total_rows} 行")
-                    ctx.flush()
-                continue
-            try:
-                code6 = code.split(".")[0]
-                _, _, limit_pct = self._in_target_board(code6)
-                # 补 stock_basic 一行（退市股，含退市日）
-                self.repo.upsert_stock_basic(
-                    pd.DataFrame([{
-                        "code": code, "name": r["name"], "exchange": classify_board(code6)[0],
-                        "board": classify_board(code6)[1], "delist_date": r["delist_date"],
-                        "price_limit_pct": limit_pct,
-                    }])
+        from backend.datasource.baostock_executor import current_executor
+        from backend.datasource.baostock_source import BaostockSource
+
+        executor = current_executor()
+        if isinstance(bao, BaostockSource) and executor is not None:
+            pending = dl[~dl.code.isin(covered_codes)].copy()
+            skip = total - len(pending)
+            if not pending.empty:
+                basic_rows = []
+                for r in pending.to_dict("records"):
+                    exchange, board, limit_pct = classify_board(r["code"].split(".")[0])
+                    basic_rows.append({"code": r["code"], "name": r["name"], "exchange": exchange,
+                                       "board": board, "delist_date": r["delist_date"],
+                                       "price_limit_pct": limit_pct})
+                self.repo.upsert_stock_basic(pd.DataFrame(basic_rows))
+                codes = pending.code.tolist()
+                effective = self.c.query_df(
+                    "SELECT code,delist_date,price_limit_pct FROM stock_basic "
+                    "WHERE code IN (SELECT unnest(?::VARCHAR[]))", [codes],
                 )
-                rows = self.ingest_one_daily(
-                    code, start, r["delist_date"], limit_pct, source=bao
+                # 使用已落库的有效摘牌日，保留人工覆盖；摘牌日不属于交易存续期。
+                ends = {r.code: min(end, pd.Timestamp(r.delist_date).date() - timedelta(days=1))
+                        for r in effective.itertuples()}
+                limits = dict(zip(effective.code, effective.price_limit_pct, strict=True))
+
+                def complete(i, code, value, error, _pending):
+                    nonlocal ok, fail, total_rows
+                    if error is None:
+                        ok += 1
+                        total_rows += value
+                    else:
+                        fail += 1
+                        self.repo.log_update("daily_bar", bao.name, start, ends[code], 0,
+                                             "failed", f"{code}: {error}")
+                        if ctx:
+                            ctx.log(f"退市股 {code} 灌入失败：{error}", "warn")
+                    if ctx:
+                        ctx.set_phase("delisted_history", phase_total=total, phase_done=skip + i,
+                                      current_item=code)
+                        if i % 20 == 0 or i == len(codes):
+                            ctx.log(f"退市股进度 {skip+i}/{total}：成功{ok} 跳过{skip} 失败{fail}")
+                            ctx.flush()
+
+                self._run_daily_parallel(
+                    codes, dict.fromkeys(codes, start), end, concurrency=executor.workers,
+                    ctx=ctx, label="退市股历史取源", on_complete=complete,
+                    limits=limits, source=bao, ends=ends,
                 )
-                total_rows += rows
-                ok += 1
-                if ctx and (i == 1 or i % 20 == 0 or i == total):
-                    ctx.set_phase("delisted_history", phase_total=total, phase_done=i,
-                                  current_item=code)
-                    ctx.log(f"退市股 {code} 完成：写入 {rows} 行；进度 {i}/{total}，成功{ok} 跳过{skip} 失败{fail}")
-                    ctx.flush()
-            except Exception as e:  # noqa: BLE001
-                fail += 1
-                log.warning("退市股 %s 灌入失败: %s", code, e)
+        else:
+            for i, (_, r) in enumerate(dl.iterrows(), 1):
+                code = r["code"]
                 if ctx:
-                    ctx.log(f"退市股 {code} 灌入失败：{e}", "warn")
-                self.repo.log_update("daily_bar", bao.name, start, None, 0, "failed", f"{code}: {e}")
+                    ctx.check_cancel()
+                    ctx.set_phase("delisted_history", phase_total=total, phase_done=i - 1,
+                                  current_item=code)
+                if code in covered_codes:
+                    skip += 1
+                    if ctx and (i % 20 == 0 or i == total):
+                        ctx.log(f"退市股灌入进度 {i}/{total}：成功{ok} 跳过{skip} 失败{fail}，累计 {total_rows} 行")
+                        ctx.flush()
+                    continue
+                try:
+                    code6 = code.split(".")[0]
+                    _, _, limit_pct = self._in_target_board(code6)
+                    # 补 stock_basic 一行（退市股，含退市日）
+                    self.repo.upsert_stock_basic(
+                        pd.DataFrame([{
+                            "code": code, "name": r["name"], "exchange": classify_board(code6)[0],
+                            "board": classify_board(code6)[1], "delist_date": r["delist_date"],
+                            "price_limit_pct": limit_pct,
+                        }])
+                    )
+                    rows = self.ingest_one_daily(
+                        code, start, r["delist_date"], limit_pct, source=bao
+                    )
+                    total_rows += rows
+                    ok += 1
+                    if ctx and (i == 1 or i % 20 == 0 or i == total):
+                        ctx.set_phase("delisted_history", phase_total=total, phase_done=i,
+                                      current_item=code)
+                        ctx.log(f"退市股 {code} 完成：写入 {rows} 行；进度 {i}/{total}，成功{ok} 跳过{skip} 失败{fail}")
+                        ctx.flush()
+                except Exception as e:  # noqa: BLE001
+                    fail += 1
+                    log.warning("退市股 %s 灌入失败: %s", code, e)
+                    if ctx:
+                        ctx.log(f"退市股 {code} 灌入失败：{e}", "warn")
+                    self.repo.log_update("daily_bar", bao.name, start, None, 0, "failed", f"{code}: {e}")
         # 退市股同样完成干净因子和历史限幅标记；覆盖已满足但上次中断的也须收尾。
         factor_result = self._refresh_clean_factors(dl["code"].tolist(), ctx=ctx)
         result = {"target": len(dl), "ok": ok, "skip": skip,

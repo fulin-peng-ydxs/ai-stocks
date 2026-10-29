@@ -474,8 +474,9 @@ class AsyncTaskService:
             ctx.log(_resume_message(task_type, checkpoint))
         ctx.flush()
         try:
-            from backend.datasource.observability import observe_work
+            from backend.datasource.baostock_executor import execution_scope
             from backend.datasource.base import thread_cancel_scope
+            from backend.datasource.observability import observe_work
             if task_type in {"stock_ingest", "update", "backfill", "ingest_date", "ingest_codes", "intraday_ingest", "board", "fix"}:
                 from backend.config import get_effective_settings
                 defaults = get_effective_settings().datasource.update_concurrency
@@ -485,7 +486,13 @@ class AsyncTaskService:
                     concurrency_origin="task" if params.get("concurrency") else "default",
                 )
 
-            with observe_work(ctx.request_tracker, state="coordinator"), thread_cancel_scope(ctx.check_cancel):
+            with (
+                observe_work(ctx.request_tracker, state="coordinator"),
+                thread_cancel_scope(ctx.check_cancel),
+                (execution_scope(params.get("concurrency"), tracker=ctx.request_tracker)
+                 if task_type in {"stock_ingest", "update", "backfill", "ingest_date",
+                                  "ingest_codes", "fix", "enrich_basic"} else nullcontext()),
+            ):
                 result = _HANDLERS[task_type](params, ctx)
             if ctx.request_tracker.meta or ctx.request_tracker.counts:
                 result = {**result, "request_runtime": ctx.request_tracker.snapshot(ctx.checkpoint)}

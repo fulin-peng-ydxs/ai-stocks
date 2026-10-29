@@ -50,7 +50,7 @@ class DuckDBConfig(BaseModel):
 
 
 class SourceRequestOverrides(BaseModel):
-    """来源覆盖只接受请求参数；None 表示继承，不放宽会话串行硬约束。"""
+    """来源覆盖只接受请求参数；None继承，仍受来源额度和进程内会话硬约束。"""
 
     model_config = {"extra": "forbid"}
     rate_limit_per_sec: float | None = Field(default=None, ge=0.1, le=50)

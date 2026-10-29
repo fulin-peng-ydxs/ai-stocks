@@ -293,6 +293,11 @@ def test_source_overrides_and_session_hard_limit():
     assert rp.request_policy("sina", settings).concurrency == 3
     assert rp.request_policy("sina", settings).rate == 7
     settings.datasource.sources["baostock"] = SourceRequestOverrides(network_concurrency=9)
+    assert rp.request_policy("baostock", settings).concurrency == 4
+    for capacity in (2, 3):
+        settings.datasource.sources["baostock"] = SourceRequestOverrides(network_concurrency=capacity)
+        assert rp.request_policy("baostock", settings).concurrency == capacity
+    settings.datasource.sources["baostock"] = SourceRequestOverrides(network_concurrency=1)
     assert rp.request_policy("baostock", settings).concurrency == 1
     settings.datasource.sources["ths_board"] = SourceRequestOverrides(
         network_concurrency=8, rate_limit_per_sec=8,
@@ -395,12 +400,13 @@ def test_st_fallback_binds_explicit_cancel_context_before_waiting_for_session(mo
         def flush(self):
             pass
 
-    ingest._BAO_FALLBACK_LOCK.acquire()
+    from backend.datasource.baostock_source import _SESSION_LOCK
+    _SESSION_LOCK.acquire()
     try:
         with pytest.raises(TaskCancelled):
             service._fetch_st_status_rows("600000.SH", None, None, ctx=Context())
     finally:
-        ingest._BAO_FALLBACK_LOCK.release()
+        _SESSION_LOCK.release()
 
 
 def test_baostock_repeated_queries_do_not_reload_full_configuration(monkeypatch):

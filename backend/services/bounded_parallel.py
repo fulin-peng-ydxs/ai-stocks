@@ -4,6 +4,7 @@ import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from uuid import uuid4
 
+from backend.datasource.baostock_executor import bind_executor, current_executor
 from backend.datasource.base import thread_cancel_scope
 from backend.datasource.observability import observe_work
 from backend.services.async_task import TaskCancelled
@@ -60,6 +61,7 @@ def run_bounded_parallel(
     queued_keys = {}
     last_flush = time.monotonic()
     tracker = getattr(ctx, "request_tracker", None)
+    source_executor = current_executor()
 
     def _flush():
         nonlocal last_flush
@@ -85,7 +87,8 @@ def run_bounded_parallel(
         last_flush = time.monotonic()
 
     def _run(item, queue_key):
-        with observe_work(tracker), thread_cancel_scope(ctx.check_cancel if ctx else None):
+        with (observe_work(tracker), thread_cancel_scope(ctx.check_cancel if ctx else None),
+              bind_executor(source_executor)):
             try:
                 return worker(item)
             finally:

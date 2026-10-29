@@ -110,7 +110,12 @@ def checked_collection(method):
                 phases = collection_phases(method.__name__, bound.arguments)
                 bound.arguments["ctx"] = TaskProgressScope(
                     ctx, 0.08, 0.90, phases=phases, phase_progress=True)
-            result = method(*bound.args, **bound.kwargs)
+            from backend.datasource.baostock_executor import execution_scope
+
+            with execution_scope(
+                bound.arguments.get("concurrency"), tracker=getattr(ctx, "request_tracker", None),
+            ):
+                result = method(*bound.args, **bound.kwargs)
             # 质检异常直接传播：采集写入保留，异步任务失败并保留断点，不误报整个流程成功。
             quality = batch.finish(self.c, TaskProgressScope(ctx, 0.90, 0.99)
                                    if ctx and hasattr(ctx, "progress") else ctx)

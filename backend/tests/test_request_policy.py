@@ -215,8 +215,8 @@ def test_source_registry_explains_capabilities_and_uses_real_policy(monkeypatch)
     assert rows["ths_board"]["timeout_sec"] == 12
     assert rows["intraday_ths"]["timeout_sec"] == 31
     assert rows["baostock"]["login_timeout_sec"] == 123
-    assert rows["baostock"]["concurrency"] == 1
-    assert rows["baostock"]["serial_required"] is True
+    assert rows["baostock"]["concurrency"] == 4
+    assert rows["baostock"]["serial_required"] is False
     assert rows["ths_board"]["serial_required"] is False
     assert rows["ths_board"]["work_concurrency"] == settings.ths_board.member_concurrency
     assert rows["akshare"]["network_concurrency"] == 6
@@ -229,7 +229,7 @@ def test_source_registry_explains_capabilities_and_uses_real_policy(monkeypatch)
     refreshed = {row["source"]: row for row in data_sources.source_status(False, repo=Repo())["sources"]}
     assert refreshed["akshare"]["work_concurrency"] == 3
     assert refreshed["akshare"]["network_concurrency"] == 6
-    assert refreshed["baostock"]["concurrency"] == 1
+    assert refreshed["baostock"]["concurrency"] == 4
     assert rows["eastmoney_capital"]["rate_group"] == "eastmoney"
     assert "intraday_eastmoney" not in rows
     with pytest.raises(ValueError, match="未知"):

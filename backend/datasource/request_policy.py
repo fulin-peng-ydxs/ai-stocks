@@ -81,6 +81,7 @@ def request_policy(group: str, settings=None) -> RequestPolicy:
         backoff = backoff if board.retry_backoff_sec is None else float(board.retry_backoff_sec)
     if SOURCE_GROUPS.get(group, {}).get("serial"):
         concurrency = 1
+    concurrency = min(concurrency, SOURCE_GROUPS.get(group, {}).get("max_concurrency", concurrency))
     return RequestPolicy(rate, timeout, attempts, backoff, tuple(overrides), concurrency,
                          getattr(source, "request_wait_timeout_sec", 300),
                          getattr(source, "cooldown_sec", 30),
