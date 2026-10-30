@@ -318,6 +318,14 @@
           "reason": "连板热点候选为紧凑标签选择角色，尺寸由领域共享组件维护"
         },
         {
+          "file": "views/limit-ladder/LadderHotspots.vue",
+          "selectors": [
+            ".ladder-hotspots__chip.el-button,\n.ladder-hotspots__more.el-button"
+          ],
+          "properties": ["height"],
+          "reason": "热点标签及收展入口只覆盖高度，按所属页面密度的常规控件高度减8px，标准密度24px；保留原按钮外观"
+        },
+        {
           "file": "views/limit-ladder/LimitLadderCard.vue",
           "selectors": [
             ".limit-ladder-card .limit-ladder-card__select.el-button"

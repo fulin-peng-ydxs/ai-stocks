@@ -360,15 +360,18 @@ class AKShareSource(DataSource):
         # 请求超时已由模块级 _install_default_requests_timeout 全局注入，
         # 此处无需再局部包裹（也就不会再用锁串行化并发日线请求）。
         ensure_sina_js_runtime_ready()
-        return _ak_or_empty(
-            lambda: ak.stock_zh_a_daily(
-                symbol=to_sina_symbol(code6),
-                start_date=fmt_date(start, compact=True),
-                end_date=fmt_date(end, compact=True),
-                adjust=adjust,
-            ),
-            f"{code6} sina日线",
-        )
+        from backend.datasource.observability import measure
+
+        with measure("sina_sdk"):
+            return _ak_or_empty(
+                lambda: ak.stock_zh_a_daily(
+                    symbol=to_sina_symbol(code6),
+                    start_date=fmt_date(start, compact=True),
+                    end_date=fmt_date(end, compact=True),
+                    adjust=adjust,
+                ),
+                f"{code6} sina日线",
+            )
 
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec, source_group="sina")
     def _sina_daily_pair(

@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import math
 import re
 import threading
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import date
 from functools import wraps
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -35,7 +37,6 @@ class RequestPolicy:
     concurrency: int = 6
     wait_timeout: float = 300
     cooldown: float = 30
-    failure_threshold: int = 3
     max_response_mb: int = 32
 
 
@@ -80,10 +81,10 @@ def request_policy(group: str, settings=None) -> RequestPolicy:
         backoff = backoff if board.retry_backoff_sec is None else float(board.retry_backoff_sec)
     if SOURCE_GROUPS.get(group, {}).get("serial"):
         concurrency = 1
+    concurrency = min(concurrency, SOURCE_GROUPS.get(group, {}).get("max_concurrency", concurrency))
     return RequestPolicy(rate, timeout, attempts, backoff, tuple(overrides), concurrency,
                          getattr(source, "request_wait_timeout_sec", 300),
                          getattr(source, "cooldown_sec", 30),
-                         getattr(source, "failure_threshold", 3),
                          getattr(source, "max_response_mb", 32))
 
 
@@ -142,12 +143,52 @@ def daily_materials(symbol: str):
     """
     import requests
 
+    _install_daily_decoder_reuse()
     with requests.Session() as session:
         token = _REUSE_SCOPE.set({"symbol": symbol, "cache": {}, "session": session})
         try:
             yield
         finally:
             _REUSE_SCOPE.reset(token)
+
+
+def _install_daily_decoder_reuse():
+    """仅复用同股同次已校验压缩材料的解码；不复制SDK的复权及日期处理。"""
+    import py_mini_racer
+
+    with _INSTALL_LOCK:
+        original = py_mini_racer.MiniRacer.call
+        if getattr(original, "_ai_stocks_daily_decode", False):
+            return
+
+        @wraps(original)
+        def call(context, name, *args, **kwargs):
+            scope = _REUSE_SCOPE.get()
+            if (scope is None or name != "d" or len(args) != 1 or kwargs
+                    or not scope.get("encoded_daily") or args[0] != scope["encoded_daily"]):
+                return original(context, name, *args, **kwargs)
+            from backend.datasource.observability import measure, record
+
+            with measure("sina_decode"):
+                if "decoded_daily" in scope:
+                    record(sina_decode_cache_hits=1)
+                else:
+                    scope["decoded_daily"] = original(context, name, *args, **kwargs)
+                    decoded = scope["decoded_daily"]
+                    scope["decoded_flat"] = isinstance(decoded, list) and all(
+                        isinstance(row, dict) and all(
+                            value is None or isinstance(value, (str, int, float, date))
+                            for value in row.values()
+                        ) for row in decoded
+                    )
+                # SDK会修改中间数据，返回独立副本，不能使后复权污染原始解码结果。
+                # 已确认的标量记录只复制行字典；未知嵌套结构仍完整深拷贝。
+                if scope["decoded_flat"]:
+                    return [row.copy() for row in scope["decoded_daily"]]
+                return copy.deepcopy(scope["decoded_daily"])
+
+        call._ai_stocks_daily_decode = True
+        py_mini_racer.MiniRacer.call = call
 
 
 @contextmanager
@@ -210,6 +251,27 @@ def install_http_policy(default_timeout=None):
         _install_http_policy(default_timeout)
 
 
+def _response_cooldown(response, policy):
+    """429缺少有效提示时用配置兜底；5xx只有明确Retry-After才影响整个来源。"""
+    from email.utils import parsedate_to_datetime
+
+    status = response.status_code
+    if status != 429 and status < 500:
+        return 0.0
+    value = response.headers.get("Retry-After", "").strip()
+    try:
+        delay = float(value)
+    except ValueError:
+        try:
+            # 已经过期的HTTP日期不应回退为额外30秒冷却。
+            delay = max(0, parsedate_to_datetime(value).timestamp() - time.time())
+        except (ValueError, TypeError, OverflowError):
+            delay = None
+    if delay is None or not math.isfinite(delay) or delay < 0:
+        return min(600, max(1, policy.cooldown)) if status == 429 else 0.0
+    return min(600, max(1, delay))
+
+
 def _install_http_policy(default_timeout=None):
     """统一安装一次发送拦截；适配器只提供默认超时兼容入口，不各自包装requests。"""
     import requests
@@ -229,8 +291,6 @@ def _install_http_policy(default_timeout=None):
     _HTTP_SEND = original_send
 
     def send_with_policy(self, request, *args, **kwargs):
-        from email.utils import parsedate_to_datetime
-
         from backend.datasource.base import check_thread_cancel
         from backend.datasource.request_runtime import request_slot
 
@@ -271,16 +331,7 @@ def _install_http_policy(default_timeout=None):
                                   check=check_thread_cancel) as outcome:
                     response = _HTTP_SEND(self, request, *args, **kwargs)
                     outcome["failed"] = response.status_code == 429 or response.status_code >= 500
-                    if response.status_code == 429:
-                        value = response.headers.get("Retry-After", "")
-                        try:
-                            delay = float(value)
-                        except ValueError:
-                            try:
-                                delay = parsedate_to_datetime(value).timestamp() - time.time()
-                            except (ValueError, TypeError, OverflowError):
-                                delay = policy.cooldown
-                        outcome["retry_after"] = min(600, max(1, delay))
+                    outcome["retry_after"] = _response_cooldown(response, policy)
                     # 行情响应有界读完再释放额度，包括 SDK stream=True；释放前仍占网络槽。
                     try:
                         chunks, size = [], 0
@@ -316,9 +367,10 @@ def _install_http_policy(default_timeout=None):
                     ) from exc
                 if budget is not None and budget.get(budget_key, 0) >= policy.attempts:
                     raise SourceRequestError(f"{group} 同一请求的语义与网络尝试预算已耗尽") from exc
-                from backend.datasource.observability import record
+                from backend.datasource.observability import record, retry_wait
                 record(network_retries=1)
-                pause(policy.backoff * 2 ** attempt, check_thread_cancel)
+                with retry_wait(group):
+                    pause(policy.backoff * 2 ** attempt, check_thread_cancel)
 
     adapter.send = send_with_policy
 
@@ -360,6 +412,9 @@ def _install_http_policy(default_timeout=None):
             if len(response.content) > get_effective_settings().datasource.max_response_mb * 1024 * 1024:
                 raise ValueError("新浪日线材料超过单股响应容量")
             reuse["cache"][key] = response
+            if path.endswith("/hisdata_klc2/klc_kl.js"):
+                # 与SDK当前传给d()的材料完全匹配才允许复用；协议变化自然回到原调用。
+                reuse["encoded_daily"] = response.text.split("=")[1].split(";")[0].replace('"', "")
         return response
 
     session.request = request_with_policy

@@ -97,7 +97,7 @@ def test_complete_primary_never_requests_backup(db, pipeline):
     assert "supplement" not in result
 
 
-def test_not_ready_is_deferred_without_repeated_requests_and_expires(db, pipeline):
+def test_only_collection_supplement_defers_recent_requests_and_expires(db, pipeline):
     pipeline.frames["ths"] = _frame(rows=20)
     result = async_task._h_intraday_ingest({"codes": [CODE]}, pipeline.context())
     assert result["ok"] and result["partial"] == result["deferred"] == 1
@@ -105,10 +105,15 @@ def test_not_ready_is_deferred_without_repeated_requests_and_expires(db, pipelin
     assert db.query_df("SELECT status FROM data_quality_issue").iloc[0, 0] == "open"
     first_calls = len(pipeline.calls)
     repeat = async_task._h_intraday_ingest({"codes": [CODE]}, pipeline.context())
-    assert repeat["deferred"] == 1 and len(pipeline.calls) == first_calls
+    # 独立采集任务主源正常取源；定向补齐不重复请求近期未改善的新浪/同花顺。
+    assert repeat["deferred"] == 1 and pipeline.calls[first_calls:] == [(CODE, "sina")]
     issue = json.loads(db.query_df("SELECT detail FROM data_quality_issue").iloc[0, 0])
     assert issue["availability"]["retryable"]
-    assert issue["availability"]["next_retry_at"] == "2026-09-10T16:15:00+08:00"
+    assert issue["availability"]["can_repair"]
+    assert issue["availability"]["next_retry_at"] is None
+    assessment = IntradayEvidence(db)
+    wait = assessment.assess(CODE, DAY, ["15:00"], assessment.load(), defer_recent=True)
+    assert wait["next_retry_at"] == "2026-09-10T16:15:00+08:00"
     pipeline.clock[0] = datetime(2026, 9, 10, 16, 16, tzinfo=eod_dates.SHANGHAI)
     pipeline.frames["ths"] = _frame()
     finished = async_task._h_intraday_ingest({"codes": [CODE]}, pipeline.context())
@@ -116,21 +121,63 @@ def test_not_ready_is_deferred_without_repeated_requests_and_expires(db, pipelin
     assert len(pipeline.calls) > first_calls
 
 
-def test_manual_recheck_bypasses_wait_and_failure_is_not_throttled(db, pipeline):
+@pytest.mark.parametrize("selection", ["issue_id", "issue_ids", "issue_type"])
+def test_quality_fix_and_resume_ignore_collection_interval(db, pipeline, selection):
+    pipeline.cfg.intraday.source_recheck_interval_sec = 300
     pipeline.frames["ths"] = _frame(rows=20)
     async_task._h_intraday_ingest({"codes": [CODE]}, pipeline.context())
     count = len(pipeline.calls)
+    iid = int(db.query_df("SELECT id FROM data_quality_issue").iloc[0, 0])
+    params = {selection: [iid] if selection == "issue_ids" else
+              iid if selection == "issue_id" else "intraday_partial"}
     ctx = pipeline.context()
-    result = async_task._h_fix({"issue_type": "intraday_partial"}, ctx)
-    assert result["deferred"] == 1 and result["retryable"] and len(pipeline.calls) == count
+    result = async_task._h_fix(params, ctx)
+    assert result["deferred"] == 0 and result["unchanged"] == 1
+    assert result["retryable"] and result["next_retry_at"] is None
+    assert pipeline.calls[count:] == [(CODE, "sina"), (CODE, "ths")]
     assert ctx.checkpoint["phase_done"] == 1 and ctx.checkpoint["issue_done_ids"] == []
+    # 同一分钟立即续跑，无需人工重新核验标记，也不等采集复查间隔到期。
+    pipeline.frames["ths"] = _frame()
+    final = async_task._h_fix(params, ctx)
+    assert final["ok"] and final["resolved"] == 1
+    assert len(pipeline.calls) == count + 4
+
+
+def test_quality_request_failure_remains_immediately_retryable(db, pipeline):
+    pipeline.frames["ths"] = _frame(rows=20)
+    async_task._h_intraday_ingest({"codes": [CODE]}, pipeline.context())
     pipeline.frames["ths"] = ConnectionError("temporary disconnect")
-    async_task._h_fix({"issue_type": "intraday_partial", "recheck_source": True}, pipeline.context())
+    result = async_task._h_fix({"issue_type": "intraday_partial"}, pipeline.context())
+    assert result["technical_failure"] == 1 and result["next_retry_at"] is None
     evidence = IntradayEvidence(db)
     assert "ths" in evidence.assess(CODE, DAY, ["15:00"], evidence.load())["providers"]
     pipeline.frames["ths"] = _frame()
-    final = async_task._h_fix({"issue_type": "intraday_partial", "recheck_source": True}, pipeline.context())
+    final = async_task._h_fix({"issue_type": "intraday_partial"}, pipeline.context())
     assert final["ok"]
+
+
+def test_quality_schedule_retry_uses_configured_delay_without_collection_wait(db, pipeline):
+    from backend.scheduler.scheduler import ScheduledJobService, enqueue_terminal_events
+    from backend.tests.test_pipeline import _insert_terminal_task
+
+    pipeline.cfg.intraday.source_recheck_interval_sec = 300
+    pipeline.frames["ths"] = _frame(rows=20)
+    async_task._h_intraday_ingest({"codes": [CODE]}, pipeline.context())
+    result = async_task._h_fix({"issue_type": "intraday_partial"}, pipeline.context())
+    job = ScheduledJobService(db).create(
+        name="隔离分时修复重试", task_type="fix", params={"issue_type": "intraday_partial"},
+        freq_type="daily", freq_config={"time": "16:00"}, trading_day_only=False,
+        retry_config={"enabled": True, "condition": "failure", "max_retries": 1,
+                      "delay": {"value": 1, "unit": "second"}}, enabled=False,
+    )
+    db.execute("UPDATE scheduled_job SET enabled=true WHERE id=?", [job["id"]])
+    _insert_terminal_task(db, tid="isolated_quality_retry", job_id=job["id"], status="failed")
+    db.execute("UPDATE async_task SET task_type='fix',result=? WHERE id='isolated_quality_retry'",
+               [json.dumps(result)])
+    assert enqueue_terminal_events("isolated_quality_retry", client=db) == 1
+    event = db.query_df("SELECT trigger_kind,due_at,created_at FROM scheduled_trigger_event").iloc[0]
+    assert event.trigger_kind == "retry"
+    assert pd.Timestamp(event.due_at) - pd.Timestamp(event.created_at) == pd.Timedelta(seconds=1)
 
 
 def test_after_midnight_latest_closed_day_still_defers_unready_source(db, pipeline):
@@ -141,7 +188,7 @@ def test_after_midnight_latest_closed_day_still_defers_unready_source(db, pipeli
     assert first["deferred"] == 1
     calls = len(pipeline.calls)
     repeated = async_task._h_intraday_ingest({"codes": [CODE]}, pipeline.context())
-    assert repeated["deferred"] == 1 and len(pipeline.calls) == calls
+    assert repeated["deferred"] == 1 and pipeline.calls[calls:] == [(CODE, "sina")]
 
 
 def test_existing_evidence_instance_observes_time_and_configuration_changes(db, pipeline):
@@ -150,12 +197,16 @@ def test_existing_evidence_instance_observes_time_and_configuration_changes(db, 
     evidence = IntradayEvidence(db)
     evidence.record(CODE, [payload])
     states = evidence.load()
-    assert evidence.assess(CODE, DAY, ["15:00"], states, allow_fallback=False)["status"] == "deferred"
-    pipeline.cfg.intraday.source_recheck_interval_sec = 0
     assert evidence.assess(CODE, DAY, ["15:00"], states, allow_fallback=False)["can_repair"]
+    assert evidence.assess(CODE, DAY, ["15:00"], states, allow_fallback=False,
+                           defer_recent=True)["status"] == "deferred"
+    pipeline.cfg.intraday.source_recheck_interval_sec = 0
+    assert evidence.assess(CODE, DAY, ["15:00"], states, allow_fallback=False,
+                           defer_recent=True)["can_repair"]
     pipeline.cfg.intraday.source_recheck_interval_sec = 900
     pipeline.clock[0] = datetime(2026, 9, 10, 16, 16, tzinfo=eod_dates.SHANGHAI)
-    assert evidence.assess(CODE, DAY, ["15:00"], states, allow_fallback=False)["can_repair"]
+    assert evidence.assess(CODE, DAY, ["15:00"], states, allow_fallback=False,
+                           defer_recent=True)["can_repair"]
 
 
 @pytest.mark.parametrize("value", [-1, 0.5, 86401, True])

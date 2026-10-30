@@ -92,7 +92,6 @@ const marketWorkspaceRef = ref<{
 } | null>(null)
 const layoutViewport = useLayoutViewport()
 const isNarrowViewport = computed(() => layoutViewport.width.value > 0 && layoutViewport.width.value <= 768)
-const isLowHeightViewport = computed(() => layoutViewport.height.value > 0 && layoutViewport.height.value <= 700)
 const tradeDate = ref<string | null>(null)
 const result = ref<LimitLadderResult | null>(null)
 // 首次请求前还要等待个人偏好和交易日列表，期间必须保持加载态，避免把 result=null
@@ -245,9 +244,6 @@ const workspaceMeta = computed(() => result.value?.has_snapshot
   ? `${result.value.summary.stock_count} 只 · ${filters.value.window} 日口径`
   : '等待快照')
 const ladderReturnPath = '/limit-ladder?restore=1'
-const compactHotspots = computed(() => (
-  isLowHeightViewport.value && analysisPanelVisible.value && !isNarrowViewport.value
-))
 
 const baseLayout = getPageLayout('limit-ladder')
 const {
@@ -820,7 +816,6 @@ const menuPageTitle = useMenuPageTitle()
               :can-view-sectors="canViewSectors"
               :can-recompute="canRecompute"
               :can-manage-data="canManageData"
-              :compact-hotspots="compactHotspots"
               :selected-code="activeAnalysisCode"
               :return-path="ladderReturnPath"
               :card-sort="cardSort"

@@ -50,7 +50,7 @@ class DuckDBConfig(BaseModel):
 
 
 class SourceRequestOverrides(BaseModel):
-    """来源覆盖只接受请求参数；None 表示继承，不放宽会话串行硬约束。"""
+    """来源覆盖只接受请求参数；None继承，仍受来源额度和进程内会话硬约束。"""
 
     model_config = {"extra": "forbid"}
     rate_limit_per_sec: float | None = Field(default=None, ge=0.1, le=50)
@@ -76,7 +76,7 @@ class DataSourceConfig(BaseModel):
     network_concurrency: int = Field(default=6, ge=1, le=16)
     request_wait_timeout_sec: float = Field(default=300, ge=1, le=3600)
     cooldown_sec: float = Field(default=30, ge=1, le=600)
-    failure_threshold: int = Field(default=3, ge=1, le=20)
+    failure_threshold: int = Field(default=3, ge=1, le=20)  # 兼容旧YAML；不再触发来源整体冷却
     max_response_mb: int = Field(default=32, ge=1, le=128)
     sources: dict[str, SourceRequestOverrides] = Field(default_factory=dict)
 

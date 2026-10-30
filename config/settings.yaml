@@ -39,8 +39,7 @@ datasource:
   rate_limit_per_sec: 5       # 每实际来源共享的请求起始频率，分页/重试均计入
   network_concurrency: 6     # 每来源真实网络在途上限，独立于任务工作并发；会话串行源固定1
   request_wait_timeout_sec: 300 # 来源额度与冷却等待上限，等待可取消
-  cooldown_sec: 30          # 限流或连续技术失败后共同冷却，到期单请求试探
-  failure_threshold: 3      # 连续技术失败达到此数后冷却
+  cooldown_sec: 30          # 仅429无有效Retry-After时的冷却兜底；普通技术失败不暂停整个来源
   max_response_mb: 32       # 单次响应读取容量；超过应缩小分页或区间
   sources:                  # 按已登记来源覆盖；其它来源未设置或null时继承通用规则
     ths_board:
@@ -57,7 +56,7 @@ intraday:
   enabled: true
   supported_trade_days: 8      # 数据管理采集的源端近期交易日窗口
   cache_ttl_sec: 43200         # 数据库逐股逐日归档查询缓存 12 小时
-  source_recheck_interval_sec: 900 # 最新日无更好候选/源端未就绪时的复查间隔；0关闭，人工重新核验可绕过
+  source_recheck_interval_sec: 900 # 仅分时采集定向补齐的重复取源间隔；0关闭，质检修复不受限
   # 请求限流、超时、重试和退避统一使用 datasource 的系统生效配置
 
 # ── 标的范围 ──

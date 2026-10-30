@@ -203,19 +203,24 @@ describe('LadderHotspots', () => {
   it('大量热点默认收敛并允许展开，避免挤压天梯主体', async () => {
     const concepts=Array.from({length:15},(_,index)=>({group_key:`C${index}`,group_name:`概念${index}`,stock_count:15-index}))
     const wrapper=mount(LadderHotspots,{props:{hotspots:{industry:[],concept:concepts},activeType:'concept',activeKey:'C14'}})
-    expect(wrapper.findAll('.ladder-hotspots__chip')).toHaveLength(12)
-    expect(wrapper.text()).toContain('概念14')
+    expect(wrapper.findAll('.ladder-hotspots__chip:not([inert])')).toHaveLength(1)
+    expect(wrapper.get('.ladder-hotspots__chip:not([inert])').text()).toContain('概念14')
     await wrapper.get('.ladder-hotspots__more').trigger('click')
     expect(wrapper.findAll('.ladder-hotspots__chip')).toHaveLength(15)
-    expect(wrapper.text()).toContain('收起')
+    expect(wrapper.findAll('.ladder-hotspots__chip[inert]')).toHaveLength(0)
+    expect(wrapper.get('.ladder-hotspots__more').text()).toBe('收起展开项')
+    await wrapper.get('.ladder-hotspots__more').trigger('click')
+    expect(wrapper.findAll('.ladder-hotspots__chip:not([inert])')).toHaveLength(1)
+    wrapper.unmount()
   })
 
-  it('低高度双栏按紧凑上限收敛热点，并保留当前筛选项', () => {
+  it('测量前也只保留一项及当前筛选，避免首次渲染出现多行', () => {
     const concepts=Array.from({length:8},(_,index)=>({group_key:`C${index}`,group_name:`概念${index}`,stock_count:8-index}))
-    const wrapper=mount(LadderHotspots,{props:{hotspots:{industry:[],concept:concepts},activeType:'concept',activeKey:'C7',compact:true}})
-    expect(wrapper.findAll('.ladder-hotspots__chip')).toHaveLength(4)
-    expect(wrapper.text()).toContain('概念7')
-    expect(wrapper.get('.ladder-hotspots__more').text()).toContain('展开其余 4 项')
+    const wrapper=mount(LadderHotspots,{props:{hotspots:{industry:[],concept:concepts},activeType:'concept',activeKey:'C7'}})
+    expect(wrapper.findAll('.ladder-hotspots__chip:not([inert])')).toHaveLength(1)
+    expect(wrapper.get('.ladder-hotspots__chip:not([inert])').text()).toContain('概念7')
+    expect(wrapper.get('.ladder-hotspots__more').text()).toContain('展开其余 7 项')
+    wrapper.unmount()
   })
 })
 

@@ -2560,7 +2560,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                               <span>超时 {{ row.timeout_sec }} 秒 · 最多尝试 {{ row.max_attempts }} 次</span>
                               <span>退避起点 {{ row.retry_backoff_sec }} 秒<span v-if="row.login_timeout_sec"> · 登录超时 {{ row.login_timeout_sec }} 秒</span></span>
                               <span>{{ requestRuntimeText(row.runtime) }}</span>
-                              <span v-if="row.runtime?.cooldown_seconds">来源冷却，约 {{ Math.ceil(row.runtime.cooldown_seconds) }} 秒后试探恢复</span>
+                              <span v-if="row.runtime?.cooldown_seconds">来源冷却，约 {{ Math.ceil(row.runtime.cooldown_seconds) }} 秒后恢复请求</span>
                               <div class="app-inline-info app-caption-text">
                                 <span>{{ REQUEST_CONFIG_FINGERPRINT.label }} {{ row.policy_version || '未记录' }}</span>
                                 <HelpHint label="配置指纹说明" :text="REQUEST_CONFIG_FINGERPRINT.help" />

@@ -32,7 +32,6 @@ const props = withDefaults(defineProps<{
   canViewSectors: boolean
   canRecompute?: boolean
   canManageData?: boolean
-  compactHotspots?: boolean
   selectedCode?: string
   returnPath?: string
   cardSort?: LimitLadderCardSort
@@ -216,7 +215,6 @@ function resetFilters(): void {
           :hotspots="result.hotspots"
           :active-type="filters.hotspotType"
           :active-key="filters.hotspotKey"
-          :compact="compactHotspots"
           @toggle="toggleHotspot"
         />
       </AppScrollArea>

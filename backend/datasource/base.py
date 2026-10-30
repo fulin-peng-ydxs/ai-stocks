@@ -184,7 +184,11 @@ def with_retry(
                         log.warning(
                             "%s 第%d次失败: %s，%.1fs 后重试", fn.__name__, attempt, e, sleep
                         )
-                        _cancel_aware_sleep(sleep)
+                        from backend.config.source_registry import SOURCE_GROUPS
+                        from backend.datasource.observability import retry_wait
+                        group = source_group or getattr(self, "name", None)
+                        with retry_wait(group if group in SOURCE_GROUPS else None):
+                            _cancel_aware_sleep(sleep)
             raise DataSourceError(
                 f"{fn.__name__} 重试 {retries} 次仍失败: {last_err}"
             ) from last_err

@@ -160,9 +160,9 @@ class BoardIngestService:
             label = {"member": "成分", "bar": "指数"}[stage]
             raise ValueError(f"板块{label}采集并发数必须为1~16的整数")
         tracker = getattr(ctx, "request_tracker", None)
-        if tracker:
+        if tracker and not getattr(self.src, "is_prefetched", False):
             tracker.meta.update(
-                work_concurrency=requested, default_concurrency=default,
+                configured_work_concurrency=requested, default_concurrency=default,
                 concurrency_origin="task" if concurrency is not None else "default",
             )
         return requested
@@ -170,6 +170,10 @@ class BoardIngestService:
     def _run_board_units(self, items, fetch, complete, *, concurrency: int, ctx, label: str):
         """共享有界取源入口：每线程独立会话，主线程收口，取消后等待在途退出再释放。"""
         workers = min(concurrency, max(1, len(items)))
+        material_only = getattr(self.src, "is_prefetched", False)
+        tracker = getattr(ctx, "request_tracker", None)
+        if tracker and not material_only:
+            tracker.meta.update(work_concurrency=workers)
         local = threading.local()
         sources: list[ThsBoardSource] = []
         source_lock = threading.Lock()
@@ -186,7 +190,9 @@ class BoardIngestService:
                 source = local.source
             return fetch(source, item)
 
-        if ctx:
+        if ctx and material_only:
+            ctx.log(f"{label}：复用已取源材料，由编排线程校验落库")
+        elif ctx:
             ctx.log(f"{label}：待采 {len(items)} 个板块，工作并发 {workers}；"
                     "来源总频率、在途上限与冷却共享，主线程统一落库")
         try:

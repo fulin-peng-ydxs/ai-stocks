@@ -44,7 +44,7 @@ def runtime(monkeypatch):
     keys = [prefix + name for name in ("active", "last", "stats", "starts", "waiting")]
     monkeypatch.setattr(rt, "_keys", lambda _: keys)
     policy = rp.RequestPolicy(
-        50, 1, 1, 0, concurrency=2, wait_timeout=2, cooldown=0.1, failure_threshold=1
+        50, 1, 1, 0, concurrency=2, wait_timeout=2, cooldown=0.1
     )
     monkeypatch.setattr(rp, "request_policy", lambda *_: policy)
     yield client, policy, keys, prefix, store.url
@@ -126,6 +126,7 @@ def test_shared_cooldown_releases_network_slot_and_records_wait(runtime):
     client, policy, keys, _, _ = runtime
     with rt.request_slot("sina", policy, client=client) as outcome:
         outcome["failed"] = True
+        outcome["retry_after"] = 0.1
     assert client.hlen(keys[0]) == 0
     started = time.monotonic()
     with rt.request_slot("sina", policy, client=client):
@@ -133,6 +134,155 @@ def test_shared_cooldown_releases_network_slot_and_records_wait(runtime):
     assert time.monotonic() - started >= 0.08
     assert float(client.hget(keys[2], "wait_seconds")) >= 0.08
     assert float(client.hget(keys[2], "cooldown_until")) == 0
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_inflight_completion_does_not_clear_or_extend_explicit_cooldown(runtime, failed):
+    client, policy, keys, _, _ = runtime
+    with rt.request_slot("sina", policy, client=client) as inflight:
+        with rt.request_slot("sina", policy, client=client) as limited:
+            limited.update(failed=True, retry_after=1)
+        until = float(client.hget(keys[2], "cooldown_until"))
+        inflight["failed"] = failed
+    assert float(client.hget(keys[2], "cooldown_until")) == until
+    # 只在隔离Redis键中模拟到期；恢复完整并发，不再以单请求试探阻塞其他股票。
+    client.hset(keys[2], "cooldown_until", time.time() - 1)
+    with (
+        rt.request_slot("sina", policy, client=client),
+        rt.request_slot("sina", policy, client=client),
+    ):
+        assert client.hlen(keys[0]) == 2
+    assert client.hlen(keys[0]) == client.hlen(keys[4]) == 0
+
+
+def test_sdk_disconnect_does_not_pause_other_queries(runtime):
+    client, policy, keys, _, _ = runtime
+    for _ in range(3):
+        with pytest.raises(ConnectionError), rt.request_slot("baostock", policy, client=client):
+            raise ConnectionError("temporary disconnect")
+    assert float(client.hget(keys[2], "cooldown_until") or 0) == 0
+    with rt.request_slot("baostock", policy, client=client):
+        pass
+    assert int(client.hget(keys[2], "requests")) == 4
+    assert int(client.hget(keys[2], "failures")) == 3
+
+
+@pytest.mark.parametrize("failure", [500, 502, 503, 504, "timeout", "disconnect", 404])
+@pytest.mark.parametrize("group,url", [
+    ("ths", "https://d.10jqka.com.cn/v6/line/hs_600000/60/2026.js"),
+    ("sina", "https://quotes.sina.cn/test"),
+    ("eastmoney", "https://datacenter-web.eastmoney.com/api"),
+    ("ths_board", "https://d.10jqka.com.cn/v6/line/bk_886000/01/2026.js"),
+])
+def test_ordinary_http_failure_keeps_budget_without_pausing_other_stock(
+    runtime, monkeypatch, failure, group, url,
+):
+    from dataclasses import replace
+
+    import requests
+
+    from backend.common.exceptions import SourceRequestError
+
+    client, base, keys, _, _ = runtime
+    policy = replace(base, attempts=3, cooldown=30)
+    monkeypatch.setattr(rp, "request_policy", lambda *_: policy)
+    rp.install_http_policy()
+    calls = []
+
+    def send(adapter, request, **kwargs):
+        calls.append(request.url)
+        if "healthy=1" not in request.url:
+            if failure == "timeout":
+                raise requests.Timeout("temporary timeout")
+            if failure == "disconnect":
+                raise requests.ConnectionError("temporary disconnect")
+        response = requests.Response()
+        response.status_code = 200 if "healthy=1" in request.url else failure
+        response._content, response._content_consumed = b"{}", True
+        response.url = request.url
+        return response
+
+    monkeypatch.setattr(rp, "_HTTP_SEND", send)
+    tracker = RequestTracker()
+    with observe_work(tracker), rp.http_policy_scope(group, policy, client=client):
+        with pytest.raises(SourceRequestError):
+            requests.get(url)
+        expected = 1 if failure == 404 else 3
+        assert len(calls) == expected
+        assert float(client.hget(keys[2], "cooldown_until") or 0) == 0
+        assert requests.get(url, params={"healthy": 1}).status_code == 200
+    assert len(calls) == expected + 1
+    assert tracker.snapshot()["failures"] == expected
+    assert client.hlen(keys[0]) == client.hlen(keys[4]) == 0
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_explicit_retry_after_is_shared_and_does_not_reduce_attempt_budget(runtime, monkeypatch, status):
+    from dataclasses import replace
+
+    import requests
+
+    client, base, keys, _, _ = runtime
+    policy = replace(base, attempts=2, cooldown=30)
+    monkeypatch.setattr(rp, "request_policy", lambda *_: policy)
+    rp.install_http_policy()
+    calls = []
+
+    def send(adapter, request, **kwargs):
+        calls.append(time.monotonic())
+        response = requests.Response()
+        response.status_code = status if len(calls) == 1 else 200
+        response.headers["Retry-After"] = "1"
+        response._content, response._content_consumed = b"{}", True
+        response.url = request.url
+        return response
+
+    monkeypatch.setattr(rp, "_HTTP_SEND", send)
+    tracker = RequestTracker()
+    with observe_work(tracker), rp.http_policy_scope("ths", policy, client=client):
+        assert requests.get("https://d.10jqka.com.cn/v6/line/hs_600000/60/2026.js").status_code == 200
+    assert len(calls) == 2 and calls[1] - calls[0] >= 0.95
+    assert tracker.snapshot()["failures"] == tracker.snapshot()["network_retries"] == 1
+    assert float(client.hget(keys[2], "cooldown_until")) == 0
+
+
+@pytest.mark.parametrize("status,header,expected", [
+    (429, None, 30), (429, "invalid", 30), (429, "NaN", 30), (429, "inf", 30),
+    (429, "-2", 30), (429, "2", 2), (429, "0", 1), (429, "3600", 600),
+    (503, None, 0), (502, "invalid", 0), (504, "NaN", 0), (503, "-2", 0),
+    (503, "2", 2), (200, "600", 0), (404, "600", 0),
+])
+def test_response_cooldown_only_uses_explicit_source_signals(status, header, expected):
+    import requests
+
+    response = requests.Response()
+    response.status_code = status
+    if header is not None:
+        response.headers["Retry-After"] = header
+    assert rp._response_cooldown(response, rp.RequestPolicy(5, 30, 3, 2)) == expected
+
+
+@pytest.mark.parametrize("offset,expected", [(10, 10), (-10, 1), (3600, 600)])
+def test_retry_after_http_date_is_bounded_and_expired_date_does_not_use_fallback(monkeypatch, offset, expected):
+    from email.utils import formatdate
+
+    import requests
+
+    now = 1_800_000_000
+    monkeypatch.setattr(rp.time, "time", lambda: now)
+    response = requests.Response()
+    response.status_code = 503
+    response.headers["Retry-After"] = formatdate(now + offset, usegmt=True)
+    assert rp._response_cooldown(response, rp.RequestPolicy(5, 30, 3, 2)) == expected
+
+
+def test_legacy_failure_threshold_is_accepted_but_not_exposed_or_consumed():
+    from backend.storage.app_config import get_field_meta
+
+    cfg = Settings.model_validate({"datasource": {"failure_threshold": 1}})
+    assert cfg.datasource.failure_threshold == 1
+    assert get_field_meta("datasource.failure_threshold") is None
+    assert not hasattr(rp.request_policy("ths", cfg), "failure_threshold")
 
 
 def test_source_overrides_and_session_hard_limit():
@@ -143,6 +293,11 @@ def test_source_overrides_and_session_hard_limit():
     assert rp.request_policy("sina", settings).concurrency == 3
     assert rp.request_policy("sina", settings).rate == 7
     settings.datasource.sources["baostock"] = SourceRequestOverrides(network_concurrency=9)
+    assert rp.request_policy("baostock", settings).concurrency == 4
+    for capacity in (2, 3):
+        settings.datasource.sources["baostock"] = SourceRequestOverrides(network_concurrency=capacity)
+        assert rp.request_policy("baostock", settings).concurrency == capacity
+    settings.datasource.sources["baostock"] = SourceRequestOverrides(network_concurrency=1)
     assert rp.request_policy("baostock", settings).concurrency == 1
     settings.datasource.sources["ths_board"] = SourceRequestOverrides(
         network_concurrency=8, rate_limit_per_sec=8,
@@ -245,12 +400,13 @@ def test_st_fallback_binds_explicit_cancel_context_before_waiting_for_session(mo
         def flush(self):
             pass
 
-    ingest._BAO_FALLBACK_LOCK.acquire()
+    from backend.datasource.baostock_source import _SESSION_LOCK
+    _SESSION_LOCK.acquire()
     try:
         with pytest.raises(TaskCancelled):
             service._fetch_st_status_rows("600000.SH", None, None, ctx=Context())
     finally:
-        ingest._BAO_FALLBACK_LOCK.release()
+        _SESSION_LOCK.release()
 
 
 def test_baostock_repeated_queries_do_not_reload_full_configuration(monkeypatch):

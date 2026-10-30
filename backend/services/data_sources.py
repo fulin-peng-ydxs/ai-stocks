@@ -9,10 +9,10 @@ import requests
 
 from backend.common.logging import get_logger
 from backend.config.request_snapshot import get_request_settings as get_effective_settings
-from backend.datasource.base import get_source, with_retry
-from backend.datasource.request_policy import request_policy
 from backend.config.request_snapshot import request_settings_status
 from backend.config.source_registry import SOURCE_GROUPS
+from backend.datasource.base import get_source, with_retry
+from backend.datasource.request_policy import request_policy
 from backend.datasource.request_runtime import source_runtime
 from backend.storage.data_source_health_repository import DataSourceHealthRepository
 
@@ -31,7 +31,7 @@ SOURCE_DEFINITIONS = (
         "baostock",
         "BaoStock",
         "baostock",
-        "逐日ST、上市退市资料、历史行情与参考价；共享会话串行",
+        "逐日ST、上市退市资料、历史行情与参考价；进程内会话串行，批量取源至多四路独立进程，共享来源总额度",
         "fallback",
     ),
     (
@@ -115,7 +115,10 @@ def _ping(name: str, timeout: float) -> tuple[bool, str | None]:
         else:
             src = get_source(name)
             end = datetime.now().astimezone().date()
-            df = src.get_trade_calendar(end - timedelta(days=7), end)
+            from backend.datasource.baostock_executor import execution_scope
+
+            with execution_scope(1):
+                df = src.get_trade_calendar(end - timedelta(days=7), end)
         if df is None or df.empty:
             return False, "代表接口返回空结果，无法确认本项能力可用"
         return True, None

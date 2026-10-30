@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from backend.common.exceptions import ConflictError
 from backend.common.logging import get_logger
 from backend.services.collection_quality import collection_summary
+from backend.services.quality_repair_sources import repair_source_scope
 from backend.services.task_progress import TaskProgressScope
 from backend.storage.duckdb_client import get_client
 from backend.storage.task_runtime import (
@@ -474,8 +475,9 @@ class AsyncTaskService:
             ctx.log(_resume_message(task_type, checkpoint))
         ctx.flush()
         try:
-            from backend.datasource.observability import observe_work
+            from backend.datasource.baostock_executor import execution_scope
             from backend.datasource.base import thread_cancel_scope
+            from backend.datasource.observability import observe_work
             if task_type in {"stock_ingest", "update", "backfill", "ingest_date", "ingest_codes", "intraday_ingest", "board", "fix"}:
                 from backend.config import get_effective_settings
                 defaults = get_effective_settings().datasource.update_concurrency
@@ -485,7 +487,13 @@ class AsyncTaskService:
                     concurrency_origin="task" if params.get("concurrency") else "default",
                 )
 
-            with observe_work(ctx.request_tracker, state="coordinator"), thread_cancel_scope(ctx.check_cancel):
+            with (
+                observe_work(ctx.request_tracker, state="coordinator"),
+                thread_cancel_scope(ctx.check_cancel),
+                (execution_scope(params.get("concurrency"), tracker=ctx.request_tracker)
+                 if task_type in {"stock_ingest", "update", "backfill", "ingest_date",
+                                  "ingest_codes", "fix", "enrich_basic"} else nullcontext()),
+            ):
                 result = _HANDLERS[task_type](params, ctx)
             if ctx.request_tracker.meta or ctx.request_tracker.counts:
                 result = {**result, "request_runtime": ctx.request_tracker.snapshot(ctx.checkpoint)}
@@ -854,8 +862,8 @@ def _h_ingest_codes(params: dict, ctx: TaskContext) -> dict:
             "ok": not (res.get("stage_failures") or res.get("fail")), "ingest": res}
 
 
-class _IntradayRepairContext:
-    """归档子上下文复用取消与日志，隔离检查点，并按外层问题口径上报进度。"""
+class _RepairCollectionContext:
+    """采集子上下文复用取消与日志，隔离检查点，并按外层问题口径上报进度。"""
 
     def __init__(self, ctx, persist_key=None, *, on_progress=None):
         self.ctx, self.tid = ctx, ctx.tid
@@ -928,13 +936,13 @@ def _h_intraday_ingest(params: dict, ctx: TaskContext) -> dict:
                       phase_total=len(frozen.get("codes", dates)))
         ctx.progress(0.65 + 0.35 * value, "定向补齐：" + message)
 
-    supplement_ctx = _IntradayRepairContext(
+    supplement_ctx = _RepairCollectionContext(
         ctx, "intraday_supplement_checkpoint", on_progress=report,
     )
     supplement = archive.collect(
         {"mode": "refetch", "codes": sorted(dates), "date_start": scope["start"],
          "date_end": scope["end"]},
-        ctx=supplement_ctx, allow_fallback=True, repair_dates=dates,
+        ctx=supplement_ctx, allow_fallback=True, repair_dates=dates, defer_recent=True,
     )
     after_facts, after_issues = archive.last_scan
     replaced = set(after_facts.code)
@@ -966,9 +974,16 @@ def _h_intraday_ingest(params: dict, ctx: TaskContext) -> dict:
                           for kind in INTRADAY_ISSUE_TYPES},
               "supplement": supplement,
               "errors": (primary.get("errors", []) + supplement.get("errors", []))[:100]}
+    # 台账解释使用质检修复口径；采集结果单独按定向补齐口径计算等待数，
+    # 不能把采集阶段的复查间隔扩散到后续独立 fix 任务。
+    evidence = archive.evidence
+    states = evidence.load(sorted({item["code"] for item in issues})) if issues else {}
     availability = {(item["code"], str(item["trade_date"])):
-                    json.loads(item["detail"]).get("availability", {}).get("status")
-                    for item in issues}
+                    evidence.assess(
+                        item["code"], str(item["trade_date"]),
+                        json.loads(item["detail"]).get("coverage", {}).get("missing_times", []),
+                        states, defer_recent=True,
+                    )["status"] for item in issues}
     result["deferred"] = sum(status == "deferred" for status in availability.values())
     result["out_of_range"] = sum(status == "unavailable" for status in availability.values())
     result["message"] = (f"分时采集及定向补齐完成：新增 {result['inserted']}、更新 {result['updated']}、"
@@ -1370,6 +1385,7 @@ def _market_index_trailing_gap_range(c, code: str, fallback_end):
 
 def _reingest_market_index(ing, code: str, start, end, ctx: TaskContext) -> int:
     """调用既有指数采集能力定向恢复；0 行视为未恢复并让任务失败回到 open。"""
+    ing = getattr(ctx, "_market_repair_material", None) or ing
     rows = ing.ingest_indices(start, end, ctx=ctx, codes=[code])
     if rows <= 0:
         date_range = str(start) if start == end else f"{start}~{end}"
@@ -1408,7 +1424,7 @@ def _repair_intraday_stock(c, ctx, code, day):
         if pending_days:
             result = archive.collect(
                 {"mode": "refetch", "codes": [code], "date_start": min(pending_days),
-                 "date_end": max(pending_days)}, ctx=_IntradayRepairContext(ctx),
+                 "date_end": max(pending_days)}, ctx=_RepairCollectionContext(ctx),
                 allow_fallback=True, repair_dates=pending_days,
                 recheck_source=getattr(ctx, "_intraday_recheck_source", False),
             )
@@ -1489,7 +1505,9 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
         note = ""
         # 质检后普通采集可能已补齐数据；先按同一口径复检，避免旧台账重复请求源端。
         # 仍走下方状态回写和关联扫描，不能只跳过采集而留下 open 旧问题。
-        if issue_type in (scan_board_types | scan_market_index_types | {"abnormal_change"}) and rep.recheck_clean(
+        if issue_type in (scan_board_types | scan_market_index_types | {
+            "abnormal_change", "st_status_missing", "st_status_approximate", "st_status_mismatch",
+        }) and rep.recheck_clean(
             issue_type, code, td, detail=issue_detail,
         ):
             note = "目标数据已满足复检要求，无需重复采集"
@@ -1518,7 +1536,8 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
                 note = "全历史复检已通过，无需重复采集"
             else:
                 ctx.log(f"恢复(股本市值)：{code} 全历史多来源补采与复检")
-                res = ing.repair_capital_quality(code, ctx=ctx)
+                from backend.services.quality_repair_sources import repair_capital_once
+                res = repair_capital_once(ing, code, ctx)
                 note = "多来源核验完成"
                 reasons = res.get("diagnostics", {}).get(code, {}).get("remaining", {})
                 if reasons:
@@ -1597,8 +1616,16 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
             "st_status_missing", "st_status_approximate", "st_status_mismatch"
         ):
             ctx.log(f"恢复(ST 点时事实)：刷新 {code} 上市/行情起点至市场最新日的事实（含停牌）")
-            res = ing.refresh_st_status(codes=[str(code)], ctx=ctx)
-            if int(res.get("fail") or 0):
+            error = getattr(ctx, "_st_repair_error", None)
+            if error is not None:
+                raise error
+            res = getattr(ctx, "_st_repair_result", None)
+            if res is None:
+                res = ing.refresh_st_status(codes=[str(code)], ctx=ctx)
+            failures = res.get("failures") or []
+            if int(res.get("fail") or 0) and (
+                not failures or any(str(item.get("code")) == str(code) for item in failures)
+            ):
                 raise RuntimeError(f"ST 状态刷新失败：{res.get('failures')}")
             affected = [
                 pd.Timestamp(value).date()
@@ -1628,14 +1655,14 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
         elif issue_type == "board_index_gap":
             # 末尾缺口：只补「最后已有日的下一交易日 → 当前全局最新日」，不再固定从 2024
             # 整段重采。这样连续缺两日会一次补两日，也不会被无关历史年份失败拖累。
-            from backend.services.board_ingest import BoardIngestService
+            from backend.services.quality_repair_sources import board_repair_service
             repair_start, repair_end = _board_trailing_gap_range(c, str(code), td)
             if repair_start is None:
                 note = f"板块指数已追平 {repair_end}，无需重复重采"
             else:
                 ctx.log(f"恢复(板块指数缺口)：重采板块 {code} "
                         f"{repair_start}~{repair_end} 指数")
-                bsvc = BoardIngestService(c)
+                bsvc = board_repair_service(c, ctx)
                 res = _reingest_board_bar_with_retry(
                     bsvc, str(code), repair_start, repair_end, ctx)
                 note = f"重采指数 {res.get('rows', 0)} 行"
@@ -1644,32 +1671,32 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
             # 板块指数逐日缺口：按缺失日窄窗口重采该板块指数。
             # 源端按年返回 K 线，传入 start=end=缺失日即可触发该年数据回填；幂等 upsert。
             # 源端未发布时由年度请求共用网络尝试预算补取，不在任务层整段重试。
-            from backend.services.board_ingest import BoardIngestService
+            from backend.services.quality_repair_sources import board_repair_service
             if td is None:
                 note = "缺少日期，无法定向重采"
             else:
                 ctx.log(f"恢复(板块指数逐日缺口)：重采板块 {code} {td} 指数")
-                bsvc = BoardIngestService(c)
+                bsvc = board_repair_service(c, ctx)
                 res = _reingest_board_bar_with_retry(bsvc, code, td, td, ctx)
                 note = f"重采指数 {res.get('rows', 0)} 行"
                 ctx.log(note)
         elif issue_type == "board_index_invalid":
             # 已有记录内容非法：按问题日期定向重采；源端按年返回，仍会幂等覆盖同年记录。
             # 与 board_index_gap_daily 共用源请求预算，避免源端延迟误报失败。
-            from backend.services.board_ingest import BoardIngestService
+            from backend.services.quality_repair_sources import board_repair_service
             if td is None:
                 note = "缺少日期，无法定向重采"
             else:
                 ctx.log(f"恢复(板块指数数据异常)：重采板块 {code} {td} 指数")
-                bsvc = BoardIngestService(c)
+                bsvc = board_repair_service(c, ctx)
                 res = _reingest_board_bar_with_retry(bsvc, code, td, td, ctx)
                 note = f"重采指数 {res.get('rows', 0)} 行"
                 ctx.log(note)
         elif issue_type == "board_member_incomplete":
             # 成分快照采集不完整/失败：重采该板块成分快照（只进不出，完整才落库）
-            from backend.services.board_ingest import BoardIngestService
+            from backend.services.quality_repair_sources import board_repair_service
             ctx.log(f"恢复(成分快照不完整)：重采板块 {code} 成分快照")
-            bsvc = BoardIngestService(c)
+            bsvc = board_repair_service(c, ctx)
             # force=True：质量修复必须绕过周频跳过，否则修复会被跳过逻辑挡住
             res = _call_with_ctx(bsvc.ingest_board_members, board_codes=[code], ctx=ctx, force=True)
             r = res.get(code, {})
@@ -1683,7 +1710,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
             # 资金流未匹配：重采全周期资金流（字典补齐后所有周期都可能需要刷新），重扫收敛
             import json as _json
 
-            from backend.services.board_ingest import BoardIngestService
+            from backend.services.quality_repair_sources import board_repair_service
             ctx.log("恢复(资金流未匹配)：重采板块资金流")
             issue_payload = {}
             if isinstance(issue_detail, str):
@@ -1692,7 +1719,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
                 except (TypeError, ValueError):
                     issue_payload = {}
             repair_board_type = issue_payload.get("board_type")
-            bsvc = BoardIngestService(c)
+            bsvc = board_repair_service(c, ctx)
             _call_with_ctx(bsvc.ingest_board_dict, board_type=repair_board_type, ctx=ctx)
             res = _call_with_ctx(
                 bsvc.ingest_board_fund_flow,
@@ -1705,7 +1732,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
             # 目标日传入服务做源能力校验；实时排行禁止倒填历史日或混入盘中快照。
             import json as _json
 
-            from backend.services.board_ingest import BoardIngestService
+            from backend.services.quality_repair_sources import board_repair_service
             issue_payload = {}
             if isinstance(issue_detail, str):
                 try:
@@ -1718,7 +1745,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
             if td is None:
                 raise RuntimeError("板块资金流缺失问题缺少目标交易日，无法定向重采")
             ctx.log(f"恢复(板块资金流缺失)：重采板块 {code} 周期 {list(periods_list)}")
-            bsvc = BoardIngestService(c)
+            bsvc = board_repair_service(c, ctx)
             res = _call_with_ctx(
                 bsvc.ingest_board_fund_flow, snapshot_date=td, periods=tuple(periods_list),
                 board_codes=[code], ctx=ctx)
@@ -1731,7 +1758,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
             # detail 无 periods（旧纯文本 issue）回退全周期。快照追平后重扫收敛。
             import json as _json
 
-            from backend.services.board_ingest import BoardIngestService
+            from backend.services.quality_repair_sources import board_repair_service
             issue_payload = {}
             if isinstance(issue_detail, str):
                 try:
@@ -1747,7 +1774,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
                 periods_arg = tuple(stale_periods)
             if td is None:
                 raise RuntimeError("板块资金流滞后问题缺少目标交易日，无法定向重采")
-            bsvc = BoardIngestService(c)
+            bsvc = board_repair_service(c, ctx)
             res = _call_with_ctx(
                 bsvc.ingest_board_fund_flow,
                 snapshot_date=td, periods=periods_arg, ctx=ctx)
@@ -1814,6 +1841,9 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
     return bool(scope_clean), affected, msg
 
 
+
+
+@repair_source_scope
 def _h_fix(params: dict, ctx: TaskContext) -> dict:
     """质检问题定向恢复（FR-DM-4，DM-D22）：按问题类型分派恢复手段 → 复检 → 仅复检通过才置已解决。
 
@@ -1906,10 +1936,17 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
             ctx._intraday_groups.setdefault(row.code, set()).add(str(pd.Timestamp(row.trade_date).date()))
     intraday_codes = {int(r.id): r.code for r in selected.itertuples()
                       if r.issue_type in INTRADAY_ISSUE_TYPES}
-    if intraday_codes:
+    from backend.services.quality_repair_sources import (
+        CAPITAL_TYPES,
+        run_batched_repairs,
+        run_st_repairs,
+    )
+    capital_codes = {int(r.id): r.code for r in selected.itertuples() if r.issue_type in CAPITAL_TYPES}
+    if intraday_codes or capital_codes:
         groups = {}
         for iid in ids:
-            key = ("intraday", intraday_codes[iid]) if iid in intraday_codes else ("issue", iid)
+            key = (("intraday", intraday_codes[iid]) if iid in intraday_codes else
+                   ("capital", capital_codes[iid]) if iid in capital_codes else ("issue", iid))
             groups.setdefault(key, []).append(iid)
         ids = [iid for group in groups.values() for iid in group]
     ids = [x for x in ids if x not in done_ids]
@@ -1996,7 +2033,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
             ctx.progress(0.1 + 0.8 * len(processed_ids) / n,
                          f"恢复 {len(processed_ids)}/{n} 条，已解决 {resolved} 条；{message}")
 
-        batch_ctx = _IntradayRepairContext(
+        batch_ctx = _RepairCollectionContext(
             ctx, "intraday_repair_checkpoint", on_progress=report_progress,
         )
         ctx._intraday_batch_failed = dict(batch_ctx.checkpoint.get("intraday_failed", {}))
@@ -2054,6 +2091,8 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
                 on_stock_complete=finish_stock,
             )
         ctx._intraday_batch_failed = batch_ctx.checkpoint.get("intraday_failed", {})
+    run_st_repairs(ing, rep, ctx, selected, recover_issue)
+    run_batched_repairs(c, rep, ing, ctx, selected, recover_issue)
     for iid in ids:
         recover_issue(iid)
     # 诚实文案：区分 已解决 / 复检未通过(仍 open) / 恢复失败(异常退回 open)。单条直接给原因。

@@ -114,6 +114,7 @@ class ThsBoardSource:
 
     name = "ths_board"
     fund_flow_is_live_snapshot = True
+    supports_bar_dates = True
 
     def __init__(
         self,
@@ -160,6 +161,7 @@ class ThsBoardSource:
         if self._v_code:
             return self._v_code
         import py_mini_racer
+
         from backend.datasource.akshare_source import ensure_js_runtime_ready
 
         # 复用新浪已有进程预热入口，避免独立板块任务冷启动时触发V8原生并发初始化崩溃。
@@ -228,6 +230,7 @@ class ThsBoardSource:
         accept 用于识别可补取的空壳/未发布数据；预算耗尽仍返回最后一次空响应，
         由业务保留缺口或跳过该页。网络失败耗尽则抛错，不能伪装成有效空响应。
         """
+        from backend.datasource.observability import record, retry_wait
         from backend.datasource.request_policy import pause, request_policy
 
         policy = request_policy("ths_board")
@@ -249,15 +252,17 @@ class ThsBoardSource:
                 resp.raise_for_status()
                 if accept is None or accept(resp.text) or attempt == attempts:
                     return resp.text
-            except Exception as exc:  # noqa: BLE001 -- 次数包含401刷新，不额外发送隐藏重试
+            except Exception as exc:  # 次数包含401刷新，不额外发送隐藏重试
                 check_thread_cancel()
                 if getattr(exc, "request_attempts_exhausted", False):
                     raise
                 if attempt == attempts:
                     raise DataSourceError(f"同花顺请求尝试 {attempts} 次仍失败: {exc}") from exc
             backoff = self._request_overrides["backoff"]
-            pause((policy.backoff if backoff is None else backoff) * 2 ** (attempt - 1),
-                  check_thread_cancel)
+            record(semantic_retries=1)
+            with retry_wait("ths_board"):
+                pause((policy.backoff if backoff is None else backoff) * 2 ** (attempt - 1),
+                      check_thread_cancel)
 
     # ── 公开取数方法 ─────────────────────────────────────────
 
@@ -357,35 +362,54 @@ class ThsBoardSource:
         return {"codes": list(seen), "complete": complete, "pages": total_pages}
 
     @rate_limited(1.0)
-    def get_board_bar(self, code: str, board_type: str, start: date, end: date) -> pd.DataFrame:
+    def get_board_bar(self, code: str, board_type: str, start: date, end: date,
+                      *, required_dates: set[date] | None = None) -> pd.DataFrame:
         """板块指数日线（原始连续指数，原值）。
 
         先取详情页 clid（概念 88xxxx / 行业=路径 code），再按年请求 quotebridge JS。
         返回列：trade_date, open, high, low, close, volume, amount。
         """
         _validate_board_type(board_type)
+        required = {day.isoformat() for day in (required_dates or [])}
+        if any(not start.isoformat() <= day <= end.isoformat() for day in required):
+            raise ValueError("板块指数目标日期必须位于请求区间内")
         clid = self._get_clid(code, board_type)
         rows: list[dict] = []
         failed_years: list[int] = []
         for year in range(start.year, end.year + 1):
             url = _BAR_LINE_URL.format(clid=clid, year=year)
+            observed = {}
+            wanted = {day for day in required if day.startswith(str(year))}
+
+            def accept(text, year=year, wanted=wanted, observed=observed):
+                parsed = _parse_bar_js(text, year)
+                if required_dates is not None:
+                    observed.update({row["trade_date"]: row for row in parsed})
+                    return wanted.issubset(observed) if wanted else bool(observed)
+                return any(start.isoformat() <= row["trade_date"] <= end.isoformat()
+                           for row in parsed)
+
             try:
                 text = self._http_get(
                     url, referer="https://q.10jqka.com.cn/",
-                    accept=lambda text, year=year: any(
-                        start.isoformat() <= row["trade_date"] <= end.isoformat()
-                        for row in _parse_bar_js(text, year)
-                    ),
+                    accept=accept,
                 )
             except Exception as e:  # noqa: BLE001 —— 单年失败跳过（指数缺口由 T7 质检扫描发现）
                 check_thread_cancel()
                 log.warning("板块 %s 指数 %d 年取数失败: %s", code, year, e)
                 failed_years.append(year)
-                continue
-            for row in _parse_bar_js(text, year):
-                rows.append(row)
+                if required_dates is None:
+                    continue
+            if required_dates is not None:
+                # 空壳/波动响应不能抹掉前一次已取得的有效日期；同日取最近一次响应。
+                rows.extend(observed.values())
+            else:
+                rows.extend(_parse_bar_js(text, year))
         df = pd.DataFrame(rows)
         df.attrs["failed_years"] = failed_years
+        if required_dates is not None:
+            df.attrs["required_dates"] = sorted(required)
+            df.attrs["missing_dates"] = sorted(required - {row["trade_date"] for row in rows})
         if df.empty:
             return df
         df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date

@@ -540,6 +540,8 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       PageSettingsTrigger: true,
       PageSettingSection: { template: '<section><slot/></section>' },
       PageSettingItem: { template: '<div><slot/></div>' },
+      // 配置分组需保留正文插槽，才能验证其中的比例编辑及保存动作。
+      SettingsGroup: { template: '<section><slot/></section>' },
       PageSegmented: PageSegmentedStub,
       PageToggleRow: PageToggleRowStub,
       PageSettingsApplyButton: {
