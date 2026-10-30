@@ -365,13 +365,7 @@ function buildHeaderSummary(
   const preClose = bar ? bar.pre_close : quote.pre_close
   // 市值与股本同取该根末交易日；历史缺口不回退最新值。
   const isLatestDate = !bar || bar.date === quote.trade_date
-  const evidence = bar ? bar.capital_evidence : quote.capital_evidence
-  const capitalHint = (field: 'total' | 'float') => {
-    const fact = evidence?.[field]
-    if (!fact?.source) return `对应交易日的${field === 'total' ? '总股本' : '流通 A 股股本'}；周、月、年线取最后交易日，缺失不回填最新值。`
-    const basis = '历史股本记录'
-    return `${basis}；来源：${fact.source}；记录日期：${fact.effective_date ?? '未知'}；披露日期：${fact.available_date ?? '未知'}。公告日期仅作溯源；按股本变动日期用于历史行情和计算。${fact.mv_source?.startsWith('computed:') ? '市值由同日股本乘原始收盘价计算。' : ''}`
-  }
+  const capitalHint = '按对应交易日展示，周、月、年线取最后交易日；市值优先按同日股本 × 未复权收盘价计算，缺失不回填最新值。'
   const totalMv = bar ? bar.total_mv : quote.total_mv
   const floatMv = bar ? bar.float_mv : quote.float_mv
   const volumeRatio = bar
@@ -391,15 +385,13 @@ function buildHeaderSummary(
     showChangeDetail: true,
     supplement,
     additionalMetrics: [
-      { label: '总市值', value: formatCompactMoneyYuan(totalMv), hint: capitalHint('total') },
-      { label: '流通市值', value: formatCompactMoneyYuan(floatMv), hint: capitalHint('float') },
+      { label: '总市值', value: formatCompactMoneyYuan(totalMv), hint: capitalHint },
+      { label: '流通市值', value: formatCompactMoneyYuan(floatMv) },
       {
         label: '总股本', value: formatShares(bar ? bar.total_share : quote.total_share, '—'),
-        hint: capitalHint('total'),
       },
       {
         label: '流通股', value: formatShares(bar ? bar.float_share : quote.float_share, '—'),
-        hint: capitalHint('float'),
       },
       { label: '量比', value: volumeRatio == null ? '—' : volumeRatio.toFixed(2) },
       { label: '市盈率', value: !isLatestDate || quote.pe_ttm == null ? '—' : quote.pe_ttm.toFixed(2) },

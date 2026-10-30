@@ -39,6 +39,7 @@ describe('账本只读记录', () => {
       expect(wrapper.text()).toContain('应买未买')
       expect(wrapper.text()).toContain('未履约')
       expect(wrapper.get('[data-testid="ledger-rule-record"]').classes()).toContain('is-panel-bordered')
+      expect(wrapper.get('[data-testid="ledger-rule-record"]').classes()).toContain('is-grouped')
       const content = wrapper.text()
       await wrapper.setProps({ borderPlacement: 'none' })
       expect(wrapper.get('[data-testid="ledger-rule-record"]').classes()).toContain('is-borderless')

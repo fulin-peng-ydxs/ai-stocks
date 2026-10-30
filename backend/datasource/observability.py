@@ -56,6 +56,7 @@ class RequestTracker:
                 "failures": self.counts["failures"],
                 "network_seconds": round(self.counts["network_seconds"], 3),
                 "wait_seconds": round(self.counts["wait_seconds"], 3),
+                "retry_wait_seconds": round(self.counts["retry_wait_seconds"], 3),
                 "states": dict(Counter(self.states.values())),
                 "completed": done,
                 "elapsed_seconds": round(now - self.started, 3),
@@ -135,3 +136,17 @@ def measure(name):
         yield
     finally:
         record(**{f"{name}_seconds": time.monotonic() - started})
+
+
+@contextmanager
+def retry_wait(source=None):
+    """真实重试退避单独计时，取消也记录已等待部分；不混入来源准入等待。"""
+    started = time.monotonic()
+    with work_state("retry_wait"):
+        try:
+            yield
+        finally:
+            elapsed = time.monotonic() - started
+            record(retry_wait_seconds=elapsed)
+            if source:
+                record_source(source, retry_wait_seconds=elapsed)

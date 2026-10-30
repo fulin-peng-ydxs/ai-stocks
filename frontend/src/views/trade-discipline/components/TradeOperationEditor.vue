@@ -337,6 +337,7 @@ defineExpose({ expandOperation, validate })
     class="operation-editor"
     :title="sectionTitle || '操作事实'"
     :border-placement="borderPlacement"
+    :grouped="Boolean(sectionTitle)"
     description="只填写实际成交；没有买卖时可直接提交。"
     data-testid="checkin-operation-section"
   >

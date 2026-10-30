@@ -27,5 +27,18 @@ describe('请求运行指标', () => {
     const fingerprint = fields.find(f => f.label === '配置指纹')
     expect(fingerprint?.value).toBe('v1')
     expect(fingerprint?.warning).toContain('最近有效配置')
+    expect(fields.find(f => f.label === '累计重试退避')?.value).toBe('未记录')
+  })
+
+  it('显示有效并发和配置容量，并将退避与额度等待分开', () => {
+    const fields = taskRequestFields({
+      requests: 4, failures: 0, network_seconds: 1, wait_seconds: 0.2,
+      states: { retry_wait: 1 }, completed: 1, elapsed_seconds: 7,
+      work_concurrency: 1, configured_work_concurrency: 8, retry_wait_seconds: 6,
+    })
+    expect(fields.find(f => f.label === '工作并发')?.value).toBe('1（系统默认；本阶段配置 8）')
+    expect(fields.find(f => f.label === '工作状态')?.value).toContain('重试退避 1')
+    expect(fields.find(f => f.label === '累计额度等待')?.value).toBe('0.2 秒')
+    expect(fields.find(f => f.label === '累计重试退避')?.value).toBe('6.0 秒')
   })
 })

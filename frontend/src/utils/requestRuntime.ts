@@ -20,6 +20,7 @@ export interface TaskRequestRuntime {
   completed: number
   elapsed_seconds: number
   work_concurrency?: number
+  configured_work_concurrency?: number
   default_concurrency?: number
   concurrency_origin?: string
   policy_version?: string
@@ -28,6 +29,7 @@ export interface TaskRequestRuntime {
   db_wait_seconds?: number
   db_execute_seconds?: number
   db_queries?: number
+  retry_wait_seconds?: number
 }
 
 export function requestRuntimeText(runtime?: RequestRuntime | null): string {
@@ -52,12 +54,16 @@ interface TaskRequestField {
 export function taskRequestFields(runtime?: TaskRequestRuntime | null): TaskRequestField[] {
   if (!runtime) return []
   const states = runtime.states ?? {}
+  const configured = runtime.configured_work_concurrency == null
+    ? `启动时默认 ${runtime.default_concurrency ?? '未记录'}`
+    : `本阶段配置 ${runtime.configured_work_concurrency}`
   return [
-    { label: '工作并发', value: runtime.work_concurrency == null ? '未记录' : `${runtime.work_concurrency}（${runtime.concurrency_origin === 'task' ? '任务覆盖' : '系统默认'}；启动时默认 ${runtime.default_concurrency ?? '未记录'}）` },
-    { label: '工作状态', value: `网络 ${states.network ?? 0} · 等待额度 ${states.source_wait ?? 0} · 等待落库 ${states.write_queue ?? 0} · 处理 ${states.processing ?? 0}` },
+    { label: '工作并发', value: runtime.work_concurrency == null ? '未记录' : `${runtime.work_concurrency}（${runtime.concurrency_origin === 'task' ? '任务覆盖' : '系统默认'}；${configured}）`, help: '本阶段有效工作单元上限，受待采标的数限制；实际网络在途还受来源共享额度约束。' },
+    { label: '工作状态', value: `网络 ${states.network ?? 0} · 等待额度 ${states.source_wait ?? 0} · 等待落库 ${states.write_queue ?? 0} · 处理 ${states.processing ?? 0} · 重试退避 ${states.retry_wait ?? 0}` },
     { label: '真实请求', value: `${runtime.requests} 次，技术失败 ${runtime.failures} 次` },
     { label: '累计网络耗时', value: `${runtime.network_seconds.toFixed(1)} 秒` },
     { label: '累计额度等待', value: `${runtime.wait_seconds.toFixed(1)} 秒` },
+    { label: '累计重试退避', value: runtime.retry_wait_seconds == null ? '未记录' : `${runtime.retry_wait_seconds.toFixed(1)} 秒`, help: '失败或空响应后的重试间隔，独立于网络和来源额度等待；并发时按线程累计，不等于任务墙钟耗时。' },
     { label: '数据库累计耗时', value: `等锁 ${(runtime.db_wait_seconds ?? 0).toFixed(1)} 秒 · 执行 ${(runtime.db_execute_seconds ?? 0).toFixed(1)} 秒 · ${runtime.db_queries ?? 0} 次` },
     { label: '当前阶段预计剩余', value: runtime.eta_seconds == null ? '样本不足或阶段已变化' : `约 ${Math.ceil(runtime.eta_seconds / 60)} 分钟` },
     {

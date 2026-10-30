@@ -367,9 +367,10 @@ def _install_http_policy(default_timeout=None):
                     ) from exc
                 if budget is not None and budget.get(budget_key, 0) >= policy.attempts:
                     raise SourceRequestError(f"{group} 同一请求的语义与网络尝试预算已耗尽") from exc
-                from backend.datasource.observability import record
+                from backend.datasource.observability import record, retry_wait
                 record(network_retries=1)
-                pause(policy.backoff * 2 ** attempt, check_thread_cancel)
+                with retry_wait(group):
+                    pause(policy.backoff * 2 ** attempt, check_thread_cancel)
 
     adapter.send = send_with_policy
 
