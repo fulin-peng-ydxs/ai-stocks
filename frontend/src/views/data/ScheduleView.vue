@@ -500,8 +500,12 @@ const EVENT_STATUS_LABEL: Record<ScheduledTriggerEvent['status'], string> = {
 function eventStatusLabel(status: ScheduledTriggerEvent['status']): string {
   return enumText(EVENT_STATUS_LABEL, status, '状态未识别')
 }
-function sourceStatusLabel(status: TaskStatus): string {
-  return enumText({ ...STATUS_LABEL, ...SOURCE_STATUS_LABEL }, status, '状态未识别')
+function sourceStatusLabel(status?: TaskStatus | null): string {
+  return status ? enumText({ ...STATUS_LABEL, ...SOURCE_STATUS_LABEL }, status, '状态未识别') : '—'
+}
+function triggerKindLabel(event: ScheduledTriggerEvent): string {
+  if (event.trigger_kind === 'retry') return `重试 ${event.retry_count}`
+  return enumText({ manual: '手动执行', scheduled: '定时执行', dependency: '任务依赖' }, event.trigger_kind, '未知类型')
 }
 function triggerConditionLabel(condition?: TriggerCondition | null): string {
   return condition ? CONDITION_LABEL[condition] : '—'
@@ -713,7 +717,7 @@ const menuPageTitle = useMenuPageTitle()
       v-model="eventDrawer"
       size="xl"
       :title="eventJob ? `${eventJob.name} · 触发记录` : '触发记录'"
-      subtitle="仅包含任务依赖和自身重试事件；手动、定时执行记录请在任务中心查看。"
+      subtitle="统一展示手动、定时、依赖和自身重试的最近 100 条记录。"
       :body-scroll="false"
       body-layout="fill"
       class="schedule-trigger-events-drawer"
@@ -725,13 +729,13 @@ const menuPageTitle = useMenuPageTitle()
     >
       <AppDataTable :data="triggerEvents" size="small" aria-label="调度触发记录表" data-testid="schedule-trigger-events-table">
         <AppTableColumn label="来源任务">
-          <template #default="{ row }">{{ row.source_job_name || row.source_task_id }}</template>
+          <template #default="{ row }">{{ row.source_job_name || row.source_task_id || '—' }}</template>
         </AppTableColumn>
         <AppTableColumn label="来源结果" role="status">
           <template #default="{ row }">{{ sourceStatusLabel(row.source_status) }}</template>
         </AppTableColumn>
         <AppTableColumn label="类型" role="status">
-          <template #default="{ row }">{{ row.trigger_kind === 'retry' ? `重试 ${row.retry_count}` : '任务依赖' }}</template>
+          <template #default="{ row }">{{ triggerKindLabel(row) }}</template>
         </AppTableColumn>
         <AppTableColumn label="命中规则" role="status">
           <template #default="{ row }">{{ triggerConditionLabel(row.trigger_condition) }}</template>
@@ -742,17 +746,20 @@ const menuPageTitle = useMenuPageTitle()
         <AppTableColumn label="实际触发">
           <template #default="{ row }">{{ fmtTime(row.dispatched_at) }}</template>
         </AppTableColumn>
-        <AppTableColumn label="状态" role="status">
+        <AppTableColumn label="触发状态" role="status">
           <template #default="{ row }">
             <el-tag size="small" effect="plain" :type="row.status === 'failed' || row.status === 'exhausted' ? 'danger' : row.status === 'waiting' || row.status === 'dispatching' ? 'warning' : row.status === 'dispatched' ? 'success' : 'info'">
               {{ eventStatusLabel(row.status) }}
             </el-tag>
           </template>
         </AppTableColumn>
-        <AppTableColumn label="下游任务">
+        <AppTableColumn label="执行状态" role="status">
+          <template #default="{ row }">{{ sourceStatusLabel(row.task_status) }}</template>
+        </AppTableColumn>
+        <AppTableColumn label="执行任务">
           <template #default="{ row }">{{ row.task_id || businessMessage(row.message, '尚未创建任务，详情请查看触发记录') }}</template>
         </AppTableColumn>
-        <template #empty>暂无依赖或自身重试触发记录</template>
+        <template #empty>暂无触发记录</template>
       </AppDataTable>
     </AppDetailDrawer>
 

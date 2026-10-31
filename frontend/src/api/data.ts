@@ -432,13 +432,13 @@ export function runSchedule(id: string): Promise<{ task_id: string }> {
 export type TriggerEventStatus = 'waiting' | 'dispatching' | 'dispatched' | 'cancelled' | 'exhausted' | 'failed'
 export interface ScheduledTriggerEvent {
   id: string
-  chain_id: string
-  source_task_id: string
+  chain_id: string | null
+  source_task_id: string | null
   source_attempt: number
-  source_status: TaskStatus
+  source_status: TaskStatus | null
   source_job_name?: string | null
   target_job_id: string
-  trigger_kind: 'dependency' | 'retry'
+  trigger_kind: 'manual' | 'scheduled' | 'dependency' | 'retry'
   trigger_condition?: TriggerCondition | null
   retry_count: number
   dispatch_order?: number
@@ -446,6 +446,7 @@ export interface ScheduledTriggerEvent {
   dispatched_at?: string | null
   status: TriggerEventStatus
   task_id?: string | null
+  task_status?: TaskStatus | null
   message?: string | null
   created_at: string
   updated_at: string

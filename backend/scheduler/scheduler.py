@@ -984,18 +984,41 @@ class ScheduledJobService:
         return len(rows)
 
     def list_events(self, jid: str, limit: int = 100) -> list[dict]:
+        """统一读取目标调度的触发事件及执行记录，已关联事件的任务只展示一次。"""
         import pandas as pd
 
         size = max(1, min(int(limit), 200))
         df = self.c.query_df(
-            "SELECT e.*, sj.name AS source_job_name FROM scheduled_trigger_event e "
+            "SELECT * FROM ("
+            "SELECT e.id, e.chain_id, e.source_task_id, e.source_attempt, e.source_status, "
+            "e.target_job_id, e.trigger_kind, e.trigger_condition, e.retry_count, e.dispatch_order, "
+            "e.due_at, e.dispatched_at, e.status, e.task_id, e.job_snapshot, e.message, "
+            "e.created_at, e.updated_at, COALESCE(st.job_name, sj.name) AS source_job_name, "
+            "t.status AS task_status FROM scheduled_trigger_event e "
             "LEFT JOIN async_task st ON st.id=e.source_task_id "
             "LEFT JOIN scheduled_job sj ON sj.id=st.job_id "
-            "WHERE e.target_job_id=? ORDER BY e.created_at DESC LIMIT ?", [jid, size])
+            "LEFT JOIN async_task t ON t.id=e.task_id "
+            "WHERE e.target_job_id=? "
+            "UNION ALL "
+            "SELECT 'task:' || t.id AS id, t.chain_id, t.parent_task_id AS source_task_id, "
+            "COALESCE(st.execution_attempt, 1) AS source_attempt, st.status AS source_status, "
+            "t.job_id AS target_job_id, COALESCE(t.trigger_source, 'manual') AS trigger_kind, "
+            "NULL AS trigger_condition, t.retry_count, 0 AS dispatch_order, NULL AS due_at, "
+            "t.created_at AS dispatched_at, 'dispatched' AS status, t.id AS task_id, "
+            "NULL AS job_snapshot, t.message, t.created_at, t.updated_at, "
+            "COALESCE(st.job_name, sj.name) AS source_job_name, t.status AS task_status "
+            "FROM async_task t "
+            "LEFT JOIN async_task st ON st.id=t.parent_task_id "
+            "LEFT JOIN scheduled_job sj ON sj.id=st.job_id "
+            "WHERE t.job_id=? AND NOT EXISTS ("
+            "SELECT 1 FROM scheduled_trigger_event e WHERE e.target_job_id=t.job_id "
+            "AND (e.id=t.trigger_event_id OR e.task_id=t.id))"
+            ") records ORDER BY created_at DESC, id DESC LIMIT ?", [jid, jid, size])
         out = []
         for _, row in df.iterrows():
             item = row.to_dict()
-            for key in ("source_job_name", "trigger_condition", "task_id", "message"):
+            for key in ("chain_id", "source_task_id", "source_status", "source_job_name",
+                        "trigger_condition", "task_id", "task_status", "message", "job_snapshot"):
                 if item.get(key) is not None and pd.isna(item[key]):
                     item[key] = None
             for key in ("due_at", "dispatched_at", "created_at", "updated_at"):

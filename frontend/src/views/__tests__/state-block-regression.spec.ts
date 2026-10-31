@@ -832,10 +832,36 @@ describe('代表性页面四态回归', () => {
       .find((item) => item.props('title') === '每日质检 · 触发记录')!
     expect(drawer.props('bodyLayout')).toBe('fill')
     expect(drawer.props('bodyScroll')).toBe(false)
-    expect(drawer.props('subtitle')).toContain('手动、定时执行记录请在任务中心查看')
+    expect(drawer.props('subtitle')).toContain('手动、定时、依赖和自身重试')
     const table = drawer.getComponent('[data-testid="schedule-trigger-events-table"]')
     expect(table.attributes('embedded')).toBeUndefined()
     expect(table.attributes('aria-label')).toBe('调度触发记录表')
+    wrapper.unmount()
+  })
+
+  it('调度触发记录统一呈现四种来源并区分触发与执行状态', async () => {
+    vi.mocked(dataApi.listScheduleTriggerEvents).mockResolvedValueOnce({ events: [
+      { id: 'manual', trigger_kind: 'manual', status: 'dispatched', task_id: 'manual-task', task_status: 'failed' },
+      { id: 'scheduled', trigger_kind: 'scheduled', status: 'dispatched', task_id: 'scheduled-task', task_status: 'running' },
+      { id: 'dependency', trigger_kind: 'dependency', status: 'waiting', source_task_id: 'upstream', source_status: 'done' },
+      { id: 'retry', trigger_kind: 'retry', retry_count: 2, status: 'exhausted', source_status: 'failed' },
+    ] } as any)
+    const wrapper = await mountView(ScheduleView, {}, {
+      AppDataTable: false, ElTable: false, ElTableColumn: false,
+    })
+    await (wrapper.vm as any).openTriggerEvents({ id: 'schedule-a', name: '每日质检' })
+    await flushPromises()
+    const table = wrapper.get('[data-testid="schedule-trigger-events-table"]')
+    for (const label of ['手动执行', '定时执行', '任务依赖', '重试 2', '触发状态', '执行状态', '执行任务']) {
+      expect(table.text()).toContain(label)
+    }
+    const rows = table.findAll('tbody tr')
+    expect(rows[0].text()).toContain('已触发')
+    expect(rows[0].text()).toContain('失败')
+    expect(rows[0].text()).not.toContain('任务依赖')
+    expect(rows[1].text()).toContain(dataApi.STATUS_LABEL.running)
+    expect(rows[2].text()).toContain('等待中')
+    expect(rows[3].text()).toContain('已达上限')
     wrapper.unmount()
   })
 

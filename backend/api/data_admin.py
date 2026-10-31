@@ -952,7 +952,7 @@ def schedules_delete(job_id: str) -> ApiResponse:
 
 @router.get("/schedules/{job_id}/trigger-events", response_model=ApiResponse, dependencies=_SCHEDULE)
 def schedules_trigger_events(job_id: str, limit: int = 100) -> ApiResponse:
-    """依赖与自身重试的持久化触发记录，供调度页排障抽屉展示。"""
+    """当前调度的所有触发机制记录，供调度页排障抽屉统一展示。"""
     from backend.scheduler.scheduler import ScheduledJobService
     svc = ScheduledJobService()
     if not svc.get(job_id):

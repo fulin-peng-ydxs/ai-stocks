@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -94,6 +94,70 @@ def edit_fields(job, **changes):
         'name', 'task_type', 'params', 'freq_type', 'freq_config', 'trigger_mode',
         'dependency_job_ids', 'dependency_condition', 'dependency_delay', 'retry_config',
         'trading_day_only', 'enabled')}, **changes}
+
+
+def test_trigger_records_include_all_sources_without_duplicate_tasks(runtime):
+    svc = scheduler.ScheduledJobService(runtime, initialize=False)
+    job, other = root(svc), root(svc, '其他调度')
+    now = datetime.now(ZoneInfo('Asia/Shanghai'))
+
+    def task(tid, source, status, offset, *, job_id=None, event_id=None):
+        created = now + timedelta(seconds=offset)
+        runtime.execute(
+            'INSERT INTO async_task (id,task_type,status,job_id,trigger_source,trigger_event_id,'
+            'created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',
+            [tid, 'recompute', status, job_id or job['id'], source, event_id, created, created])
+
+    task('manual', 'manual', 'failed', 1)
+    task('scheduled', 'scheduled', 'running', 2)
+    task('unrelated', 'manual', 'done', 99, job_id=other['id'])
+    task('dependency', 'dependency', 'done', 3, event_id='dependency-event')
+    # 旧数据可能仅有 task_id 关联；同样不能重复展示任务。
+    task('retry', 'retry', 'pending', 4)
+    for kind, offset in [('dependency', 3), ('retry', 4)]:
+        created = now + timedelta(seconds=offset)
+        runtime.execute(
+            'INSERT INTO scheduled_trigger_event (id,source_task_id,source_status,target_job_id,'
+            'trigger_kind,retry_count,due_at,dispatched_at,status,task_id,created_at,updated_at) '
+            'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+            [f'{kind}-event', 'manual', 'failed', job['id'], kind, int(kind == 'retry'),
+             created, created, 'dispatched', kind, created, created])
+    # 已创建任务但事件尚未回填 task_id 的恢复窗口，以 trigger_event_id 去重。
+    runtime.execute("UPDATE scheduled_trigger_event SET task_id=NULL WHERE id='dependency-event'")
+    records = svc.list_events(job['id'])
+    assert [r['id'] for r in records] == [
+        'retry-event', 'dependency-event', 'task:scheduled', 'task:manual']
+    assert [r['trigger_kind'] for r in records] == ['retry', 'dependency', 'scheduled', 'manual']
+    assert records[0]['task_status'] == 'pending'
+    assert records[0]['retry_count'] == 1
+    assert records[2]['task_status'] == 'running'
+    assert records[3]['task_status'] == 'failed'
+    assert records[3]['status'] == 'dispatched'
+    assert records[3]['source_task_id'] is None
+    assert records[3]['source_status'] is None
+    assert records[3]['due_at'] is None  # 不伪造未存储的定时计划时间。
+    assert records[3]['dispatched_at'] is not None
+    assert [r['id'] for r in svc.list_events(job['id'], 2)] == [r['id'] for r in records[:2]]
+    assert svc.list_events(other['id'])[0]['task_id'] == 'unrelated'
+
+
+def test_trigger_records_limit_is_global_bounded_and_stable(runtime):
+    svc = scheduler.ScheduledJobService(runtime, initialize=False)
+    job = root(svc)
+    assert svc.list_events(job['id']) == []
+    now = datetime.now(ZoneInfo('Asia/Shanghai'))
+    for i in range(205):
+        runtime.execute(
+            'INSERT INTO async_task (id,task_type,status,job_id,trigger_source,created_at,updated_at) '
+            'VALUES (?,?,?,?,?,?,?)',
+            [f'task-{i:03}', 'recompute', 'done', job['id'],
+             'manual' if i % 2 else 'scheduled', now, now])
+    records = svc.list_events(job['id'], 999)
+    assert len(records) == 200
+    assert records[0]['task_id'] == 'task-204'
+    assert records[-1]['task_id'] == 'task-005'
+    assert len(svc.list_events(job['id'])) == 100
+    assert len(svc.list_events(job['id'], 0)) == 1
 
 
 def test_multi_upstream_each_fires_and_same_attempt_is_idempotent(runtime, monkeypatch):
