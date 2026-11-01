@@ -1133,6 +1133,17 @@ class IngestionService:
             # 备用源无股本列也按已存股本刷新计算市值，保持来源核验口径。
             ShareCapitalService(self.c).merge(frames, "sina_daily", _in_transaction=True)
             for item in materials:
+                if "_price_repair_evidence" in item.frame:
+                    repaired = item.frame[item.frame._price_repair_evidence.notna()]
+                    if not repaired.empty:
+                        self.repo.log_update(
+                            "daily_bar", f"{item.source}:verified_price_repair",
+                            min(repaired.trade_date), max(repaired.trade_date), len(repaired),
+                            "success", json.dumps({"code": item.code,
+                                "evidence": repaired[["trade_date", "_price_repair_evidence"]]
+                                .astype(str).to_dict("records"),
+                                "task_id": getattr(ctx, "tid", None)}, ensure_ascii=False),
+                        )
                 if "_identity_source_ref" in item.frame:
                     for ref, group in item.frame.groupby("_identity_source_ref", sort=False):
                         if ";identity=" in ref:

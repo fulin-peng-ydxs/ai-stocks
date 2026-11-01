@@ -1608,6 +1608,10 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
                     ing.ingest_one_daily(code, td, td, source=ing._bao_source(), ctx=ctx)
                 else:
                     ing.ingest_one_daily(code, td, td, ctx=ctx)
+                if issue_type in ("null_close", "ohl_repaired", "price_volume_mismatch"):
+                    factors = ing._recompute_clean([code], ctx=ctx)
+                    if factors["fail"]:
+                        raise RuntimeError(f"{code} 原始价格恢复后因子收尾失败")
                 affected = [td]
             else:
                 note = "缺少日期，无法定向重采"

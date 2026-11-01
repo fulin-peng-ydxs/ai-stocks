@@ -13,7 +13,7 @@ WHERE trade_date BETWEEN DATE '2011-10-30' AND DATE '2026-10-30'
 GROUP BY year(trade_date) ORDER BY year;
 
 -- V-SQL-02：逐日 ST 唯一事实及派生因子；完整验收要求异常均为 0。
--- 本次实际 clean 缺失 1（R1），其余三项 0；不能把源因子兜底有效当作 clean 已齐。
+-- R1 定向修复并完成因子收尾后，实际四项均为 0；不能用源因子兜底代替清洗完成。
 SELECT 'V-SQL-02' AS check_id, count(*) AS bar_count,
        count(*) FILTER (WHERE s.code IS NULL OR s.quality IS DISTINCT FROM 'accurate')
            AS missing_or_nonaccurate_st,
@@ -63,7 +63,7 @@ SELECT 'V-SQL-06' AS check_id, issue_type, status, count(*) AS issue_count
 FROM data_quality_issue WHERE status IN ('open','fixing')
 GROUP BY issue_type,status ORDER BY issue_type,status;
 
--- V-SQL-07：残差 R1 的原始字段及成交均价；仍有源冲突，不能按“字段有值”判通过。
+-- V-SQL-07：R1 修正后的原始字段、因子及成交均价；均价应落在 9.80～10.37 内。
 SELECT 'V-SQL-07' AS check_id, code,trade_date,open,high,low,close,volume,amount,
        adj_factor,adj_factor_clean,
        amount/nullif(volume,0) AS average_trade_price

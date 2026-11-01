@@ -455,7 +455,12 @@ class BaostockSource(DataSource):
         zero_vol = out["volume"] == 0
         out.loc[zero_vol, "amount"] = out.loc[zero_vol, "amount"].fillna(0.0)
         out.loc[zero_vol, "turnover_rate"] = out.loc[zero_vol, "turnover_rate"].fillna(0.0)
-        return out.reset_index(drop=True)
+        from backend.datasource.price_evidence import repair_baostock_price_conflicts
+
+        return repair_baostock_price_conflicts(
+            code, out.reset_index(drop=True), self._k_data,
+            timeout=get_effective_settings().datasource.socket_timeout_sec,
+        )
 
     @pooled_operation
     def get_st_status(self, code: str, start: date, end: date) -> pd.DataFrame:

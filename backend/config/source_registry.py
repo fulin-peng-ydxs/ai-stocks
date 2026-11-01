@@ -4,6 +4,7 @@ BAOSTOCK_MAX_CONCURRENCY = 4
 
 SOURCE_GROUPS = {
     "sina": {"label": "新浪", "domains": ("sina.com.cn", "sina.cn"), "serial": False},
+    "tencent": {"label": "腾讯历史价格核验", "domains": ("gtimg.cn",), "serial": False},
     "eastmoney": {"label": "东方财富", "domains": ("eastmoney.com",), "serial": False},
     "sse": {"label": "上交所", "domains": ("sse.com.cn",), "serial": False},
     "szse": {"label": "深交所", "domains": ("szse.cn",), "serial": False},

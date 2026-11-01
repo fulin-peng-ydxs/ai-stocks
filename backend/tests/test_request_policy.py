@@ -71,6 +71,8 @@ def test_board_source_overrides_are_not_reported_as_legacy(monkeypatch):
         ("https://d.10jqka.com.cn/v6/line/hs_600000/60/2026.js", "ths"),
         ("https://d.10jqka.com.cn/v6/line/bk_886000/01/2026.js", "ths_board"),
         ("https://query.sse.com.cn/commonQuery.do", "sse"),
+        ("https://web.ifzq.gtimg.cn/appstock/app/kline/kline", "tencent"),
+        ("https://evil-gtimg.cn/", None),
         ("https://www.szse.cn/api/report/ShowReport", "szse"),
         ("https://www.bse.cn/nqxxController/nqxxCnzq.do", "bse"),
         ("https://evil-szse.cn/", None),

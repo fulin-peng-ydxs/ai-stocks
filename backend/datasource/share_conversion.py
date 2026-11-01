@@ -73,6 +73,7 @@ def fetch_sse_conversions(bond: str, year: int, *, timeout=15) -> pd.DataFrame:
             out = pd.DataFrame(rows)
             if out.empty:
                 return out
+            raw_columns = list(out.columns)
             if not out.CVTBOND_CODE.eq(bond).all():
                 raise ValueError("转股响应包含其他债券")
             out["effective"] = pd.to_datetime(out.TRADING_DATE, errors="coerce")
@@ -84,7 +85,24 @@ def fetch_sse_conversions(bond: str, year: int, *, timeout=15) -> pd.DataFrame:
                 or out.cumulative.lt(0).any()
             ):
                 raise ValueError("转股响应存在无效日期或累计股数")
-            return out.sort_values("effective")
+            # 接口分页序号 NUM 不属于业务事实。只合并其余所有原始字段完全相同的
+            # 重复响应，原始副本留在诊断；同日不同累计/当日转股/价格仍交重建门禁拒绝。
+            business_columns = [column for column in raw_columns if column != "NUM"]
+            duplicates = out.duplicated(business_columns, keep="first")
+            repeated = out.duplicated(business_columns, keep=False)
+            if duplicates.any() and (
+                "NUM" not in out
+                or out.loc[repeated, "NUM"].isna().any()
+                or out.loc[repeated, "NUM"].astype(str).duplicated().any()
+            ):
+                # 相同序号重复可能是分页回放，不能靠去重把缺页掩盖成完整响应。
+                raise ValueError(f"{bond}/{year} 重复响应序号异常，拒绝合并")
+            evidence = out.loc[
+                repeated, raw_columns
+            ].to_dict("records")
+            out = out.loc[~duplicates].sort_values("effective")
+            out.attrs["exact_duplicate_rows"] = evidence
+            return out
     raise ValueError("转股统计超过分页上限")
 
 
@@ -168,6 +186,12 @@ def reconstruct_conversion_shares(code, dates, events, bonds, fetch, *, evidence
             }
         )
         pieces = [fetch(number, year) for year in range(start.year, target.max().year + 1)]
+        for piece in pieces:
+            duplicates = piece.attrs.get("exact_duplicate_rows")
+            if duplicates:
+                report.setdefault("exact_duplicate_rows", {})[number] = (
+                    report.get("exact_duplicate_rows", {}).get(number, []) + duplicates
+                )
         nonempty = [piece for piece in pieces if not piece.empty]
         if not nonempty:
             report["skipped"][number] = "exchange_has_no_daily_conversion_rows"

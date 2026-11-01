@@ -150,6 +150,48 @@ def test_sse_bad_page_is_not_silent_empty(monkeypatch):
         fetch_sse_conversions("110001", 2026)
 
 
+@pytest.mark.parametrize("conflict", [None, "TOTAL_ZG_NUM", "ZG_NUM", "CONVERTPRICE", "EXTRA"])
+def test_sse_coalesces_only_exact_business_duplicates_and_retains_raw_evidence(monkeypatch, conflict):
+    first = {"NUM": "108", "TRADING_DATE": "2026-01-04", "CVTBOND_CODE": "110001",
+             "TOTAL_ZG_NUM": "0.03", "ZG_NUM": "0.03", "CONVERTPRICE": "3.77"}
+    second = dict(first, NUM="109")
+    if conflict:
+        second[conflict] = "0.04"
+    class Response:
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return {"pageHelp": {"total": 2, "pageCount": 1, "data": [first, second]}}
+    monkeypatch.setattr("backend.datasource.share_conversion.requests.get", lambda *a, **k: Response())
+    frame = fetch_sse_conversions("110001", 2026)
+    if conflict:
+        with pytest.raises(ValueError, match="累计转股重复或倒退"):
+            reconstruct_conversion_shares("600001.SH", ["2026-01-05"], events(), bonds(),
+                                          lambda *a: frame)
+    else:
+        assert len(frame) == 1
+        evidence = {}
+        out = reconstruct_conversion_shares("600001.SH", ["2026-01-05"], events(), bonds(),
+                                            lambda *a: frame, evidence=evidence)
+        assert out.total_share.tolist() == [10300]
+        assert evidence["exact_duplicate_rows"]["110001"] == [first, second]
+
+
+@pytest.mark.parametrize("sequence", [None, "108"])
+def test_sse_duplicate_missing_or_replayed_sequence_is_not_accepted(monkeypatch, sequence):
+    first = {"NUM": "108", "TRADING_DATE": "2026-01-04", "CVTBOND_CODE": "110001",
+             "TOTAL_ZG_NUM": "0.03"}
+    second = dict(first, NUM=sequence)
+    class Response:
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return {"pageHelp": {"total": 2, "pageCount": 1, "data": [first, second]}}
+    monkeypatch.setattr("backend.datasource.share_conversion.requests.get", lambda *a, **k: Response())
+    with pytest.raises(ValueError, match="重复响应序号异常"):
+        fetch_sse_conversions("110001", 2026)
+
+
 def test_sse_source_corrects_stale_event_but_preserves_precision_and_verified(market):
     svc = ShareCapitalService(market)
     old = pd.DataFrame(
