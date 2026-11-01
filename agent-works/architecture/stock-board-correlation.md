@@ -191,7 +191,11 @@ board_neutral_t = board_return_t - benchmark_return_t
 ## 性能与容量
 
 - 候选、个股行情、板块行情和基准行情均批量读取；板块与基准收益按唯一代码预计算。
-- 四个直接表格入口按当前页代码集合固定一次 SQL；连板天梯按整份当日快照代码集合固定一次 SQL，均不随行数逐股查询。
+- 四个直接表格入口按当前页代码集合批量查询；连板天梯按整份当日快照代码集合批量查询，均不随行数逐股查询。正常命中有效冠军的摘要读取包含快照与业务日板块涨跌幅两次批量查询；样本不足时的历史冠军回退另走批量查询，不能把快照单次查询等同完整请求的 SQL 次数。
+
+读取基准由 [benchmark_stock_board_correlation_read.py](../../backend/devtools/benchmark_stock_board_correlation_read.py) 构造内存 DuckDB 固定夹具，默认 5000 只股票、10000 行冠军，预热 5 轮后测量 50 轮。`READ_SCALES` 的 1／50／200 代码规模对应 `THRESHOLDS_MS` 的 P95 ≤10／20／50ms；这些是固定夹具下的回归目标，权威定义在脚本常量，不代表真实部署的容量或 SLA。
+
+当前基准的 SQL 次数判定存在冲突：单项 `ReadScaleResult.passed` 要求 1 次，总报告 `ReadBenchmarkReport.passed` 及 [定向测试](../../backend/tests/test_stock_board_correlation_read_benchmark.py) 要求 2 次。判定统一前，`--enforce` 不能作为有效的通过门禁；定向测试只检查报告结构和 SQL 次数，不证明延迟达标。
 
 输入规模、读取尾延迟与内存峰值按部署目标单独验证，历史性能报告中的单次结果不作为当前容量或 SLA。
 
