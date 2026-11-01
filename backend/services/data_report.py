@@ -26,6 +26,7 @@ import pandas as pd
 from backend.common.logging import get_logger
 from backend.dataquality.checker import ISSUE_LAYER, mv_inverted_sql
 from backend.datasource.ths_board import FUND_FLOW_PERIODS
+from backend.price_adjustment import adjust_price_columns, effective_factors
 from backend.storage.duckdb_client import DuckDBClient, DuckDBReadClient, get_client
 
 log = get_logger("services.data_report")
@@ -1640,10 +1641,11 @@ class DataIntegrityReport:
                 FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code=b.code
                 WHERE b.code=? AND b.close>0 ORDER BY b.trade_date
                 """, [code])
+            if effective_factors(df, strict=False).isna().any():
+                return False  # 缺输入不能将复权问题误关闭为已解决。
             if len(df) < 2:
                 return True
-            af = df["adj_factor"].fillna(1.0)
-            qfq = df["close"] * af / (af.iloc[-1] or 1.0)
+            qfq = adjust_price_columns(df.copy(), "qfq")["close"]
             ratio = (qfq / qfq.shift(1) - 1).abs()
             prev_date = pd.to_datetime(df["trade_date"]).shift(1)
             gap_days = (pd.to_datetime(df["trade_date"]) - prev_date).dt.days
@@ -1847,13 +1849,14 @@ class DataIntegrityReport:
         """
         scope = " AND b.code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
         # 复权基数、相邻日与上市序号都在过滤前计算；只把异常行送入 Python。
-        # 保留旧算法的最后有效因子归一化与 NaN/零基数行为，不能先过滤退市或新股行。
+        # 与共享换算一致：非法因子保持缺数，不用 1 替代；不能先过滤退市或新股行。
         df = self.c.query_df(
             f"""
             WITH bars AS (
                 SELECT b.code,b.trade_date,b.close,sb.name,sb.delist_date,
-                       CASE WHEN isnan(COALESCE(b.adj_factor_clean,b.adj_factor)) THEN 1.0
-                            ELSE COALESCE(b.adj_factor_clean,b.adj_factor,1.0) END AS factor,
+                       CASE WHEN isfinite(COALESCE(b.adj_factor_clean,b.adj_factor))
+                                 AND COALESCE(b.adj_factor_clean,b.adj_factor)>0
+                            THEN COALESCE(b.adj_factor_clean,b.adj_factor) END AS factor,
                        CASE WHEN sb.list_date IS NOT NULL
                             AND min(b.trade_date) OVER (PARTITION BY b.code)
                                 <=sb.list_date+INTERVAL 30 DAY

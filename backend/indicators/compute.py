@@ -24,6 +24,7 @@ from backend.indicators.operators import (
     platform_breakout,
 )
 from backend.market_identity import IDENTITY_VERSION
+from backend.price_adjustment import PRICE_CONSUMPTION_VERSION
 
 INDICATOR_ALGO_VERSION = "2.2-preset-runtime-v1"
 _MACD_FAST = 12
@@ -37,6 +38,7 @@ def build_params(settings=None) -> dict:
     return {
         "algo_version": INDICATOR_ALGO_VERSION,
         "stock_identity_version": IDENTITY_VERSION,
+        "price_consumption_version": PRICE_CONSUMPTION_VERSION,
         "ma_periods": list(s.ma_periods),
         "hhv_periods": list(s.hhv_periods),
         "ma_up_lookback": s.ma_up_lookback,

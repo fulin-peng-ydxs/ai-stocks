@@ -21,6 +21,7 @@ import pandas as pd
 
 from backend.common.logging import get_logger
 from backend.dataquality.checker import mv_inverted_sql
+from backend.price_adjustment import adjust_price_columns
 from backend.services.trade_calendar_readiness import (
     calendar_readiness_detail,
     inspect_trade_calendar,
@@ -496,7 +497,8 @@ class DataVerifier:
         bad_factor = self._finding(
             "SELECT code,trade_date,adj_factor,adj_factor_clean FROM daily_bar "
             "WHERE COALESCE(adj_factor_clean, adj_factor) IS NULL "
-            "OR COALESCE(adj_factor_clean, adj_factor)<=0"
+            "OR COALESCE(adj_factor_clean, adj_factor)<=0 "
+            "OR NOT isfinite(COALESCE(adj_factor_clean, adj_factor))"
         )
         self._check(
             "复权因子为正",
@@ -584,8 +586,8 @@ class DataVerifier:
                     self._check(f"{code} 交叉验证", False, "本地无数据", evidence=context)
                     continue
                 local["d"] = local["trade_date"].apply(lambda x: pd.Timestamp(x).date())
-                latest_f = local["adj_factor"].iloc[-1]
-                local["qfq"] = local["close"] * local["adj_factor"] / latest_f
+                adjust_price_columns(local, "qfq", columns=("close",), suffix="_qfq")
+                local["qfq"] = local.pop("close_qfq")
                 local = local.set_index("d")
 
                 # 取末尾 n_dates 个公共交易日比对

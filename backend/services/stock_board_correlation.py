@@ -31,6 +31,7 @@ from backend.indicators.stock_board_correlation import (
     resolve_benchmark_code,
 )
 from backend.market_identity import trading_code_at, trading_code_on_sql
+from backend.price_adjustment import adjust_price_columns
 from backend.services.market_benchmark import MarketBenchmarkService
 from backend.services.stock_codes import normalize_stock_code, normalize_stock_codes
 from backend.storage.duckdb_client import DuckDBClient, get_client, is_managed_duckdb_client
@@ -1381,12 +1382,15 @@ class StockBoardCorrelationService:
         }
 
         stock_price_frame = self.c.query_df(
-            "SELECT code, trade_date, "
-            "       close * COALESCE(adj_factor_clean, adj_factor) AS adjusted_close "
+            "SELECT code, trade_date, close, "
+            "       COALESCE(adj_factor_clean, adj_factor) AS adj_factor "
             f"FROM daily_bar WHERE code IN ({placeholders}) "
             "  AND trade_date >= ? AND trade_date <= ? ORDER BY code, trade_date",
             [*normalized, lower_date, actual_as_of],
         )
+
+        adjust_price_columns(stock_price_frame, "hfq", columns=("close",), suffix="_hfq")
+        stock_price_frame = stock_price_frame.rename(columns={"close_hfq": "adjusted_close"})
 
         board_codes = sorted(
             {

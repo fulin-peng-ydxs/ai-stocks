@@ -119,15 +119,18 @@ export function stockChartTheme(isDark: boolean): StockChartTheme {
   }
 }
 
-/** 后向移动平均；暖机不足返回 null，不读取当日之后的数据。 */
+/** 与后端 MA 同口径：后向满窗、非法值窗口缺数，计算不舍入，读数处再格式化。
+ * 图表按当前复权模式及周期计算，不能套用固定前复权日线 MA。
+ */
 export function movingAverage(values: number[], period: number): (number | null)[] {
   return values.map((_, index) => {
     if (index + 1 < period) return null
     let total = 0
     for (let cursor = index + 1 - period; cursor <= index; cursor += 1) {
+      if (!Number.isFinite(values[cursor])) return null
       total += values[cursor]
     }
-    return +(total / period).toFixed(2)
+    return total / period
   })
 }
 

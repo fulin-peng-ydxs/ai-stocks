@@ -22,6 +22,7 @@ import pandas as pd
 
 from backend.auth.context import get_current_owner
 from backend.common.logging import get_logger
+from backend.price_adjustment import hfq_price_sql
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
 
@@ -359,7 +360,7 @@ class StockGroupRepo:
         cutoff_clause = " AND trade_date<=?" if trade_date else ""
         last_params = [*codes, trade_date] if trade_date else codes
         last = self.mkt.query_df(
-            f"SELECT code, close*COALESCE(adj_factor_clean, adj_factor) AS h, close AS px, "
+            f"SELECT code, {hfq_price_sql('close', 'COALESCE(adj_factor_clean, adj_factor)')} AS h, close AS px, "
             f"       CASE WHEN pre_close > 0 THEN (close / pre_close - 1) * 100 END AS day_pct, trade_date FROM "
             f"(SELECT *, row_number() OVER (PARTITION BY code ORDER BY trade_date DESC) AS rn "
             f" FROM daily_bar WHERE code IN ({ph}){cutoff_clause}) WHERE rn=1", last_params)
@@ -442,7 +443,7 @@ class StockGroupRepo:
                 entry_cutoff = " AND trade_date<=?" if trade_date else ""
                 entry_params = [code, ad, trade_date] if trade_date else [code, ad]
                 e = self.mkt.query_df(
-                    "SELECT close*COALESCE(adj_factor_clean, adj_factor) AS h, trade_date FROM daily_bar "
+                    f"SELECT {hfq_price_sql('close', 'COALESCE(adj_factor_clean, adj_factor)')} AS h, trade_date FROM daily_bar "
                     f"WHERE code=? AND trade_date>=?{entry_cutoff} ORDER BY trade_date LIMIT 1",
                     entry_params,
                 )

@@ -19,14 +19,15 @@ from datetime import date, datetime
 
 import pandas as pd
 
+from backend.auth.context import get_current_owner
 from backend.backtest.broker import can_buy_at_open, can_sell_at_open
 from backend.common.logging import get_logger
-from backend.indicators.compute import compute_macd
 from backend.config import get_effective_settings
+from backend.indicators.compute import compute_macd
 from backend.market_rules import price_limit_pct_for
+from backend.price_adjustment import adjust_price_columns, effective_factors, price_scale
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
-from backend.auth.context import get_current_owner
 
 log = get_logger("services.training")
 
@@ -116,6 +117,7 @@ class TrainingService:
         )
         if df.empty:
             return None
+        effective_factors(df, factor_column="f")
         r = df.iloc[0]
         return {k: (None if pd.isna(r[k]) else float(r[k])) for k in
                 ("open", "high", "low", "close", "pre_close", "volume", "amount", "turnover_rate", "f")}
@@ -158,22 +160,22 @@ class TrainingService:
         except ValueError:
             idx0 = 0
         lo = max(0, idx0 - VIEW_HISTORY)
+        scale = price_scale(df.iloc[lo:], "qfq", base_factor=float(base), factor_column="f")
         bars, date_map = [], {}
         for i in range(lo, len(df)):
             r = df.iloc[i]
             rel = i - idx0
-            f = float(r["f"]) if not pd.isna(r["f"]) else base
-            scale = f / base if base else 1.0
+            factor_scale = float(scale.iloc[i - lo])
             label = dates[i].isoformat() if reveal_dates else f"D{rel:+d}"
             date_map[rel] = label
             bars.append({
                 "date": label,
                 "rel_day": rel,
-                "open": round(float(r["open"]) * scale, 3),
-                "high": round(float(r["high"]) * scale, 3),
-                "low": round(float(r["low"]) * scale, 3),
-                "close": round(float(r["close"]) * scale, 3),
-                "pre_close": None if pd.isna(r["pre_close"]) else round(float(r["pre_close"]) * scale, 3),
+                "open": float(r["open"]) * factor_scale,
+                "high": float(r["high"]) * factor_scale,
+                "low": float(r["low"]) * factor_scale,
+                "close": float(r["close"]) * factor_scale,
+                "pre_close": None if pd.isna(r["pre_close"]) else float(r["pre_close"]) * factor_scale,
                 "volume": None if pd.isna(r["volume"]) else int(r["volume"]),
                 "amount": None if pd.isna(r["amount"]) else float(r["amount"]),
                 "turnover_rate": None if pd.isna(r["turnover_rate"]) else float(r["turnover_rate"]),
@@ -193,7 +195,8 @@ class TrainingService:
         return bars, date_map
 
     def _disp_price(self, raw_price: float, factor: float, base: float) -> float:
-        return raw_price * factor / base if base else raw_price
+        frame = pd.DataFrame({"close": [raw_price], "adj_factor": [factor]})
+        return float(adjust_price_columns(frame, "qfq", base_factor=base).iloc[0]["close"])
 
     # ════════════════════════════════════════════════════════════
     # 开局与随机抽样
@@ -509,10 +512,12 @@ class TrainingService:
             return None
         sid, cur = s["id"], int(rnd["seq"])
         fee_on = bool(s["fee_enabled"])
+        frow = self._raw_bar(rnd["code"], fill_date)
+        disp_open = self._disp_price(frow["open"], frow["f"], rnd["base_factor"]) if frow else None
+        # 因子未就绪必须在资产状态写入前失败，保留订单以便修复后重试。
         self.pg.execute(
             "UPDATE training_round SET pending=NULL WHERE session_id=%s AND seq=%s "
             "AND tenant_id=%s AND owner_user_id=%s", [sid, cur, *self._op])
-        frow = self._raw_bar(rnd["code"], fill_date)
         if not frow:
             return "次日停牌，订单未成交"
         pct = self._effective_price_limit_pct(
@@ -521,7 +526,6 @@ class TrainingService:
         raw_open, raw_pre = frow["open"], frow["pre_close"]
         side, hands = pending["side"], int(pending["hands"])
         reason = pending.get("reason", "")
-        disp_open = self._disp_price(raw_open, frow["f"], rnd["base_factor"])
         if side == "buy":
             if raw_pre and not can_buy_at_open(raw_open, raw_pre, pct):
                 return "次日开盘涨停，买入未成交"
@@ -643,8 +647,8 @@ class TrainingService:
         if not sb or not eb or not sb["open"]:
             return 0.0
         # 用后复权口径（raw×factor）保证跨除权一致
-        start_hfq = sb["open"] * sb["f"]
-        end_hfq = eb["close"] * eb["f"]
+        start_hfq = self._disp_price(sb["open"], sb["f"], 1.0)
+        end_hfq = self._disp_price(eb["close"], eb["f"], 1.0)
         return end_hfq / start_hfq - 1 if start_hfq else 0.0
 
     def _round_equity_curve(self, sid: str, rnd: dict, init_cap: float) -> list[float]:
@@ -654,12 +658,13 @@ class TrainingService:
             "SELECT trade_date, close, COALESCE(adj_factor_clean, adj_factor) AS f "
             "FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ? ORDER BY trade_date",
             [rnd["code"], rnd["start_date"], rnd["cursor_date"]])
+        scale = price_scale(df, "qfq", base_factor=float(rnd["base_factor"]), factor_column="f")
         fills: dict[date, list[dict]] = {}
         for t in trades:
             fills.setdefault(_to_date(t["fill_date"]), []).append(t)
-        cash, shares, base = init_cap, 0, rnd["base_factor"]
+        cash, shares = init_cap, 0
         curve = []
-        for _, r in df.iterrows():
+        for i, r in df.iterrows():
             d = _to_date(r["trade_date"])
             for t in fills.get(d, []):
                 if t["side"] == "buy":
@@ -668,7 +673,7 @@ class TrainingService:
                 else:
                     cash += (float(t["amount"]) - float(t["fee"]))
                     shares -= int(t["shares"])
-            close = float(r["close"]) * (float(r["f"]) / base if base else 1.0)
+            close = float(r["close"]) * float(scale.loc[i])
             curve.append(round(cash + shares * close, 2))
         return curve
 

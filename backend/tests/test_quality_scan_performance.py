@@ -33,6 +33,7 @@ def test_adj_jump_keeps_listing_lag_clean_factor_and_ignore_boundaries(market):
         "('OLD.SH','2024-01-01',10,1,NULL),('OLD.SH','2024-01-02',10,2,NULL),"
         "('OLD.SH','2024-01-03',10,2,1),('OLD.SH','2024-01-04',10,'NaN',NULL),"
         "('OLD.SH','2024-01-05',10,NULL,NULL),('OLD.SH','2024-01-06',10,4,2),"
+        "('OLD.SH','2024-01-07',10,4,NULL),"
         "('OLD.SH','2024-02-07',10,8,NULL),"
         "('RET.SH','2024-01-01',10,1,NULL),('RET.SH','2024-01-12',10,2,NULL),"
         "('ZERO.SH','2024-01-01',10,1,NULL),('ZERO.SH','2024-01-02',10,0,NULL)"
@@ -42,14 +43,16 @@ def test_adj_jump_keeps_listing_lag_clean_factor_and_ignore_boundaries(market):
     assert {(r["code"], str(r["trade_date"])[:10]) for r in rows} == {
         ("NEW.SH", "2024-01-06"),
         ("OLD.SH", "2024-01-02"),
-        ("OLD.SH", "2024-01-06"),
+        ("OLD.SH", "2024-01-07"),
     }
     scoped = report._collect_adj_jump_issues(
         codes=["OLD.SH"],
         ignored_exact={("OLD.SH", "adj_jump", "2024-01-02")},
     )
     assert len(scoped) == 1
-    assert str(scoped[0]["trade_date"])[:10] == "2024-01-06"
+    assert str(scoped[0]["trade_date"])[:10] == "2024-01-07"
+    # 01-05 缺因子不再冒充 1，于是 01-06 不产生伪跳变；01-07 的真实跳变仍被检出。
+    assert not report.recheck_clean('adj_jump', 'OLD.SH', None)
     assert report._collect_adj_jump_issues(codes=[]) == []
 
 

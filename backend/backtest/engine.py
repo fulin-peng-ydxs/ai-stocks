@@ -26,8 +26,10 @@ import pandas as pd
 from backend.backtest.broker import Broker, can_buy_at_open, can_sell_at_open
 from backend.common.logging import get_logger
 from backend.config import get_effective_settings
+from backend.indicators.operators import MA
 from backend.market_identity import STOCK_CODE_CHANGES, filter_trading_codes, trading_code_at
 from backend.market_rules import price_limit_pct_for
+from backend.price_adjustment import adjust_price_columns
 from backend.scoring.model import ScoreModel
 from backend.storage.duckdb_client import get_client
 
@@ -78,9 +80,7 @@ class BacktestEngine:
         if bars.empty:
             return {}
         bars["trade_date"] = pd.to_datetime(bars["trade_date"])
-        af = bars["adj_factor"].fillna(1.0)
-        bars["open_hfq"] = bars["open"] * af
-        bars["close_hfq"] = bars["close"] * af
+        adjust_price_columns(bars, "hfq", columns=("open", "close"), suffix="_hfq")
         missing_st = bars["is_st"].isna() | (bars["st_quality"] != "accurate")
         if missing_st.any():
             bad = bars.loc[missing_st, ["code", "trade_date"]].head(5)
@@ -100,7 +100,7 @@ class BacktestEngine:
         ]
         # below_ma：close_hfq < MA(close_hfq, ma_period)（后向、点时安全、基准一致）
         bars["ma"] = bars.groupby("code")["close_hfq"].transform(
-            lambda x: x.rolling(ma_period, min_periods=ma_period).mean()
+            lambda x: MA(x, ma_period)
         )
         bars["below_ma"] = bars["close_hfq"] < bars["ma"]
         out: dict = {}

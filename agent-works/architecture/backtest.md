@@ -21,7 +21,7 @@
 - 方向性滑点：买入价上浮 `×(1+slippage)`、卖出价下浮 `×(1-slippage)`（`broker.py:95`/`broker.py:134`）。
 - 费用：佣金双边（费率/最低值取大）+ 印花税（仅卖）+ 过户费（`broker.py:79-88`）。默认参数见 `backend/config/settings.py:106`（佣金率 0.00025/最低 5 元、印花税 0.001、过户费 0.00001、滑点 0.002）。
 
-**复权一致：后复权记账 + 原始价判可成交性**。`engine.py:60-62` 用 `COALESCE(adj_factor_clean, adj_factor)` 算 `open_hfq`/`close_hfq`，成交/估值/净值/收益率统一在后复权（hfq）基准下进行——hfq 单调、无需 rebase；而涨跌停可成交性用**原始** `open`/`pre_close` 判定（`engine.py:354`/`engine.py:415`），因为涨跌停是按原始价 round 到分的市场规则。
+**复权一致：后复权记账 + 原始价判可成交性**。`engine._load_prices` 与 `forward.compute_forward_returns` 统一消费 `backend/price_adjustment.py`：选择 `COALESCE(adj_factor_clean, adj_factor)` 后校验为正有限数，再计算后复权价格；输入缺失或非法时抛出 `DataQualityError`，不默认补 1。成交/估值/净值/收益率统一在后复权（hfq）基准下进行，无需随查询截止日重定基准；涨跌停可成交性仍用**原始** `open`/`pre_close` 判定，因为涨跌停是按原始价 round 到分的市场规则。批量读取和向量计算保留，不改成逐股查询。价格消费版本纳入新运行签名，旧用户回测资产不自动重算；消费与展示的完整契约见 [采集架构](stock-collection.md#价格消费与复权换算)。
 
 **前向收益（hfq、无未来函数）**。`backend/backtest/forward.py` `compute_forward_returns` 回答「信号后 N 日内最高摸到多少涨幅」：入场价取信号日**下一根可得 bar** 的 hfq 开盘价（`forward.py:94` `shift(-1)`，停牌自然顺延到复牌首日，与撮合一致），窗口 `[T+1..T+N]` 内 hfq high 的反向滚动最大（`forward.py:99`）。比值消去公共复权基准故等于真实复权收益；`adj_factor` 是历史已知值，用未来 N 日价格是「评估」而非「信号生成」，无未来函数。右沿数据不足完整 N 日窗口的信号标 `eval_<N>=False`（按市场日历判定，`forward.py:108-113`），默认从命中率中排除以免低估。
 

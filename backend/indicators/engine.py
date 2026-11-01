@@ -29,6 +29,7 @@ from backend.indicators.compute import (
 )
 from backend.indicators.period import INDICATOR_ENGINE_DEFAULT_PERIOD
 from backend.market_identity import filter_trading_codes
+from backend.price_adjustment import adjust_price_columns
 from backend.storage.duckdb_client import get_client
 from backend.storage.repository import MarketRepository
 
@@ -118,12 +119,7 @@ class IndicatorEngine:
         )
         if df.empty:
             return df
-        af = df["adj_factor"].fillna(1.0)
-        # 各股 base = 该股末日（最大 trade_date）的 adj_factor；qfq = raw*af/base
-        base = df.groupby("code")["adj_factor"].transform("last").fillna(1.0)
-        for col in ("open", "high", "low", "close", "pre_close"):
-            df[col] = df[col] * af / base
-        return df
+        return adjust_price_columns(df, "qfq")
 
     def compute_series(self, code: str, end_date: date | None = None,
                        lookback: int | None = None) -> pd.DataFrame:

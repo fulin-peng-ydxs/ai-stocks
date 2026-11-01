@@ -14,6 +14,7 @@ import pandas as pd
 
 from backend.common.logging import get_logger
 from backend.config import get_effective_settings
+from backend.price_adjustment import price_scale
 from backend.scoring.model import ScoreModel
 from backend.screening.engine import ScreenEngine
 from backend.screening.profile import ProfileRepo
@@ -237,17 +238,17 @@ class ScreenScoreService:
         from backend.indicators.operators import MA, is_new_high, platform_breakout
 
         s = self.s.indicators
-        af = g["adj_factor"].fillna(1.0)
-        c_hfq = (g["close"] * af).reset_index(drop=True)
-        o_hfq = (g["open"] * af).reset_index(drop=True)
-        h_hfq = (g["high"] * af).reset_index(drop=True)
+        scale = price_scale(g, "hfq")
+        c_hfq = (g["close"] * scale).reset_index(drop=True)
+        o_hfq = (g["open"] * scale).reset_index(drop=True)
+        h_hfq = (g["high"] * scale).reset_index(drop=True)
         v = g["volume"].astype(float).reset_index(drop=True)
         vol_ma_n = MA(v, s.vol_breakout_n)
         return pd.DataFrame({
             "close": c_hfq, "open": o_hfq, "volume": v,
             "turnover_rate": g["turnover_rate"].reset_index(drop=True),
-            "ma10": c_hfq.rolling(10).mean(), "ma20": c_hfq.rolling(20).mean(),
-            "ma60": c_hfq.rolling(60).mean(),
+            "ma10": MA(c_hfq, 10), "ma20": MA(c_hfq, 20),
+            "ma60": MA(c_hfq, 60),
             "vol_ma5": v.rolling(s.vol_sustain_s).mean(), "vol_ma20": vol_ma_n,
             "is_platform_breakout": platform_breakout(c_hfq, h_hfq, s.platform_breakout_n).fillna(False),
             "is_vol_breakout": (v > vol_ma_n * s.vol_breakout_x).fillna(False),

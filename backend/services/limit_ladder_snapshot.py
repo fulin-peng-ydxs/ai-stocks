@@ -13,13 +13,14 @@ import pandas as pd
 
 from backend.market_identity import IDENTITY_VERSION
 from backend.market_rules import CloseLimitStatus, listing_board_for
+from backend.price_adjustment import PRICE_CONSUMPTION_VERSION
 from backend.services.limit_ladder_calculator import (
     LimitLadderCalculation,
     LimitLadderCalculator,
 )
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
-RULE_VERSION = f"limit-ladder-v2-{IDENTITY_VERSION}"
+RULE_VERSION = f"limit-ladder-v2-{IDENTITY_VERSION}-{PRICE_CONSUMPTION_VERSION}"
 SOURCE_VERSION = "duckdb-eod-v1"
 TERMINAL_STATUSES = frozenset({"success", "partial", "failed", "unknown"})
 

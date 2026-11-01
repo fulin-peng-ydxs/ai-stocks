@@ -18,6 +18,7 @@ import pandas as pd
 
 from backend.common.logging import get_logger
 from backend.market_rules import price_limit_pct_for, round_price_to_cent
+from backend.price_adjustment import adjust_price_columns
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
 log = get_logger("dataquality.checker")
@@ -342,8 +343,7 @@ class QualityChecker:
         if len(df) < 2:
             return 0
         # 前复权价 = close × 干净因子 / 最新干净因子
-        latest = df["adj_factor"].iloc[-1]
-        qfq = df["close"] * df["adj_factor"] / latest
+        qfq = adjust_price_columns(df.copy(), "qfq", strict=False)["close"]
         ratio = (qfq / qfq.shift(1) - 1).abs()
         bad = df[ratio > threshold]
         issues = [

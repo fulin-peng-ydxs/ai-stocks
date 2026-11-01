@@ -15,6 +15,7 @@ import pandas as pd
 from backend.common.logging import get_logger
 from backend.config import get_effective_settings
 from backend.market_identity import trading_code_active_sql
+from backend.price_adjustment import adjust_price_columns
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
 log = get_logger("storage.repository")
@@ -121,6 +122,8 @@ class MarketRepository:
         end_date: date,
         lookback: int | None = None,
         adjust: str = "qfq",
+        *,
+        strict_factors: bool = True,
     ) -> pd.DataFrame:
         """点时取个股日线（只含 <= end_date），并按需复权。
 
@@ -130,21 +133,20 @@ class MarketRepository:
           - "hfq" 后复权 = close × 干净因子
         复权用**去抖后的 adj_factor_clean**（分段恒定，消除源因子的逐日舍入噪声）；
         旧库该列为空时 COALESCE 回落原始 adj_factor，保证未回填前不报错。
-        lookback: 仅返回最近 N 个交易日（在复权计算之后裁剪）。
+        lookback: 仅返回最近 N 个交易日；裁剪不改变末日归一基准。
+        strict_factors=False 仅供缺数展示/诊断，研究消费者默认严格拒绝非法因子。
         """
         df = self.c.query_df(
-            "SELECT * FROM daily_bar WHERE code = ? AND trade_date <= ? ORDER BY trade_date",
+            "SELECT *, COALESCE(adj_factor_clean, adj_factor) AS _effective_factor "
+            "FROM daily_bar WHERE code = ? AND trade_date <= ? ORDER BY trade_date",
             [code, end_date],
         )
         if df.empty:
             return df
-        if adjust in ("qfq", "hfq"):
-            factor = df["adj_factor_clean"].fillna(df["adj_factor"])
-            base = factor.iloc[-1] if adjust == "qfq" else 1.0
-            for col in ("open", "high", "low", "close", "pre_close"):
-                df[col] = df[col] * factor / base
         if lookback:
-            df = df.tail(lookback)
+            df = df.tail(lookback).copy()
+        adjust_price_columns(df, adjust, strict=strict_factors)
+        df = df.drop(columns="_effective_factor")
         return df.reset_index(drop=True)
 
     def get_suspension_days(self, code: str) -> list[date]:

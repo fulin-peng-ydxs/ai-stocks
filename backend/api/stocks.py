@@ -332,7 +332,7 @@ def stock_quote_summary(code: str) -> ApiResponse:
 
 @router.get("/stocks/{code}/bars", response_model=ApiResponse,
             dependencies=[Depends(require_perm("stocks:view"))])
-def stock_bars(code: str, adjust: str = "qfq", lookback: int = 250,
+def stock_bars(code: str, adjust: Literal["", "qfq", "hfq"] = "qfq", lookback: int = 250,
                end: date | None = None, include_market_values: bool = False,
                capital_basis: Literal["point_in_time", "historical"] = "point_in_time") -> ApiResponse:
     # 附加市值只供详情联动消费，旧调用保持响应形态；禁止不受限历史加载。
@@ -343,12 +343,15 @@ def stock_bars(code: str, adjust: str = "qfq", lookback: int = 250,
         c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]).date()
     name_df = c.query_df("SELECT name FROM stock_basic WHERE code = ?", [code])
     name = str(name_df.iloc[0]["name"]) if not name_df.empty else None
+    # 缺复权输入走统一业务错误，前端展示原因；不把 NULL K 线传入数值图表。
     df = MarketRepository(c).get_bars(code, end_date, lookback=lookback, adjust=adjust)
     if df.empty:
         return ok({"code": code, "name": name, "adjust": adjust, "bars": []})
 
-    def _f(v, n=3):  # 安全转 float（NaN→None）
-        return round(float(v), n) if v is not None and not pd.isna(v) else None
+    def _f(v, n=None):  # 价格保留计算精度，舍入只在前端展示；量额按原字段约定。
+        if v is None or pd.isna(v):
+            return None
+        return float(v) if n is None else round(float(v), n)
 
     out = [{
         "date": str(pd.Timestamp(r["trade_date"]).date()),

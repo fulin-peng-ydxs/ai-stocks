@@ -20,6 +20,7 @@ from backend.market_rules import (
     ipo_price_limit_applicability,
     listing_board_for,
 )
+from backend.price_adjustment import adjust_price_columns
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
 SUPPORTED_WINDOWS = frozenset({10, 20, 31, 60})
@@ -307,9 +308,9 @@ class LimitLadderCalculator:
                 if fact is None:
                     continue
                 close = self._positive_number(fact.get("close"))
-                factor = self._positive_number(fact.get("adj_factor"))
-                if close is not None and factor is not None:
-                    adjusted_closes.append(close * factor)
+                adjusted_close = self._positive_number(fact.get("close_hfq"))
+                if close is not None and adjusted_close is not None:
+                    adjusted_closes.append(adjusted_close)
                 if self._bool_value(fact.get("confirmed_suspension")):
                     continue
                 result, _ = self.evaluate_fact(
@@ -376,9 +377,9 @@ class LimitLadderCalculator:
                     if fact is None:
                         continue
                     close = self._positive_number(fact.get("close"))
-                    factor = self._positive_number(fact.get("adj_factor"))
-                    if close is not None and factor is not None:
-                        adjusted_closes.append(close * factor)
+                    adjusted_close = self._positive_number(fact.get("close_hfq"))
+                    if close is not None and adjusted_close is not None:
+                        adjusted_closes.append(adjusted_close)
                     if self._bool_value(fact.get("confirmed_suspension")):
                         continue
                     result, _ = self.evaluate_fact(
@@ -475,6 +476,15 @@ class LimitLadderCalculator:
                 """
             )
         self._batch_query_count += 1
+        # 停牌事实可没有行情/因子；实际价格行的收益统计必须使用有效复权输入。
+        priced = rows["close"].notna()
+        rows["close_hfq"] = float("nan")
+        if priced.any():
+            adjusted = adjust_price_columns(
+                rows.loc[priced, ["code", "trade_date", "close", "adj_factor"]].copy(),
+                "hfq", columns=("close",), suffix="_hfq"
+            )
+            rows.loc[priced, "close_hfq"] = adjusted["close_hfq"]
         return {
             (str(row["code"]), pd.Timestamp(row["trade_date"]).date()): row.to_dict()
             for _, row in rows.iterrows()

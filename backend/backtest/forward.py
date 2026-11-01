@@ -24,6 +24,7 @@ import pandas as pd
 
 from backend.common.logging import get_logger
 from backend.market_identity import STOCK_CODE_CHANGES, canonical_stock_code
+from backend.price_adjustment import adjust_price_columns
 from backend.storage.duckdb_client import get_client
 
 log = get_logger("backtest.forward")
@@ -81,9 +82,7 @@ def compute_forward_returns(
         return pd.DataFrame(columns=["code", "trade_date", "entry_price"])
 
     bars["trade_date"] = pd.to_datetime(bars["trade_date"])
-    af = bars["adj_factor"].fillna(1.0)
-    bars["open_hfq"] = bars["open"] * af
-    bars["high_hfq"] = bars["high"] * af
+    adjust_price_columns(bars, "hfq", columns=("open", "high"), suffix="_hfq")
 
     # 右沿可评估截止：信号日的市场位置 k 满足 k+N <= last_market_pos
     mdates = _market_dates(client, date_start, buf_hi)
