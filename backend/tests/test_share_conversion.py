@@ -108,6 +108,33 @@ def test_unknown_notice_is_allowed_but_overlapping_bonds_are_rejected():
     ).empty
 
 
+@pytest.mark.parametrize("other_start,other_end,blocked", [
+    (None, None, True), ("2025-01-01", None, True),
+    ("2030-01-01", None, False), (None, "2020-12-31", False),
+])
+def test_missing_other_bond_period_never_compares_none_or_assumes_no_overlap(other_start, other_end, blocked):
+    evidence, calls = {}, []
+    listing = bonds() + [{"SECURITY_CODE": "110002", "TRANSFER_START_DATE": other_start,
+                          "TRANSFER_END_DATE": other_end}]
+    out = reconstruct_conversion_shares(
+        "600001.SH", ["2026-01-05"], events(), listing,
+        lambda *a: calls.append(a) or daily(*a), evidence=evidence)
+    assert out.empty is blocked
+    assert bool(calls) is (not blocked)
+    if blocked:
+        assert evidence["skipped"]["110001"] == "unknown_other_conversion_period"
+        assert evidence["unknown_period_bonds"]["110001"] == ["110002"]
+
+
+@pytest.mark.parametrize("bad", ["decreasing", "duplicate"])
+def test_invalid_cumulative_source_remains_rejected(bad):
+    rows=daily("110001",2026)
+    if bad=="decreasing":rows["cumulative"]=[500,300]
+    else:rows["effective"]=pd.to_datetime(["2026-01-04","2026-01-04"])
+    with pytest.raises(ValueError,match="累计转股重复或倒退"):
+        reconstruct_conversion_shares("600001.SH",["2026-01-06"],events(),bonds(),lambda *a: rows)
+
+
 def test_sse_bad_page_is_not_silent_empty(monkeypatch):
     class Response:
         def raise_for_status(self):
@@ -306,17 +333,19 @@ def test_review_resume_keeps_window_without_changing_daily_checkpoint(market):
         capital_review_batch_size=1, capital_review_interval_days=7,
         history_years=10, update_concurrency=1,
     ))
-    service._source_for = lambda *args: SimpleNamespace(name="test")
-    service._thread_source = lambda *args: None
+    source = SimpleNamespace(name="test", get_valuation=lambda *args: pd.DataFrame())
+    service._source_for = lambda *args: source
+    service._thread_source = lambda *args: source
     service._history_window = lambda *args: pytest.fail("续跑不重新计算日期")
     checkpoint = {"target_end": "2026-01-06", "history_start": "2020-01-01",
                   "capital_review_window": ["2016-01-05", "2026-01-05"],
                   "capital_review_targets": ["600001.SH"]}
     ctx = SimpleNamespace(checkpoint=checkpoint, set_checkpoint=lambda **kw: checkpoint.update(kw),
-                          log=lambda *args: None, flush=lambda: None)
+                          set_phase=lambda *args, **kw: checkpoint.update(kw),
+                          log=lambda *args: None, flush=lambda: None,
+                          check_cancel=lambda: None, progress=lambda *args: None)
     windows = []
-    service._collect_capital_one = lambda code, source, start, end, diagnostics: windows.append((start, end))
-    service._run_bounded_parallel = lambda pending, worker, **kw: [worker(code) for code in pending]
+    service._collect_capital_one = lambda code, source, start, end, diagnostics: windows.append((start, end)) or 0
     service.review_capital_history(ctx=ctx)
     assert windows == [(date(2016, 1, 5), date(2026, 1, 5))]
     assert checkpoint["target_end"] == "2026-01-06"

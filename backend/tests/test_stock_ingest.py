@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
 import pandas as pd
+import pytest
 
 from backend.scheduler.scheduler import SCHEDULABLE_TASK_TYPES
 from backend.services.async_task import (
@@ -102,6 +102,45 @@ def test_normalize_stock_ingest_params_accepts_nine_safe_recipes(params, expecte
 def test_normalize_stock_ingest_params_rejects_unsafe_combinations(params):
     with pytest.raises(ValueError):
         normalize_stock_ingest_params(params)
+
+
+@pytest.mark.parametrize("recipe", [
+    "history_backfill", "valuation_history", "share_capital_history", "delisted_history",
+])
+def test_historical_recipes_accept_shared_end_and_reject_start(recipe):
+    params = {"recipe": recipe, "years": 15, "date_end": "2026-10-30"}
+    assert normalize_stock_ingest_params(params) == params
+    for extra in [{"date_start": "2012-01-01"}, {"date_end": "invalid"}]:
+        with pytest.raises(ValueError):
+            normalize_stock_ingest_params({**params, **extra})
+
+
+@pytest.mark.parametrize("mode", ["review_only", "rebuild_events_only", "recalculate_only"])
+def test_local_capital_modes_reject_historical_end(mode):
+    with pytest.raises(ValueError):
+        normalize_stock_ingest_params({
+            "recipe": "share_capital_history", mode: True, "date_end": "2026-10-30",
+        })
+
+
+@pytest.mark.parametrize(("recipe", "method"), [
+    ("history_backfill", "backfill"), ("valuation_history", "ingest_valuation"),
+    ("share_capital_history", "ingest_share_capital"), ("delisted_history", "ingest_delisted"),
+])
+def test_historical_handlers_forward_shared_end_and_sample_codes(
+    monkeypatch, capital_sync, recipe, method,
+):
+    from datetime import date
+
+    calls = []
+    service = SimpleNamespace(c=None, enrich_basic_dates=lambda **kw: 1)
+    setattr(service, method, lambda **kw: calls.append(kw) or {"ok": 1, "fail": 0})
+    monkeypatch.setattr("backend.services.ingest.IngestionService", lambda: service)
+    _h_stock_ingest({"recipe": recipe, "codes": ["000522.SZ"], "years": 15,
+                     "date_end": "2026-10-30"}, _Ctx())
+    assert calls[0]["end"] == date(2026, 10, 30)
+    assert calls[0]["codes"] == ["000522.SZ"]
+    assert calls[0]["years"] == 15
 
 
 @pytest.mark.parametrize(
@@ -233,3 +272,26 @@ def test_daily_substage_failure_is_not_success(monkeypatch, handler):
         update=lambda **kw: {'ok': 10, 'fail': 0, 'stage_failures': {'valuation_latest_error': 'timeout'}}))
     result = getattr(async_task, handler)({'codes':['600000.SH'], 'recipe':'daily_update'}, _Ctx())
     assert result['ok'] is False
+
+
+def test_gap_only_capital_mode_is_explicit_and_forwards(monkeypatch, capital_sync):
+    calls = []
+    service = SimpleNamespace(c=None, ingest_share_capital=lambda **kw: calls.append(kw) or {"ok": 1})
+    monkeypatch.setattr("backend.services.ingest.IngestionService", lambda: service)
+    params = {"recipe": "share_capital_history", "gaps_only": True,
+              "years": 15, "date_end": "2026-10-30"}
+    assert normalize_stock_ingest_params(params) == params
+    _h_stock_ingest(params, _Ctx())
+    assert calls[0]["gaps_only"] is True
+
+
+@pytest.mark.parametrize("params", [
+    {"recipe": "daily_update", "gaps_only": True},
+    {"recipe": "share_capital_history", "gaps_only": "true"},
+    {"recipe": "share_capital_history", "gaps_only": True, "review_only": True},
+    {"recipe": "share_capital_history", "gaps_only": True, "recalculate_only": True},
+    {"recipe": "share_capital_history", "gaps_only": True, "rebuild_events_only": True},
+])
+def test_gap_only_capital_mode_rejects_incompatible_options(params):
+    with pytest.raises(ValueError):
+        normalize_stock_ingest_params(params)

@@ -17,6 +17,7 @@ T 日选股/卖出判定，T+1 开盘成交，杜绝未来函数。
 from __future__ import annotations
 
 import json
+import math
 from datetime import date
 from typing import ClassVar
 
@@ -25,6 +26,7 @@ import pandas as pd
 from backend.backtest.broker import Broker, can_buy_at_open, can_sell_at_open
 from backend.common.logging import get_logger
 from backend.config import get_effective_settings
+from backend.market_identity import STOCK_CODE_CHANGES, filter_trading_codes, trading_code_at
 from backend.market_rules import price_limit_pct_for
 from backend.scoring.model import ScoreModel
 from backend.storage.duckdb_client import get_client
@@ -343,7 +345,6 @@ class BacktestEngine:
         ind_map: dict = {}
         ind_cap: int | None = None
         if industry_max_pct:
-            import math
             ind_df = self.c.query_df("SELECT code, industry FROM stock_basic")
             ind_map = dict(zip(ind_df["code"], ind_df["industry"]))
             ind_cap = max(1, math.ceil(float(industry_max_pct) * top_n))
@@ -359,7 +360,37 @@ class BacktestEngine:
         def price_row(code: str, day: pd.Timestamp):
             return P.get((code, day))
 
+        def exit_notes(pos, reason, detail=None):
+            if not pos.code_changes:
+                return detail
+            labels = json.loads(detail) if detail else [reason]
+            return json.dumps([*labels, *pos.code_changes], ensure_ascii=False)
+
+        def transfer_positions(day):
+            # 只用切换前两代码同日的原始价/有效因子校准，绝不以跨日价格比抹去真实收益。
+            for change in STOCK_CODE_CHANGES:
+                if change.previous_code not in broker.positions or day.date() < change.effective_date:
+                    continue
+                pairs = [(stamp, old, P.get((change.current_code, stamp)))
+                         for (code, stamp), old in P.items()
+                         if code == change.previous_code and stamp.date() < change.effective_date]
+                pairs = [(stamp, old, new) for stamp, old, new in pairs if new is not None]
+                if not pairs:
+                    raise ValueError(f"{change.previous_code}→{change.current_code} 缺切换前共同复权锚点")
+                _, old, new = max(pairs, key=lambda item: item[0])
+                factors = (old.adj_factor, new.adj_factor)
+                if (not all(math.isfinite(x) and x > 0 for x in factors)
+                        or not math.isfinite(old.close) or not math.isfinite(new.close)
+                        or abs(old.close - new.close) > .011):
+                    raise ValueError(f"{change.previous_code}→{change.current_code} 复权锚点价格或因子不一致")
+                broker.transfer_code(change.previous_code, change.current_code,
+                                     old.adj_factor / new.adj_factor, day.date())
+                if change.previous_code in pending_sells:
+                    pending_sells.remove(change.previous_code)
+                    pending_sells.add(change.current_code)
+
         for i, D in enumerate(days):
+            transfer_positions(D)
             sig = days[i - 1] if i > 0 else None  # 信号日 = 前一交易日
             sold_today: set[str] = set()  # 当日已卖出的票，禁止当日买回（防同日"卖了又买"churn）
 
@@ -373,12 +404,12 @@ class BacktestEngine:
                     reason = "顺延" if trigger else None
                     exit_detail = None  # 卖树部分命中时记命中指标标签（JSON）；全命中/非卖树为空
                     if srow is not None:
-                        cur = srow.close_hfq
+                        cur = srow.close_hfq * pos.price_scale
                         ret = cur / pos.entry_price - 1.0
                         hold = i - 1 - days.index(pd.Timestamp(pos.entry_date)) if pd.Timestamp(pos.entry_date) in days else 0
                         # 卖出信号：有买卖方案则用 sell_tree 命中；否则旧式跌破 MA
                         if use_profiles:
-                            sell_sig = code in sell_hits.get(sig, set())
+                            sell_sig = trading_code_at(code, sig.date()) in sell_hits.get(sig, set())
                             sell_label = "卖出信号"
                         else:
                             sell_sig = bool(srow.below_ma)
@@ -386,7 +417,7 @@ class BacktestEngine:
                         if sell_sig:
                             trigger, reason = True, sell_label
                             if use_profiles and sell_labels:  # 部分命中 → 标注命中了哪些卖出指标
-                                hl = sell_hit_labels(code, sig)
+                                hl = sell_hit_labels(trading_code_at(code, sig.date()), sig)
                                 if hl and len(hl) < len(sell_labels):
                                     exit_detail = json.dumps(hl, ensure_ascii=False)
                         elif take_profit is not None and ret >= float(take_profit):
@@ -414,7 +445,7 @@ class BacktestEngine:
                             "seq": seq, "code": code, "entry_date": entry_dt.date(),
                             "entry_price": round(pos.entry_price, 4), "exit_date": D.date(),
                             "exit_price": round(f.price, 4), "exit_reason": reason,
-                            "exit_detail": exit_detail,
+                            "exit_detail": exit_notes(pos, reason, exit_detail),
                             "shares": f.shares,
                             "return_pct": round((f.cash_delta - pos.cost_basis) / pos.cost_basis, 6),
                             "pnl": round(f.cash_delta - pos.cost_basis, 2),
@@ -428,6 +459,7 @@ class BacktestEngine:
             if do_rebalance and len(broker.positions) < top_n:
                 cand = S.get(sig)
                 if cand is not None and not cand.empty:
+                    cand = filter_trading_codes(cand.assign(trade_date=sig))
                     codes_ranked = cand["code"].tolist()
                     grade_map = dict(zip(cand["code"], cand["grade"]))
                     score_map = dict(zip(cand["code"], cand["total_score"]))
@@ -443,6 +475,13 @@ class BacktestEngine:
                     # 方案内排名（命中票按评分排序后的优先级）+ 候选池大小（解释"为什么买它"）
                     pick_map = {c: i + 1 for i, c in enumerate(codes_ranked)}
                     pool = len(codes_ranked)
+                    # 信号规则在 T 日旧代码求值；T+1 若更码，则按当天真实代码撮合。
+                    execution_codes = {code: trading_code_at(code, D.date()) for code in codes_ranked}
+                    grade_map = {execution_codes.get(c, c): v for c, v in grade_map.items()}
+                    score_map = {execution_codes.get(c, c): v for c, v in score_map.items()}
+                    rank_map = {execution_codes.get(c, c): v for c, v in rank_map.items()}
+                    pick_map = {execution_codes[c]: v for c, v in pick_map.items()}
+                    codes_ranked = [execution_codes[c] for c in codes_ranked]
                     slots = top_n - len(broker.positions)
                     alloc = broker.cash / max(slots, 1)
                     # 当前各行业持仓数（行业上限用）
@@ -496,7 +535,7 @@ class BacktestEngine:
         for code in list(broker.positions.keys()):
             pos = broker.positions[code]
             drow = price_row(code, last_day)
-            exit_px = drow.open_hfq if drow is not None else pos.last_price
+            exit_px = drow.open_hfq if drow is not None else pos.last_price / pos.price_scale
             reason = "区间末强平" if drow is not None else "停牌/退市强平"
             f = broker.sell_all(code, last_day, exit_px)
             if f:
@@ -505,7 +544,8 @@ class BacktestEngine:
                 trades.append({
                     "seq": seq, "code": code, "entry_date": entry_dt.date(),
                     "entry_price": round(pos.entry_price, 4), "exit_date": last_day.date(),
-                    "exit_price": round(f.price, 4), "exit_reason": reason, "exit_detail": None,
+                    "exit_price": round(f.price, 4), "exit_reason": reason,
+                    "exit_detail": exit_notes(pos, reason),
                     "shares": f.shares,
                     "return_pct": round((f.cash_delta - pos.cost_basis) / pos.cost_basis, 6),
                     "pnl": round(f.cash_delta - pos.cost_basis, 2),

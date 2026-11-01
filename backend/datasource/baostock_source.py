@@ -27,6 +27,7 @@ from backend.config.request_snapshot import get_request_settings as get_effectiv
 from backend.datasource.akshare_source import classify_board
 from backend.datasource.baostock_executor import pooled_operation
 from backend.datasource.base import DataSource, rate_limited, with_retry
+from backend.market_identity import source_code_periods
 
 log = get_logger("datasource.baostock")
 
@@ -366,16 +367,8 @@ class BaostockSource(DataSource):
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
     @rate_limited(_MIN_INTERVAL)
     def _k_data(self, code: str, start: date, end: date, adjustflag: str) -> pd.DataFrame:
-        import baostock as bs
-
         fields = "date,open,high,low,close,preclose,volume,amount,turn,tradestatus,isST"
-        return self._query_frame(
-            lambda: bs.query_history_k_data_plus(
-                full_to_bs(code), fields,
-                start_date=fmt_date(start), end_date=fmt_date(end),
-                frequency="d", adjustflag=adjustflag,
-            )
-        )
+        return self._history_data(code, start, end, fields, adjustflag)
 
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
     @rate_limited(_MIN_INTERVAL, start_to_start=True)
@@ -385,18 +378,33 @@ class BaostockSource(DataSource):
         批量取源可由共享执行器的独立进程调用，所有进程仍在request_slot共用频率与网络额度。
         with_retry在单次查询锁外退避，不能在业务层重新锁住整个重试序列。
         """
+        return self._history_data(code, start, end, "date,tradestatus,isST", "3")
+
+    def _history_data(self, code, start, end, fields, adjustflag):
+        """同一证券按官方身份分段查询；保留原始报价/源因子，基准清洗留给共享入库链路。"""
         import baostock as bs
 
-        return self._query_frame(
-            lambda: bs.query_history_k_data_plus(
-                full_to_bs(code),
-                "date,tradestatus,isST",
-                start_date=fmt_date(start),
-                end_date=fmt_date(end),
-                frequency="d",
-                adjustflag="3",
+        parts = []
+        for actual_code, lo, hi, evidence in source_code_periods(code, start, end):
+            part = self._query_frame(
+                lambda actual_code=actual_code, lo=lo, hi=hi: bs.query_history_k_data_plus(
+                    full_to_bs(actual_code), fields,
+                    start_date=fmt_date(lo), end_date=fmt_date(hi),
+                    frequency="d", adjustflag=adjustflag,
+                )
             )
-        )
+            if part is None or part.empty:
+                continue
+            # 源端可能为新代码追溯历史；只接纳真实身份区间，不能重复或越界写事实。
+            dates = pd.to_datetime(part["date"]).dt.date
+            part = part.loc[(dates >= lo) & (dates <= hi)].copy()
+            ref = ("query_history_k_data_plus:isST" if fields == "date,tradestatus,isST"
+                   else f"query_history_k_data_plus:daily;adjustflag={adjustflag}")
+            if actual_code != code:
+                ref += f";query_code={actual_code};identity={evidence}"
+            part["source_ref"] = ref
+            parts.append(part)
+        return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
 
     @pooled_operation
     def get_daily_bar(self, code: str, start: date, end: date, adjust: str = "") -> pd.DataFrame:
@@ -441,6 +449,8 @@ class BaostockSource(DataSource):
                 "turnover_rate": raw["turn"],  # baostock turn 已是百分比
             }
         ).sort_values("trade_date")
+        if "source_ref" in raw and raw.source_ref.str.contains(";identity=", regex=False).any():
+            out["_identity_source_ref"] = raw["source_ref"]
         # 零成交日（退市整理/停牌）成交额、换手率应为 0，而非 NaN
         zero_vol = out["volume"] == 0
         out.loc[zero_vol, "amount"] = out.loc[zero_vol, "amount"].fillna(0.0)
@@ -468,6 +478,7 @@ class BaostockSource(DataSource):
                 "code": code,
                 "trade_date": raw["date"].apply(to_date),
                 "is_st": status.astype("int8").astype(bool),
+                "source_ref": raw.get("source_ref", "query_history_k_data_plus:isST"),
                 # 未知交易状态绝不能填成 0（停牌）；保留 NaN，交由证据校验拒绝确认。
                 "trade_status": pd.to_numeric(
                     raw["tradestatus"], errors="coerce"

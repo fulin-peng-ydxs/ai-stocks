@@ -110,6 +110,69 @@ def test_history_window_before_close_uses_previous_session(monkeypatch, market):
     assert svc._history_window(10) == (date(2016, 10, 16), date(2026, 10, 16))
 
 
+def test_fifteen_year_history_pins_shared_end_and_survives_cross_day_resume(monkeypatch, market):
+    from datetime import datetime
+
+    from backend.services import eod_dates
+
+    monkeypatch.setattr(eod_dates, "shanghai_now", lambda: datetime(
+        2026, 11, 3, 12, tzinfo=eod_dates.SHANGHAI))
+    market.execute("INSERT INTO trade_calendar VALUES ('2026-10-30',TRUE),('2026-11-02',TRUE)")
+    svc = object.__new__(IngestionService)
+    svc.repo = SimpleNamespace(c=market)
+    ctx = SimpleNamespace(checkpoint={}, log=lambda *a: None)
+    ctx.set_checkpoint = lambda **kw: ctx.checkpoint.update(kw)
+    result = svc._history_window(15, ctx, end=date(2026, 10, 30))
+    assert result == (date(2011, 10, 30), date(2026, 10, 30))
+    assert result[0] < date(2012, 1, 1)
+    # 更晚创建的子阶段明确传同一日期；旧任务续跑即使传参变化也消费已冻结窗口。
+    assert svc._history_window(15, end=date(2026, 10, 30)) == result
+    assert svc._history_window(10, ctx, end=date(2026, 11, 2)) == result
+
+
+@pytest.mark.parametrize("end", [date(2026, 11, 2), date(2026, 11, 3)])
+def test_explicit_history_end_cannot_bypass_preclose_or_future_gate(monkeypatch, market, end):
+    from datetime import datetime
+
+    from backend.common.exceptions import DataSourceError
+    from backend.services import eod_dates
+
+    monkeypatch.setattr(eod_dates, "shanghai_now", lambda: datetime(
+        2026, 11, 2, 12, tzinfo=eod_dates.SHANGHAI))
+    svc = object.__new__(IngestionService)
+    svc.repo = SimpleNamespace(c=market)
+    svc.ingest_calendar = lambda *a, **kw: pytest.fail("非法目标不得先写日历")
+    with pytest.raises(DataSourceError, match="尚未达到EOD"):
+        svc._history_window(15, end=end)
+
+
+@pytest.mark.parametrize("include_bse", [False, True])
+def test_stock_list_only_requests_configured_markets(monkeypatch, include_bse):
+    from backend.datasource import akshare_source as module
+
+    monkeypatch.setattr(module, "get_effective_settings", lambda: SimpleNamespace(
+        universe=SimpleNamespace(include_bse=include_bse)))
+    monkeypatch.setattr(module.ak, "stock_info_sh_name_code", lambda symbol: pd.DataFrame({
+        "证券代码": ["600000" if symbol == "主板A股" else "688001"], "证券简称": [symbol],
+    }))
+    monkeypatch.setattr(module.ak, "stock_info_sz_name_code", lambda symbol: pd.DataFrame({
+        "A股代码": [1], "A股简称": ["平安银行"],
+    }))
+    calls = []
+
+    def bse():
+        calls.append(True)
+        return pd.DataFrame({"证券代码": ["920001"], "证券简称": ["北交所样本"]})
+
+    monkeypatch.setattr(module.ak, "stock_info_bj_name_code", bse)
+    source = object.__new__(module.AKShareSource)
+    source._min_interval_sec = 0
+    result = source.get_stock_list()
+    assert set(result.code) == {"600000.SH", "688001.SH", "000001.SZ"} | (
+        {"920001.BJ"} if include_bse else set())
+    assert calls == ([True] if include_bse else [])
+
+
 def test_history_coverage_does_not_hide_two_missing_sessions(market):
     from backend.storage.repository import MarketRepository
     svc = object.__new__(IngestionService)
@@ -232,3 +295,23 @@ def test_basic_refresh_preserves_industry_omitted_by_source(market, monkeypatch)
     actual = market.query_df('SELECT code,industry FROM stock_basic').set_index('code').industry
     assert actual['601198.SH'] == 'J67资本市场服务'
     assert actual['301660.SZ'] == 'C39制造业'
+
+
+def test_reingested_bar_invalidates_completed_factor_checkpoint(market, monkeypatch):
+    from backend.storage.repository import MarketRepository
+
+    market.execute("INSERT INTO daily_bar(code,trade_date,close,adj_factor_clean) VALUES "
+                   "('001872.SZ','2018-12-20',10,NULL),('600519.SH','2018-12-20',10,1)")
+    service = object.__new__(IngestionService)
+    service.c = market
+    service.repo = MarketRepository(market)
+    ctx = SimpleNamespace(checkpoint={"factor_done_codes": ["001872.SZ", "600519.SH"]})
+    ctx.set_phase = lambda *a, **kw: ctx.checkpoint.update(kw)
+    ctx.log = ctx.progress = lambda *a, **kw: None
+    ctx.check_cancel = lambda: None
+    calls = []
+    monkeypatch.setattr(service, "_recompute_clean_one", lambda code, *a, **kw: calls.append(code) or 1)
+    result = service._refresh_clean_factors(["001872.SZ", "600519.SH"], ctx=ctx)
+    assert result["ok"] == 1
+    assert calls == ["001872.SZ"]
+    assert ctx.checkpoint["factor_done_codes"] == ["001872.SZ", "600519.SH"]

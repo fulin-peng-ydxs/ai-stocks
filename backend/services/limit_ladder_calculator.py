@@ -12,6 +12,7 @@ from backend.limit_ladder.rules import (
     PointInTimeSTStatus,
     STStatusQuality,
 )
+from backend.market_identity import trading_code_on_sql
 from backend.market_rules import (
     CloseLimitStatus,
     PriceLimitApplicability,
@@ -418,11 +419,12 @@ class LimitLadderCalculator:
     def _point_in_time_basics(self, trade_date: date) -> pd.DataFrame:
         # 保留退市前的历史股票池；退市当天起不再要求行情或计入天梯。
         return self.c.query_df(
-            """
+            f"""
             SELECT code,name,board,list_date,delist_date,industry,price_limit_pct
             FROM stock_basic
             WHERE list_date IS NOT NULL AND list_date<=?
               AND (delist_date IS NULL OR delist_date>?)
+              AND {trading_code_on_sql(trade_date)}
             ORDER BY code
             """,
             [trade_date, trade_date],

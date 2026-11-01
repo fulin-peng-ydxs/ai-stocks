@@ -28,6 +28,7 @@ from backend.indicators.compute import (
     param_hash,
 )
 from backend.indicators.period import INDICATOR_ENGINE_DEFAULT_PERIOD
+from backend.market_identity import filter_trading_codes
 from backend.storage.duckdb_client import get_client
 from backend.storage.repository import MarketRepository
 
@@ -138,7 +139,7 @@ class IndicatorEngine:
         """按 trade_date 对 W 日收益做横截面百分位（0~100）。"""
         if not rets:
             return pd.DataFrame(columns=["code", "trade_date", "rs_pct"])
-        allret = pd.concat(rets, ignore_index=True).dropna(subset=["ret_w"])
+        allret = filter_trading_codes(pd.concat(rets, ignore_index=True)).dropna(subset=["ret_w"])
         if allret.empty:
             return pd.DataFrame(columns=["code", "trade_date", "rs_pct"])
         allret["rs_pct"] = allret.groupby("trade_date")["ret_w"].rank(pct=True) * 100.0
@@ -212,7 +213,7 @@ class IndicatorEngine:
             })
             ind_td = pd.to_datetime(ind["trade_date"])
             m = (ind_td >= lo_ts) & (ind_td <= hi_ts)
-            ind = ind[m.values]
+            ind = filter_trading_codes(ind[m.values])
             ret = ret[((pd.to_datetime(ret["trade_date"]) >= lo_ts)
                        & (pd.to_datetime(ret["trade_date"]) <= hi_ts)).values]
             if ind.empty:

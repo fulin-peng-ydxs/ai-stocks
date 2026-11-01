@@ -34,12 +34,12 @@ STOCK_INGEST_RECIPE_LABELS = {
 }
 
 _COMMON_FIELDS = {
-    "recipe", "codes", "date_start", "date_end", "years", "concurrency", "force_current_day", "verified_facts", "recalculate_only", "review_only", "rebuild_events_only",
+    "recipe", "codes", "date_start", "date_end", "years", "concurrency", "force_current_day", "verified_facts", "recalculate_only", "review_only", "rebuild_events_only", "gaps_only",
 }
 _CODE_RECIPES = {
     "daily_update", "history_backfill", "range_refetch",
     "share_capital_history",
-    "valuation_history", "valuation_gaps", "valuation_invalid_history",
+    "valuation_history", "valuation_gaps", "valuation_invalid_history", "delisted_history",
     "st_status_refresh",
 }
 _YEAR_RECIPES = {"share_capital_history", "history_backfill", "valuation_history", "delisted_history"}
@@ -160,6 +160,13 @@ def normalize_stock_ingest_params(params: dict | None) -> dict:
                 raise ValueError("结束日期不得早于起始日期")
             out["date_start"] = start.isoformat()
             out["date_end"] = end.isoformat()
+    elif recipe in _YEAR_RECIPES and raw.get("date_start") is None:
+        # 多阶段历史补采共享截止日；年数仍决定起点，不开放任意区间绕过方案边界。
+        if raw.get("date_end") is not None:
+            try:
+                out["date_end"] = date.fromisoformat(str(raw["date_end"])).isoformat()
+            except ValueError as exc:
+                raise ValueError("采集日期须使用 YYYY-MM-DD 格式") from exc
     elif raw.get("date_start") is not None or raw.get("date_end") is not None:
         raise ValueError(f"{STOCK_INGEST_RECIPE_LABELS[recipe]}不支持日期区间参数")
 
@@ -201,4 +208,15 @@ def normalize_stock_ingest_params(params: dict | None) -> dict:
             if "years" in out or "verified_facts" in out:
                 raise ValueError("仅本地补算不支持年限和公告事实参数")
             out["recalculate_only"] = True
+    if "gaps_only" in raw:
+        if recipe != "share_capital_history" or not isinstance(raw["gaps_only"], bool):
+            raise ValueError("缺口补采仅支持逐日股本方案及布尔参数")
+        if raw["gaps_only"]:
+            if any(out.get(key) for key in ("review_only", "rebuild_events_only", "recalculate_only", "verified_facts")):
+                raise ValueError("缺口补采不能与轮询、本地重算或公告导入混用")
+            out["gaps_only"] = True
+    if "date_end" in out and recipe == "share_capital_history" and any(
+        out.get(key) for key in ("review_only", "rebuild_events_only", "recalculate_only")
+    ):
+        raise ValueError("非联网股本补采模式不支持历史截止日期")
     return out

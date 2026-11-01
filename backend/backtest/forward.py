@@ -23,6 +23,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from backend.common.logging import get_logger
+from backend.market_identity import STOCK_CODE_CHANGES, canonical_stock_code
 from backend.storage.duckdb_client import get_client
 
 log = get_logger("backtest.forward")
@@ -68,8 +69,12 @@ def compute_forward_returns(
     if codes is not None:
         if not codes:
             return pd.DataFrame(columns=["code", "trade_date", "entry_price"])
-        sql += f" AND code IN ({','.join('?' * len(codes))})"
-        params += list(codes)
+        query_codes = list(dict.fromkeys([*codes, *[
+            canonical_stock_code(c) for c in codes
+            if any(x.previous_code == c and x.effective_date <= buf_hi for x in STOCK_CODE_CHANGES)
+        ]]))
+        sql += f" AND code IN ({','.join('?' * len(query_codes))})"
+        params += query_codes
     sql += " ORDER BY code, trade_date"
     bars = client.query_df(sql, params)
     if bars.empty:
@@ -82,7 +87,6 @@ def compute_forward_returns(
 
     # 右沿可评估截止：信号日的市场位置 k 满足 k+N <= last_market_pos
     mdates = _market_dates(client, date_start, buf_hi)
-    pos_of = {d: i for i, d in enumerate(mdates)}
     last_pos = len(mdates) - 1
     cutoff_n = {
         n: (mdates[last_pos - n] if last_pos - n >= 0 else None) for n in horizons
@@ -104,6 +108,21 @@ def compute_forward_returns(
     res = pd.concat(out_parts, ignore_index=True)
     # 只保留信号区间内的日期（缓冲日不作为信号）
     res = res[res["trade_date"] <= pd.Timestamp(date_end)]
+
+    value_cols = ["entry_price", *[f"fwd_ret_{n}" for n in horizons]]
+    for change in STOCK_CODE_CHANGES:
+        if not date_start <= change.effective_date <= buf_hi:
+            continue
+        mask = res["code"].eq(change.previous_code) & res["trade_date"].lt(pd.Timestamp(change.effective_date))
+        if not mask.any():
+            continue
+        continuous = res.loc[res["code"].eq(canonical_stock_code(change.current_code))].set_index("trade_date")
+        dates = res.loc[mask, "trade_date"]
+        if not dates.isin(continuous.index).all():
+            raise ValueError(f"{change.previous_code} 更码前向收益缺同一证券的连续行情")
+        res.loc[mask, value_cols] = continuous.reindex(dates)[value_cols].to_numpy()
+    if codes is not None:
+        res = res.loc[res["code"].isin(codes)].copy()
 
     # 可评估标记：有入场价（下一根 bar 存在）且右沿完整窗口
     has_entry = res["entry_price"].notna()

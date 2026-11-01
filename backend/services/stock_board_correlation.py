@@ -30,6 +30,7 @@ from backend.indicators.stock_board_correlation import (
     precompute_market_returns,
     resolve_benchmark_code,
 )
+from backend.market_identity import trading_code_at, trading_code_on_sql
 from backend.services.market_benchmark import MarketBenchmarkService
 from backend.services.stock_codes import normalize_stock_code, normalize_stock_codes
 from backend.storage.duckdb_client import DuckDBClient, get_client, is_managed_duckdb_client
@@ -266,7 +267,7 @@ class StockBoardCorrelationService:
                 "WHERE list_date <= ? AND (delist_date IS NULL OR delist_date > ?) "
                 "  AND board IN ('主板', '创业板', '科创板') "
                 "  AND regexp_matches(code, '^[0-9]{6}\\.(SH|SZ)$') "
-                "ORDER BY code",
+                f"AND {trading_code_on_sql(as_of_date)} ORDER BY code",
                 [as_of_date, as_of_date],
             )
             targets = [str(value) for value in rows["code"].tolist()]
@@ -287,6 +288,8 @@ class StockBoardCorrelationService:
             if row is None:
                 errors.append(f"{code}:未知股票")
                 continue
+            if trading_code_at(code, as_of_date) != code:
+                errors.append(f"{code}:目标日代码未生效或已更码")
             board = None if pd.isna(row["board"]) else str(row["board"])
             list_date = row["list_date"]
             delist_date = row["delist_date"]

@@ -13,6 +13,7 @@ import pandas as pd
 import psycopg
 
 from backend.common.exceptions import ConflictError, NotFoundError, ValidationError
+from backend.market_identity import trading_code_at
 from backend.services.trade_discipline_conditions import (
     condition_violations,
     condition_warnings,
@@ -817,6 +818,9 @@ class TradeDisciplineService:
             missing = [code for code in codes if code not in stocks]
             if missing:
                 raise ValidationError(f"股票代码不存在：{'、'.join(missing)}")
+            inactive_codes = [code for code in codes if trading_code_at(code, trade_date) != code]
+            if inactive_codes:
+                raise ValidationError(f"履约日期代码未生效或已更码：{'、'.join(inactive_codes)}")
             not_listed = [
                 code for code in codes
                 if stocks[code]["list_date"] is not None

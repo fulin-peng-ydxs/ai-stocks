@@ -15,6 +15,7 @@ from backend.api.response import ApiResponse, ok
 from backend.auth.context import get_current_context
 from backend.auth.deps import require_any_perm, require_perm
 from backend.common.exceptions import NotFoundError, ValidationError
+from backend.market_identity import trading_code_on_sql
 from backend.services.audit_service import AuditService
 from backend.services.stock_st_status import StockSTStatusService, STStatusNotReadyError
 from backend.services.trade_discipline_service import TradeDisciplineService
@@ -620,6 +621,7 @@ def stock_options(
         point_in_time = (
             "AND (list_date IS NULL OR list_date <= ?) "
             "AND (delist_date IS NULL OR ? < delist_date) "
+            f"AND {trading_code_on_sql(trade_date)} "
         )
         params.extend([trade_date, trade_date])
     params.extend([f"{escaped}%", f"{escaped}%", limit])

@@ -1010,6 +1010,12 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
     codes = normalized.get("codes")
     concurrency = _concurrency(normalized)
     ing = IngestionService()
+    history_kwargs = (
+        {"end": _date.fromisoformat(normalized["date_end"])}
+        if normalized.get("date_end") and recipe in {
+            "history_backfill", "share_capital_history", "valuation_history", "delisted_history"
+        } else {}
+    )
     scope = f"指定 {len(codes)} 只股票" if codes else "全市场"
     ctx.log(f"个股采集方案：{label}；范围：{scope}")
     ctx.progress(0.08, f"{label}准备中…")
@@ -1023,7 +1029,8 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
         )
     elif recipe == "history_backfill":
         result = ing.backfill(
-            codes=codes, years=normalized.get("years"), concurrency=concurrency, ctx=ctx)
+            codes=codes, years=normalized.get("years"), concurrency=concurrency, ctx=ctx,
+            **history_kwargs)
     elif recipe == "range_refetch":
         result = ing.ingest_date(
             _date.fromisoformat(normalized["date_start"]),
@@ -1050,10 +1057,12 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
                 rows = ShareCapitalService(ing.c).merge_verified(verified, codes)
                 ctx.log(f"已按核验证据导入 {rows} 条总股本事实；继续采集并核验剩余字段")
             result = ing.ingest_share_capital(
-                codes=codes, years=normalized.get("years"), concurrency=concurrency, ctx=ctx)
+                codes=codes, years=normalized.get("years"), concurrency=concurrency, ctx=ctx,
+                **history_kwargs, **({"gaps_only": True} if normalized.get("gaps_only") else {}))
     elif recipe == "valuation_history":
         result = ing.ingest_valuation(
-            codes=codes, years=normalized.get("years"), concurrency=concurrency, ctx=ctx)
+            codes=codes, years=normalized.get("years"), concurrency=concurrency, ctx=ctx,
+            **history_kwargs)
     elif recipe == "valuation_gaps":
         result = ing.ingest_valuation_gaps(codes=codes, concurrency=concurrency, ctx=ctx)
     elif recipe == "valuation_invalid_history":
@@ -1077,7 +1086,9 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
         result = {"target": rows, "ok": rows, "fail": 0, "rows": rows}
     else:  # delisted_history：与 CLI delisted --enrich 保持同一先后顺序。
         basic_rows = ing.enrich_basic_dates(ctx=ctx)
-        result = ing.ingest_delisted(years=normalized.get("years"), ctx=ctx)
+        result = ing.ingest_delisted(
+            years=normalized.get("years"), ctx=ctx,
+            **({"codes": codes} if codes else {}), **history_kwargs)
         result["basic_rows"] = basic_rows
 
     if recipe in {"history_backfill", "range_refetch", "share_capital_history", "valuation_history",

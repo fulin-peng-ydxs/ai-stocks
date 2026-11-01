@@ -15,6 +15,7 @@ from backend.auth.deps import require_perm, require_system_perm
 from backend.groups.stock_group import StockGroupRepo
 from backend.indicators.engine import _IND_COLS
 from backend.indicators.period import MACD_OUTPUT_COLUMNS, IndicatorPeriod, compute_period_macd
+from backend.market_identity import trading_code_on_sql
 from backend.services.intraday_quotes import IntradayQuoteService, IntradayServiceUnavailable
 from backend.services.market_benchmark import MarketBenchmarkService
 from backend.services.stock_board_correlation import StockBoardCorrelationService
@@ -139,7 +140,7 @@ def list_stocks(q: str | None = None, boards: str | None = None,
     board_placeholders = ",".join(["?"] * len(selected_boards))
     if include_delisted:
         # 项目只对已有历史行情的退市证券承诺点时 ST 事实。更早的证券仅有基础档案，
-        # 既不属于当前五年行情研究范围，也不能靠名称伪造退市前 ST 状态。
+        # 不属于已采入的历史行情研究范围，也不能靠名称伪造退市前 ST 状态。
         missing_conds = [
             "sb.delist_date IS NOT NULL",
             "sb.delist_date<=?",
@@ -184,7 +185,7 @@ def list_stocks(q: str | None = None, boards: str | None = None,
         listed_codes = c.query_df(
             "SELECT code FROM stock_basic WHERE (list_date IS NULL OR list_date<=?) "
             "AND (delist_date IS NULL OR delist_date>?) "
-            f"AND board IN ({board_placeholders})",
+            f"AND board IN ({board_placeholders}) AND {trading_code_on_sql(td)}",
             [td, td, *selected_boards],
         )["code"].astype(str).tolist()
         StockSTStatusService(c).status_map(td, listed_codes)
@@ -205,12 +206,14 @@ def list_stocks(q: str | None = None, boards: str | None = None,
     status_conds: list[str] = []
     if "正常上市" in selected_statuses:
         status_conds.append(
-            "((sb.delist_date IS NULL OR sb.delist_date>?) AND st.is_st IS FALSE)"
+            "((sb.delist_date IS NULL OR sb.delist_date>?) AND st.is_st IS FALSE "
+            f"AND {trading_code_on_sql(td, 'sb.code')})"
         )
         params.append(td)
     if "ST" in selected_statuses:
         status_conds.append(
-            "((sb.delist_date IS NULL OR sb.delist_date>?) AND st.is_st IS TRUE)"
+            "((sb.delist_date IS NULL OR sb.delist_date>?) AND st.is_st IS TRUE "
+            f"AND {trading_code_on_sql(td, 'sb.code')})"
         )
         params.append(td)
     if include_delisted:

@@ -116,13 +116,26 @@ def reconstruct_conversion_shares(code, dates, events, bonds, fetch, *, evidence
         target = days[(days >= start) & (days <= end)]
         if not len(target):
             continue
-        overlaps = [
-            b
-            for b in bonds
-            if b is not bond
-            and pd.to_datetime(b.get("TRANSFER_START_DATE"), errors="coerce") <= target.max()
-            and pd.to_datetime(b.get("TRANSFER_END_DATE"), errors="coerce") >= start
-        ]
+        overlaps, unknown_periods = [], []
+        for other_bond in bonds:
+            if other_bond is bond:
+                continue
+            other_start = pd.to_datetime(other_bond.get("TRANSFER_START_DATE"), errors="coerce")
+            other_end = pd.to_datetime(other_bond.get("TRANSFER_END_DATE"), errors="coerce")
+            # 日期缺失不能参与 Timestamp 比较，也不能据此断言两只转债不重叠。
+            # 已知一端足以排除目标区间时允许继续，其余情况保留未知并拒绝重建。
+            if pd.notna(other_start) and other_start > target.max():
+                continue
+            if pd.notna(other_end) and other_end < start:
+                continue
+            if pd.isna(other_start) or pd.isna(other_end):
+                unknown_periods.append(str(other_bond["SECURITY_CODE"]))
+            else:
+                overlaps.append(other_bond)
+        if unknown_periods:
+            report["skipped"][number] = "unknown_other_conversion_period"
+            report.setdefault("unknown_period_bonds", {})[number] = unknown_periods
+            continue
         if overlaps:
             report["skipped"][number] = "overlapping_convertible_bonds"
             continue

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import threading
 from bisect import bisect_left
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
@@ -83,6 +84,7 @@ class _PreparedDaily:
     st_facts: list[StockSTStatusFact]
     references: pd.DataFrame
     source: str
+    suspensions: tuple[DataSource, pd.DataFrame] | None = None
 
 
 class IngestionService:
@@ -452,10 +454,13 @@ class IngestionService:
         )
         if status_rows is None or status_rows.empty:
             raise DataSourceError(f"{code} {query_start}~{query_end} ST 点时事实为空")
-        status_by_date = {
-            pd.Timestamp(row["trade_date"]).date(): bool(row["is_st"])
-            for _, row in status_rows.iterrows()
-        }
+        status_by_date = {}
+        refs_by_date = {}
+        for row in status_rows.itertuples(index=False):
+            day = pd.Timestamp(row.trade_date).date()
+            status_by_date[day] = bool(row.is_st)
+            ref = getattr(row, "source_ref", None)
+            refs_by_date[day] = ref if isinstance(ref, str) and ref else "query_history_k_data_plus:isST"
         missing = [day for day in dates if day not in status_by_date]
         if missing:
             raise DataSourceError(
@@ -477,7 +482,7 @@ class IngestionService:
                 status=PointInTimeSTStatus(
                     is_st=status_by_date[day],
                     source=st_source.name,
-                    source_ref="query_history_k_data_plus:isST",
+                    source_ref=refs_by_date[day],
                     quality=STStatusQuality.ACCURATE,
                 ),
             )
@@ -512,7 +517,8 @@ class IngestionService:
                 status=PointInTimeSTStatus(
                     is_st=bool(row["is_st"]),
                     source=source.name,
-                    source_ref="query_history_k_data_plus:isST",
+                    source_ref=(row.get("source_ref") if isinstance(row.get("source_ref"), str)
+                                and row.get("source_ref") else "query_history_k_data_plus:isST"),
                     quality=STStatusQuality.ACCURATE,
                 ),
             )
@@ -624,6 +630,7 @@ class IngestionService:
         df: pd.DataFrame,
         code: str,
         ctx=None,
+        *, excluded_dates=(),
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """核验重采区间接缝，不能将两个来源的因子绝对基准当作除权。
 
@@ -635,23 +642,17 @@ class IngestionService:
             return df, empty
         ordered = df.sort_values("trade_date")
         incoming_dates = pd.to_datetime(ordered.trade_date).dt.date.tolist()
+        exclude = " AND trade_date NOT IN (SELECT unnest(?::DATE[]))" if excluded_dates else ""
+        excluded = [list(excluded_dates)] if excluded_dates else []
         neighbors = self.c.query_df(
-            "(SELECT * FROM daily_bar WHERE code=? AND trade_date<? "
-            "ORDER BY trade_date DESC LIMIT 1) UNION ALL "
-            "(SELECT * FROM daily_bar WHERE code=? AND trade_date>? "
-            "ORDER BY trade_date LIMIT 1) UNION ALL "
+            "(SELECT * FROM daily_bar WHERE code=? AND trade_date<? " + exclude +
+            " ORDER BY trade_date DESC LIMIT 1) UNION ALL "
+            "(SELECT * FROM daily_bar WHERE code=? AND trade_date>? " + exclude +
+            " ORDER BY trade_date LIMIT 1) UNION ALL "
             "SELECT * FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ? "
-            "AND trade_date NOT IN (SELECT unnest(?::DATE[]))",
-            [
-                code,
-                incoming_dates[0],
-                code,
-                incoming_dates[-1],
-                code,
-                incoming_dates[0],
-                incoming_dates[-1],
-                incoming_dates,
-            ],
+            "AND trade_date NOT IN (SELECT unnest(?::DATE[]))" + exclude,
+            [code, incoming_dates[0], *excluded, code, incoming_dates[-1], *excluded,
+             code, incoming_dates[0], incoming_dates[-1], incoming_dates, *excluded],
         )
         if neighbors.empty:
             return df, empty
@@ -777,10 +778,96 @@ class IngestionService:
             "(code, table_name, date_start, date_end, source, rows, fetched_at) VALUES (?,?,?,?,?,?,?)",
             [code, table_name, start, end, source, int(rows), datetime.now()])
 
+    def _reuse_stored_references(self, frame, code):
+        """主源无直接参考价时，保留与本次原始收盘价一致的既有校准证据。"""
+        if frame.empty:
+            return frame
+        missing = frame.get("reference_source", pd.Series(None, index=frame.index)).isna()
+        if not missing.any():
+            return frame
+        keys = frame.loc[missing, ["trade_date", "close"]].copy()
+        keys["trade_date"] = pd.to_datetime(keys.trade_date).dt.date
+        with self.c.temp_view(keys, "reference_reuse") as view:
+            stored = self.c.query_df(
+                "SELECT b.trade_date,b.reference_pre_close,b.reference_close,b.reference_source "
+                f"FROM daily_bar b JOIN {view} r USING(trade_date) WHERE b.code=? "
+                "AND b.reference_source IS NOT NULL AND b.reference_pre_close>0 "
+                "AND isfinite(b.reference_pre_close) "
+                "AND abs(b.reference_close-r.close)<=0.011", [code])
+        if stored.empty:
+            return frame
+        stored["trade_date"] = pd.to_datetime(stored.trade_date).dt.date
+        stored = stored.set_index("trade_date")
+        days = pd.to_datetime(frame.trade_date).dt.date
+        reuse = missing & days.isin(stored.index)
+        result = frame.copy()
+        for column in ("reference_pre_close", "reference_close", "reference_source"):
+            if column not in result:
+                result[column] = pd.Series(None, index=result.index, dtype=object)
+            result.loc[reuse, column] = days.loc[reuse].map(stored[column]).to_numpy()
+        result.loc[reuse, "pre_close"] = days.loc[reuse].map(stored.reference_pre_close).to_numpy()
+        return result
+
+    def _filter_verified_suspension_bars(
+        self, code, frame, material=None, ctx=None, *, start=None, end=None
+    ):
+        """零量零额只作为核验候选；仅准确交易状态一致为停牌时排除占位 K 线。"""
+        zero = pd.to_numeric(frame.volume, errors="coerce").fillna(0).eq(0)
+        zero &= pd.to_numeric(frame.amount, errors="coerce").fillna(0).eq(0)
+        if not zero.any():
+            return frame, None, material
+        days = set(pd.to_datetime(frame.loc[zero, "trade_date"]).dt.date)
+        lo, hi = (
+            start or pd.Timestamp(frame.trade_date.min()).date(),
+            end or pd.Timestamp(frame.trade_date.max()).date(),
+        )
+        if material is None:
+            material = _DailySTMaterial(
+                stored=self.c.query_df(
+                    "SELECT trade_date,is_st,source,source_ref,quality FROM stock_st_status_daily "
+                    "WHERE code=? AND trade_date BETWEEN ? AND ? AND quality='accurate'",
+                    [code, lo, hi],
+                )
+            )
+        if material.error is not None:
+            raise material.error
+        if material.fetched is None:
+            material.fetched = self._fetch_st_status_rows(code, lo, hi, ctx=ctx)
+        source, states = material.fetched
+        if states is None or states.empty or "trade_status" not in states:
+            return frame, None, material
+        states = states.assign(trade_date=pd.to_datetime(states.trade_date).dt.date)
+        states = states[states.trade_date.isin(days)]
+        confirmed = []
+        for day, group in states.groupby("trade_date"):
+            if pd.to_numeric(group.trade_status, errors="coerce").eq(0).all():
+                if group.is_st.isna().any() or group.is_st.nunique() != 1:
+                    raise DataSourceError(f"{code} {day} 停牌/ST 事实重复冲突")
+                confirmed.append(day)
+        if not confirmed:
+            return frame, None, material
+        positive = self.c.query_df(
+            "SELECT trade_date FROM daily_bar WHERE code=? "
+            "AND trade_date IN (SELECT unnest(?::DATE[])) AND (volume>0 OR amount>0)",
+            [code, confirmed],
+        )
+        if not positive.empty:
+            raise DataSourceError(f"{code} 停牌状态与已有成交记录冲突，保留原数据待核验")
+        facts = states[states.trade_date.isin(confirmed)].drop_duplicates("trade_date")
+        dates = pd.to_datetime(frame.trade_date).dt.date
+        if ctx:
+            ctx.log(f"{code} 已核实 {len(confirmed)} 个零量零额停牌占位日，保存状态而不写 K 线")
+        return frame.loc[~dates.isin(confirmed)].copy(), (source, facts), material
+
     def ingest_one_daily(
-        self, code: str, start: date, end: date,
-        board_limit_pct: float | None = None, is_st: bool | None = None,
-        source: DataSource | None = None, ctx=None,
+        self,
+        code: str,
+        start: date,
+        end: date,
+        board_limit_pct: float | None = None,
+        is_st: bool | None = None,
+        source: DataSource | None = None,
+        ctx=None,
         st_status: PointInTimeSTStatus | None = None,
         status_unavailable: bool = False,
         _prefetched=None,
@@ -891,13 +978,22 @@ class IngestionService:
             log.warning("%s 入库清洗：丢弃%d 修复OHL%d 零成交填补%d",
                         code, sanitize_stats["dropped"], sanitize_stats["fixed_ohl"],
                         sanitize_stats["filled_zerovol"])
+        suspensions = None
+        if st_status is None and is_st is None:
+            df, suspensions, _st_material = self._filter_verified_suspension_bars(
+                code, df, _st_material, ctx, start=start, end=end)
+        # 历史重采不能用主源反推值擦掉已校准的参考价；新直接证据及真实错价修正优先。
+        df = self._reuse_stored_references(df, code)
         # 板块涨跌幅按代码判定；ST 必须来自与行情日期对齐的 Baostock 点时事实。
         if board_limit_pct is None:
             _, _, board_limit_pct = classify_board(code.split(".")[0])
         df, used_source = self._calibrate_corporate_action_pre_close(
             df, code, float(board_limit_pct), used_source, ctx=ctx
         )
-        df, retained_references = self._calibrate_factor_boundaries(df, code, ctx=ctx)
+        df, retained_references = self._calibrate_factor_boundaries(
+            df, code, ctx=ctx,
+            **({"excluded_dates": suspensions[1].trade_date.tolist()} if suspensions else {}),
+        )
         st_service = StockSTStatusService(self.c)
         trade_dates = [pd.Timestamp(day).date() for day in df["trade_date"].tolist()]
         if st_status is not None or is_st is not None:
@@ -916,12 +1012,19 @@ class IngestionService:
         else:
             effective_st_facts = self._accurate_st_facts(
                 code,
-                trade_dates,
+                # 本批已验证的占位日也作为待写日期，阻止 ST 解析阶段提前提交停牌。
+                # 对应停牌/删除/备份事实在下方同一批事务中保存。
+                sorted(set(trade_dates) | set(suspensions[1].trade_date)) if suspensions else trade_dates,
                 fetch_start=start,
                 fetch_end=end,
                 ctx=ctx,
                 material=_st_material,
             )
+        if suspensions is not None:
+            # 完整状态材料本来可能已含停牌日；逐键合并，避免同一批事实重复更新。
+            effective_st_facts = list({(fact.code, fact.trade_date): fact for fact in [
+                *effective_st_facts, *self._st_facts_from_rows(code, *suspensions)
+            ]}.values())
         effective_st_by_date = {
             fact.trade_date: fact.status.is_st for fact in effective_st_facts
         }
@@ -964,6 +1067,7 @@ class IngestionService:
         ]
         prepared = _PreparedDaily(
             code, start, end, df, bar_cols, effective_st_facts, retained_references, used_source,
+            suspensions,
         )
         if _defer_write:
             return prepared
@@ -980,6 +1084,15 @@ class IngestionService:
         frames = pd.concat([item.frame for item in materials], ignore_index=True)
         bars = pd.concat([item.frame[item.bar_columns] for item in materials], ignore_index=True)
         with self.c.transaction():
+            from backend.services.data_report import DataIntegrityReport
+            for item in materials:
+                if item.suspensions is not None:
+                    source, states = item.suspensions
+                    days = states.trade_date.tolist()
+                    self._purge_suspension_placeholders(item.code, days, ctx=ctx)
+                    self._persist_gap_status(item.code, source, states, days,
+                                             DataIntegrityReport(self.c), ctx=ctx,
+                                             _in_transaction=True)
             self.repo.upsert_daily_bar(bars)
             for item in materials:
                 if not item.references.empty:
@@ -1020,6 +1133,15 @@ class IngestionService:
             # 备用源无股本列也按已存股本刷新计算市值，保持来源核验口径。
             ShareCapitalService(self.c).merge(frames, "sina_daily", _in_transaction=True)
             for item in materials:
+                if "_identity_source_ref" in item.frame:
+                    for ref, group in item.frame.groupby("_identity_source_ref", sort=False):
+                        if ";identity=" in ref:
+                            self.repo.log_update(
+                                "daily_bar", f"{item.source}:code_identity",
+                                min(group.trade_date), max(group.trade_date), len(group), "success",
+                                json.dumps({"code": item.code, "source_ref": ref,
+                                            "task_id": getattr(ctx, "tid", None)}, ensure_ascii=False),
+                            )
                 if item.source != self.s.datasource.primary:
                     self._record_provenance(item.code, "daily_bar", item.start, item.end,
                                             item.source, len(item.frame))
@@ -1109,20 +1231,23 @@ class IngestionService:
             )
 
     # ── 估值/市值（总市值/总股本，补 G2）──
-    def _history_window(self, years: int, ctx=None) -> tuple[date, date]:
+    def _history_window(self, years: int, ctx=None, *, end: date | None = None) -> tuple[date, date]:
         """历史任务首次冻结日期窗口，续跑不随当天日期或默认年限漂移。"""
         checkpoint = getattr(ctx, "checkpoint", {}) or {}
         if checkpoint.get("history_start") and checkpoint.get("history_end"):
             eod_dates.cap_end(date.fromisoformat(checkpoint['history_end']), strict=True)
             return (date.fromisoformat(checkpoint["history_start"]),
                     date.fromisoformat(checkpoint["history_end"]))
-        today = eod_dates.shanghai_now().date()
+        # 显式截止日用于串行历史任务共享批次上界，仍受收盘和真实日历保护。
+        requested_end = end or eod_dates.shanghai_now().date()
+        if end is not None:
+            eod_dates.cap_end(end, strict=True)
         try:
-            eod_dates.is_open_day(self.repo.c, today)
+            eod_dates.is_open_day(self.repo.c, requested_end)
         except DataSourceError:
             # 首次初始化历史库时先补真实日历；源端仍未覆盖则由统一解析明确失败。
-            self.ingest_calendar(years_before(today, years), today, ctx=ctx)
-        end = self._resolve_update_end(today, _UPDATE_READY_SAMPLE, None, ctx)
+            self.ingest_calendar(years_before(requested_end, years), requested_end, ctx=ctx)
+        end = self._resolve_update_end(requested_end, _UPDATE_READY_SAMPLE, None, ctx)
         start = years_before(end, years)
         if ctx is not None:
             ctx.set_checkpoint(history_start=start.isoformat(), history_end=end.isoformat())
@@ -1130,7 +1255,7 @@ class IngestionService:
 
     @checked_collection
     def ingest_valuation(self, codes: list[str] | None = None, years: int | None = None,
-                         concurrency: int | None = None, ctx=None) -> dict:
+                         concurrency: int | None = None, ctx=None, *, end: date | None = None) -> dict:
         """补每日市值字段到 daily_metrics，并把最新总/流通股本写入 stock_basic。
 
         数据源 stock_value_em（东财市值接口，可用）。按在市股逐只拉取。
@@ -1138,7 +1263,7 @@ class IngestionService:
         写入由 DuckDB 单写锁串行。默认 1（串行）。并发不放大来源请求频率。
         """
         years = years or self.s.datasource.history_years
-        start, end = self._history_window(years, ctx)
+        start, end = self._history_window(years, ctx, **({"end": end} if end else {}))
         live = self._stock_basic_from_db(codes, as_of=end)["code"].tolist()
         include_collection_scope(self, "stock", live)
         val_src = self._source_for("valuation")  # 校验能力可用（串行直接用，并发用线程局部源）
@@ -1676,7 +1801,7 @@ class IngestionService:
 
     @checked_collection
     def backfill(self, codes: list[str] | None = None, years: int | None = None, ctx=None,
-                 concurrency: int | None = None) -> dict:
+                 concurrency: int | None = None, *, end: date | None = None) -> dict:
         """全量回填近 N 年。codes=None 表示全市场；可断点续跑（跳过已入库）。
 
         ctx（M2.8-B，可选）：逐股写实时日志 + 进度 + checkpoint。续跑天然幂等（跳过已入库）。
@@ -1685,7 +1810,7 @@ class IngestionService:
         并发仅覆盖网络等待，不放大来源请求频率。
         """
         years = years or self.s.datasource.history_years
-        start, end = self._history_window(years, ctx)
+        start, end = self._history_window(years, ctx, **({"end": end} if end else {}))
         log.info("开始回填 %s ~ %s", start, end)
 
         # 续跑跳过前置（与 update 一致）：日历/指数/基础信息首跑已幂等入库，prep_done 标记后续跑跳过；
@@ -2350,7 +2475,8 @@ class IngestionService:
         source, rows = self._fetch_st_status_rows(code, min(dates), max(dates), ctx=ctx)
         return self._persist_gap_status(code, source, rows, dates, report, ctx=ctx)
 
-    def _persist_gap_status(self, code, source, rows, dates, report, *, ctx=None):
+    def _persist_gap_status(self, code, source, rows, dates, report, *, ctx=None,
+                            _in_transaction=False):
         """保存可核验停牌：仅开市、存续期且未存行情的候选日，附明确逐日来源留痕。"""
         if rows is None or rows.empty or not dates or "trade_status" not in rows.columns:
             return 0
@@ -2364,7 +2490,7 @@ class IngestionService:
         if resumed:
             old = report.c.query_df("SELECT trade_date FROM stock_suspension WHERE code=? AND trade_date IN (SELECT unnest(?::DATE[]))", [code, resumed])
             if not old.empty:
-                with report.c.transaction():
+                with nullcontext() if _in_transaction else report.c.transaction():
                     report.c.execute("DELETE FROM stock_suspension WHERE code=? AND trade_date IN (SELECT unnest(?::DATE[]))", [code, resumed])
                     MarketRepository(report.c).log_update("stock_suspension", f"{getattr(source, 'name', source)}:trade_status=1", min(resumed), max(resumed), len(old), "success", json.dumps({"action":"revoke", "code":code,"trade_dates":old.trade_date.astype(str).tolist(),"task_id":getattr(ctx,"tid",None)}))
         by_day = checked.groupby("_day")._stopped.all()
@@ -2384,7 +2510,7 @@ class IngestionService:
             return 0
         if ctx:
             ctx.check_cancel()
-        with report.c.transaction():
+        with nullcontext() if _in_transaction else report.c.transaction():
             count = report.confirm_suspension(code, stopped)
             report.c.execute("UPDATE stock_suspension SET source=?,task_id=?,confirmed_at=current_timestamp WHERE code=? AND trade_date IN (SELECT unnest(?::DATE[]))",
                              [f"{getattr(source, 'name', source)}:trade_status=0", getattr(ctx, "tid", None), code, stopped])
@@ -2398,6 +2524,47 @@ class IngestionService:
         if ctx and count:
             ctx.log(f"{code} 已确认停牌 {count} 天（{getattr(source, 'name', source)} 逐日 trade_status=0）")
         return count
+
+    def _purge_suspension_placeholders(self, code, stopped, *, ctx=None):
+        """调用方已核实逐日停牌；备份原行与市值后，仅清零量零额占位，事务由调用方持有。"""
+        bad = self.c.query_df(
+            "SELECT * FROM daily_bar WHERE code=? AND trade_date IN (SELECT unnest(?::DATE[])) AND (volume=0 OR volume IS NULL) AND coalesce(amount,0)=0",
+            [code, stopped],
+        )
+        if not bad.empty:
+            # 删除前完整保存行情与市值，便于按任务恢复。
+            metrics = self.c.query_df(
+                "SELECT * FROM daily_metrics WHERE code=? AND trade_date IN (SELECT unnest(?::DATE[]))",
+                [code, bad.trade_date.tolist()],
+            )
+            self.repo.log_update(
+                "daily_bar",
+                "review:suspension_backup",
+                min(stopped),
+                max(stopped),
+                len(bad),
+                "success",
+                json.dumps(
+                    {
+                        "bars": json.loads(
+                            bad.to_json(orient="records", date_format="iso")
+                        ),
+                        "metrics": json.loads(
+                            metrics.to_json(orient="records", date_format="iso")
+                        ),
+                        "task_id": getattr(ctx, "tid", None),
+                    }
+                ),
+            )
+            for table in ("daily_metrics", "daily_bar"):
+                self.c.execute(
+                    f"DELETE FROM {table} WHERE code=? AND trade_date IN (SELECT unnest(?::DATE[]))",
+                    [code, bad.trade_date.tolist()],
+                )
+            # 删除历史占位同样会改变序列；即使本批写入 0 条真实行情，收尾/续跑也须重算。
+            self.c.execute("UPDATE daily_bar SET adj_factor_clean=NULL WHERE code=?", [code])
+            return len(bad)
+        return 0
 
     def review_suspensions(self, codes=None, ctx=None, purge_candidates=False):
         """正式修复任务复核旧停牌与零量候选；未返回证据保留并报告，不推测。"""
@@ -2506,43 +2673,8 @@ class IngestionService:
                                 "success",
                                 old.to_json(orient="records", date_format="iso"),
                             )
-                    if stopped:
-                        # 正成交与停牌响应冲突，不删行情；仅清理已核实的零量占位行。
-                        bad = self.c.query_df(
-                            "SELECT * FROM daily_bar WHERE code=? AND trade_date IN (SELECT unnest(?::DATE[])) AND (volume=0 OR volume IS NULL) AND coalesce(amount,0)=0",
-                            [code, stopped],
-                        )
-                        if not bad.empty:
-                            # 删除前完整保存行情与市值，便于按任务恢复。
-                            metrics = self.c.query_df(
-                                "SELECT * FROM daily_metrics WHERE code=? AND trade_date IN (SELECT unnest(?::DATE[]))",
-                                [code, bad.trade_date.tolist()],
-                            )
-                            self.repo.log_update(
-                                "daily_bar",
-                                "review:suspension_backup",
-                                min(stopped),
-                                max(stopped),
-                                len(bad),
-                                "success",
-                                json.dumps(
-                                    {
-                                        "bars": json.loads(
-                                            bad.to_json(orient="records", date_format="iso")
-                                        ),
-                                        "metrics": json.loads(
-                                            metrics.to_json(orient="records", date_format="iso")
-                                        ),
-                                        "task_id": getattr(ctx, "tid", None),
-                                    }
-                                ),
-                            )
-                            for table in ("daily_metrics", "daily_bar"):
-                                self.c.execute(
-                                    f"DELETE FROM {table} WHERE code=? AND trade_date IN (SELECT unnest(?::DATE[]))",
-                                    [code, bad.trade_date.tolist()],
-                                )
-                            result["purged"] += len(bad)
+                    purged = self._purge_suspension_placeholders(code, stopped, ctx=ctx) if stopped else 0
+                    result["purged"] += purged
                 if stopped:
                     self._persist_gap_status(code, source, rows, stopped, report, ctx=ctx)
                     verified = (
@@ -2558,8 +2690,10 @@ class IngestionService:
                 result["unverified"] += len(days) - len(stopped) - len(traded)
                 if traded:
                     self.reconcile_gaps(code, ctx=ctx, full_history=True)
-                if stopped and not bad.empty:
-                    self._recompute_clean([code], ctx=ctx)
+                if purged:
+                    factors = self._recompute_clean([code], ctx=ctx)
+                    if factors["fail"]:
+                        raise RuntimeError(f"{code} 清理停牌占位后复权因子重算失败，需续修")
                 HistoryQualityService(self.c).sync([code])
             except TaskCancelled:
                 raise
@@ -3122,14 +3256,35 @@ class IngestionService:
         return {"rows": rows, "diagnostics": diagnostics}
 
     @checked_collection
-    def ingest_share_capital(self, codes=None, years=None, concurrency=None, ctx=None):
+    def ingest_share_capital(self, codes=None, years=None, concurrency=None, ctx=None, *, end=None,
+                            gaps_only=False):
         """按已有日线覆盖含退市股；不因已有市值跳过股本采集。"""
-        start, end = self._history_window(years or self.s.datasource.history_years, ctx)
+        start, end = self._history_window(
+            years or self.s.datasource.history_years, ctx, **({"end": end} if end else {}))
         stocks = self.c.query_df(
             "SELECT code FROM daily_bar WHERE trade_date BETWEEN ? AND ? GROUP BY code ORDER BY code",
             [start, end])["code"].tolist()
         if codes:
             stocks = [code for code in stocks if code in set(codes)]
+        windows = {}
+        if gaps_only:
+            saved = (getattr(ctx, "checkpoint", {}) or {}).get("share_gap_ranges")
+            if saved is None:
+                from backend.services.share_capital import ShareCapitalService
+                ranges = (ShareCapitalService(self.c).issue_ranges(start, end, codes=stocks)
+                          if stocks else pd.DataFrame(columns=["code", "issue_start", "issue_end"]))
+                saved = {row.code: [str(pd.Timestamp(row.issue_start).date()),
+                                   str(pd.Timestamp(row.issue_end).date())]
+                         for row in ranges.itertuples(index=False)}
+                if ctx:
+                    ctx.set_checkpoint(share_gap_ranges=saved)
+            windows = {code: tuple(date.fromisoformat(value) for value in bounds)
+                       for code, bounds in saved.items()}
+            if any(not start <= lo <= hi <= end for lo, hi in windows.values()):
+                raise ValueError("股本缺口检查点超出已冻结历史窗口")
+            if set(windows) - set(stocks):
+                raise ValueError("股本缺口检查点股票的历史行情已不存在，停止范围漂移")
+            stocks = [code for code in stocks if code in windows]
         done = set((getattr(ctx, "checkpoint", {}) or {}).get("share_codes_done", []))
         # 旧版本检查点没有逐股证据，升级续跑需补做核验，避免把未诊断股票当作已闭环。
         done &= set((getattr(ctx, "checkpoint", {}) or {}).get("share_diagnostics", {}))
@@ -3141,12 +3296,14 @@ class IngestionService:
 
         def worker(code):
             source = self._thread_source(tls, source_name)
-            return self._fetch_capital_material(code, source, start, end)
+            lo, hi = windows.get(code, (start, end))
+            return self._fetch_capital_material(code, source, lo, hi)
 
         def complete(i, code, value, error, _in_flight):
             detail = result["diagnostics"].get(code, {})
             self.repo.log_update(
-                "stock_share_capital_daily", f"capital_review:{code}", start, end,
+                "stock_share_capital_daily", f"capital_review:{code}",
+                *windows.get(code, (start, end)),
                 sum(item["count"] for item in detail.get("remaining", {}).values()),
                 "failed" if error is not None else "checked",
                 json.dumps({**detail, **({"error": str(error)} if error else {})}, ensure_ascii=False),
@@ -3168,13 +3325,20 @@ class IngestionService:
                     ctx.log(f"逐日股本进度 {i}/{len(pending)}，成功 {result['ok']} 失败 {result['fail']}")
                     ctx.flush()
 
+        def collect(code, source):
+            lo, hi = windows.get(code, (start, end))
+            try:
+                return self._collect_capital_one(code, source, lo, hi, diagnostics=result["diagnostics"])
+            finally:
+                result["diagnostics"].setdefault(code, {}).update(
+                    fetch_start=lo.isoformat(), fetch_end=hi.isoformat())
+
         self._run_bounded_parallel(pending, worker,
             concurrency=concurrency or self.s.datasource.update_concurrency, ctx=ctx,
             wait_label="逐日股本采集", on_complete=complete,
             transform_batch=lambda entries: self._complete_capital_material(
                 entries, self._source_for("share_capital"),
-                lambda code, source: self._collect_capital_one(
-                    code, source, start, end, diagnostics=result["diagnostics"])))
+                collect))
         with self.c.temp_view(pd.DataFrame({"code": stocks}), prefix="share_targets") as target:
             coverage = self.c.query_df(
                 "SELECT count(*) AS bar_rows,count(s.total_share) AS total_share_rows, "
@@ -3779,6 +3943,10 @@ class IngestionService:
         basic = self.repo.c.query_df("SELECT code, price_limit_pct FROM stock_basic")
         limit_lut = dict(zip(basic["code"], basic["price_limit_pct"]))
         done_codes = set(ctx.checkpoint.get("factor_done_codes") or []) if (ctx and ctx.checkpoint) else set()
+        # 续跑可能重新覆盖一只以前已完成因子的股票；新原始价已将 clean 置空，旧断点不能跳过。
+        completed_targets = done_codes.intersection(target)
+        if completed_targets:
+            done_codes.difference_update(self._dirty_daily_codes(completed_targets))
         target = [c for c in target if c not in done_codes]
         ok = fail = rows = 0
         n = len(target)
@@ -4036,13 +4204,14 @@ class IngestionService:
         return n
 
     @checked_collection
-    def ingest_delisted(self, years: int | None = None, limit: int | None = None, ctx=None) -> dict:
+    def ingest_delisted(self, years: int | None = None, limit: int | None = None, ctx=None,
+                        *, codes: list[str] | None = None, end: date | None = None) -> dict:
         """灌入"近 N 年内退市"的退市股历史日线（防幸存者偏差核心）。
 
         只取退市日落在回测窗口内的票（更早退市的在目标窗口内无数据，跳过）。
         """
         years = years or self.s.datasource.history_years
-        start, end = self._history_window(years, ctx)
+        start, end = self._history_window(years, ctx, **({"end": end} if end else {}))
         bao = self._source_for("delisted")  # 退市股能力源
 
         dl = bao.get_delisted_list()  # code,name,delist_date
@@ -4050,6 +4219,8 @@ class IngestionService:
         dl = dl[dl["delist_date"] >= start]
         # 仅目标板块
         dl = dl[dl["code"].apply(lambda c: self._in_target_board(c.split(".")[0])[0])]
+        if codes is not None:
+            dl = dl[dl["code"].isin(codes)]
         if limit:
             dl = dl.head(limit)
         include_collection_scope(self, "stock", dl["code"].tolist())

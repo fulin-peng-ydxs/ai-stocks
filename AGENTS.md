@@ -10,7 +10,7 @@
 
 ## 项目概览
 
-「复盘啦」是 EOD A 股趋势龙头研究系统，栈为 FastAPI + Vue 3 + DuckDB + PostgreSQL + Redis。行情/参考数据在 DuckDB 分析；用户资产、权限元数据、平台配置以及任务/日志/调度运行态在 PostgreSQL；Redis 存短状态。数据源为公开免费接口（AKShare / baostock），覆盖近 10 年主板、创业板、科创板，不含北交所。
+「复盘啦」是 EOD A 股趋势龙头研究系统，栈为 FastAPI + Vue 3 + DuckDB + PostgreSQL + Redis。行情/参考数据在 DuckDB 分析；用户资产、权限元数据、平台配置以及任务/日志/调度运行态在 PostgreSQL；Redis 存短状态。数据源为公开免费接口（AKShare / baostock），默认回填近 15 年主板、创业板、科创板，不含北交所。
 
 ## 代码结构
 
@@ -22,7 +22,7 @@
 ## 核心契约
 
 - 防未来函数：指标和均线后向计算；选股只用 `<=T` 数据；回测 T 日选股、T+1 开盘成交；平台突破用 `shift(1)`。
-- 防幸存者偏差：股票池按点时构造，包含当时存活但后来退市的股票。
+- 防幸存者偏差：股票池按点时构造，包含当时存活但后来退市的股票；证券更码统一读取 `backend/market_identity.py` 的官方生效日，横截面排他纳入旧/新代码，连续图表与暖机不裁剪。
 - 撮合口径：涨跌停价按板块/ST 计算，开盘封死不可成交，停牌顺延，退市强平，计佣金/印花/过户/方向性滑点。
 - ST 口径：唯一事实为 `stock_st_status_daily` 的准确逐日记录；禁止按当前名称或 `daily_bar.is_st` 投影推断。主板 ST 2026-07-06 前 5%、当日起 10%，创业板 2020-08-24 前 10%、当日起 20%，科创板 20%；完整链路见 `agent-works/architecture/st-status.md`。
 - 复权口径：前向收益与回测记账用后复权，成交性判定用原始价；复权查询统一 `COALESCE(adj_factor_clean, adj_factor)`，清洗因子不得写回 `adj_factor`。

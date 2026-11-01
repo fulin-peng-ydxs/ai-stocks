@@ -49,6 +49,9 @@ class Position:
     entry_pool: int = 0       # 当日候选池大小（方案命中数；无方案=全市场已评分数）
     last_price: float = 0.0   # 最近估值价（hfq close）
 
+    price_scale: float = 1.0
+    code_changes: list[str] = field(default_factory=list)
+
     def market_value(self) -> float:
         return self.shares * self.last_price
 
@@ -91,7 +94,8 @@ class Broker:
             grade: str = "", rank: int = 0, pick_rank: int = 0, pool: int = 0,
             score: float | None = None) -> Fill | None:
         """以 open_px(hfq) 上浮滑点买入，目标金额取整手；资金/整手不足→不成交（返回 None）。"""
-        price = open_px * (1 + self.cost.slippage)
+        scale = self.positions[code].price_scale if code in self.positions else 1.0
+        price = open_px * scale * (1 + self.cost.slippage)
         if price <= 0:
             return None
         # 整手取整，且预留费用空间（用粗略上限：gross×(1+rate)+min）
@@ -130,7 +134,7 @@ class Broker:
         pos = self.positions.get(code)
         if not pos or pos.shares <= 0:
             return None
-        price = open_px * (1 - self.cost.slippage)
+        price = open_px * pos.price_scale * (1 - self.cost.slippage)
         shares = pos.shares
         gross = price * shares
         cost = self._sell_costs(gross)
@@ -141,12 +145,24 @@ class Broker:
         self.fills.append(f)
         return f
 
+    def transfer_code(self, previous: str, current: str, scale: float, day) -> None:
+        """同一证券更码：不改变份额、成本、现金或成交记录，换算后续原生 HFQ 报价。"""
+        if not math.isfinite(scale) or scale <= 0:
+            raise ValueError("更码复权基准换算必须为正有限数")
+        if current in self.positions:
+            raise ValueError("更码前后代码同时持仓，拒绝重复记账")
+        pos = self.positions.pop(previous)
+        pos.code = current
+        pos.price_scale *= scale
+        pos.code_changes.append(f"证券更码：{previous}→{current}（{str(day)[:10]}）")
+        self.positions[current] = pos
+
     # ── 估值 ──
     def mark(self, prices: dict[str, float]) -> None:
         """用当日 hfq close 更新持仓估值价（停牌无价→沿用上一次）。"""
         for code, pos in self.positions.items():
             if code in prices and prices[code] == prices[code]:  # 非 NaN
-                pos.last_price = prices[code]
+                pos.last_price = prices[code] * pos.price_scale
 
     def position_value(self) -> float:
         return sum(p.market_value() for p in self.positions.values())

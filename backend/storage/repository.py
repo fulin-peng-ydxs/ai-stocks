@@ -14,6 +14,7 @@ import pandas as pd
 
 from backend.common.logging import get_logger
 from backend.config import get_effective_settings
+from backend.market_identity import trading_code_active_sql
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
 log = get_logger("storage.repository")
@@ -212,11 +213,12 @@ class MarketRepository:
         from backend.services.stock_st_status import StockSTStatusService
 
         day_codes = self.c.query_df(
-            "SELECT code FROM daily_bar WHERE trade_date=? ORDER BY code", [asof]
+            "SELECT code FROM daily_bar WHERE trade_date=? AND "
+            + trading_code_active_sql("code", "trade_date") + " ORDER BY code", [asof]
         )["code"].astype(str).tolist()
         StockSTStatusService(self.c).status_map(asof, day_codes)
 
-        conds = ["b.trade_date = ?"]  # 当日有行情 = 已上市且未停牌（点时存活）
+        conds = ["b.trade_date = ?", trading_code_active_sql("b.code", "b.trade_date")]  # 当日有行情 = 已上市且未停牌（点时存活）
         params: list = [asof]
 
         # 板块（默认剔除北交所）

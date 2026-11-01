@@ -273,7 +273,22 @@ class AKShareSource(DataSource):
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
     @rate_limited(_MIN_INTERVAL)
     def get_stock_list(self) -> pd.DataFrame:
-        df = ak.stock_info_a_code_name()  # columns: code, name
+        """按生效市场配置读取名册，统一返回完整代码、六位代码与名称。"""
+        # SDK 的沪深京聚合会无条件请求北交所；排除的市场故障不应阻断沪深回填。
+        frames = []
+        for board in ("主板A股", "科创板"):
+            frame = ak.stock_info_sh_name_code(symbol=board)
+            frames.append(frame[["证券代码", "证券简称"]].rename(
+                columns={"证券代码": "code", "证券简称": "name"}))
+        frame = ak.stock_info_sz_name_code(symbol="A股列表")
+        frames.append(frame[["A股代码", "A股简称"]].rename(
+            columns={"A股代码": "code", "A股简称": "name"}))
+        if get_effective_settings().universe.include_bse:
+            frame = ak.stock_info_bj_name_code()
+            frames.append(frame[["证券代码", "证券简称"]].rename(
+                columns={"证券代码": "code", "证券简称": "name"}))
+        df = pd.concat(frames, ignore_index=True)
+        df["code"] = df["code"].astype(str).str.zfill(6)
         df = df.rename(columns={"code": "code6"})
         df["code"] = df["code6"].apply(to_full_code)
         return df[["code", "code6", "name"]]

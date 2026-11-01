@@ -29,6 +29,7 @@ from backend.backtest.engine import BacktestEngine
 from backend.backtest.metrics import compute_metrics
 from backend.backtest.signal import SignalAnalyzer
 from backend.common.logging import get_logger
+from backend.market_identity import IDENTITY_VERSION
 from backend.services.asset_audit import record_backtest_reuse_audit
 from backend.services.asset_visibility import (
     ASSET_BACKTEST_RUN,
@@ -210,7 +211,7 @@ class BacktestService:
 
     def _resolve_versions(self, params: dict) -> dict:
         """运行时解析各引用方案的当前版本（命名展示 + 签名用）。方案在 PG。"""
-        out: dict = {}
+        out: dict = {"stock_identity_version": IDENTITY_VERSION}
         score_profile = self._visible_score_profile(params.get("score_profile_id"))
         if score_profile:
             out["score_profile_version"] = int(score_profile["version"])

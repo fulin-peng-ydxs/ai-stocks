@@ -26,20 +26,34 @@ class ShareCapitalService:
 
         return " OR ".join(f"({sql})" for sql in capital_predicates(include_sources=True).values())
 
-    def review_candidates(self, start, end, *, codes=None, limit=50, interval_days=7):
-        """历史缺口公平轮询；复用采集日志持久化尝试时间，不让无变化复查刷新数据版本。"""
+    def _issue_ranges_sql(self, start, end, codes=None):
+        """缺失、业务不一致与来源疑点共用区间，不把已有字段等同于来源已核实。"""
         condition = "AND b.code IN (SELECT unnest(?::VARCHAR[]))" if codes else ""
-        # data_update_log 使用本机无时区时间，重试截止时间保持相同口径。
-        now = datetime.now()  # noqa: DTZ005 -- 与既有日志字段保持同一时间口径
-        params = [start, end] + ([codes] if codes else []) + [now, interval_days, limit]
-        return self.c.query_df(
-            "WITH candidates AS (SELECT b.code,count(*) issue_rows,min(b.trade_date) issue_start,"
+        params = [start, end] + ([codes] if codes else [])
+        sql = (
+            "SELECT b.code,count(*) issue_rows,min(b.trade_date) issue_start,"
             "max(b.trade_date) issue_end FROM daily_bar b "
             "LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
             "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE b.trade_date BETWEEN ? AND ? "
             f"AND (({self.review_predicate()}) OR b.code IN (SELECT code FROM stock_share_capital_event "
             "WHERE active AND (effective_date IS NULL OR total_share<=0 OR float_share<0 OR float_share>total_share))) "
-            f"{condition} GROUP BY b.code), "
+            f"{condition} GROUP BY b.code"
+        )
+        return sql, params
+
+    def issue_ranges(self, start, end, *, codes=None):
+        """手动补数只取有实际缺口或疑点的区间，包含退市股，不套用轮询重试间隔。"""
+        sql, params = self._issue_ranges_sql(start, end, codes)
+        return self.c.query_df(sql + " ORDER BY code", params)
+
+    def review_candidates(self, start, end, *, codes=None, limit=50, interval_days=7):
+        """历史缺口公平轮询；复用采集日志持久化尝试时间，不让无变化复查刷新数据版本。"""
+        sql, params = self._issue_ranges_sql(start, end, codes)
+        # data_update_log 使用本机无时区时间，重试截止时间保持相同口径。
+        now = datetime.now()  # noqa: DTZ005 -- 与既有日志字段保持同一时间口径
+        params += [now, interval_days, limit]
+        return self.c.query_df(
+            f"WITH candidates AS ({sql}), "
             "logs AS (SELECT split_part(source,':',2) code,updated_at,status,date_start,date_end "
             "FROM data_update_log WHERE starts_with(source,'capital_review:') "
             "OR starts_with(source,'capital_collect:')), "

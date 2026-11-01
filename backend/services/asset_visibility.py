@@ -477,6 +477,11 @@ def backtest_signature(kind: str, params: dict, versions: dict) -> str:
         val = params.get(key)
         if val is not None:
             payload[key] = str(val) if key in ("date_start", "date_end") else val
+    # 发布/收回仅规范化方案引用，不能丢弃原运行的数据版本或套用今天的身份规则。
+    stored_versions = params.get("_data_versions") or {}
+    for key in ("stock_identity_version", "st_data_version", "capital_data_version"):
+        if isinstance(stored_versions, dict) and key in stored_versions:
+            payload[key] = stored_versions[key]
     payload.update({key: versions.get(key) for key in sorted(versions)})
     blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()

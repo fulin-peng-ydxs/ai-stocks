@@ -23,6 +23,7 @@ from backend.indicators.operators import (
     is_new_high,
     platform_breakout,
 )
+from backend.market_identity import IDENTITY_VERSION
 
 INDICATOR_ALGO_VERSION = "2.2-preset-runtime-v1"
 _MACD_FAST = 12
@@ -35,6 +36,7 @@ def build_params(settings=None) -> dict:
     s = (settings or get_effective_settings()).indicators
     return {
         "algo_version": INDICATOR_ALGO_VERSION,
+        "stock_identity_version": IDENTITY_VERSION,
         "ma_periods": list(s.ma_periods),
         "hhv_periods": list(s.hhv_periods),
         "ma_up_lookback": s.ma_up_lookback,

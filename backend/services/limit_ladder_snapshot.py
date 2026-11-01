@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import pandas as pd
 
+from backend.market_identity import IDENTITY_VERSION
 from backend.market_rules import CloseLimitStatus, listing_board_for
 from backend.services.limit_ladder_calculator import (
     LimitLadderCalculation,
@@ -18,7 +19,7 @@ from backend.services.limit_ladder_calculator import (
 )
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
-RULE_VERSION = "limit-ladder-v2"
+RULE_VERSION = f"limit-ladder-v2-{IDENTITY_VERSION}"
 SOURCE_VERSION = "duckdb-eod-v1"
 TERMINAL_STATUSES = frozenset({"success", "partial", "failed", "unknown"})
 
@@ -100,16 +101,7 @@ class LimitLadderSnapshotService:
 
         calendar = self._calendar_through(trade_date)
         # 退市日是存续区间的排他上界，与采集、质检的应有行情日期一致。
-        basics = self.c.query_df(
-            """
-            SELECT code,name,board,list_date,delist_date,industry,price_limit_pct
-            FROM stock_basic
-            WHERE list_date IS NOT NULL AND list_date<=?
-              AND (delist_date IS NULL OR delist_date>?)
-            ORDER BY code
-            """,
-            [trade_date, trade_date],
-        )
+        basics = LimitLadderCalculator(self.c)._point_in_time_basics(trade_date)
         basic_by_code = {
             str(row["code"]): row
             for _, row in basics.iterrows()

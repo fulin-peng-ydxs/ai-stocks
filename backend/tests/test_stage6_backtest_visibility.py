@@ -13,6 +13,20 @@ from fastapi.testclient import TestClient
 _SECRET = "test-secret-backtest-visibility-0123456789abcdef"
 
 
+@pytest.fixture(autouse=True)
+def _trade_st_facts(market, monkeypatch):
+    """可见性夹具补齐逐笔日期的准确 ST；API 同样只读本用例内存行情库。"""
+    monkeypatch.setattr("backend.services.backtest_service.get_client", lambda: market)
+    for day in (date(2024, 1, 2), date(2024, 1, 9)):
+        market.execute(
+            "INSERT INTO stock_st_status_daily "
+            "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) "
+            "VALUES ('000001.SZ',?,FALSE,'test_fixture','backtest_visibility',"
+            "'accurate',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+            [day],
+        )
+
+
 @pytest.fixture()
 def client(monkeypatch, pg, redis_cli):
     monkeypatch.setenv("AI_STOCKS_JWT_SECRET", _SECRET)
@@ -42,8 +56,8 @@ def _mk_user(pg, codes: list[str], tenant: str | None = None) -> tuple[str, str,
     )
     pg.execute(
         "INSERT INTO sys_role (id,code,name,kind,is_builtin,is_locked) "
-        "VALUES (%s,%s,'btv','custom',FALSE,FALSE)",
-        [rid, rid],
+        "VALUES (%s,%s,%s,'custom',FALSE,FALSE)",
+        [rid, rid, rid],
     )
     pg.execute("INSERT INTO sys_user_role (user_id,role_id) VALUES (%s,%s)", [uid, rid])
     for code in codes:

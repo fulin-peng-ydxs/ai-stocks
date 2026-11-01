@@ -11,7 +11,7 @@ from backend.storage import DuckDBClient
 
 def test_settings_load():
     s = get_settings()
-    assert s.datasource.history_years == 10
+    assert s.datasource.history_years == 15
     assert s.backtest.benchmark_main == "000905.SH"
     assert s.scoring.weights["position"] == 30
     assert s.universe.boards == ["主板", "创业板", "科创板"]

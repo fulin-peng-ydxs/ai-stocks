@@ -33,7 +33,7 @@ duckdb:
 datasource:
   primary: "akshare"          # 主源
   fallback: "baostock"        # 补退市股/复权因子
-  history_years: 10           # 历史深度近 10 年
+  history_years: 15           # 按截止日回溯自然年，首次执行冻结实际起止日
   capital_review_batch_size: 50  # 每次日常更新轮询股本历史缺口/不一致股票；0关闭
   capital_review_interval_days: 7 # 无新增证据的同股历史复查间隔；失败次日可重试
   rate_limit_per_sec: 5       # 每实际来源共享的请求起始频率，分页/重试均计入
