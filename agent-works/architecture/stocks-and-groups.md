@@ -6,8 +6,6 @@
 
 查询接口、行情摘要或分组资产契约变化时同步本文和对应测试；行情来源、股本与估值事实更新 [个股采集架构](stock-collection.md)，分钟归档更新 [分时架构](stock-intraday.md)，阶段验收与页面实测分别留在对应功能目录和响应式清单。
 
-<span style="color:#2563eb">●</span> 个股查询　<span style="color:#7c3aed">●</span> 信号详情　<span style="color:#16a34a">●</span> 分组跟踪　<span style="color:#dc2626">●</span> 性能风险
-
 ## 核心技术
 
 ### 个股列表：服务端排序 + 分页

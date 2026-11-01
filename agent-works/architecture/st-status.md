@@ -276,7 +276,7 @@ ST 采集自身不调用 `ScoreSnapshotRepo.mark_stale_dates()`，也不调用 `
 | 股票池/筛选/榜单 | 下游业务依赖 | 目标日期准确 ST 与 D 日版本 | 缺失/未发布时拒绝形成候选或有效缓存 | 禁止名称推断和读取投影替代事实 | `screening-and-board.md` |
 | 回测/训练 | 下游业务依赖 | 点时 ST、限幅规则、事实版本 | 缺失时拒绝候选或撮合；旧回测不自动改写 | 运行签名和撮合继续记录当前口径 | `backtest.md`、`market-sense-training.md` |
 | 连板天梯 | 下游业务依赖 | 截至 T 日版本、逐日 ST、原始价和覆盖门 | 未发布/缺失时不发布新快照 | 保留最后成功快照但不得声明为当前有效 | `limit-ladder.md` |
-| 结果维护调度 | 可选下游运维 | 用户指定失效范围 | 不配置不影响 ST 读取自检；其它输入变化可能仍需维护 | 不把 `changed_date_values` 隐式转换成下游任务参数 | `result-maintenance-scheduling/requirement-closure.md` |
+| 结果维护调度 | 可选下游运维 | 用户指定失效范围 | 不配置不影响 ST 读取自检；其它输入变化可能仍需维护 | 不把 `changed_date_values` 隐式转换成下游任务参数 | [任务运行态](task-runtime.md) |
 
 改变 ST 源字段、质量枚举、日期修订算法或发布门语义，会同时影响股票池、榜单、回测、训练和天梯，必须做跨模块回归。只调整任务说明文案不改变上述运行契约。
 

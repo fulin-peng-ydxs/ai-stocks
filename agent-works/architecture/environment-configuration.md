@@ -35,6 +35,12 @@ flowchart TD
 | PG 用户偏好表 | 主题、导航模式、页面业务偏好、K 线偏好、回测参数记忆、设置抽屉跨页面偏好 | `backend/storage/user_preference.py`、`/api/user-preferences` | 只保存当前登录用户自己的偏好；未登录或接口失败时前端使用本地 fallback |
 | 方案/业务表 | 评分、买卖、筛选、定时任务等业务配置 | 各 repo/service | 不属于环境变量链路，按对应模块的版本和权限规则生效 |
 
+### 路径解析与运行目录
+
+`backend/config/settings.py::PathsConfig` 声明运行文件的默认位置：DuckDB 文件为 `data/ai_stocks.duckdb`，导出为 `data/exports`，日志为 `logs`。`Settings.duckdb_path/export_path/log_path` 共用 `_resolve()`，将相对路径按模块定义的 `PROJECT_ROOT`（仓库根目录）解析；绝对路径保持原值，不随调用 CLI 的当前工作目录漂移。`parquet_dir=data/parquet` 目前仅为配置预留字段，不能据此声明已有 parquet 归档流程。
+
+这些位置用于运行数据和受管日志，不作为 Git 中的事实文档、源码或长期测试夹具目录。目录及覆盖值仍通过现有 YAML/环境配置入口维护，不在各业务模块复制默认路径；具体日志归档和清理范围见 [文件日志归档与清理](#文件日志归档与清理)。
+
 ### 2. 环境变量总表
 
 | 变量 | 消费入口 | 用途 | 必填性与默认 | 生效时机 |

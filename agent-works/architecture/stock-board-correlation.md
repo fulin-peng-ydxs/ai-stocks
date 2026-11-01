@@ -4,15 +4,13 @@
 
 本文维护走势相关算法、候选口径、快照发布、后台任务与页面批量消费的当前契约。板块字典、成分和行情源由 [板块采集架构](board-collection.md) 维护，股票与分组页面的请求协调由 [个股与分组架构](stocks-and-groups.md) 维护；本文不把相关度解释为成员归属，也不重复定义采集协议。
 
-算法、版本或发布接口变化时同步本文及对应测试；需求、性能与实施证据留在下方功能目录，界面契约由 [DESIGN.md](../../DESIGN.md) 维护，E2E 夹具操作由 [执行指南](../e2e-automation/guide.md) 维护。
+算法、版本或发布接口变化时同步本文及对应测试；通用任务能力由 [任务运行态](task-runtime.md) 维护，界面契约由 [DESIGN.md](../../DESIGN.md) 维护，E2E 夹具操作由 [执行指南](../e2e-automation/guide.md) 维护。
 
 ## 模块定位
 
 本模块在股票截至目标交易日已经收录的行业、概念候选中，分别选出近期走势最相关的行业冠军和概念冠军。计算通过版本化后台任务完成，股票列表、分组列表、每日榜单和策略筛选直接批量读取对应业务日快照，连板天梯则为整份当日快照读取同日冠军或样本不足时的最近历史冠军；读取发现该日期、该范围从未生成快照时，只幂等创建异步首次计算任务，不在页面请求线程内逐股计算或写正式结果。
 
 > “走势相关”表示在扣除共同市场基准后，股票与板块收益的同步程度；不表示公司主营归属、当前有效成分关系、因果关系或投资建议。
-
-当前端到端运行事实见 [`../stock-board-correlation/stock-board-correlation-closed-loop-flow.md`](../stock-board-correlation/stock-board-correlation-closed-loop-flow.md)，需求与验收边界见 [`../stock-board-correlation/requirement.md`](../stock-board-correlation/requirement.md)，开发和验证证据见 [`../stock-board-correlation/plan.md`](../stock-board-correlation/plan.md) 与 [`../stock-board-correlation/performance-report.md`](../stock-board-correlation/performance-report.md)。
 
 ## 页面字段怎么理解
 
@@ -194,10 +192,8 @@ board_neutral_t = board_return_t - benchmark_return_t
 
 - 候选、个股行情、板块行情和基准行情均批量读取；板块与基准收益按唯一代码预计算。
 - 四个直接表格入口按当前页代码集合固定一次 SQL；连板天梯按整份当日快照代码集合固定一次 SQL，均不随行数逐股查询。
-- 固定读取基准中，1/50/200 代码 P95 为 `2.498/3.761/6.293ms`，通过 `10/20/50ms` 门槛。
-- 本地真实全市场任务曾处理 5211 只股票、67592 条候选并成功原子切换；该结果不代表生产并发和网络条件下的 SLA。
 
-详细环境、固定随机种子、复现命令和真实任务统计见 [`../stock-board-correlation/performance-report.md`](../stock-board-correlation/performance-report.md)。
+输入规模、读取尾延迟与内存峰值按部署目标单独验证，历史性能报告中的单次结果不作为当前容量或 SLA。
 
 ## 验证入口
 
@@ -211,12 +207,11 @@ python -m pytest \
   backend/tests/test_stock_board_correlation_read.py \
   backend/tests/test_stock_board_correlation_checkup.py -q
 
-# 共享单元格与生产构建
+# 共享单元格定向验证；构建仅按 AGENTS 的准入条件执行
 cd frontend
 npm test -- --run src/components/__tests__/RelatedBoardCell.spec.ts
-npm run build
 
-# 安全真实后端页面链路；runner 负责服务状态、夹具和清理
+# 仅满足 E2E 指南准入时执行；runner 负责服务状态、夹具和清理
 AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:stock-board-correlation
 ```
 

@@ -37,6 +37,8 @@
 表达式指标复用同一批行情和受限 DSL 求值。全市场行情通过 `_bulk_qfq_bars` 的窗口 SQL 批量取各股后向区间，按 `COALESCE(adj_factor_clean, adj_factor)` 复权；RS 按交易日对窗口收益做横截面百分位排名。计算只读取业务日及以前数据，平台突破等事件继续使用
 前一交易日窗口，禁止未来函数。
 
+`backend/cli.py::cmd_indicators` 保留旧 `indicators` 子命令兼容，但只输出动态计算说明，不实际计算或落库；它不是采集、筛选或回测前的预计算步骤。指标由上述消费链按业务日期按需计算。
+
 进程级 LRU 仅缓存受规模上限保护的小结果，key 包含行情更新版本、全局指标参数指纹、股票集合和日期范围。
 共享层仅保存不超过 10 万行的文件库结果，`:memory:` 测试库不共享；进程共享缓存的写入与取出均深拷贝，实例内缓存直接复用当前帧，消费方需要修改时须先复制。
 行情或全局参数变化自然产生新 key；指标计算语义修改会主动清空进程缓存。评分快照指纹包含被方案引用指标的
@@ -44,6 +46,10 @@
 标签、单位与说明不参与指纹，避免展示修改触发重算。
 
 ## 自定义指标契约
+
+公式创建与编辑分别通过 `POST /api/indicators/def`、`PATCH /api/indicators/def/{key}` 进入 `backend/services/indicator_definition_service.py::IndicatorDefinitionService.save`，再调用 `IndicatorDefRepo.save_custom` 落库。服务层区分新建与编辑、禁止覆盖内置定义，并在计算语义变化时审计当前与历史方案引用；存在引用则拒绝原地变更。删除同样先经该服务的引用审计，再进入仓储，业务入口不得绕过服务直接写定义表。
+
+key 须以英文字母开头，其余字符只允许英文、数字或下划线，输出类型限定 `bool/number`。参数、表达式占位符与 DSL 白名单校验通过后，定义保存到 `indicator_def`；仓储负责校验并写入、维护计算缓存失效，跨库引用保护由服务层负责。
 
 自定义定义只允许安全 DSL，变量为 `C/O/H/L/V/TURN`，函数由表达式白名单控制。参数 schema 固定包含
 `name、label、type、default、min、max、unit、description`。参数名、类型、范围、默认值和表达式占位符

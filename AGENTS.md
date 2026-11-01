@@ -2,31 +2,31 @@
 
 ## 文档职责
 
-- `AGENTS.md` 是本仓库 AI 协作的项目级入口，只保留当前有效、会影响执行的稳定规则。
+- `AGENTS.md` 是本仓库 AI 协作与项目命令的权威入口，只保留当前有效、会影响执行的稳定规则；README 按使用路径选取必要命令，不独立定义第二套命令。
 - `CLAUDE.md` 只作为 Claude Code 薄入口，避免复制本文件内容；仓库事实以代码、`README.md`、`DESIGN.md` 和 `agent-works/architecture/` 为准。
-- 功能需求、计划、开发留痕、业务核查和 SQL 归档放入 `agent-works/{feature-slug}/`；同一功能复用同一目录。
+- 功能需求、计划、开发留痕、业务核查和 SQL 归档放入 `agent-works/{feature-slug}/`；同一功能复用同一目录。开发阶段材料不作为长期事实源，不与长期正文建立持续关联引用，也不因本次文档治理删除；归档识别与停止同步遵守全局文档边界规范。
 - 前端页面规范以 `DESIGN.md` 和 `agent-works/configurable-layout-system/page-template.md` 为入口，不在本文件重复细则。
 - 本文件不承载完整业务架构、视觉配方或阶段验收记录；稳定执行约束变更更新本文件，领域实现变更更新对应事实文档，测试结果留在当次交付中。
 
 ## 项目概览
 
-「复盘啦」是 EOD A 股趋势龙头研究系统，栈为 FastAPI + Vue 3 + DuckDB + PostgreSQL + Redis。行情/参考数据在 DuckDB 分析；用户资产、权限元数据、平台配置以及任务/日志/调度运行态在 PostgreSQL；Redis 存短状态。数据源为公开免费接口（AKShare / baostock），默认回填近 15 年主板、创业板、科创板，不含北交所。
+「复盘啦」是 EOD A 股趋势龙头研究系统，栈为 FastAPI + Vue 3 + DuckDB + PostgreSQL + Redis。行情/参考数据在 DuckDB 分析；用户资产、权限元数据、平台配置以及任务/日志/调度运行态在 PostgreSQL；Redis 存短状态、来源共享额度和已落库分时读取缓存。数据源为公开免费接口（AKShare / baostock），默认回填近 15 年主板、创业板、科创板，不含北交所。
 
 ## 代码结构
 
 - 后端：`backend/api/` 放 REST 路由，`backend/services/` 放业务编排，`backend/storage/` 管理 DuckDB/PG/Redis 与 DDL，`backend/indicators/`、`screening/`、`scoring/`、`backtest/` 放领域逻辑，测试在 `backend/tests/`。
 - 前端：`frontend/src/views/`、`components/`、`api/`、`layout/`、`stores/`。
 - 配置与运行数据：`config/settings.yaml`、`data/`、`logs/`；环境变量、变量文件和数据库配置覆盖层见 `agent-works/architecture/environment-configuration.md`。
-- 架构文档：`agent-works/architecture/`；前端设计规范：`DESIGN.md`。
+- 系统分层、存储及运行装配见 [系统架构](agent-works/architecture/system-architecture.md)，跨模块任务、调度和恢复见 [任务运行态](agent-works/architecture/task-runtime.md)；领域专题位于 `agent-works/architecture/`，前端设计规范为 `DESIGN.md`。
 
 ## 核心契约
 
 - 防未来函数：指标和均线后向计算；选股只用 `<=T` 数据；回测 T 日选股、T+1 开盘成交；平台突破用 `shift(1)`。
 - 防幸存者偏差：股票池按点时构造，包含当时存活但后来退市的股票；证券更码统一读取 `backend/market_identity.py` 的官方生效日，横截面排他纳入旧/新代码，连续图表与暖机不裁剪。
 - 撮合口径：涨跌停价按板块/ST 计算，开盘封死不可成交，停牌顺延，退市强平，计佣金/印花/过户/方向性滑点。
-- ST 口径：唯一事实为 `stock_st_status_daily` 的准确逐日记录；禁止按当前名称或 `daily_bar.is_st` 投影推断。主板 ST 2026-07-06 前 5%、当日起 10%，创业板 2020-08-24 前 10%、当日起 20%，科创板 20%；完整链路见 `agent-works/architecture/st-status.md`。
+- ST 口径：唯一事实为 `stock_st_status_daily` 的准确逐日记录；禁止按当前名称或 `daily_bar.is_st` 投影推断。采集发布、历史限幅及业务门禁统一消费 [ST 架构](agent-works/architecture/st-status.md)。
 - 复权口径：前向收益与回测记账用后复权，成交性判定用原始价；复权查询统一 `COALESCE(adj_factor_clean, adj_factor)`，清洗因子不得写回 `adj_factor`。
-- 股本口径：按来源历史变更日期建立统一逐日事实，公告日期仅作溯源、不作历史入库门槛；展示、指标、筛选与回测统一读取 `stock_share_capital_daily` / `daily_metrics`，不另设事后展示股本。市值优先按有效逐日股本×同日未复权收盘价落库，接口市值独立留存用于核验与缺输入兜底；业务质量与来源核验分开：接口差异和拒用原始记录进入结构体检提醒，仍参与复查；计算一致不得宣称来源冲突已核实。来源优先、精度与修复规则见 `agent-works/architecture/stock-collection.md`。
+- 股本与市值：展示、指标、筛选和回测统一读取逐日事实，禁止当前快照倒填历史；来源变更日期、计算优先级及跨源核验遵守 [个股采集](agent-works/architecture/stock-collection.md)，业务台账与来源提醒的分类遵守 [数据管理](agent-works/architecture/data-management.md)。
 - 评分与验证：分层命中率必须扣同期全市场 base rate 并附样本量；技术指标是唯一原子定义，下游只组合引用，不硬编码字段。
 - 双库边界：禁止跨库 JOIN。行情读 DuckDB，资产读写 PG；需要联合时在服务层分别取数后内存合并，并控制结果集规模。
 - 数据表接入：新增或修改表必须同步对应 DDL、表级中文业务元数据、归属/来源/关系、显式鲜活度与质量策略以及字段中文名/说明；不适用策略也必须登记。合并前执行 `python -m backend.cli verify-catalog`，禁止手工建表绕过 DDL。完整流程见 `agent-works/architecture/data-management.md`。
@@ -38,7 +38,7 @@
 - 菜单初始化：`sys_menu` / `sys_resource` 是运行时事实源；启动 seed、普通升级 SQL 和测试只允许补缺失行，禁止默认覆盖或删除现有父级、标题、类型、路由、图标、排序、可见性及功能点配置。确需覆盖时必须由系统管理员通过管理页面/API 显式操作并留 before/after 审计，或使用带独立 marker、确认口令和事务的专项迁移。
 - RBAC 口径：JWT 不携带角色/权限，权限以 PG 的用户/租户状态与 `perm_ver` 为准；授权变更与 `perm_ver` 自增必须同一 PG 事务提交。`layout:view`、`trade-calendar:view`、`indicator:registry` 是登录基线共享读，有角色的非 system 用户强制注入，无角色 fail-closed。
 - 资产可见性：评分、筛选、买卖方案和回测记录支持 `private|tenant|public`；前端透传 opaque `profile_ref`/`run_ref`，榜单、筛选、回测和评分服务必须解析真实 owner；非 owner 公开资产只读，方案类资产可复制为自己的 private，公开回测只允许复用参数重跑。
-- 长任务：采集、修复、重算等写库任务走 `async_task`；DuckDB 写任务同一时间只允许一个，PG 资产写不受该互斥限制。
+- 长任务：采集、修复、重算等任务复用 [任务运行态](agent-works/architecture/task-runtime.md) 的创建、能力、日志、取消与恢复入口；DuckDB 写任务同一时间只允许一个，PG 资产写不受该互斥限制。
 - 配置：环境变量、变量文件、YAML 基线和 `app_config` 覆盖层以 `agent-works/architecture/environment-configuration.md` 为准，不把临时研究参数写死进代码。
 
 ## 运行命令
@@ -64,10 +64,11 @@ python -m backend.cli rebuild-price-factors
 python -m backend.cli verify-data
 python -m backend.cli verify-catalog
 python -m backend.cli daily
-python -m backend.cli task-runtime-storage status|migrate
 ```
 
 CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
+
+旧库升级和存储回滚属于有前置条件的一次性维护，命令、数据影响及结果核对分别见 [用户资产迁移](agent-works/architecture/system-rbac-tenant.md#旧版用户资产的一次性迁移) 和 [任务运行态切换](agent-works/architecture/task-runtime.md#一次性升级与受控回滚)。这些操作不属于默认日常流程，单纯文档维护或 CLI 帮助校验不构成实际迁移授权，也不代表目标库已验证。
 
 跑后端测试前先判断是否会访问项目`data/ai_stocks.duckdb`：
 只要测试会启动 FastAPI、触发 DuckDB 初始化、访问行情/数据管理/布局接口、异步任务、数据采集、质检、回测或任何可能拿 DuckDB 文件锁的链路，就必须先执行 `./start.sh status` 确认后台状态，再用`./start.sh stop` 停掉后端；

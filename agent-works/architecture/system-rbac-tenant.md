@@ -8,8 +8,6 @@
 
 > 全系统共享的安全与租户基座：登录会话、系统菜单、角色授权、接口功能码、按钮权限、租户启停和用户资产归属统一以后端为事实源。
 
-<span style="color:#2563eb">●</span> 登录会话　<span style="color:#7c3aed">●</span> 菜单权限　<span style="color:#16a34a">●</span> 租户隔离　<span style="color:#dc2626">●</span> 安全边界
-
 ## 核心技术
 
 ### 1. 鉴权入口与请求上下文
@@ -81,7 +79,34 @@ system-only 边界在数据层还有一道防线：`role_repository` 的 `system
 - **发布权放开（C4/R4）**：8 个 `*:publish-tenant` / `*:publish-public` 发布码已由「仅管理员持有」放开为 normal / tenant_admin 的普通业务授权（`backend/auth/constants.py`）；存量库经 marker `migration.asset_publish_open_v2` 一次性回填并同事务 bump `perm_ver`（受影响用户重新登录）。守卫不变——可见性接口仍 owner-only，放开的是「能否发布」，不能改他人资产。回滚走确定性基线恢复 + tombstone（见 `agent-works/asset-ownership-refactor/asset-publish-open.sql`），与所有默认策略迁移一致，不保留迁移后经角色页的人工增删。
 - **来源分段取数**：各资产下拉固定 `source=mine`（纯 owner，排除平台槽全部预设）；搜索抽屉按 `preset / tenant / public` 四来源互斥浏览——`preset` 严格 `is_preset AND visibility=public AND 平台槽 PUBLIC_BOARD_OWNER`（只读、永不泄露 private），`tenant / public` 排除自己且 `public` 强制补集排除平台槽公开预设。取数在 `visible_sql` 之上叠加来源条件，全程归属键 + opaque ref，owner 脱敏不回显真实 user_id。
 - **收回逃生口**：已发布资产的 owner 即使后来失去 publish 权限，仍可凭 view 基线把自己的资产收回为 private；发布到 tenant/public 继续要求对应 publish 权限。前端已发布标签保留收回入口，后端 `require_visibility_perm` 对 private 目标按 view 资源码守卫。
-- 事实源与发布门禁（T0 生产预设归属核验、perm_ver 低峰窗口等）见 [agent-works/asset-ownership-refactor/](../asset-ownership-refactor/)。
+- 平台预设的归属和初始化以 `pg_ddl.PUBLIC_BOARD_OWNER`、`services/asset_visibility.py::publish_platform_presets` 及当前 PG 资产表为准，不从开发阶段材料推导线上归属或迁移完成状态。
+
+## 旧版用户资产的一次性迁移
+
+本节维护 `backend/services/migrate_rbac.py::migrate_rbac` 的操作条件，不适用于已有线上 PG 资产的日常同步。命令入口为 `backend/cli.py::cmd_migrate_rbac`；任务/日志/调度运行态另走 [任务运行态迁移](task-runtime.md#一次性升级与受控回滚)，不得用用户资产迁移替代它。
+
+迁移从 DuckDB 旧资产表读取方案、分组、回测、训练等数据，按 `_ASSET_TABLES` 和 `_transform` 补齐归属后写入 PG；默认归属为 `default/admin`，旧布局用户 `local` 映射为 admin，其他布局用户身份按转换规则保留。行情事实不迁移、不修改；平台 `app_config` 仅补缺，不覆盖已有配置。具体表集合以 PG DDL 与迁移器为准，不在本文冻结表数量。
+
+这是有前置条件的维护参考，不代表对具体目标库已经完成运行验证：
+
+1. 确认目标连接、DuckDB 源文件和旧库升级场景，按 AGENTS 检查任务并安全停服，备份两库。PG 已有需要保留的新资产时不得重跑；`--apply` 会先删除目标资产表中 `default` 租户行再重载，并非只补缺失数据。
+2. 准备 CLI 所需环境后，在仓库根目录预演：
+
+   ```bash
+   python -m backend.cli migrate-rbac
+   ```
+
+   默认预演不复制或删除用户资产行，但实现会调用 `init_pg_db()` 初始化 schema/seed，因此不能当成完全只读探活。报告应无映射、主键或孤儿问题，退出码为 0；有问题时先处理目标和源数据，不能直接跳到 apply。
+3. 确认备份、归属映射及预演报告后执行：
+
+   ```bash
+   python -m backend.cli migrate-rbac --apply
+   ```
+
+   成功须退出码 0，并核对源与目标行数、字段映射、归属非空及外键关系；`app_config` 是补缺合并，不能要求其总行数等于源。资产按表删除和载入，不是全库单一事务；失败后保持停服并核对受影响表，不将部分完成当作成功。`--recreate` 会 DROP/重建资产表，仅能作为已单独确认的旧主键升级处理，不能加入通用迁移步骤。
+4. 验证通过后按 AGENTS 恢复原服务方式，检查健康、登录和授权范围内资产。若原本停止则保持停止。
+
+该入口没有自动反向迁移命令。需要恢复时协调同一版本代码、PG 备份和保留的 DuckDB 源；PG 已产生新业务数据后，不能用重跑 `--apply`、清空 default 租户或只回退代码代替数据恢复。
 
 ## 业务架构
 
@@ -171,17 +196,13 @@ flowchart LR
 3. 提交后尽力清理 Redis 权限缓存。
 4. 受影响用户旧 token 在下一次请求时失效，重新登录后加载新权限。
 
-### 缓存职责边界（Redis / PG 评分快照 / 进程内 LRU）
+### 认证与权限缓存
 
-> 本项目的缓存分三层，职责互不重叠；**Redis 不承载任何计算类结果缓存**。
+认证域通过 `backend/auth/session_store.py` 保存 token 黑名单、权限缓存、验证码和限流状态，权限解析由 `perm_resolver.py` 与 `services/auth_service.py` 编排。`auth:perms:{user_id}` 保存解析结果，登录回填 TTL 为 `access_ttl_min × 60`；权限与状态的权威仍在 PG。
 
-| 层 | 载体 | 用途 | 失效方式 |
-|---|---|---|---|
-| 短状态缓存 | Redis | 仅认证/鉴权域：token 黑名单、`perm_ver` 权限缓存、验证码、限流计数（`backend/auth/session_store.py`、`perm_resolver.py`） | `perm_ver` 自增即失效；TTL 见 `agent-works/multi-tenant-rbac/stage3-rbac-tenant/plan.md` §4.2（`auth:perms:{user_id}` 等，`TTL=access_ttl`） |
-| 评分快照（唯一落库计算缓存） | PostgreSQL `score_snapshot` + `score_snapshot_meta` | 每日榜单按 `(tenant, owner, trade_date, profile_id, profile_version)` 惰性物化，meta 同时保存 `param_hash` 与当日 `st_input_version` | 显式失效：「结果维护」/用户调度标记范围 stale，或榜单 owner 的「重算当日」精确标记当前槽；采集不直接调用失效。读取时发现指标参数或 ST 版本变化，会让当前槽不命中并沿用锁内重算（见 `screening-and-board.md` 评分快照节） |
-| 指标进程内缓存 | `IndicatorEngine._cache`（LRU 上限 6） | 单次运行内对相同 `(codes, lo, hi, param_hash)` 复用 | 参数/算法版本变 → `param_hash` 变 → 不命中；跨请求不共享（每请求新建实例） |
+授权或用户/租户状态变更必须在 PG 同事务更新 `perm_ver`，提交后尽力清理 Redis；旧 token 下一次请求失效，不能依靠缓存 TTL 才撤销权限。认证关键 Redis 操作失败时拒绝请求，不能按匿名或空权限继续执行。
 
-**约定**：新增计算类缓存一律优先复用评分快照层或进程内 LRU；Redis 只用于认证短状态，不塞计算结果。`data_report._coverage_frame` 另有"数据变更签名"内存缓存（概览页同页多次调用复用），属于统计口径缓存，与上表并列。
+这只是认证域的缓存契约。来源共享额度、分时归档读取、指标进程缓存和业务快照由 [系统架构](system-architecture.md#缓存与物化结果) 指向各自正文，不在权限文档定义全系统缓存用途。
 
 ### 系统管理对象操作闭环
 

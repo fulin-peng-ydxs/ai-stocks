@@ -8,8 +8,6 @@
 
 > 用条件树筛选全市场点时命中，再按评分方案打 0~100 综合分并惰性物化成每日榜单。
 
-<span style="color:#2563eb">●</span> 条件筛选　<span style="color:#7c3aed">●</span> 评分排序　<span style="color:#16a34a">●</span> 快照缓存　<span style="color:#dc2626">●</span> 口径风险
-
 ## 核心技术
 
 ### 条件 AST（`backend/screening/condition.py`）
@@ -49,7 +47,7 @@
 - 失效触发器（只标 meta、不重算，便宜）：
   - `mark_stale_dates`（snapshot.py:116）：指定交易日的所有方案版本标 stale。
   - `mark_stale_all`（snapshot.py:131）：全量标 stale。
-  - 实际由数据任务调用（见业务流程）。下次 `get_board` 读到 stale 才重算。
+  - 显式结果维护或用户调度只标记失效；下次 `get_board` 读取时再物化，普通采集不直接发起重算。
 
 ## 业务架构
 
@@ -203,6 +201,12 @@ flowchart LR
   - 权限：普通用户的「重算当日」必须同时满足 `board:compute` 与方案 owner；公开/租户可见的他人方案共读 owner 快照但不能被查看者强制覆盖。system 管理员可维护可见方案及平台预设。前后端均执行该边界，后端为最终事实源。
 - **方案版本化**：`ProfileRepo.save` / `ScoreProfileRepo.save` 仅在名称或内容实质变更时 version+1 并归档历史版本（内容未变返回原版本，避免重复 seed 致版本虚增）。
 - **方案 id 自动生成**：三类方案不设业务编码；`save`/`save_with_id` 接受空 `pid`，新建和复制时由后端生成 32 位 UUIDv4 十六进制内部 `id`，名称不参与身份生成。`save_with_id` 返回 `(id, version)` 供 API 绑定新方案；页面不展示内部 `id`。存量可读 `id` 继续兼容，避免改写版本、快照和回测引用。名称必填，空名 `save` 抛 `ValueError`。
+
+## CLI 兼容接入
+
+`backend/cli.py::cmd_screen` 通过 `ScreenScoreService.run_profile` 执行指定筛选方案，`screen` 接收位置参数 `profile` 和可选 `--date`。`cmd_rank` 通过 `rank_board` 输出榜单，`rank` 接收可选 `--date` 与 `--top`；日期未指定时读取库内最新日线日期。
+
+CLI 的兼容参数不替代页面的方案选择、可见性与 owner 解析契约；精确参数取子命令帮助，环境和服务保护条件统一遵守 [AGENTS](../../AGENTS.md) 与 [环境配置](environment-configuration.md)。
 
 ## 风险事项
 

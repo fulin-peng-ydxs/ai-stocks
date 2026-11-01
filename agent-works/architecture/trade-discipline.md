@@ -1,10 +1,12 @@
 # 交易纪律模块
 
+## 文档边界
+
+本文维护私人规则、持仓记账、自动履约、修订链和页面消费的当前技术事实。规则判定与资产操作在本模块说明；共享权限归 [权限架构](system-rbac-tenant.md)，任务机制归 [任务运行态](task-runtime.md)，页面契约归 [DESIGN](../../DESIGN.md)，夹具执行归 [E2E 指南](../e2e-automation/guide.md)。需求、计划和阶段验收保留原文，不作为本文的事实来源或持续关联引用。
+
 ## 模块定位
 
 交易纪律模块为登录用户提供私人交易规则、规则版本、真实成交与持仓账本、自动履约判断、历史修订和快捷无操作打卡闭环。模块入口是 `/trade-discipline`，数据始终按 `tenant_id + owner_user_id` 隔离；当前仅校验可确认的结构化规则违规，不包含自由文本规则自动裁决、AI 分析、收益曲线、券商同步或规则公开分享。
-
-需求与验收边界见 [`../trading-discipline-checkin/requirement.md`](../trading-discipline-checkin/requirement.md)，本轮实现及验证记录见[持仓与自动履约计划](../trading-discipline-checkin/position-ledger-auto-assessment/plan.md)。本文维护当前代码、数据模型和操作方式，原阶段需求中的手工自评等冲突口径已被本轮约定替代。
 
 ## 核心技术
 
@@ -204,7 +206,7 @@ python -m backend.cli trade-discipline-rbac rollback \
 - 新账本结构归档：[ledger-schema-migration.sql](../trading-discipline-checkin/position-ledger-auto-assessment/ledger-schema-migration.sql)。普通启动只幂等建表，不自动清空数据。
 - 全用户重置入口 `python -m backend.cli trade-discipline-reset` 默认只读预检；实际执行需 `--apply`、已核实PG指纹、真实生效交易日和备份路径，并受本地环境白名单约束。执行前停服，先校验备份再事务内按归属清理；一次性 marker `trade_discipline.ledger_reset_v1` 阻止重复清空新周期。
 - 保留每套规则最新已发布内容（含待生效）重建为v1，保留主体归属、草稿及归档状态；清理全部旧打卡/修订/操作/激活历史和账户测试流水。账号、公共字典、菜单、角色、行情及其他资产不在清理范围。
-- 本地执行结果、备份校验及未验证边界在新阶段计划中记录。恢复须先冻结写入，将备份在隔离目标完整还原并核对，再协调旧数据、一次性marker和代码版本；新周期已写数据时禁止直接覆盖或只回退应用。
+- 恢复须先冻结写入，将备份在隔离目标完整还原并核对，再协调旧数据、一次性marker和代码版本；新周期已写数据时禁止直接覆盖或只回退应用。
 
 ## 验证入口
 
@@ -221,7 +223,7 @@ npm test -- --run src/views/__tests__/TradeDisciplineView.spec.ts \
   src/components/trade-discipline/__tests__/TradeDisciplineQuickCard.spec.ts
 ```
 
-旧 Playwright 夹具用于原阶段流程，不作为新账本完成证据；本轮使用领域/真实PG服务/API、定向Vitest及内置浏览器验证。执行或升级长期E2E前遵守项目准入规则，不默认运行整组或完整构建。
+验证优先使用领域、真实 PG 服务/API 及定向 Vitest；页面实测按受影响范围完成。旧 Playwright 夹具不能作为当前账本完成证据，执行或升级 E2E 前按指南核对模型、账号和日期是否仍适用，不默认运行整组或完整构建。
 
 确定性夹具仅使用 `debug_tenant` 下固定调试账号、`e2e_td_`/`E2E纪律-`/`E2E类型-` 前缀、DuckDB `9988*.SZ` 和 2098 年专属日期。seed/cleanup 必须在后端停服时执行，并校验 `/api/health/e2e` 与直连 PG 指纹一致。
 

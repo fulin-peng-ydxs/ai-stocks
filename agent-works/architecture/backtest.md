@@ -8,8 +8,6 @@
 
 > 用历史数据验证「选股+买卖」策略与「评分」预测力的事件驱动回测引擎：在杜绝未来函数、撮合不失真、复权一致的前提下，产出净值曲线/绩效/逐笔成交，并以「分层命中率减全市场 base rate」量化评分的真实超额能力。
 
-<span style="color:#2563eb">●</span> 输入方案　<span style="color:#7c3aed">●</span> 历史验证　<span style="color:#16a34a">●</span> 结果复盘　<span style="color:#dc2626">●</span> 风险约束
-
 ## 核心技术
 
 **事件驱动引擎（逐日先卖后买）**。`backend/backtest/engine.py:223` `BacktestEngine.run` 按交易日逐日循环：执行日 `D` 成交的是信号日 `D-1` 做出的决策——`engine.py:315` `sig = days[i-1]`，`T` 日选股/卖出判定、`T+1` 开盘成交。每日四步：①评估并执行卖出（`engine.py:319`）②选股+买入（`engine.py:377`）③估值（`engine.py:428`）④记账资金曲线。卖出在买入之前，先释放仓位再填新仓。
@@ -165,6 +163,12 @@ flowchart LR
 2. `SignalAnalyzer.analyze`：区间逐日全市场打分（`_score_range`，方案表达式型指标跨区间向量化补列）→ `compute_forward_returns` 算各 horizon 前向最大涨幅 → 按 `(code, signal_date)` inner join。
 3. 算 base rate（全部已评分票）→ 各分档命中率减 base rate 得超额 + 样本量 + reliable 标记。
 4. 结果 JSON 落 `backtest_metrics.hit_rate_by_grade`，写 `done`；前端渲染分层命中率表（行=各档+base rate，列=N×X）。
+
+## CLI 接入
+
+CLI 入口为 `backend/cli.py::cmd_backtest` 与 `cmd_robust`。`backtest` 使用 `--kind signal|strategy`、必填 `--start/--end` 及可选 `--profile/--top` 组装服务参数，`--no-persist` 控制结果是否落库；`robust` 同样指定区间，可用 `--param/--values` 做敏感性扫描，或用 `--split` 做样本内外切分，复用 `RobustnessAnalyzer`。
+
+CLI 仍须满足服务的方案、资产归属与数据条件；完整参数取子命令帮助，环境与服务保护统一遵守 [AGENTS](../../AGENTS.md) 和 [环境配置](environment-configuration.md)，不将这些计算列为日常必跑流程。
 
 ## 风险事项
 

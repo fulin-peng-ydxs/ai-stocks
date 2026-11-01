@@ -1,450 +1,151 @@
-# 复盘啦 · A股趋势龙头选股 / 打分 / 回测系统
+# 复盘啦 · A 股趋势龙头研究系统
 
-## 文档边界
+「复盘啦」面向收盘后的 A 股复盘、筛选、历史验证和持续跟踪，将行情质量、技术指标、评分与买卖方案串成可解释的研究流程。行情覆盖主板、创业板和科创板，不含北交所；公开免费数据源的默认历史回填目标为近 15 年，实际可用范围以源端覆盖和质量报告为准。
 
-本文面向使用者和开发者，维护产品概览、环境准备、运行操作及模块导航。AI 执行约束以 [AGENTS.md](AGENTS.md) 为准，界面契约以 [DESIGN.md](DESIGN.md) 为准；领域数据口径由对应架构文档维护，本页只保留操作所需摘要。产品入口或运行命令变化时同步本页，详细规则及实现变化更新对应事实源，不在此保存开发计划、阶段验收或重复的模块细则。
+本文维护产品概览、环境准备、最小使用路径、常用任务及文档导航。命令和执行条件以 [AGENTS](AGENTS.md) 为权威入口，系统与模块机制由 [架构正文](agent-works/architecture/system-architecture.md) 维护，界面契约由 [DESIGN](DESIGN.md) 维护。需求闭环、需求、计划和阶段记录不作为当前事实来源，也不纳入本文持续引用。
 
-## 产品概览
+仅供个人研究，不构成投资建议。
 
-**EOD（收盘后）** 的 A 股趋势龙头研究系统，面向每天收盘后做复盘、筛选、验证和跟踪的研究场景；系统已具备多租户 RBAC、账号登录和用户资产隔离能力，正持续向公网 SaaS 形态演进。它不是一个只给出"黑盒推荐"的工具，而是把数据、条件、评分、买卖规则和历史验证串成一条能检查、能复盘、能迭代的工作流。
+## 可以完成什么
 
-系统希望解决三个实际问题：
+| 研究任务 | 入口与产出 | 技术正文 |
+| --- | --- | --- |
+| 找当日强势股票 | 每日榜单：按可见评分方案排序，查看综合分、评级与分项解释 | [选股与榜单](agent-works/architecture/screening-and-board.md) |
+| 复盘涨停梯队 | 连板天梯：按交易日查看板位、活跃度和走势相关热点，进入个股分析 | [连板天梯](agent-works/architecture/limit-ladder.md) |
+| 验证选股条件 | 策略筛选：组合指标或表达式，保存方案并查看候选池 | [选股与榜单](agent-works/architecture/screening-and-board.md) |
+| 验证策略与评分 | 策略回测／评分验证：净值、绩效、逐笔成交、分层与超额命中率 | [回测](agent-works/architecture/backtest.md) |
+| 跟踪个股和股票篮子 | 个股查询／详情／分组：走势对比、K 线/量能/MACD、买卖信号和已归档分时 | [个股与分组](agent-works/architecture/stocks-and-groups.md)、[分时归档](agent-works/architecture/stock-intraday.md) |
+| 理解股票与板块同步性 | 个股、榜单、筛选和天梯中的走势关联：冠军板块、相关度、样本和截止日 | [走势关联](agent-works/architecture/stock-board-correlation.md) |
+| 研究行业与概念 | 板块工作台／详情：指数对比、资金流及成分股钻取 | [板块采集与消费](agent-works/architecture/board-collection.md) |
+| 配置研究方法 | 配置管理：技术指标、评分方案和买卖方案；方案支持版本、可见范围及复制 | [配置定义](agent-works/architecture/config-definitions.md)、[技术指标](agent-works/architecture/technical-indicators.md) |
+| 检查与修复数据 | 数据管理：概览、采集、质量台账、修复复检及定时调度 | [数据管理](agent-works/architecture/data-management.md) |
+| 记录交易纪律 | 私人规则、真实持仓和成交、自动履约判断、最新日修正及历史修订 | [交易纪律](agent-works/architecture/trade-discipline.md) |
+| 练习盘感 | 随机股票盲测、逐日揭示与 T+1 撮合，查看结算和成长记录 | [盘感训练](agent-works/architecture/market-sense-training.md) |
+| 管理平台 | 用户、角色、菜单/功能点、租户、系统参数和布局配置 | [权限与租户](agent-works/architecture/system-rbac-tenant.md)、[环境配置](agent-works/architecture/environment-configuration.md)、[DESIGN](DESIGN.md) |
 
-| 研究问题 | 系统怎么支持 | 最终产出 |
-|----------|--------------|----------|
-| 今天哪些股票更像趋势龙头？ | 每日榜单按评分方案对全市场排序，并展示分项得分 | Top 榜单、评级、分项解释 |
-| 一个选股思路到底能不能用？ | 策略筛选保存条件树，再接入回测验证 | 候选池、净值曲线、逐笔成交 |
-| 数据和结论是否可信？ | 数据管理提供采集、补数、质检、修复、体检闭环 | 数据质量分、问题台账、修复记录 |
+一条日常使用路径是：**更新收盘数据 → 处理质量问题 → 查看榜单或筛选候选 → 回测验证 → 放入分组跟踪**。技术指标是统一原子定义，下游方案组合引用；需要授权的入口以当前账号菜单和功能码为准。
 
-一条完整使用闭环是：**收盘后更新数据 → 处理质量问题 → 查看每日榜单 → 用筛选/配置调整思路 → 回测验证 → 把重点股票放入分组持续跟踪**。全程强调可解释、可回测、防未来函数。
+## 从环境准备到首次访问
 
-> 仅供个人研究，不构成投资建议。数据源为公开免费接口（新浪 / 东财 / baostock；异常价格辅以腾讯核验），默认支持近 15 年历史回填，覆盖主板 / 创业板 / 科创板（不含北交所）。
+### 准备依赖和本机配置
 
-系统当前的三条设计主线：
+后端使用 Python ≥3.11、FastAPI、DuckDB、PostgreSQL ≥14 和 Redis ≥6；前端使用 Vue 3、TypeScript、Element Plus 和 Vite，建议 Node.js 20 LTS。依赖版本以 [Python 清单](requirements.txt)、[项目配置](pyproject.toml) 和 [前端清单](frontend/package.json) 为准。
 
-| 主线 | 含义 |
-|------|------|
-| <span style="color:#2563eb">●</span> **统一基座** | 技术指标是唯一"原子定义"，买卖方案、评分规则、策略筛选全部引用它组合而来；指标动态实时计算 + 单次运行内存缓存，不落预计算表。 |
-| <span style="color:#7c3aed">●</span> **配置化** | 怎么买怎么卖、评分用哪些指标多少权重，全在页面配置、存为方案、可版本化，**改策略不改代码**。 |
-| <span style="color:#16a34a">●</span> **闭环化** | 数据问题在「数据管理」页内解决（同步 / 补数 / 质检 / 修复）；筛选 → 买卖方案 → 回测 → 评分验证形成可操作闭环。 |
-
-**阅读标识**：<span style="color:#dc2626">●</span> 高风险 / <span style="color:#f59e0b">●</span> 中风险 / <span style="color:#16a34a">●</span> 低风险 / <span style="color:#2563eb">●</span> 信息提示。
-
----
-
-## 目录
-
-- [1. 架构总览](#1-架构总览)
-- [2. 功能模块与技术文档](#2-功能模块与技术文档)
-- [3. 目录结构](#3-目录结构)
-- [4. 技术栈](#4-技术栈)
-- [5. 服务与脚本操作](#5-服务与脚本操作)
-- [6. 开发契约（不可破坏）](#6-开发契约不可破坏)
-- [7. 当前文档入口](#7-当前文档入口)
-
----
-
-## 1. 架构总览
-
-全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。**持久层为混合架构**：行情/参考数据留嵌入式 DuckDB 单文件（一个专用写连接 + 同进程逻辑只读连接池），用户资产、系统菜单、角色权限、平台配置以及任务/日志/调度运行态落 PostgreSQL，Redis 作 token 黑名单、权限缓存、验证码和限流等短状态库。
-
-认证与授权以后端为事实源：`AuthMiddleware` 对非白名单 `/api/**` 默认拒绝，JWT 只承载身份和权限版本，`/api/auth/me` 返回用户、租户、角色、授权菜单树和功能码；接口用 `require_perm` / `require_system` / `require_system_perm` 做精确授权，前端侧栏、路由守卫和按钮级 `v-permission` 只消费后端结果。多租户数据归属由请求上下文注入到仓库和服务层，前端不决定资产归属；评分、筛选、买卖方案和回测记录支持 `private / tenant / public` 可见性，公开资产只读可见，方案类资产可复制为自己的 private（含指定历史版本），公开回测记录可复用参数重跑且发布范围不能超过引用方案可见范围；方案收窄可见性时会保留历史结果并同步收窄关联回测。技术架构见 [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md)，需求与落地记录见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)。
-
-```
-┌─────────────────────────── 浏览器 (Vue3 SPA) ───────────────────────────┐
-│  榜单 / 筛选 / 回测 / 个股 / 盘感训练 / 系统管理(配置·布局) / 数据管理     │
-└───────────────────────────────┬─────────────────────────────────────────┘
-                                 │ REST  /api/**
-┌───────────────────────────────▼─────────────────────────────────────────┐
-│  FastAPI (backend/api)         路由层：薄，只做参数校验与响应包装         │
-├───────────────────────────────────────────────────────────────────────── ┤
-│  auth            JWT / AuthContext / 菜单与功能码解析 / 权限版本失效      │
-│  services        编排层：入库 / 筛选打分 / 回测 / 系统管理 / 异步任务      │
-│  screening · scoring · signals · backtest · indicators   领域引擎         │
-│  datasource      数据源适配（akshare / baostock，限流·重试·超时·兜底）    │
-│  dataquality     入库清洗 + 四层质检 + 修复闭环                           │
-│  storage         双库访问层：行情 DuckDB(点时安全) + 资产/任务/RBAC PG   │
-│  scheduler       APScheduler 定时调度（任务可在「数据管理」页配置）        │
-└───────────────────────────────┬─────────────────────────────────────────┘
-                                 │
-        行情 data/ai_stocks.duckdb (嵌入式列存,只读分析)  ·  PostgreSQL
-        (sys_* 权限表 + 用户方案/分组/回测/训练/快照/配置/任务运行态) · Redis
-```
-
-**核心数据流（每日收盘后）**：增量更新日线（含补最新交易日总市值；历史市值缺口另跑 `valuation --fill-gaps` 回补）→ 入库清洗 + 四层质检 → 动态算指标 → 按默认评分方案出榜单。
-
----
-
-## 2. 功能模块与技术文档
-
-系统按"数据先可靠、方案可配置、结果可验证"组织成下列业务模块。README 负责说明**从哪里进、做什么、和谁关联**；详细文档优先看 [`agent-works/architecture/`](agent-works/architecture/) 与对应功能目录。
-
-| 模块 | 页面入口 | 主要 API | 你在这里完成什么 | 详细文档 |
-|------|----------|----------|------|----------|
-| 📈 **每日榜单** | `BoardView` | `/api/board/*` | 按用户可见**评分方案**全市场排序（自己的方案、租户公开、全体公开、平台内置预设；0–100 综合分 + 评级 + 分项达标分） | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
-| 🪜 **连板天梯** | `LimitLadderView`（`/limit-ladder`） | `/api/limit-ladder/*` | 按交易日查看收盘涨停梯队、固定窗口活跃度和走势相关热点；进入个股分析/详情，system 可发起单日重算 | [limit-ladder.md](agent-works/architecture/limit-ladder.md) |
-| 🧮 **策略筛选** | `ScreenView` | `/api/screen*`, `/api/profiles` | 统一条件构建器（AND/OR 树，叶子可选指标条件或表达式，同一份 AST）；方案可存、版本回看、按权限公开和复制 | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
-| 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率；历史记录可按权限公开，公开记录可复用参数重跑 | [backtest.md](agent-works/architecture/backtest.md) |
-| ✅ **交易纪律** | `TradeDisciplineView`（`/trade-discipline`） | `/api/trade-discipline/*` | 维护私人交易规则和不可变版本，初始化真实持仓后按交易日记录成交，自动核对持仓与履约结果，仅最新日可修正；用户中心支持查看待办和快捷无操作打卡 | [trade-discipline.md](agent-works/architecture/trade-discipline.md) |
-| 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 服务端排序分页与跨页分组；查询页可在共享工作台中做多股走势对比和 K 线分析；详情页及共享分析面板可从日 K 下钻已采集的历史价格/均价/量能分时 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) / [stock-intraday.md](agent-works/architecture/stock-intraday.md) |
-| 🧭 **走势板块关联** | `StocksView` / `BoardView` / `ScreenView` / `LimitLadderView` / `ScheduleView` | `/api/stocks/*`, `/api/board/run`, `/api/screen/run`, `/api/limit-ladder/*`, `/api/data/*` | 在累计行业/概念候选中按市场中性化相关性选出当前冠军；页面统一展示相关度、有效样本和截止日，管理员通过任务与调度维护结果 | [stock-board-correlation.md](agent-works/architecture/stock-board-correlation.md) |
-| ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底，可公开/复制）/ 技术指标（注册表）/ 系统设置（数据源、回测成本、认证与审计白名单） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
-| 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略 + 页面 slot 自动继承覆盖） | [DESIGN.md](DESIGN.md) |
-| 🔐 **系统菜单 / 权限 / 租户** | `views/system/{UserManage,RoleManage,MenuResource,TenantManage}` | `/api/auth/*`, `/api/users`, `/api/roles`, `/api/menus`, `/api/resources`, `/api/tenants` | 登录会话、用户域、角色授权、菜单树、功能点和租户启停；接口、菜单、按钮同源授权 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) |
-| 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 数据采集 / 质检修复 / 定时调度；个股采集统一提供十类安全方案，含 ST 全局/区间刷新 | [data-management.md](agent-works/architecture/data-management.md) / [stock-collection.md](agent-works/architecture/stock-collection.md) / [st-status.md](agent-works/architecture/st-status.md) |
-| 🧩 **板块行情与采集** | `SectorsView` / `SectorDetailView` / `views/data/*` | `/api/sectors/*`, `/api/data/*` | 板块工作台支持概念/行业查询、连续指数对比、资金流和成分股钻取；数据管理承接字典/成分/指数/资金流采集、周频控制和专项质检修复 | [board-collection.md](agent-works/architecture/board-collection.md) |
-| 🎮 **盘感训练** | `TrainingView` | `/api/training/*` | 盲测随机个股 + 逐日揭示 K 线（含 MACD）+ T+1 真实撮合买卖；一局产出评分/评级/资金曲线，结算揭晓板块；跨局成长轨迹 | [market-sense-training.md](agent-works/architecture/market-sense-training.md) |
-
-> `/system/*` 是系统管理域，包含配置管理、布局配置、用户、角色、菜单/功能点和租户。评分规则与买卖指标是业务可授权子页；技术指标、系统设置、角色、菜单/功能点、租户和全局布局配置保持 system-only；用户管理可按 `user:*` 功能码授权给租户管理员，但服务层仍把非 system 用户限制在本租户。
-> 横切的基础设施（点时安全仓库、异步任务底座、定时调度、配置生效、服务部署、前端布局规范）见 [platform.md](agent-works/architecture/platform.md)；环境变量、变量文件、YAML 基线和数据库覆盖层见 [environment-configuration.md](agent-works/architecture/environment-configuration.md)。
-
-### 2.1 模块关系图
-
-```mermaid
-flowchart LR
-  DM["数据管理\n采集 / 补数 / 质检 / 修复"] --> DB[("DuckDB\n行情 / 基础信息 / 市值 / 日历")]
-  DB --> IND["指标引擎\n动态计算"]
-  CFG["配置管理\n评分 / 买卖 / 技术指标 / 系统设置"] --> IND
-  IND --> SCR["策略筛选\n条件树命中"]
-  IND --> BRD["每日榜单\n评分排序"]
-  DB --> LAD["连板天梯\n涨停梯队 / 热点 / 快照"]
-  SCR --> BT["回测验证\n策略回测"]
-  BRD --> BT
-  CFG --> BT
-  DB --> STK["个股与分组\nK线 / 信号 / 股票篮子"]
-  CFG --> STK
-  DB --> TRN["盘感训练\n盲测 / T+1撮合 / 评分成长"]
-  DB --> TD["交易纪律\n交易日 / 股票参考"]
-  TD --> TDPG[("PostgreSQL\n私人规则 / 履约修订")]
-  RBAC["系统菜单 / 权限 / 租户\n登录 / /me / 菜单树 / 功能码 / 归属上下文"] -. 控制入口与资产归属 .-> CFG
-  RBAC -. 控制入口与资产归属 .-> SCR
-  RBAC -. 控制入口与资产归属 .-> BRD
-  RBAC -. 控制查看与重算权限 .-> LAD
-  RBAC -. 控制入口与资产归属 .-> BT
-  RBAC -. 控制入口与资产归属 .-> TD
-```
-
-### 2.2 常用工作流
-
-| 场景 | 推荐路径 | 结果 |
-|------|----------|------|
-| 首次搭建本地库 | `backfill` → `delisted --enrich` → `valuation` → `rebuild-price-factors` → `verify-data` | 目标近 15 年行情、退市股及复权口径；市值按源端实际覆盖，缺口由体检报告披露 |
-| 每天收盘后更新 | 数据管理 → 数据采集 → 个股采集 → 日常同步，或 `python -m backend.cli daily` | 最新行情入库、总市值补齐；CLI `daily` 还会继续执行质检 |
-| 复盘当日涨停梯队 | 最新行情 → 连板天梯 → 查看热点/板位 → 选择股票分析 → 进入个股或板块详情 | 当日不可变涨停快照、窗口活跃度、走势相关热点和可恢复的详情上下文 |
-| 发现榜单异常 | 数据管理 → 概览/质量定位缺口 → 修复 → 按影响范围决定是否执行「结果维护」；若是 ST 事实纠错可直接重开对应日期 | ST 版本变化会在读取当前榜单时自动识别并重算；其它输入变化由用户显式维护结果 |
-| 新建选股思路 | 配置管理 → 评分规则/买卖指标建方案 → 策略筛选试条件 → 每日榜单看排序 | 得到可保存、可版本回看、可按权限公开的评分方案 |
-| 验证策略能否交易 | 策略筛选 + 评分方案 + 买卖方案 → 回测验证 | 净值、回撤、逐笔成交、卖出原因、分层命中率 |
-| 跟踪一批股票 | 个股查询跨页勾选 → 工作台走势对比/K 线分析 → 存为分组 → 详情页连续翻看 | 统一交易日相对走势、分组篮子、组内涨幅与买卖信号 |
-| 练盘感 / 验手感 | 盘感训练 → 配置窗口/资金 → 盲测随机股逐日买卖 → 结算看评级与成长曲线 | 成交明细、资金曲线、评分、身份揭晓、跨局成长轨迹 |
-| 记录交易纪律 | 交易纪律 → 维护并发布规则 → 初始化期初持仓 → 按交易日录入成交 → 持仓/历史查看与最新日修正 | 私人规则版本、履约结论、操作事实和不可变修订链 |
-
----
-
-## 3. 目录结构
-
-```
-backend/
-  auth/           登录鉴权与授权上下文：JWT / AuthMiddleware / require_perm / perm_ver / 菜单资源解析
-  api/            REST 路由（薄层）：auth / users / roles / menus / resources / tenants
-                  / board / stocks / screen / backtest / config
-                  / indicators / score_profiles / trade_profiles / stock_groups
-                  / data_tasks / data_admin / health / training / layout / trade_discipline
-  services/       编排层：ingest（入库）· screen_score（筛选打分）· backtest
-                  · pipeline（一键日常 DailyPipeline）· async_task（异步任务底座）
-                  · auth_service / user_admin / role_admin / menu_admin / tenant_admin
-                  · data_report / data_verify / data_sources · training（盘感训练）
-                  · trade_discipline（规则版本 / 履约打卡 / 历史修订）
-  datasource/     数据源适配（akshare / baostock / ths_board 同花顺板块直连；限流·重试·超时·兜底·溯源）
-  storage/        DuckDB 连接 / DDL / 点时安全仓库 / PG DDL / RBAC 仓库 / 资产归属仓库
-                  / 配置覆盖层 / 布局配置(layout_config) / 数据目录
-  dataquality/    入库清洗 + 四层质检（checker）
-  indicators/     指标引擎（后向算子 / param_hash / 动态计算）
-  screening/      条件 AST + 表达式 DSL 沙箱 + 筛选引擎
-  scoring/        阈值打分 + 动态权重评分模型 + 评分快照
-  signals/        买卖信号（由买卖方案推导）
-  backtest/       前向收益 / 信号质量 / 撮合 Broker / 事件驱动引擎 / 绩效
-  groups/         股票分组（篮子）
-  scheduler/      APScheduler 定时调度
-  config/         settings 加载与校验（pydantic-settings）
-  common/         日志等通用工具
-  cli.py          命令行入口        main.py  FastAPI 应用装配 + 前端托管
-  tests/          后端单测（pytest）
-
-frontend/         Vue3 + TS + Element Plus + ECharts，构建产物 frontend/dist 由后端托管
-  src/stores/auth.ts      登录态、/me 菜单树、功能码与租户信息
-  src/utils/permission.ts 路由与按钮权限纯逻辑
-  src/directives/permission.ts  v-permission 按钮级授权
-  src/views/system/       用户 / 角色 / 菜单功能点 / 租户管理页
-  src/layout/     可配置布局底座：页面外壳 LayoutHost / 布局 schema / 组件目录 / 校验器 / 契约测试
-  src/views/layout/  布局配置工作台：预设管理 / 页面布局 / 系统组件
-agent-works/architecture/ 各模块技术文档（核心技术 / 业务架构 / 业务流程 / 风险事项）
-agent-works/market-sense-training/ 盘感训练模块需求 / 开发计划 / 开发留痕 / DDL 归档
-agent-works/trading-discipline-checkin/ 交易纪律需求 / 开发计划 / 人工复核 SQL / 页面原型
-agent-works/configurable-layout-system/ 布局系统底座需求 / 新页面开发模板 page-template.md
-agent-works/layout-config-productization/ 布局配置产品化需求 / 开发计划 / 字段策略 DDL
-config/           settings.yaml —— 所有阈值/权重/参数（改参不改码）
-data/             ai_stocks.duckdb（DuckDB 数据文件）+ exports（导出）
-agent-works/initialization/ 需求 / 系统设计 / 任务清单 / 演进过程文档
-DESIGN.md         前端设计与布局规范（地图/索引；强制规则在 frontend/src/layout 代码）
-agent-works/configurable-layout-system/page-template.md
-                  新页面开发模板与页面设计闭环清单
-start.sh          后端启停脚本（dev/prod，见 §5.1）
-```
-
----
-
-## 4. 技术栈
-
-- **后端**：Python 3.11+（本机 3.12）/ FastAPI / Uvicorn / pandas + numpy / APScheduler / pydantic-settings
-- **持久层**：DuckDB（行情，嵌入式列存）+ PostgreSQL ≥14（用户资产/平台配置/任务运行态，psycopg3 同步）+ Redis ≥6（会话、安全短状态及分钟归档查询 12 小时缓存）；后端启动期三库连通性自检
-- **前端**：Vue 3 + TypeScript + Element Plus + ECharts + Pinia + Vue Router + Vite
-- **数据源**：AKShare（新浪 / 东财系）+ baostock（退市股历史、复权因子兜底）；分时常规采集只用新浪近期 1 分钟窗口，质检修复按目标日依次尝试同花顺年度分钟及东财近 5 日备用源，不复权；独立 intraday_ingest 任务将已收盘分钟长期归档到 DuckDB，Redis 仅缓存已入库事实，查询缺失不取源，统一由数据管理采集和解释。按首次可采集窗口固定监控起点，历史整日缺口与最新缺口统一质检。来源范围及缺失分钟另存证据；质量页支持补采复检与重新核验，普通调度跳过已知无更完整候选的历史目标。不承诺补齐当前接入来源无法提供的历史，独立调度默认关闭
-- 依赖清单见 [`requirements.txt`](requirements.txt) / [`pyproject.toml`](pyproject.toml)
-
----
-
-## 5. 服务与脚本操作
-
-本项目有两种运行方式：
-
-| 模式 | 适用场景 | 访问地址 | 进程形态 |
-|------|----------|----------|----------|
-| 开发模式 | 日常开发、前端热更新、调试 API | 前端 `http://localhost:5173` | 前端 Vite + 后端 FastAPI 两个进程 |
-| 生产/集成模式 | 单端口访问、演示、局域网访问 | 后端 `http://<机器IP>:8000` | 后端托管 `frontend/dist` |
-
-> **前置依赖**：后端启动前 **PostgreSQL 与 Redis 须先运行**（启动期三库连通性自检，任一不通即失败）。本机开发：`brew services start postgresql@16 redis`，并建 PG 库/角色 `ai_stocks`。环境变量、变量文件、连接密钥、YAML 基线与数据库覆盖层的完整口径见 [environment-configuration.md](agent-works/architecture/environment-configuration.md)。存量从旧 DuckDB 升级：`python -m backend.cli migrate-rbac`（先 dry-run，再 `--apply`）。
-
-### 5.1 开发模式启动（前后端联动）
-
-后端与前端是**两个独立进程**，各自热更、互不重启。前端经 Vite 代理把 `/api` 转发到后端，调试时**访问前端端口**。
-
-```bash
-cp .env.local.example .env.local
-# 按 environment-configuration.md 填写本机后端启动变量
-./start.sh                      # 后端 8000，热重载（= python -m backend.cli serve --reload，独立 session）
-./start-web.sh                  # 前端 5173，HMR（独立 session，依赖须先 npm install）
-```
-
-本地账号分两类，避免权限测试混用：
-
-| 账号体系 | 用途 | 密码来源 | 维护方式 |
-|----------|------|----------|----------|
-| `admin` | `default` 租户平台系统管理员，用于初始化、系统级运维和最高权限验收 | 按 [environment-configuration.md](agent-works/architecture/environment-configuration.md) 的管理员初始密码规则维护 | 后端启动 seed/校准；已有密码不会被环境变量覆盖 |
-| `debug_*` | RBAC 页面和接口权限验收账号，用于验证普通用户、租户管理员、最小权限、无权限等场景 | 按 [test-users.md](agent-works/multi-tenant-rbac/test-users.md) 和环境配置文档维护 | 明确 `AI_STOCKS_ENV=dev|test|local` 后用 `./start.sh dev-users` 创建/校准，`--list` 查看 |
-
-固定调试账号清单和使用规则见 [test-users.md](agent-works/multi-tenant-rbac/test-users.md)。页面或接口权限验收应按场景选择最小权限 `debug_*` 账号，不要默认用 `admin` 覆盖权限态、空权限态或 fail-closed 场景。
-
-两个脚本的服务生命周期接口一致：`dev`(默认) / `stop` / `restart` / `status` / `logs`。后端另提供受环境守卫的 `dev-users` 与 E2E 内部 `e2e-user` 动作，确保与服务统一加载 `.env.local`。后端日志 `logs/backend.log`，前端日志 `logs/frontend.log`。
-
-文件日志按北京时间跨日或大小滚动至 `logs/archive/` 并 gzip 压缩：后端单文件 50 MiB、历史 30 天、归档总量 1 GiB；前端单文件 20 MiB、历史 7 天、每个端口归档总量 200 MiB。超过期限或容量删除最旧归档，容量限制可能使实际保留时间缩短。重启保留已有日志，`logs` 动作跨轮转持续跟踪。配置位于 `config/settings.yaml` 的 `logging` 段，修改后重启对应服务；详细生命周期与边界见 [环境配置说明](agent-works/architecture/environment-configuration.md#文件日志归档与清理)。
-
-| 角色 | 命令 | 监听 | 对外? | 热更 |
-|------|------|------|-------|------|
-| 后端 | `./start.sh`（dev，默认） | `127.0.0.1:8000` | ❌ 仅本机 | watchfiles 自动重启 |
-| 前端 | `./start-web.sh` | `0.0.0.0:5173` | ✅ 局域网 | Vite HMR |
-
-- 唯一对外入口是前端 5173；后端 8000 只对本机，由 Vite 代理 `/api` 回 `127.0.0.1:8000`。
-- 开发期改前端**不要** `npm run build`（那是生产产物、不带 HMR）。
-- 日志在 `logs/backend.log`，`./start.sh logs` 跟踪、`./start.sh status` 查状态（同时核对健康响应中的存储状态和任务运行态，HTTP 200 本身不代表就绪）。
-- 自动化验证（AI 截图/交互核查）走**专用端口 5181**，不占用日常的 5173。两个前端实例可并存，同样由 Vite 代理 `/api` 回 8000。Claude Code 的 preview 工具配置在 `.claude/launch.json`，与日常开发的 `start.sh`/`start-web.sh` 互不相关。
-
-**启动检查顺序**：
-
-1. `./start.sh status` 看后端进程、端口和 `/api/health`。
-2. `./start.sh logs` 看数据库初始化、调度器启动、报错堆栈。
-3. 浏览器打开 `http://localhost:5173`，前端报 API 错误时优先确认 Vite 代理是否仍指向 `127.0.0.1:8000`。
-4. 如果 DuckDB 被 CLI 或旧服务占用，先执行安全停服 `./start.sh stop`；脚本会在有后台任务或无法读取任务状态时拒绝。只有明确接受任务被中断时才使用 `./start.sh stop --force`。
-
-任务运行态升级先停服并预演，再应用；激活标记写入前不会切换，也不会双写：
-
-```bash
-python -m backend.cli task-runtime-storage status
-python -m backend.cli task-runtime-storage migrate
-python -m backend.cli task-runtime-storage migrate --apply
-```
-
-紧急回退须保持停服，并显式确认：`python -m backend.cli task-runtime-storage rollback --confirm-marker migration.task_runtime_pg_v1`。命令会先把 PG 全量事实原子写回 DuckDB，再原子清空 PG 四张运行表并切换 marker；因此回退后仍可重新执行正向迁移。
-
-### 5.2 生产 / 集成模式
-
-```bash
-cd frontend && npm run build && cd ..   # 产物进 frontend/dist
-./start.sh prod                         # 后端绑 0.0.0.0:8000 托管 dist
-```
-
-生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权、细粒度 RBAC、系统菜单、租户管理、存量业务路由资源码、基线共享读和评分/筛选/买卖/回测资产可见性；启动前必须按 [environment-configuration.md](agent-works/architecture/environment-configuration.md) 完成密钥、管理员初始密码和 PG/Redis 连接配置。**注**：注册邮箱验证码已支持真实 SMTP 投递（`backend/common/mailer.py`），但仓库基线默认关闭（`mail.enabled=false` → 仅写 dev 日志），公网放量前需按 `environment-configuration.md` 用 `AI_STOCKS_SMTP_*` 开启并配好发信账号；公网部署仍应配合反向代理与 TLS。
-
-### 5.3 首次准备数据（依赖有序）
+先启动并准备 PostgreSQL 数据库/角色与 Redis；再在仓库根目录安装依赖并复制变量模板：
 
 ```bash
 pip install -r requirements.txt
 cd frontend && npm install && cd ..
-
-python -m backend.cli backfill           # 全市场近 15 年日线全量回填（支持断点续跑）
-python -m backend.cli delisted --enrich  # 退市股历史 + 上市/退市日（防幸存者偏差）
-python -m backend.cli valuation          # 总市值 / 总股本
-python -m backend.cli rebuild-price-factors  # 干净复权因子 / pre_close / 涨跌停标记
-python -m backend.cli verify-data        # 数据正确性 + 完整性核查
+cp .env.local.example .env.local
 ```
 
-前端依赖安装会校验并应用 `frontend/patches/` 中的兼容补丁，不应跳过安装脚本。升级带补丁的依赖时，须同步锁定版本、补丁和真实组件交互验证；版本失配会中断安装。
+按 [环境与配置加载](agent-works/architecture/environment-configuration.md) 设置 JWT 密钥、PG/Redis 连接及管理员初始密码。本机变量文件不提交；已有 `.env.local` 时直接核对，不能用模板覆盖个人配置。前端安装会校验并应用依赖兼容补丁，不应跳过安装脚本。
 
-首次准备的依赖关系如下，顺序不要反：
-
-```mermaid
-flowchart LR
-  A["安装依赖"] --> B["backfill\n日线/日历/指数/基础信息"]
-  B --> C["delisted --enrich\n退市股历史与上市退市日"]
-  C --> D["valuation\n总市值/总股本"]
-  D --> E["rebuild-price-factors\n复权清洗/pre_close/涨跌停"]
-  E --> F["verify-data\n结构与字段体检"]
-```
-
-| 命令 | 大致作用 | 什么时候重跑 |
-|------|----------|--------------|
-| `backfill` | 全市场近 15 年日线回填，支持断点续跑 | 新库初始化、历史行情缺大段 |
-| `delisted --enrich` | 补退市股历史和上市/退市日 | 新库初始化、怀疑幸存者偏差 |
-| `valuation` | 按单只股票补总市值/总股本 | 新库初始化、新上市股票缺总市值 |
-| 数据采集页「逐日股本补采」 | 采集含退市股的逐日股本，并按同日原始收盘价补缺失市值 | 历史股本回补；支持断点和并发，公告未知或跨源数值冲突未解决时保留缺失；总市值统一按总股本×A股原价 |
-| `valuation --fill-gaps` | 针对已有库的总市值缺口逐段回补 | 质检出现大量 `mv_gap` 或历史缺口时 |
-| `rebuild-price-factors` | 不联网，重建清洗复权因子、`pre_close`、涨跌停标记 | 重采行情、发现复权跳变、初始化后 |
-| `verify-data` | 只读体检，输出 PASS/FAIL | 初始化后、重大补数后、回测前 |
-
-- 逐日股本采集包含交易所转股补充和历史缺口/非空差异轮询；默认每次 50 股，来源失败可重试。调度开关独立管理，详见 [个股采集架构](agent-works/architecture/stock-collection.md)。
-
-
-### 5.4 一键日常流程
+### 启动、访问和停止
 
 ```bash
-python -m backend.cli daily              # 增量更新行情(补最新交易日总市值) → 数据质检 →（可选）数据体检
-python -m backend.cli valuation --fill-gaps   # 一次性回补历史 total_mv 缺口（增量只保最新交易日，历史缺口走这里）
+./start.sh
+./start-web.sh
+./start.sh status
 ```
 
-也可在「数据管理 → 任务调度」页配置任务（个股采集统一使用 `stock_ingest`，另有 `verify`/`checkup`/`audit_cleanup` 等）：既可按 cron/每日/每周/每月触发，也可在指定上游任务成功、失败或完成后延迟触发；依赖任务支持有次数上限的固定延迟自身重试。数据类时间任务通常仅交易日，审计清理不受交易日限制。旧 `update/backfill/ingest_date` 调度继续执行，编辑保存时转换为统一模型。
+浏览器打开 `http://localhost:5173`。开发模式由 Vite 将 `/api` 代理到 `127.0.0.1:8000`，前后端分别热更新；生产模式由后端托管前端产物。模式和环境身份的区别见 [系统架构](agent-works/architecture/system-architecture.md#运行装配与生命周期)。
 
-日常流程等价于页面里的"数据管理闭环"：
+`status` 应显示当前进程、健康响应和存储/任务状态；页面能登录并加载授权菜单才形成首次访问路径。后端日志为 `logs/backend.log`，前端日志为 `logs/frontend.log`；通过脚本的 `logs` 动作跟踪，归档与保留策略见 [环境配置](agent-works/architecture/environment-configuration.md#文件日志归档与清理)。
 
-```mermaid
-flowchart LR
-  A["增量更新行情"] --> B["缺口收口"]
-  B --> C["刷新复权清洗"]
-  C --> D["补最新日 total_mv"]
-  D --> E["四层质检"]
-  E --> F["必要时体检"]
-  F --> G["业务结果按需读取"]
-  G --> H{"ST 输入版本变化?"}
-  H -->|否| I["直接复用有效缓存"]
-  H -->|是| J["当前榜单/天梯\n复用既有机制自愈"]
-```
-
-如果只是看榜单，不需要每天手工预生成榜单。采集、补数和修复不会自动批量失效业务结果：ST 事实真实变化由榜单/天梯在读取当前结果时按版本自检并自愈，指标参数指纹变化也会让所读榜单缓存自动不命中；除这两类版本外的行情、基础资料等输入变化是否维护，由用户在「结果维护」或调度依赖中显式决定。
-
-### 5.5 服务管理（`start.sh`）与 CLI 命令
-
-| `start.sh` 子命令 | 作用 |
-|------|------|
-| `./start.sh` / `dev` | 开发模式（热重载，默认） |
-| `prod` | 生产模式 |
-| `stop` / `restart` / `status` / `logs` | 停止 / 重启 / 状态+`/health` / 跟踪日志 |
-
-| CLI（`python -m backend.cli <cmd>`） | 作用 |
-|------|------|
-| `serve` / `health` | 启动 Web / 本地自检 |
-| `backfill` / `update` | 日线全量回填 / 增量更新 |
-| `delisted` / `valuation` | 退市股历史 / 总市值·总股本（`valuation --fill-gaps` 一次性回补缺口） |
-| `rebuild-price-factors` / `refetch-daily` | 重算复权清洗因子（不联网）/ 重拉日线覆盖（恢复源因子） |
-| `indicators` / `rank` / `screen` | 算指标 / 出榜单 / 跑筛选方案 |
-| `backtest --kind signal\|strategy` / `robust` | 信号质量·策略回测 / 稳健性测试 |
-| `check-data` / `verify-data` / `verify-catalog` | 完整性体检 / 正确性核查 / 双库目录契约校验 |
-| `daily` | 一键日常流程 |
-
-Web 与 CLI 共用同一采集服务和行情口径。Web 是常用运维入口，CLI 保留为应急和批处理入口：
-
-| Web「个股采集」方案 | `stock_ingest.recipe` | CLI 对应能力 |
-|------|------|------|
-| 日常同步 | `daily_update` | `update`（完整日常流水线用 `daily`） |
-| 历史行情补全 | `history_backfill` | `backfill` |
-| 日期区间重采 | `range_refetch` | `refetch-daily` / 指定日期采集 |
-| 市值历史补采 | `valuation_history` | `valuation` |
-| 市值缺口修复 | `valuation_gaps` | `valuation --fill-gaps` |
-| 全历史异常市值修复 | `valuation_invalid_history` | 质量修复对应能力 |
-| 基础资料刷新 | `basic_refresh` | `delisted --enrich` 的基础资料阶段 |
-| 退市股历史补全 | `delisted_history` | `delisted --enrich` |
-| ST 状态刷新 | `st_status_refresh` | ST 专项刷新能力 |
-
-### 5.6 数据管理页面操作速查
-
-| 页面 | 主要用途 | 典型操作 |
-|------|----------|----------|
-| 数据概览 | 看数据规模、分时覆盖、日线质量、缺口与双库资产目录 | 通过说明入口读口径、具名操作定位明细；资产支持全部 / DuckDB / PG / 规划中及按需精确统计；[指标与操作映射](agent-works/architecture/data-management.md#统计内容与操作映射) |
-| 数据采集 | 发起异步采集/补数任务，看实时日志 | 在一个「个股采集」入口选择十类方案与全市场/指定股票范围，并续跑、重试或终止任务 |
-| 数据质量 | 质检台账、修复、忽略、结构体检 | 先筛高危 open 问题，批量修复后复检 |
-| 定时调度 | 配置自动更新、质检、体检、审计清理 | 建每日收盘后「个股采集·日常同步」，再建定期 verify/checkup；审计清理默认每天 03:30 |
-
-写库任务全局互斥：采集、补数、修复、重算等同一时间只能跑一个。遇到 409 说明已有写任务在执行，去任务列表看进度，完成后再提交。
-
-任务状态、实时日志、调度定义和依赖事件存 PostgreSQL；实际行情写入仍只有一个 DuckDB 写任务。普通行情读取从逻辑只读连接池借连接并发执行，池繁忙最多等待 3 秒后返回 503，不会无限排队。
-
-终止为协作式（到下一只/下一问题的检查点停下，已完成部分保留，状态转"可续跑"）；续跑沿用该任务**原定目标日**（增量更新不会因隔天续跑而漂到今天），并跳过已完成的日历/指数等前置，从断点继续。CLI 的 `backfill`/`update`/`refetch-daily` 与任务中心同源，实时输出阶段进度。
-
-### 5.7 测试
+停止对应服务使用：
 
 ```bash
-cd frontend && npm run check && cd ..   # 前端静态规范、布局契约测试与类型检查，不连接后端
-python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB 的服务）
+./start-web.sh stop
+./start.sh stop
 ```
 
-前端构建与普通 `npm test` 共用 `check:design` 静态入口；组件行为可运行 `cd frontend && npm test -- <测试文件>`。GitHub 工作流 `Frontend contracts` 在提交和 PR 时执行 `npm run check`，不以路径过滤跳过整条必过检查；远端仓库需将该检查设为分支规则中的必过项，工作流文件本身不会设置分支保护。完整浏览器验收仍按 [E2E 准入规范](agent-works/e2e-automation/guide.md) 单独执行。
+后端停止或重启遇到活跃任务、无法可信读取任务状态时会拒绝；先在数据管理查看任务，只有明确接受中断时才使用 AGENTS 声明的强制选项。不要裸杀进程或同时运行争用 DuckDB 文件锁的 CLI 写入。
 
-### 5.8 常见问题
+### 登录账号与权限
+
+`default` 租户的 `admin` 是平台系统管理员，用于初始化和系统级管理。初始密码来源及已有密码不覆盖规则见 [环境配置](agent-works/architecture/environment-configuration.md)；不要将其作为普通权限测试账号。
+
+本地权限验收使用按场景配置的 `debug_*`，维护方式和当前账号见 [测试用户清单](agent-works/multi-tenant-rbac/test-users.md)。评分、筛选、买卖方案和回测的共享范围受资产可见性与后端授权共同约束，非 owner 的公开资产只读。
+
+旧版 DuckDB 部署升级时，先按适用场景处理 [用户资产迁移](agent-works/architecture/system-rbac-tenant.md#旧版用户资产的一次性迁移) 和 [任务运行态切换/回滚](agent-works/architecture/task-runtime.md#一次性升级与受控回滚)，再恢复服务；两种迁移不能互相替代，也不是每次启动都要执行的初始化步骤。
+
+## 数据准备与日常研究
+
+### 首次准备行情
+
+首次进入数据管理，先查看覆盖范围与缺口，再选择所需采集方案。全历史建库可能耗时较长；CLI 批处理与 Web 共用服务，但直接运行 CLI 不会自动加载 `.env.local`，须事先准备其需要的环境变量，且写库前按 AGENTS 检查并安全停止后端。
+
+仓库根目录的首次数据准备顺序为：
+
+```bash
+python -m backend.cli backfill
+python -m backend.cli delisted --enrich
+python -m backend.cli valuation
+python -m backend.cli rebuild-price-factors
+python -m backend.cli verify-data
+```
+
+依次准备日线及前置数据、退市股历史、估值、干净复权因子及正确性体检；完成后恢复原服务状态。成功不能仅看命令结束，还要看质量报告是否仍有关键缺口。历史股本使用页面的逐日股本补采能力，详细方案、来源覆盖与断点边界见 [个股采集](agent-works/architecture/stock-collection.md)；ST、板块和分钟分别见 [ST 事实](agent-works/architecture/st-status.md)、[板块采集](agent-works/architecture/board-collection.md)、[分时归档](agent-works/architecture/stock-intraday.md)。
+
+### 每日收盘后
+
+1. 数据管理 → 数据采集 → 个股采集 → 日常同步，查看冻结的目标日期、进度和任务汇总；需要自动化时配置定时调度。
+2. 数据质量中定位待处理问题，修复后复检；来源不可得或请求成功都不能当作问题已解决。
+3. 打开每日榜单或策略筛选，选择方案并查看分项及候选；需要验证时进入回测。
+4. 将重点股票加入分组跟踪，或在交易纪律记录真实持仓和成交。
+
+应急批处理可在满足相同环境、文件锁和服务恢复要求后运行 `python -m backend.cli daily`。任务的互斥、取消、续跑、依赖和重试解释见 [任务运行态](agent-works/architecture/task-runtime.md)，页面使用和质量口径见 [数据管理](agent-works/architecture/data-management.md)。
+
+榜单与天梯按各自版本协议读取或自愈，走势关联缺失快照时发起首次计算；采集不会自动批量重算所有研究结果。需要提前维护或指定范围重算时，使用数据管理的结果维护或显式调度，详见所属模块正文。
+
+## 开发、验证与生产访问
+
+后端代码从 `backend/main.py`、`api/`、`services/` 和领域模块定位，存储及 DDL 在 `backend/storage/`；前端页面在 `frontend/src/views/`，共享组件在 `components/`，配置布局在 `layout/`。完整分层与数据所有权见 [系统架构](agent-works/architecture/system-architecture.md)。
+
+常用检查从仓库根目录执行，范围和准入以 AGENTS 为准：
+
+```bash
+cd frontend && npm run check && cd ..
+python -m pytest backend/tests/ -q
+```
+
+前端快检包含静态规范、布局契约和类型检查，不连接后端；构建与 GitHub 检查的职责见 [构建与 CI 门禁](agent-works/architecture/system-architecture.md#构建与-ci-门禁)。后端全量命令仅作入口说明；日常按变更风险选择定向测试，可能访问 DuckDB 时须先确认状态、安全停服并在结束后恢复。页面设计流程见 [页面模板](agent-works/configurable-layout-system/page-template.md)，浏览器验证与夹具流程见 [E2E 指南](agent-works/e2e-automation/guide.md)，普通改动不默认执行全量 E2E。
+
+需要生产产物或发布门禁时执行：
+
+```bash
+cd frontend && npm run build && cd ..
+./start.sh prod
+./start.sh status
+```
+
+浏览器访问 `http://localhost:8000` 或部署地址。生产启动方式监听 `0.0.0.0:8000` 并托管 `frontend/dist`，公网部署还需反向代理、TLS、限流和运维访问控制；密钥、真实 SMTP 与连接配置按环境配置正文准备。停止、健康检查和活跃任务保护沿用启动脚本。
+
+## 常见问题
 
 | 现象 | 优先检查 |
-|------|----------|
-| 前端页面空白或 API 404 | 开发期是否访问了 `5173`；生产期是否已 `npm run build` |
-| 后端启动失败 | `logs/backend.log`；DuckDB 文件是否被另一个进程占用 |
-| 写任务提交失败 409 | 数据管理任务列表是否已有 running/pending 写任务 |
-| 榜单不是最新 | 先核对行情、ST 覆盖和质量问题；ST/指标版本变化会在读取时自愈，其它输入变化按影响范围执行「结果维护」 |
-| 质检大量 `mv_gap` | 先跑 `python -m backend.cli valuation --fill-gaps` 清历史缺口 |
-| 回测很慢或超时 | 缩短区间/降低 TopN/减少表达式筛选；当前回测 API 仍是同步执行 |
+| --- | --- |
+| 页面空白或 API 404 | 开发访问 5173；确认 Vite 代理；生产检查 `frontend/dist` 和后端静态托管 |
+| 后端启动失败 | `./start.sh status`、`./start.sh logs`；核对三类存储及 DuckDB 文件占用 |
+| 创建任务返回 409 | 已有 DuckDB 写任务；到任务列表查看，完成后再提交 |
+| 读取返回 503 | 区分鉴权依赖故障与 DuckDB 读池繁忙，按日志定位 |
+| 榜单日期或结果异常 | 先核对行情、ST 发布、质量台账和方案版本，再按所属模块判断是否维护结果 |
+| 历史市值／股本仍缺失 | 查看逐股缺口与来源证据，按个股采集选择补采方案，不能按当前股本倒填 |
+| 分时无数据 | 查询只读取已归档事实；在数据管理查看监控范围、采集和质量问题，不从查询页临时取源 |
+| 回测耗时长 | 按范围、候选规模和表达式定位；当前回测 API 的同步执行边界见回测正文 |
 
----
+## 文档归属与深入阅读
 
-## 6. 开发契约（不可破坏）
+| 入口 | 权威内容 |
+| --- | --- |
+| [AGENTS](AGENTS.md)／[CLAUDE](CLAUDE.md) | 项目协作与命令／Claude 薄入口 |
+| [系统架构](agent-works/architecture/system-architecture.md) | 分层、运行单元、数据流、持久层和故障边界 |
+| [任务运行态](agent-works/architecture/task-runtime.md) | 后台任务、调度、可靠事件、取消续跑和恢复 |
+| [环境配置](agent-works/architecture/environment-configuration.md) | 变量、YAML、PG 覆盖层、运行档案、日志与生效规则 |
+| [权限与租户](agent-works/architecture/system-rbac-tenant.md) | 认证、授权、资产归属及新功能接入 |
+| [数据管理](agent-works/architecture/data-management.md) | 数据目录、质量策略、问题台账和修复复检；源协议归对应采集专题 |
+| [DESIGN](DESIGN.md)／[页面模板](agent-works/configurable-layout-system/page-template.md) | 设计契约／页面实施模板与维护清单 |
+| [E2E 指南](agent-works/e2e-automation/guide.md)／[测试用户](agent-works/multi-tenant-rbac/test-users.md) | 验证准入、执行生命周期／固定调试身份 |
 
-> 系统命脉与扩展边界。新增/修改功能前务必先读；细节见各模块技术文档与 [platform.md](agent-works/architecture/platform.md)。
-
-- **防未来函数**：指标/均线一律后向计算；选股只用 ≤T 数据，回测 T 日选股、**T+1 开盘成交**；平台突破用 `shift(1)` 防自指（AST 单测拦截 `shift(负)`）。
-- **防幸存者偏差**：universe 点时构造，含"当时存活、后来退市"的票；退市股历史已入库。
-- **撮合不失真**：涨跌停价按板块 / ST 计算，开盘封死不可成交、停牌顺延、退市强平；计佣金 / 印花 / 过户 / 方向性滑点。
-- **ST 单一事实**：历史 ST 只读 `stock_st_status_daily` 的准确点时事实；名称推断和 `daily_bar.is_st` 投影不得参与业务。分板块、分日期的限幅、发布门及修订版本统一遵守 [st-status.md](agent-works/architecture/st-status.md)，不得用当前限幅覆盖历史回测口径。
-- **复权一致**：前向收益与回测记账统一**后复权(hfq)**；可成交性判定用**原始价**。源因子 `adj_factor` 用于 K 线前复权，`pre_close` 走独立清洗因子，复权查询统一走 `COALESCE(adj_factor_clean, adj_factor)`。
-- **base rate**：分层命中率必减同期全市场无条件命中率得超额，并附样本量。
-- **统一基座**：技术指标是唯一原子定义，买卖/评分/筛选全部引用它组合，不在下游硬编码字段。
-- **分层职责**：`api/` 只做参数校验与响应包装，业务逻辑放 `services/` 与领域引擎；一切读写经 `storage` 点时安全仓库；长耗时操作走 `async_task` 异步任务底座 + 进度。
-- **配置即时生效**：环境变量、变量文件、YAML 基线、PG `app_config` 覆盖层与生效优先级统一见 [environment-configuration.md](agent-works/architecture/environment-configuration.md)；新增运行期参数不得硬编码。
-- **默认股票范围要标明入口**：训练随机池走 `MarketRepository.get_universe_asof` 的股票池硬过滤；榜单、筛选、买卖预览和回测候选排序主要走当日 `wide_snapshot` 并叠加 ST/方案/成交约束，不得把训练股票池规则误写成全系统默认。
-- **权限默认拒绝**：新增受控 `/api/**` 先过 `AuthMiddleware`，再挂精确 `require_perm` 或 system 守卫；不要只靠前端菜单、按钮或隐藏路由做安全控制。
-- **租户归属不可前端决定**：用户资产读写必须从请求上下文取 `tenant_id` 和 `owner_user_id`，除明确 system 管理接口外，不接受前端传入归属字段决定数据范围。
-
----
-
-## 7. 当前文档入口
-
-| 文档 | 内容 |
-|------|------|
-| [`agent-works/architecture/`](agent-works/architecture/) | 各业务模块当前技术说明、业务流程和风险边界 |
-| [AGENTS.md](AGENTS.md) | AI 协作入口与仓库级稳定约束 |
-| [CLAUDE.md](CLAUDE.md) | Claude Code 薄入口，指向 AGENTS 与 Claude 项目记忆 |
-| [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) | 登录鉴权、系统菜单、细粒度权限、多租户资产隔离和公开资产可见性的当前技术架构 |
-| [environment-configuration.md](agent-works/architecture/environment-configuration.md) | 环境变量、变量文件、YAML 基线、PG/DuckDB `app_config` 边界和配置生效规则 |
-| [stock-board-correlation.md](agent-works/architecture/stock-board-correlation.md) | 行业/概念走势冠军的算法口径、有效样本含义、任务落表、页面读取和风险边界 |
-| [stock-intraday.md](agent-works/architecture/stock-intraday.md) | 日 K 分时查询、分钟归档、独立采集/调度、质量修复与 Redis 缓存口径 |
-| [stock-collection.md](agent-works/architecture/stock-collection.md) | 个股 EOD 数据的十类采集方案、交易日历与源端就绪、并发落库、断点续跑和质量修复 |
-| [board-collection.md](agent-works/architecture/board-collection.md) | 板块字典、成分、指数和资金流的日期口径、采集编排、反爬、质检与修复 |
-| [limit-ladder.md](agent-works/architecture/limit-ladder.md) | 连板天梯的涨停/ST 口径、快照 v2、任务协调、页面/API、权限、部署与风险边界 |
-| [st-status.md](agent-works/architecture/st-status.md) | ST 点时事实的采集、批次发布、质检、修复、业务门禁与涨跌停截止点 |
-| [multi-tenant-rbac](agent-works/multi-tenant-rbac/) | 系统菜单、权限、多租户相关需求与落地记录 |
-| [DESIGN.md — 前端设计与布局规范](DESIGN.md) | 前端布局事实源与页面开发契约：可配置布局系统、页面设计闭环、组件/布局维护矩阵、设置抽屉规范；强制规则归 `frontend/src/layout` + 契约测试 |
-| [page-template.md — 新页面开发模板](agent-works/configurable-layout-system/page-template.md) | AI/开发者新建或改造页面时复制使用的页面设计块、维护矩阵、7 个原型骨架和验收清单 |
-
-规范类文档只表达当前事实和操作入口。其他过程性材料不能覆盖上述当前事实源。
+领域主题从上方功能表进入，各事实正文只维护所属内容。开发阶段文档保留原有历史与未决状态，归档识别及停止同步统一遵守全局文档边界规范。

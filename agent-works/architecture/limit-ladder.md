@@ -4,15 +4,13 @@
 
 本文维护连板天梯的识别、按需物化、缓存失效、任务治理及页面消费的当前实现。点时 ST 和历史限幅由 [ST 架构](st-status.md) 维护，走势相关冠军由 [关联板块架构](stock-board-correlation.md) 维护；本文说明其消费方式，不复制源端采集或指标算法。
 
-天梯接口、缓存或任务契约变化时同步本文和对应测试；需求及实施证据沿用下方功能目录，界面规则遵守 [DESIGN.md](../../DESIGN.md)，不在本文混入待实现方案或阶段通过记录。
+天梯接口、缓存或任务契约变化时同步本文和对应测试；共享执行、日志和恢复见 [任务运行态](task-runtime.md)，界面规则遵守 [DESIGN.md](../../DESIGN.md)，不在本文混入待实现方案或阶段通过记录。
 
 ## 模块定位
 
 连板天梯是「最新行情」下的 EOD 市场复盘模块。它按交易日识别收盘涨停股票，以连续涨停高度组织天梯，并把窗口活跃度、走势相关热点、个股行情分析、任务治理和权限审计串成一条闭环。
 
 > 模块只覆盖主板、创业板和科创板，不含北交所；它不替代按评分方案生成的每日榜单，也不提供盘中实时天梯。
-
-需求范围和验收见 [`../limit-up-ladder/requirement.md`](../limit-up-ladder/requirement.md)，实际任务与验证见 [`../limit-up-ladder/plan.md`](../limit-up-ladder/plan.md) 和 [`../limit-up-ladder/development-trace.md`](../limit-up-ladder/development-trace.md)。
 
 ## 核心技术
 
@@ -138,7 +136,7 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 
 本模块没有新增环境变量或外部服务。`limit_ladder_invalidate` 是面向用户的可调度结果维护任务；`limit_ladder_recompute` 仍是查询按需物化的内部任务类型，不出现在调度任务类型中。
 
-部署顺序和验证查询见 [`../limit-up-ladder/sql-rehearsal.md`](../limit-up-ladder/sql-rehearsal.md)：
+结构以双库 DDL 为准；审计副本为 [行情结构](../limit-up-ladder/limit-ladder-schema.sql)、[协调与审计](../limit-up-ladder/limit-ladder-audit-ledger.sql) 和 [权限补缺](../limit-up-ladder/limit-ladder-rbac.sql)。升级前核对目标状态和幂等条件：
 
 1. 停止后端并备份 DuckDB、PostgreSQL。
 2. 执行 `limit-ladder-schema.sql`、`limit-ladder-audit-ledger.sql`、`limit-ladder-rbac.sql`。
@@ -155,10 +153,10 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 | 代表性规模 | `python -m backend.devtools.benchmark_limit_ladder_pipeline` |
 | 页面组件与状态 | `frontend/src/views/limit-ladder/__tests__/` |
 | 页面交互 | `frontend/e2e/limit-ladder*.spec.ts` |
-| SQL 正反向 | `agent-works/limit-up-ladder/sql-rehearsal.md` |
+| SQL 结构与回滚边界 | 双库 DDL、上述审计副本及 `rollback-limit-ladder.sql` |
 | 设计契约 | `cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:design` |
 
-已执行证据以 [`../limit-up-ladder/frontend-test-report.md`](../limit-up-ladder/frontend-test-report.md)、[`../limit-up-ladder/performance-report.md`](../limit-up-ladder/performance-report.md) 和 [`../limit-up-ladder/business-audit.md`](../limit-up-ladder/business-audit.md) 为准；命令入口不代表本轮已重新执行全部测试。
+验证入口不代表已执行；具体结果、环境与未验证范围由当次交付说明，不以开发阶段报告作为当前运行事实。
 
 ## 当前风险事项
 
