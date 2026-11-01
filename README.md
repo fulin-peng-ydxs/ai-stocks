@@ -99,9 +99,76 @@ python -m backend.cli verify-data
 
 榜单与天梯按各自版本协议读取或自愈，走势关联缺失快照时发起首次计算；采集不会自动批量重算所有研究结果。需要提前维护或指定范围重算时，使用数据管理的结果维护或显式调度，详见所属模块正文。
 
-## 开发、验证与生产访问
+## 项目目录
 
-后端代码从 `backend/main.py`、`api/`、`services/` 和领域模块定位，存储及 DDL 在 `backend/storage/`；前端页面在 `frontend/src/views/`，共享组件在 `components/`，配置布局在 `layout/`。完整分层与数据所有权见 [系统架构](agent-works/architecture/system-architecture.md)。
+主要源码、配置、工具和文档入口如下。后端按技术分层与领域拆分；前端页面在 `views/`，跨页面能力在组件、组合逻辑和布局目录中维护。
+
+```text
+ai-stocks/
+├── backend/                        后端应用与领域实现
+│   ├── main.py                     FastAPI 应用装配与生命周期
+│   ├── cli.py                      数据准备、采集、修复和校验的 CLI 入口
+│   ├── api/                        REST 路由、请求校验与服务调用
+│   ├── services/                   业务编排、采集流程、后台任务和结果查询
+│   ├── auth/                       身份上下文、JWT、会话、权限解析与守卫
+│   ├── security/                   平台敏感配置加解密
+│   ├── config/                     配置模型、覆盖加载与来源请求配置
+│   ├── common/                     异常、日志、时间、请求和邮件等共用工具
+│   ├── datasource/                 AKShare、baostock 等来源适配与请求控制
+│   ├── dataquality/                质量检查、问题整合与忽略规则
+│   ├── storage/                    DuckDB / PostgreSQL / Redis 访问与 DDL
+│   ├── indicators/                 原子指标定义、注册、计算与周期处理
+│   ├── screening/                  选股条件、表达式、方案与筛选引擎
+│   ├── scoring/                    评分模型、方案与结果快照
+│   ├── signals/                    买卖方案、买点信号与风险规则
+│   ├── backtest/                   回测引擎、撮合、收益与稳健性评估
+│   ├── groups/                     股票分组与板块自选
+│   ├── limit_ladder/               连板天梯使用的点时 ST 状态规则
+│   ├── scheduler/                  定时调度与任务触发
+│   ├── market_identity.py          证券更码与历史身份映射
+│   ├── market_rules.py             交易板块、ST 与涨跌停规则
+│   ├── price_adjustment.py         价格复权共用计算
+│   ├── devtools/                   本地调试账号、测试夹具与性能诊断工具
+│   └── tests/                      后端领域、服务、API 与存储测试及夹具
+├── frontend/                       Vue 3 + TypeScript 前端
+│   ├── src/
+│   │   ├── main.ts / App.vue       应用挂载与根组件
+│   │   ├── views/                  业务页面、数据管理与系统管理页面
+│   │   ├── components/             图表、表格、指标、方案等共享组件
+│   │   ├── composables/            查询、偏好、任务轮询与交互等组合逻辑
+│   │   ├── layout/                 配置布局引擎、容器组件与布局契约
+│   │   ├── api/                    API 客户端与按业务划分的请求封装
+│   │   ├── router/                 路由注册、页面跳转与访问控制
+│   │   ├── stores/                 Pinia 全局状态
+│   │   ├── directives/             权限、键盘操作等自定义指令
+│   │   ├── styles/                 全局样式与共用视觉规则
+│   │   ├── constants/              分页等共享常量
+│   │   ├── types/                  TypeScript 类型定义
+│   │   └── utils/                  通用工具与数据处理辅助
+│   ├── e2e/                       Playwright 场景、辅助方法与夹具
+│   ├── scripts/                   静态规范检查、契约门禁与页面脚手架
+│   ├── patches/                   前端依赖补丁
+│   ├── public/                    直接发布的静态资源
+│   └── package.json               前端依赖与 npm 命令入口
+├── config/settings.yaml           非敏感配置基线
+├── scripts/                       环境加载、日志及专项验证运行脚本
+├── .github/workflows/             GitHub CI 检查定义
+├── agent-works/architecture/       当前系统架构与模块技术说明
+├── AGENTS.md / CLAUDE.md           项目 AI 协作规范与 Claude 薄入口
+├── DESIGN.md                      前端设计规范
+├── pyproject.toml                 Python 依赖、工具与测试配置
+├── .env.local.example             本机环境变量示例
+├── start.sh                       后端启动、停止、状态和日志入口
+├── start-web.sh                   前端开发服务入口
+├── data/                          本地行情库与导出等运行数据（不提交）
+└── logs/                          运行日志与运行档案（不提交）
+```
+
+前端单元与契约测试就近放在 `src/` 各目录的 `__tests__/` 中，浏览器场景位于 `frontend/e2e/`。盘感训练、交易纪律、板块关联等功能的编排可从 `backend/services/` 和对应 `backend/api/` 入口定位，并非每项业务都对应独立的后端顶层目录。
+
+代码分层、模块依赖与数据所有权见 [系统架构](agent-works/architecture/system-architecture.md)，具体机制从该文档进入所属模块正文；开发命令和执行条件以 [AGENTS](AGENTS.md) 为准。
+
+## 开发、验证与生产访问
 
 常用检查从仓库根目录执行，范围和准入以 AGENTS 为准：
 
@@ -148,4 +215,4 @@ cd frontend && npm run build && cd ..
 | [DESIGN](DESIGN.md)／[页面模板](agent-works/configurable-layout-system/page-template.md) | 设计契约／页面实施模板与维护清单 |
 | [E2E 指南](agent-works/e2e-automation/guide.md)／[测试用户](agent-works/multi-tenant-rbac/test-users.md) | 验证准入、执行生命周期／固定调试身份 |
 
-领域主题从上方功能表进入，各事实正文只维护所属内容。开发阶段文档保留原有历史与未决状态，归档识别及停止同步统一遵守全局文档边界规范。
+领域主题从上方功能表进入，各事实正文只维护所属内容。开发阶段文档保留原有历史与未决状态，归档识别及停止同步统一遵守全局协作约束。
