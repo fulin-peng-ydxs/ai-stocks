@@ -34,6 +34,35 @@ class StockQuoteSummaryService:
             return None
         return int(value)
 
+    def _serialize_market_values(
+        self, row: dict[str, Any], *, basis: str
+    ) -> dict[str, Any]:
+        """报价与历史 K 线共用股本、市值及来源证据的序列化口径。"""
+        value = {
+            field: self._number(row[field], 0) if field.endswith("mv")
+            else self._integer(row[field])
+            for field in ("total_mv", "float_mv", "total_share", "float_share")
+        }
+        if basis == "historical":
+            day = str(pd.Timestamp(row["trade_date"]).date())
+            evidence = {}
+            for field in ("total", "float"):
+                item = {}
+                for suffix in ("source", "effective_date", "available_date", "basis"):
+                    raw = row[f"{field}_{suffix}"]
+                    item[suffix] = (
+                        None if pd.isna(raw)
+                        else str(raw)[:10] if suffix.endswith("date") else str(raw)
+                    )
+                item["retrospective"] = bool(
+                    item["available_date"] and item["available_date"] > day
+                )
+                source = row[f"{field}_mv_source"]
+                item["mv_source"] = None if pd.isna(source) else source
+                evidence[field] = item
+            value["capital_evidence"] = evidence
+        return value
+
     def get_market_values(
         self, code: object, trade_dates: list[date], *, basis: str = "point_in_time"
     ) -> dict[str, dict[str, Any]]:
@@ -47,31 +76,18 @@ class StockQuoteSummaryService:
         from backend.services.share_capital_history import historical_joins
         if basis not in ("historical", "point_in_time"):
             raise ValueError("股本口径仅支持 historical 或 point_in_time")
-        joins = historical_joins()
+        joins = historical_joins(bounded=True)
         basis_fields = "'source_record' total_basis,'source_record' float_basis"
         rows = self.c.query_df(
             "SELECT b.trade_date,m.total_mv,m.float_mv,s.total_share,s.float_share,"
             "s.total_source,s.float_source,s.total_effective_date,s.float_effective_date,"
             "s.total_available_date,s.float_available_date,m.total_mv_source,m.float_mv_source," + basis_fields +
             " FROM (SELECT ? code,unnest(?::DATE[]) trade_date) b " + joins,
-            [normalized,dates])
+            [normalized, dates, *([normalized, min(dates), max(dates)] * 2)])
         result = {}
         for row in rows.to_dict("records"):
             day = str(pd.Timestamp(row["trade_date"]).date())
-            value = {field: self._number(row[field],0) if field.endswith("mv") else self._integer(row[field])
-                     for field in ("total_mv","float_mv","total_share","float_share")}
-            if basis == "historical":
-                evidence = {}
-                for field in ("total","float"):
-                    evidence[field] = {
-                        suffix: None if pd.isna(row[field+"_"+suffix]) else str(row[field+"_"+suffix])[:10]
-                        if suffix.endswith("date") else str(row[field+"_"+suffix])
-                        for suffix in ("source","effective_date","available_date","basis")}
-                    evidence[field]["retrospective"] = bool(
-                        evidence[field]["available_date"] and evidence[field]["available_date"] > day)
-                    evidence[field]["mv_source"] = None if pd.isna(row[field+"_mv_source"]) else row[field+"_mv_source"]
-                value["capital_evidence"] = evidence
-            result[day] = value
+            result[day] = self._serialize_market_values(row, basis=basis)
         return result
 
     def get(self, code: object) -> dict[str, Any]:
@@ -101,6 +117,11 @@ class StockQuoteSummaryService:
                    latest.pre_close, latest.volume, latest.amount, latest.turnover_rate,
                    st.is_st,
                    metrics.total_mv, metrics.float_mv,
+                   shares.total_source, shares.float_source,
+                   shares.total_effective_date, shares.float_effective_date,
+                   shares.total_available_date, shares.float_available_date,
+                   metrics.total_mv_source, metrics.float_mv_source,
+                   'source_record' AS total_basis, 'source_record' AS float_basis,
                    stats.sample_count, stats.average_volume
             FROM stock_basic sb
             LEFT JOIN latest_bar latest ON TRUE
@@ -149,7 +170,10 @@ class StockQuoteSummaryService:
             else None
         )
         trade_date = row["trade_date"]
-        values = {} if pd.isna(trade_date) else self.get_market_values(normalized, [pd.Timestamp(trade_date).date()], basis="historical")[str(pd.Timestamp(trade_date).date())]
+        # 同一条报价 SQL 已拿到当日事实；只复用序列化，避免再扫一遍股本与市值大表。
+        values = {} if pd.isna(trade_date) else self._serialize_market_values(
+            row.to_dict(), basis="historical"
+        )
         return {
             "code": normalized,
             "name": None if pd.isna(row["name"]) else str(row["name"]),

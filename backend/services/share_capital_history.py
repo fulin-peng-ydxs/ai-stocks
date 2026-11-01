@@ -17,11 +17,19 @@ def event_date_basis(reason: object) -> str:
     return "source_record"
 
 
-def historical_joins() -> str:
-    """展示和质检直接读取与指标、选股、回测相同的逐日事实。"""
+def historical_joins(*, bounded: bool = False) -> str:
+    """连接统一逐日事实；有界读取依次绑定两组 (code, start, end)。
+
+    日期数组驱动的外连接不保证 DuckDB 把动态过滤传递至两张大表，单股读取须显式
+    限定扫描范围，同时保留 code/date 等值关联以免填充日期缺口。全市场质检沿用默认值。
+    """
+    share_scope = " AND s.code=? AND s.trade_date BETWEEN ? AND ?" if bounded else ""
+    metric_scope = " AND m.code=? AND m.trade_date BETWEEN ? AND ?" if bounded else ""
     return (
-        "LEFT JOIN stock_share_capital_daily s ON s.code=b.code AND s.trade_date=b.trade_date "
-        "LEFT JOIN daily_metrics m ON m.code=b.code AND m.trade_date=b.trade_date "
+        "LEFT JOIN stock_share_capital_daily s ON s.code=b.code AND s.trade_date=b.trade_date"
+        f"{share_scope} "
+        "LEFT JOIN daily_metrics m ON m.code=b.code AND m.trade_date=b.trade_date"
+        f"{metric_scope} "
     )
 
 

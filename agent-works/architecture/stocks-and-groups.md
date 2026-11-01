@@ -22,9 +22,9 @@
 
 详情页把受保护数据拆为四个独立请求通道，每个通道都有独立 `AbortController` 和递增序号；切股、KeepAlive 停用和卸载会取消在途请求，迟到响应不能覆盖当前股票：
 
-- **复权行情**：`GET /stocks/{code}/bars?adjust=...&lookback=...` 经 `MarketRepository.get_bars` 输出 K线和量能所需的 `pre_close/amount/turnover_rate`；详情显式传 `include_market_values=true`，只对本次返回的 1..6000 根日线日期一次批量读取 `daily_metrics.total_mv/float_mv`，以元返回原始市值，不受价格复权影响。其它消费者不传该参数时保持原响应字段。范围切换重拉行情与指标，复权切换只重拉行情。
+- **复权行情**：`GET /stocks/{code}/bars?adjust=...&lookback=...` 经 `MarketRepository.get_bars` 输出 K线和量能所需的 `pre_close/amount/turnover_rate`；详情显式传 `include_market_values=true`，只对本次返回的 1..6000 根日线日期一次批量读取逐日市值、股本及来源证据，以元返回原始市值，不受价格复权影响。共享 `historical_joins(bounded=True)` 在股本和市值两张表上分别绑定股票代码及最小/最大日期，避免日期数组驱动的外连接扫描全市场历史；实际结果仍按请求日期等值关联，缺口不填充。其它消费者不传该参数时保持原响应字段。范围切换重拉行情与指标，复权切换只重拉行情。
 - **指标序列**：`GET /stocks/{code}/indicators?lookback=1..6000&fields=...&period=...` 始终保留 `trade_date` 并返回实际周期与复权口径，未知字段在计算前拒绝，NaN/无穷/可空布尔序列化为 `null`。日 K 仍提供详情快照字段和五个 MACD 原子；周/月/年 K 只开放已有周期计算能力的 MACD 五原子。个股 MACD 统一使用前复权历史，前端仅按周期末交易日对齐，不实现第二套公式；日 K 末行同时供“最新指标快照”。
-- **最新行情摘要**：独立调用 `GET /stocks/{code}/quote-summary`，对齐该股最新行情日读取原始价格、逐日市值与准确 ST 状态，补充同日股本和量比；当前没有稳定市盈率事实，返回 `null`。失败只降级摘要，不清空已加载图表。
+- **最新行情摘要**：独立调用 `GET /stocks/{code}/quote-summary`，一条 SQL 对齐该股最新行情日读取原始价格、逐日市值、股本及来源证据与准确 ST 状态，补充量比；已取事实复用历史 K 线的序列化入口，不再调用历史查询重复读取同日股本、市值。当前没有稳定市盈率事实，返回 `null`。失败只降级摘要，不清空已加载图表。
 - **买卖评估**：只有同时具备 `trade-profile:view` 与 `stocks:trade-eval` 权限时才加载可见方案并请求 `trade-eval`；方案列表失败或评估失败不阻断行情与指标。
 
 行情 403 是详情页主权限边界：立即清除行情、指标、报价和评估派生数据并取消其它通道，后续 pending/普通失败均不重新展示旧数据，只有新的行情成功响应才解除 permission 状态。MACD 指标请求普通失败则只让 MACD 面板进入局部错误态，K线与量能继续可用。

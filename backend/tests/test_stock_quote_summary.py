@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 
 import pytest
@@ -79,6 +80,70 @@ def test_quote_summary_keeps_ratio_and_valuation_empty_when_history_is_insuffici
         assert result["volume_ratio"] is None
         assert result["total_mv"] is None
         assert result["float_mv"] is None
+
+
+def test_quote_summary_reads_capital_once_and_preserves_history_evidence(monkeypatch):
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_stock(market, [100, 200, 300, 400, 500, 600])
+        market.execute(
+            "UPDATE stock_share_capital_daily SET total_source='eastmoney_events',"
+            "float_source='sina_daily',total_effective_date=DATE '2026-09-01',"
+            "float_effective_date=DATE '2026-09-02',total_available_date=DATE '2026-10-01'"
+        )
+        market.execute(
+            "UPDATE daily_metrics SET total_mv_source='computed:a_price:eastmoney_events',"
+            "float_mv_source='computed:sina_daily'"
+        )
+        queries = []
+        query_df = market.query_df
+
+        def tracked_query(sql, params=None):
+            queries.append(sql)
+            return query_df(sql, params)
+
+        monkeypatch.setattr(market, "query_df", tracked_query)
+        service = StockQuoteSummaryService(market)
+        result = service.get("600000.sh")
+        # 报价一次查询即取得全部原始事实，不能再按一个日期重复调用历史查询。
+        assert len(queries) == 1
+        assert result["capital_evidence"]["total"] == {
+            "source": "eastmoney_events",
+            "effective_date": "2026-09-01",
+            "available_date": "2026-10-01",
+            "basis": "source_record",
+            "retrospective": True,
+            "mv_source": "computed:a_price:eastmoney_events",
+        }
+        assert result["capital_evidence"]["float"]["available_date"] is None
+        assert result["capital_evidence"]["float"]["retrospective"] is False
+        historical = service.get_market_values(
+            "600000.SH", [date(2026, 9, 6)], basis="historical"
+        )["2026-09-06"]
+        assert {key: result[key] for key in historical} == historical
+
+
+def test_market_values_preserve_requested_dates_and_independent_fact_gaps():
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_stock(market, [100, 200, 300, 400, 500, 600])
+        market.execute(
+            "INSERT INTO daily_metrics(code,trade_date,total_mv,float_mv) VALUES "
+            "('600000.SH','2026-09-02',900,700),"
+            "('600001.SH','2026-09-03',99999,88888)"
+        )
+        market.execute(
+            "INSERT INTO stock_share_capital_daily(code,trade_date,total_share,float_share) "
+            "VALUES ('600000.SH','2026-09-04',100,80)"
+        )
+        dates = [date(2026, 9, day) for day in (6, 2, 3, 6)]
+        result = StockQuoteSummaryService(market).get_market_values("600000.sh", dates)
+        assert set(result) == {"2026-09-02", "2026-09-03", "2026-09-06"}
+        assert result["2026-09-02"] == {
+            "total_mv": 900, "float_mv": 700, "total_share": None, "float_share": None,
+        }
+        assert all(value is None for value in result["2026-09-03"].values())
+        assert result["2026-09-06"]["total_share"] == 10_000_000_000
 
 
 def test_quote_summary_rejects_invalid_code_and_returns_empty_shape_for_unknown_stock():
@@ -206,3 +271,59 @@ def test_bars_market_values_6000_row_real_api_regression(monkeypatch, basis):
         assert bars[0]["date"] == "2000-01-02"
         assert bars[2999]["total_mv"] is None
         assert bars[-1]["total_mv"] == 9_000_000
+
+
+def test_bars_capital_queries_bound_both_large_fact_tables(monkeypatch):
+    """跨 500 只股票、各 2000 日的真实 API 读取必须在两张大表上静态下推范围。"""
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        market.execute("INSERT INTO stock_basic(code,name) VALUES ('600000.SH','测试股')")
+        market.execute(
+            "INSERT INTO daily_bar(code,trade_date,open,high,low,close,pre_close,volume,"
+            "adj_factor) SELECT '600000.SH', DATE '2020-01-01'+i::INTEGER,"
+            "10,11,9,10,9,100,1 FROM range(1250) t(i)"
+        )
+        # 让两张关联表达到多股票历史规模，避免单股小夹具掩盖宽表扫描。
+        for table, fields, values in (
+            ("daily_metrics", "total_mv,float_mv", "9000,7000"),
+            ("stock_share_capital_daily", "total_share,float_share", "900,700"),
+        ):
+            market.execute(
+                f"INSERT INTO {table}(code,trade_date,{fields}) "
+                f"SELECT printf('%06d.SH',600000+c),DATE '2019-01-01'+d::INTEGER,{values} "
+                "FROM range(500) t(c) CROSS JOIN range(2000) u(d)"
+            )
+        query_df = market.query_df
+        capital_queries = []
+
+        def tracked_query(sql, params=None):
+            if "unnest(?::DATE[])" in sql:
+                capital_queries.append((sql, params))
+            return query_df(sql, params)
+
+        monkeypatch.setattr(market, "query_df", tracked_query)
+        response = _api_client(monkeypatch, market).get(
+            "/api/stocks/600000.SH/bars",
+            params={"include_market_values": True, "lookback": 1250,
+                    "capital_basis": "historical"},
+        )
+        assert response.status_code == 200
+        bars = response.json()["data"]["bars"]
+        assert len(bars) == 1250
+        assert all(bar["total_mv"] == 9000 and bar["float_share"] == 700 for bar in bars)
+        assert len(capital_queries) == 1
+        sql, params = capital_queries[0]
+        plan = json.loads(query_df("EXPLAIN (FORMAT JSON) " + sql, params).iloc[0, 1])
+
+        def table_scans(nodes):
+            for node in nodes:
+                if "Table" in node.get("extra_info", {}):
+                    yield node["extra_info"]
+                yield from table_scans(node.get("children", []))
+
+        scans = {scan["Table"].split(".")[-1]: scan for scan in table_scans(plan)}
+        for table in ("stock_share_capital_daily", "daily_metrics"):
+            # 检查实际优化器的静态过滤，不能只依赖小结果集和动态 join filter。
+            filters = str(scans[table].get("Filters", ""))
+            assert "600000.SH" in filters
+            assert "trade_date>=" in filters and "trade_date<=" in filters
