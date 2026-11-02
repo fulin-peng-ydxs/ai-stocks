@@ -6,7 +6,7 @@ import csv
 import io
 import json
 from dataclasses import asdict, dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Literal
 
 import pandas as pd
@@ -15,6 +15,7 @@ from backend.common.logging import get_logger
 from backend.services.limit_ladder_calculator import SUPPORTED_WINDOWS
 from backend.services.limit_ladder_snapshot import RULE_VERSION, LimitLadderSnapshotService
 from backend.services.limit_ladder_task_coordinator import LimitLadderTaskCoordinator
+from backend.services.limit_ladder_task_policy import QUEUE_TIMEOUT_REASON, queue_deadline
 from backend.services.stock_board_correlation import StockBoardCorrelationService
 from backend.services.stock_st_status import (
     StockSTStatusService,
@@ -137,39 +138,56 @@ class LimitLadderQueryService:
         trade_date: date,
         row: dict[str, Any] | None,
         st_status_error: str | None,
+        *,
+        start_failure: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build one public status shape for status and query without creating work."""
         task = self._active_task(trade_date)
+        if start_failure is None:
+            start_failure = self._failed_task_start(trade_date)
+        queue_timed_out = bool(start_failure and start_failure.get("last_error") == QUEUE_TIMEOUT_REASON)
+        waiting = bool(task and task["status"] == "requested" and not task.get("task_id"))
+        has_snapshot = bool(row and row.get("current_snapshot_id"))
+        stored_status = str(row["status"]) if row is not None else "missing"
+        if st_status_error:
+            public_status = "st_status_not_ready"
+        elif waiting:
+            public_status = "waiting"
+        elif task:
+            public_status = "recalculating" if has_snapshot else "calculating"
+        elif start_failure:
+            public_status = "queue_timeout" if queue_timed_out else "failed"
+        else:
+            public_status = stored_status
+        start_error = (
+            {"task_error": "计算任务启动失败，请联系管理员重算当日；详情见审计日志"}
+            if start_failure and not task and not st_status_error else {}
+        )
+        if queue_timed_out and not task and not st_status_error:
+            start_error = {
+                "task_error": "天梯排队等待已超时，后台已停止等待；请在数据任务结束后重新排队",
+                "queue_retry_allowed": start_failure.get("source") != "admin_recompute",
+                "queue": self._queue_details(start_failure),
+            }
+        elif waiting:
+            start_error["queue"] = task.get("queue")
         if row is None:
             return {
+                **start_error,
                 "trade_date": trade_date.isoformat(),
                 "business_code": (
                     "ST_STATUS_NOT_READY"
                     if st_status_error
-                    else ("SNAPSHOT_PENDING" if task else "SNAPSHOT_MISSING")
+                    else self._state_business_code(public_status, has_snapshot)
                 ),
-                "snapshot_status": (
-                    "st_status_not_ready"
-                    if st_status_error
-                    else ("calculating" if task else "missing")
-                ),
+                "snapshot_status": public_status,
                 "stored_snapshot_status": "missing",
                 "has_snapshot": False,
                 "st_status_error": st_status_error,
                 "task": task,
             }
-        has_snapshot = bool(row.get("current_snapshot_id"))
-        stored_status = str(row["status"])
-        public_status = (
-            "st_status_not_ready"
-            if st_status_error
-            else (
-                "recalculating"
-                if task and has_snapshot
-                else ("calculating" if task else stored_status)
-            )
-        )
         return {
+            **start_error,
             "trade_date": trade_date.isoformat(),
             "business_code": (
                 "ST_STATUS_NOT_READY"
@@ -196,6 +214,7 @@ class LimitLadderQueryService:
         auth_context=None,
         request=None,
         trigger_missing: bool = True,
+        retry_queue: bool = False,
     ) -> dict[str, Any]:
         filters.validate()
         if not self._is_open_date(trade_date):
@@ -203,24 +222,37 @@ class LimitLadderQueryService:
 
         LimitLadderSnapshotService(self._write).process_pending_invalidations()
         state, st_status_error = self._resolved_state(trade_date)
+        start_failure = self._failed_task_start(trade_date)
+        retry_allowed = bool(
+            retry_queue and start_failure
+            and start_failure.get("last_error") == QUEUE_TIMEOUT_REASON
+            and start_failure.get("source") != "admin_recompute"
+        )
         task_error = None
         ensured_task = None
         stored_status = None if state is None else str(state.get("status"))
         coverage_gate = None
+        active_task = self._active_task(trade_date)
+        expired_wait = bool(
+            active_task and active_task.get("queue")
+            and active_task["queue"]["remaining_seconds"] <= 0
+        )
         orphaned_processing = bool(
             state is not None
             and stored_status in {"calculating", "recalculating"}
-            and self._active_task(trade_date) is None
+            and active_task is None
         )
         if trigger_missing and stored_status == "invalid" and st_status_error is None:
             try:
                 coverage_gate = LimitLadderSnapshotService(self.c).check_coverage(trade_date)
             except STStatusNotReadyError as exc:
                 st_status_error = str(exc)
-        should_trigger = trigger_missing and st_status_error is None and (
+        should_trigger = trigger_missing and (not start_failure or retry_allowed) and st_status_error is None and (
             state is None
             or (stored_status == "invalid" and coverage_gate is not None and coverage_gate.ready)
             or orphaned_processing
+            or retry_allowed
+            or expired_wait
         )
         if should_trigger:
             source = (
@@ -243,11 +275,15 @@ class LimitLadderQueryService:
                 task_error = "任务创建失败，请稍后重试"
                 log.warning("天梯日期任务创建失败 date=%s: %s", trade_date, exc)
             state = self._state_row(trade_date)
+            start_failure = self._failed_task_start(trade_date)
 
-        status = self._status_payload(trade_date, state, st_status_error)
+        status = self._status_payload(
+            trade_date, state, st_status_error, start_failure=start_failure,
+        )
         if coverage_gate is not None and not coverage_gate.ready:
             status["coverage"] = coverage_gate.to_dict()
-        if ensured_task is not None and status.get("task") is None:
+        if (ensured_task is not None and ensured_task.status in {"requested", "running"}
+                and status.get("task") is None):
             has_snapshot = bool(state and state.get("current_snapshot_id"))
             status["task"] = {
                 "command_id": ensured_task.command_id,
@@ -258,8 +294,13 @@ class LimitLadderQueryService:
                 "message": None,
             }
             status["stored_snapshot_status"] = status["snapshot_status"]
-            status["snapshot_status"] = "recalculating" if has_snapshot else "calculating"
-            status["business_code"] = "SNAPSHOT_STALE" if has_snapshot else "SNAPSHOT_PENDING"
+            waiting = ensured_task.task_id is None
+            status["snapshot_status"] = (
+                "waiting" if waiting else "recalculating" if has_snapshot else "calculating"
+            )
+            status["business_code"] = (
+                self._state_business_code(status["snapshot_status"], has_snapshot)
+            )
         if task_error:
             status["task_error"] = task_error
         snapshot_id = (
@@ -641,6 +682,34 @@ class LimitLadderQueryService:
             result[kind].append(item)
         return result
 
+    def _failed_task_start(self, trade_date: date) -> dict[str, Any] | None:
+        """真正的派发失败停止自动重建；兼容升级前被错误记为失败的写槽位冲突。"""
+        command = self.coordinator.repository.get_latest_for_date(trade_date)
+        failed = bool(
+            command and command["status"] == "failed"
+            and self._nullable_text(command.get("task_id")) is None
+            and not str(command.get("last_error") or "").startswith("已有同类任务在运行:")
+        )
+        return command if failed else None
+
+    def _queue_details(self, command: dict[str, Any]) -> dict[str, Any] | None:
+        """按首次请求时间展示等待信息；不返回任务参数、日志或执行者身份。"""
+        created = command.get("created_at")
+        if created is None:
+            return None
+        stamp = pd.Timestamp(created)
+        if stamp.tzinfo is None:
+            stamp = stamp.tz_localize("UTC")
+        now = datetime.now(UTC)
+        deadline = queue_deadline(created)
+        return {
+            "queued_at": stamp.isoformat(),
+            "deadline_at": deadline.isoformat(),
+            "waited_seconds": max(0, int((now - stamp.to_pydatetime()).total_seconds())),
+            "remaining_seconds": max(0, int((deadline - now).total_seconds())),
+            "blocking_task": self.coordinator.tasks.write_blocker(),
+        }
+
     def _active_task(self, trade_date: date) -> dict[str, Any] | None:
         try:
             command = self.coordinator.repository.get_active_for_date(trade_date)
@@ -657,6 +726,7 @@ class LimitLadderQueryService:
                 "source": str(command["source"]),
                 "progress": None if runtime is None else runtime.get("progress"),
                 "message": None if runtime is None else runtime.get("message"),
+                "queue": self._queue_details(command) if task_id is None else None,
             }
         except Exception as exc:  # noqa: BLE001 -- task status is optional enrichment
             log.warning("天梯活动任务状态查询降级 date=%s: %s", trade_date, exc)
@@ -699,6 +769,10 @@ class LimitLadderQueryService:
     def _state_business_code(status: str, has_snapshot: bool) -> str:
         if status == "valid":
             return "READY"
+        if status == "waiting":
+            return "SNAPSHOT_WAITING"
+        if status == "queue_timeout":
+            return "SNAPSHOT_QUEUE_TIMEOUT"
         if status in {"calculating", "recalculating"}:
             return "SNAPSHOT_STALE" if has_snapshot else "SNAPSHOT_PENDING"
         if status == "invalid":

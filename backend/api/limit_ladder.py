@@ -116,8 +116,8 @@ def recompute(trade_date: str, request: Request) -> ApiResponse:
     except ConcurrentTaskError as exc:
         return err(
             409,
-            f"已有写任务在运行（{exc.task_type}），请等待其完成后再重算",
-            {"running_id": exc.running_id},
+            exc.user_message,
+            exc.conflict_details,
         )
     return ok(
         {
@@ -140,6 +140,7 @@ def query(
     keyword: KeywordQuery = None,
     hotspot_type: str | None = None,
     hotspot_key: HotspotKeyQuery = None,
+    retry_queue: bool = False,
 ) -> ApiResponse:
     parsed_date = _trade_date(trade_date)
     filters = _filters(window, boards, ignore_st, one_word_only, keyword, hotspot_type, hotspot_key)
@@ -149,5 +150,6 @@ def query(
             filters,
             auth_context=get_current_context(),
             request=request,
+            retry_queue=retry_queue,
         )
     )

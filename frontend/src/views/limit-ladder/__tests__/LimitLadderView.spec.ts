@@ -249,6 +249,48 @@ afterEach(() => {
 })
 
 describe('LimitLadderView polling deadline', () => {
+  it('排队到服务端期限停止轮询，重新排队必须显式发送标志', async () => {
+    const waiting = { ...pendingResult('cmd-wait', ''), business_code: 'SNAPSHOT_WAITING', snapshot_status: 'waiting',
+      queue: { queued_at: new Date().toISOString(), deadline_at: new Date(Date.now() + 5000).toISOString(),
+        waited_seconds: 0, remaining_seconds: 5, blocking_task: null } }
+    vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(waiting)
+    const wrapper = await mountView()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(stateProbe(wrapper).attributes('data-business-code')).toBe('SNAPSHOT_QUEUE_TIMEOUT')
+    const calls = vi.mocked(limitLadderApi.getLimitLadder).mock.calls.length
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(limitLadderApi.getLimitLadder).toHaveBeenCalledTimes(calls)
+    vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(pendingResult('cmd-retry', 'task-new'))
+    wrapper.findComponent(LimitLadderStub).vm.$emit('retry')
+    await flushPromises()
+    expect(limitLadderApi.getLimitLadder).toHaveBeenLastCalledWith(
+      '2026-08-28', expect.any(Object), { retryQueue: true },
+    )
+    expect(stateProbe(wrapper).attributes('data-snapshot-status')).toBe('calculating')
+  })
+
+  it('排队超过两分钟仍跟踪，开始计算后独立计时并自动展示结果', async () => {
+    const waiting = { ...pendingResult('command-1', ''),
+      business_code: 'SNAPSHOT_WAITING', snapshot_status: 'waiting' }
+    vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(waiting)
+    const wrapper = await mountView()
+    await vi.advanceTimersByTimeAsync(180_000)
+    expect(stateProbe(wrapper).attributes('data-error')).toBe('')
+    expect(stateProbe(wrapper).attributes('data-snapshot-status')).toBe('waiting')
+    const calls = vi.mocked(limitLadderApi.getLimitLadder).mock.calls.length
+    vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(pendingResult('command-1', 'task-1'))
+    await vi.advanceTimersToNextTimerAsync()
+    expect(stateProbe(wrapper).attributes('data-snapshot-status')).toBe('calculating')
+    expect(limitLadderApi.getLimitLadder).toHaveBeenCalledTimes(calls + 1)
+    vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(readyResult())
+    await vi.advanceTimersByTimeAsync(1_500)
+    expect(stateProbe(wrapper).attributes('data-business-code')).toBe('READY')
+    const doneCalls = vi.mocked(limitLadderApi.getLimitLadder).mock.calls.length
+    await vi.advanceTimersByTimeAsync(150_000)
+    expect(limitLadderApi.getLimitLadder).toHaveBeenCalledTimes(doneCalls)
+    expect(stateProbe(wrapper).attributes('data-error')).toBe('')
+  })
+
   it('清理历史查询参数，业务默认修改后即时投影到当前筛选和层内排序', async () => {
     vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(readyResult())
     const wrapper = await mountView()

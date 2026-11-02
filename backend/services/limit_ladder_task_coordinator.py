@@ -13,6 +13,11 @@ import pandas as pd
 from backend.auth.context import AuthContext
 from backend.common.request import trusted_client_ip
 from backend.services.limit_ladder_snapshot import RULE_VERSION
+from backend.services.limit_ladder_task_policy import (
+    QUEUE_TIMEOUT_REASON,
+    LimitLadderQueueTimeoutError,
+    queue_deadline,
+)
 from backend.storage.audit_repository import AuditRepository
 from backend.storage.limit_ladder_task_repository import (
     LimitLadderTaskCommand,
@@ -128,35 +133,55 @@ class LimitLadderTaskCoordinator:
                             )
                         self.dispatch_outbox()
                         continue
+                    if mapped is None and str(active["status"]) == "requested":
+                        task_id = self._submit_requested(active)
+                        if task_id is not None:
+                            return DateTaskResult(str(active["command_id"]), task_id, "requested", True)
+                        active = self.repository.get(str(active["command_id"]))
                     return self._result(active, reused=True)
                 last_error = exc
                 continue
 
             self.dispatch_outbox()
-            try:
-                task_id = self.tasks.create(
-                    "limit_ladder_recompute",
-                    {
-                        "command_id": command.command_id,
-                        "trade_date": trade_date.isoformat(),
-                        "source": source,
-                    },
-                    trigger_source="system" if source != "admin_recompute" else "manual",
-                    job_name=self._source_label(source),
-                    trigger_event_id=command.command_id,
-                )
-            except Exception as exc:
-                self.repository.transition(
-                    command_id=command.command_id,
-                    status="failed",
-                    last_error=str(exc),
-                )
-                self.dispatch_outbox()
-                raise
-            return DateTaskResult(command.command_id, task_id, "requested", False)
+            task_id = self._submit_requested(self.repository.get(command.command_id))
+            latest = self.repository.get(command.command_id)
+            return DateTaskResult(command.command_id, task_id, str(latest["status"]), False)
         if last_error is not None:
             raise last_error
         raise RuntimeError("failed to acquire limit ladder date task slot")
+
+    def _submit_requested(self, command: dict[str, Any]) -> str | None:
+        """复用运行态创建幂等与单写门禁；繁忙时保留 PG 请求供定时协调器派发。"""
+        from backend.services.async_task import ConcurrentTaskError
+
+        command_id = str(command["command_id"])
+        source = str(command["source"])
+        try:
+            return self.tasks.create(
+                "limit_ladder_recompute",
+                {
+                    "command_id": command_id,
+                    "trade_date": str(command["trade_date"]),
+                    "source": source,
+                    "queue_deadline_at": queue_deadline(command["created_at"]).isoformat(),
+                },
+                trigger_source="manual" if source == "admin_recompute" else "system",
+                job_name=self._source_label(source),
+                trigger_event_id=command_id,
+            )
+        except ConcurrentTaskError:
+            # 等待不占用 async_task 的 pending 写槽位，不产生失败审计；重启后仍能派发。
+            return None
+        except LimitLadderQueueTimeoutError:
+            self.repository.transition(
+                command_id=command_id, status="failed", last_error=QUEUE_TIMEOUT_REASON,
+            )
+            self.dispatch_outbox()
+            return None
+        except Exception as exc:
+            self.repository.transition(command_id=command_id, status="failed", last_error=str(exc))
+            self.dispatch_outbox()
+            raise
 
     def mark_running(self, command_id: str, task_id: str) -> bool:
         changed = self.repository.transition(
@@ -294,6 +319,15 @@ class LimitLadderTaskCoordinator:
                                     or "计算任务已中断，等待重新创建"
                                 ),
                             )
+                    continue
+                if str(command["status"]) == "requested":
+                    # requested 没有运行态行表示尚未获得写槽位，不适用孤儿超时。
+                    # create() 以 command_id 幂等，和首个请求并发也不会创建双份任务。
+                    try:
+                        task_id = self._submit_requested(command)
+                        updated += int(task_id is not None)
+                    except Exception:  # 已记录真实失败，继续协调其它日期。
+                        updated += 1
                     continue
                 created_at = self._as_datetime(command.get("created_at"))
                 if created_at is not None and created_at <= cutoff:

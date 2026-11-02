@@ -185,6 +185,12 @@ class BacktestConfig(BaseModel):
     cost: CostConfig = Field(default_factory=CostConfig)
 
 
+class LimitLadderConfig(BaseModel):
+    """连板天梯排队治理的非敏感启动基线。"""
+
+    queue_timeout_sec: int = Field(default=900, ge=30, le=86400)
+
+
 class SchedulerConfig(BaseModel):
     enabled: bool = False
     daily_cron_hour: int = 18
@@ -324,6 +330,7 @@ class Settings(BaseModel):
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
     backtest: BacktestConfig = Field(default_factory=BacktestConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
+    limit_ladder: LimitLadderConfig = Field(default_factory=LimitLadderConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
     postgres: PostgresConfig = Field(default_factory=PostgresConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)

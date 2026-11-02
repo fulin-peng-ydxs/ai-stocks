@@ -2,7 +2,10 @@ import { onBeforeUnmount } from 'vue'
 
 export interface AsyncResultPollingOptions {
   intervalMs?: number
+  /** 0 表示持续跟踪持久化等待请求，停止与卸载仍会清理轮询。 */
   timeoutMs?: number
+  /** 服务端绝对期限；提供时优先使用，不随轮询响应续期。 */
+  deadlineAt?: () => number | undefined
   delayMs?: (attempt: number) => number
   resetContextDuringRefresh?: boolean
   onTimeout?: () => void
@@ -54,7 +57,12 @@ export function useAsyncResultPolling(
     timedOutContext = ''
     startedAt = Date.now()
     attempt = 0
-    deadlineTimer = window.setTimeout(finishTimeout, timeoutMs)
+    const deadline = options.deadlineAt?.()
+    const absoluteDeadline = typeof deadline === 'number' && Number.isFinite(deadline)
+    if (absoluteDeadline || timeoutMs > 0) {
+      const remaining = absoluteDeadline ? Math.max(0, deadline - Date.now()) : timeoutMs
+      deadlineTimer = window.setTimeout(finishTimeout, remaining)
+    }
   }
 
   function schedule(): void {

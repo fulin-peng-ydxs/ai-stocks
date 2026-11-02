@@ -442,8 +442,17 @@ class LimitLadderCalculator:
             self.c.temp_view(code_frame, "ladder_codes") as code_view,
             self.c.temp_view(date_frame, "ladder_dates") as date_view,
         ):
+            # 行情与“有停牌、无行情”两支共用同一份已收窄事实，反向存在判断不能
+            # 再扫描全量历史。真实千万级数据下原 UNION/相关反查计划会持续等待执行任务。
             rows = self.c.query_df(
                 f"""
+                WITH scoped_bar AS MATERIALIZED (
+                    SELECT b.code,b.trade_date,b.open,b.high,b.low,b.close,b.pre_close,
+                           b.adj_factor_clean,b.adj_factor,b.amount,b.is_suspended,b.is_one_word
+                    FROM daily_bar b
+                    JOIN {code_view} codes ON codes.code=b.code
+                    JOIN {date_view} dates ON dates.trade_date=b.trade_date
+                )
                 SELECT b.code,b.trade_date,b.open,b.high,b.low,b.close,b.pre_close,
                        COALESCE(b.adj_factor_clean,b.adj_factor) AS adj_factor,
                        b.amount,b.is_suspended,b.is_one_word,
@@ -452,9 +461,7 @@ class LimitLadderCalculator:
                        (s.trade_date IS NOT NULL) AS confirmed_suspension,
                        special.event_type AS special_event_type,
                        special.source_ref AS special_source_ref
-                FROM daily_bar b
-                JOIN {code_view} codes ON codes.code=b.code
-                JOIN {date_view} dates ON dates.trade_date=b.trade_date
+                FROM scoped_bar b
                 LEFT JOIN stock_st_status_daily st
                   ON st.code=b.code AND st.trade_date=b.trade_date
                 LEFT JOIN stock_special_trading_day special
@@ -470,7 +477,7 @@ class LimitLadderCalculator:
                 LEFT JOIN stock_st_status_daily st
                   ON st.code=s.code AND st.trade_date=s.trade_date
                 WHERE NOT EXISTS (
-                    SELECT 1 FROM daily_bar b
+                    SELECT 1 FROM scoped_bar b
                     WHERE b.code=s.code AND b.trade_date=s.trade_date
                 )
                 """

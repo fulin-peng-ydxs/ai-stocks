@@ -656,7 +656,7 @@ def quality_fix(issue_id: int, recheck_source: bool = False) -> ApiResponse:
         tid = AsyncTaskService().create("fix", {"issue_id": issue_id, "issue_type": row.iloc[0]["issue_type"],
                                                "recheck_source": recheck_source})
     except ConcurrentTaskError as e:
-        return err(409, f"已有修复/采集任务在运行（{e.task_type}），请稍后再试", {"running_id": e.running_id})
+        return err(409, e.user_message, e.conflict_details)
     except ValueError as e:
         return err(400, str(e))
     return ok({"task_id": tid})
@@ -686,7 +686,7 @@ def quality_fix_batch(body: dict) -> ApiResponse:
     try:
         tid = AsyncTaskService().create("fix", {"issue_ids": ids})
     except ConcurrentTaskError as e:
-        return err(409, f"已有修复/采集任务在运行（{e.task_type}），请稍后再试", {"running_id": e.running_id})
+        return err(409, e.user_message, e.conflict_details)
     return ok({"task_id": tid})
 
 
@@ -707,7 +707,7 @@ def quality_recover_batch(body: dict) -> ApiResponse:
     try:
         tid = AsyncTaskService().create("fix", params)
     except ConcurrentTaskError as e:
-        return err(409, f"已有修复/采集任务在运行（{e.task_type}），请稍后再试", {"running_id": e.running_id})
+        return err(409, e.user_message, e.conflict_details)
     return ok({"task_id": tid, "count": len(ids)})
 
 
@@ -815,7 +815,7 @@ def quality_mark_delisted(issue_id: int, body: MarkDelistedIn) -> ApiResponse:
     except ValueError as exc:
         return err(400, str(exc))
     except ConcurrentTaskError as exc:
-        return err(409, "已有行情写任务，请等待完成后再修改退市日期", {"running_id": exc.running_id})
+        return err(409, exc.user_message, exc.conflict_details)
     return ok({"task_id": tid})
 
 
@@ -970,8 +970,8 @@ def schedules_run_now(job_id: str) -> ApiResponse:
     except ValueError as e:
         return err(404, str(e))
     except ConcurrentTaskError as e:
-        return err(409, f"已有写任务在运行（{e.task_type}），请等待其完成或稍后再试",
-                   {"running_id": e.running_id})
+        return err(409, e.user_message,
+                   e.conflict_details)
     return ok({"task_id": tid}, msg="已触发")
 
 

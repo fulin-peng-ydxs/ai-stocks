@@ -3,6 +3,8 @@ import type { LimitLadderResult } from '@/api/limitLadder'
 export const LIMIT_LADDER_POLL_BASE_MS = 1_500
 export const LIMIT_LADDER_POLL_MAX_MS = 12_000
 export const LIMIT_LADDER_POLL_TIMEOUT_MS = 120_000
+// 兼容未返回 deadline_at 的旧接口；当前接口以服务端绝对期限为准。
+export const LIMIT_LADDER_QUEUE_FALLBACK_TIMEOUT_MS = 900_000
 
 export function limitLadderPollDelay(attempt: number): number {
   return Math.min(

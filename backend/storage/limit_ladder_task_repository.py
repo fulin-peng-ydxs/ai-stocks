@@ -111,6 +111,14 @@ class LimitLadderTaskRepository:
         )
         return None if df.empty else df.iloc[0].to_dict()
 
+    def get_latest_for_date(self, trade_date: date) -> dict[str, Any] | None:
+        """读取最新请求终态，供尚未创建运行任务时的失败反馈使用。"""
+        rows = self.pg.query_df(
+            "SELECT * FROM limit_ladder_task_ledger WHERE trade_date=%s "
+            "ORDER BY created_at DESC,command_id DESC LIMIT 1", [trade_date],
+        )
+        return None if rows.empty else rows.iloc[0].to_dict()
+
     def list_active(self) -> list[dict[str, Any]]:
         rows = self.pg.query_df(
             "SELECT * FROM limit_ladder_task_ledger "

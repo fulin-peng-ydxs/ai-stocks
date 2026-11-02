@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from backend.services.limit_ladder_calculator import LimitLadderCalculator
+from backend.indicators.stock_board_correlation import ALGORITHM_VERSION
 from backend.services.limit_ladder_query import LimitLadderFilters, LimitLadderQueryService
 from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
 from backend.storage.ddl import init_db
@@ -32,6 +33,10 @@ TRADE_DATE = date(2026, 8, 28)
 
 
 class _EmptyTaskRepository:
+    @staticmethod
+    def get_latest_for_date(_trade_date: date):
+        return None
+
     @staticmethod
     def get_active_for_date(_trade_date: date):
         return None
@@ -196,9 +201,20 @@ def seed_scale_fixture(
         benchmark_fallback=False,
         as_of_date=TRADE_DATE,
         computed_at=now,
-        algorithm_version="limit-ladder-scale-v1",
+        algorithm_version=ALGORITHM_VERSION,
     )
     _insert_frame(client, "stock_board_correlation", correlation)
+    # 同日冠军与发布状态必须成对准备，缺失状态会被真实读取入口当作首次计算。
+    _insert_frame(client, "stock_board_correlation_state", pd.DataFrame({
+        "code": codes,
+        "as_of_date": TRADE_DATE,
+        "computed_at": now,
+        "algorithm_version": ALGORITHM_VERSION,
+        "benchmark_code": "000001.SH",
+        "benchmark_fallback": False,
+        "has_industry_champion": True,
+        "has_concept_champion": True,
+    }))
     _insert_frame(client, "stock_st_status_daily", pd.DataFrame({
         "code": np.repeat(np.asarray(codes, dtype=object), trade_days),
         "trade_date": np.tile(np.asarray(days, dtype=object), stock_count),
@@ -207,6 +223,11 @@ def seed_scale_fixture(
         "source_ref": [f"scale-{index}" for index in row_indexes],
         "quality": "accurate",
         "captured_at": now,
+        "updated_at": now,
+    }))
+    _insert_frame(client, "stock_st_status_date_revision", pd.DataFrame({
+        "trade_date": days,
+        "revision": stock_count,
         "updated_at": now,
     }))
     detail = json.dumps({

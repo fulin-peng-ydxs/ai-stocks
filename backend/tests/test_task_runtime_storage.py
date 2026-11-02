@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -68,6 +68,64 @@ def test_runtime_json_normalizes_non_json_scalars_for_postgres():
 
 def test_concurrent_task_error_crosses_postgres_transaction_boundary():
     assert issubclass(ConcurrentTaskError, ConflictError)
+
+
+def test_queue_deadline_is_absolute_and_inclusive():
+    from backend.config.settings import LimitLadderConfig
+    from backend.services.limit_ladder_task_policy import (
+        LimitLadderQueueTimeoutError, check_queue_deadline,
+    )
+
+    deadline = datetime.now(UTC)
+    check_queue_deadline(deadline.isoformat(), now=deadline - timedelta(microseconds=1))
+    with pytest.raises(LimitLadderQueueTimeoutError):
+        check_queue_deadline(deadline.isoformat(), now=deadline)
+    assert LimitLadderConfig().queue_timeout_sec == 900
+    with pytest.raises(ValueError):
+        LimitLadderConfig(queue_timeout_sec=0)
+
+
+def test_writer_admission_honors_oldest_ladder_and_releases_expired_queue(pg, market, monkeypatch):
+    """真实 PG SQL 与创建事务，临时表遮蔽运行表，不能改动共享任务。"""
+    from backend.services.async_task import AsyncTaskService
+    from backend.services.limit_ladder_task_policy import LimitLadderQueueTimeoutError
+
+    runtime = PostgresTaskRuntimeClient(pg)
+    tasks = AsyncTaskService(runtime, market_client=market)
+    monkeypatch.setattr(tasks, "_run", lambda *args: None)
+    monkeypatch.setattr(tasks, "_audit_task", lambda **kwargs: None)
+    now = datetime.now(UTC)
+    with runtime.transaction():
+        runtime.execute("CREATE TEMP TABLE async_task ON COMMIT DROP AS SELECT * FROM public.async_task WITH NO DATA")
+        runtime.execute("CREATE TEMP TABLE limit_ladder_task_ledger ON COMMIT DROP AS SELECT * FROM public.limit_ladder_task_ledger WITH NO DATA")
+        resumable = tasks.create("fix", {})
+        tasks._set(resumable, status="interrupted")
+        for command_id, created in [("oldest", now - timedelta(minutes=2)), ("newer", now - timedelta(minutes=1)), ("expired", now - timedelta(days=2))]:
+            runtime.execute(
+                "INSERT INTO limit_ladder_task_ledger (command_id,status,created_at) VALUES (?,?,?)",
+                [command_id, "requested", created],
+            )
+        with pytest.raises(ConcurrentTaskError) as conflict:
+            tasks.create("fix", {})
+        assert conflict.value.queued and conflict.value.running_id == "oldest"
+        assert conflict.value.conflict_details == {"running_id": None, "waiting_command_id": "oldest"}
+        with pytest.raises(ConcurrentTaskError):
+            tasks.resume(resumable)
+        # 只写 PG 的任务仍可并行，不会因为天梯等待而被阻塞。
+        assert tasks.create("audit_cleanup", {})
+        with pytest.raises(ConcurrentTaskError):
+            tasks.create("limit_ladder_recompute", {}, trigger_event_id="newer")
+        deadline = (now + timedelta(minutes=10)).isoformat()
+        first = tasks.create("limit_ladder_recompute", {"queue_deadline_at": deadline}, trigger_event_id="oldest")
+        # 已按时接受的命令先走幂等，不会因一次迟到重放被误判超时。
+        assert tasks.create("limit_ladder_recompute", {"queue_deadline_at": now.isoformat()}, trigger_event_id="oldest") == first
+        tasks._set(first, status="done")
+        second = tasks.create("limit_ladder_recompute", {"queue_deadline_at": deadline}, trigger_event_id="newer")
+        tasks._set(second, status="done")
+        with pytest.raises(LimitLadderQueueTimeoutError):
+            tasks.create("limit_ladder_recompute", {"queue_deadline_at": now.isoformat()}, trigger_event_id="expired")
+        # 已派发请求不再预留名额；未清理的过期账本也不能卡住其它写任务。
+        assert tasks.create("fix", {})
 
 
 class _MarkerPg:

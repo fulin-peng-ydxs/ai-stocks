@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_LIMIT_LADDER_FILTERS,
   exportLimitLadder,
+  getLimitLadder,
   filtersFromRouteQuery,
   filtersToRouteQuery,
   recomputeLimitLadder,
@@ -14,6 +15,13 @@ vi.mock('@/api/client', () => ({ default: http }))
 vi.mock('@/api/authToken', () => ({ getAccessToken: () => 'test-token' }))
 
 describe('limitLadder API filters', () => {
+  it('只有显式重新排队才发送 retry_queue，普通读取不续期', async () => {
+    await getLimitLadder('2026-11-02', DEFAULT_LIMIT_LADDER_FILTERS)
+    expect(http.get.mock.lastCall?.[1].params).not.toHaveProperty('retry_queue')
+    await getLimitLadder('2026-11-02', DEFAULT_LIMIT_LADDER_FILTERS, { retryQueue: true })
+    expect(http.get.mock.lastCall?.[1].params.retry_queue).toBe(true)
+  })
+
   beforeEach(() => {
     vi.restoreAllMocks()
     http.get.mockReset()

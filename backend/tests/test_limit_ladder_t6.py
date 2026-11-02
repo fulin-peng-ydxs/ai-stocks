@@ -26,11 +26,17 @@ from backend.storage.repository import MarketRepository
 
 
 class _FakeRepository:
+    def get_latest_for_date(self, trade_date):
+        return None
+
     def get_active_for_date(self, trade_date):
         return None
 
 
 class _FakeTasks:
+    def write_blocker(self):
+        return None
+
     def get(self, task_id):
         return None
 
@@ -460,6 +466,100 @@ def test_missing_snapshot_uses_only_unified_first_load_entry(market):
     assert coordinator.calls[0][1]["source"] == "auto_first_load"
 
 
+@pytest.mark.parametrize("published", [False, True])
+def test_waiting_request_is_exposed_without_failure_and_preserves_old_snapshot(market, published):
+    trade_date = date(2022, 8, 28)
+    if published:
+        _seed_ladder(market)
+    else:
+        MarketRepository(market).upsert_trade_calendar(
+            pd.DataFrame({"trade_date": [trade_date], "is_open": [True]})
+        )
+    coordinator = _FakeCoordinator()
+    coordinator.repository.get_active_for_date = lambda day: {
+        "command_id": "command-wait", "task_id": None,
+        "status": "requested", "source": "auto_first_load",
+    }
+    coordinator.ensure_date_task = lambda *args, **kwargs: _TaskResult(
+        command_id="command-wait", task_id=None,
+    )
+    service = LimitLadderQueryService(market, coordinator=coordinator)
+    data = service.query(trade_date, LimitLadderFilters(window=10, ignore_st=False))
+    assert data["business_code"] == "SNAPSHOT_WAITING"
+    assert data["snapshot_status"] == "waiting"
+    assert data["has_snapshot"] is published
+    assert "task_error" not in data
+    assert data["task"]["command_id"] == "command-wait"
+    assert bool(data["layers"]) is published
+    assert service.status(trade_date)["snapshot_status"] == "waiting"
+
+
+@pytest.mark.parametrize("legacy_busy", [False, True])
+def test_dispatch_failure_stops_auto_retry_but_legacy_busy_failure_can_recover(market, legacy_busy):
+    trade_date = date(2022, 8, 28)
+    MarketRepository(market).upsert_trade_calendar(
+        pd.DataFrame({"trade_date": [trade_date], "is_open": [True]})
+    )
+    coordinator = _FakeCoordinator()
+    coordinator.repository.get_latest_for_date = lambda day: {
+        "status": "failed", "task_id": None,
+        "last_error": "已有同类任务在运行: fix（old）" if legacy_busy else "database unavailable",
+    }
+    service = LimitLadderQueryService(market, coordinator=coordinator)
+    for _ in range(2):
+        data = service.query(trade_date, LimitLadderFilters())
+        if legacy_busy:
+            assert data["business_code"] == "SNAPSHOT_PENDING"
+        else:
+            assert data["business_code"] == "SNAPSHOT_FAILED"
+            assert "计算任务启动失败" in data["task_error"]
+    assert len(coordinator.calls) == (2 if legacy_busy else 0)
+
+
+@pytest.mark.parametrize("source", ["auto_first_load", "admin_recompute"])
+def test_timeout_stays_terminal_until_eligible_user_explicitly_requeues(market, source):
+    from backend.services.limit_ladder_task_policy import QUEUE_TIMEOUT_REASON
+
+    trade_date = date(2022, 8, 28)
+    MarketRepository(market).upsert_trade_calendar(
+        pd.DataFrame({"trade_date": [trade_date], "is_open": [True]})
+    )
+    coordinator = _FakeCoordinator()
+    failure = {"status": "failed", "task_id": None, "last_error": QUEUE_TIMEOUT_REASON,
+               "source": source, "created_at": datetime.now(UTC) - timedelta(hours=1)}
+    coordinator.repository.get_latest_for_date = lambda day: failure
+    service = LimitLadderQueryService(market, coordinator=coordinator)
+    for _ in range(2):
+        data = service.query(trade_date, LimitLadderFilters())
+        assert data["business_code"] == "SNAPSHOT_QUEUE_TIMEOUT"
+        assert data["snapshot_status"] == "queue_timeout"
+        assert data["queue"]["remaining_seconds"] == 0
+        assert data["queue_retry_allowed"] is (source != "admin_recompute")
+    assert not coordinator.calls
+    # 显式普通重试不能扩张 system-only 管理员重算权限。
+    result = service.query(trade_date, LimitLadderFilters(), retry_queue=True)
+    assert len(coordinator.calls) == (0 if source == "admin_recompute" else 1)
+
+
+def test_waiting_details_show_safe_blocker_and_absolute_deadline(market):
+    trade_date = date(2022, 8, 28)
+    MarketRepository(market).upsert_trade_calendar(
+        pd.DataFrame({"trade_date": [trade_date], "is_open": [True]})
+    )
+    coordinator = _FakeCoordinator()
+    command = {"command_id": "waiting-1", "task_id": None, "status": "requested",
+               "source": "auto_first_load", "created_at": datetime.now(UTC) - timedelta(seconds=125)}
+    coordinator.repository.get_active_for_date = lambda day: command
+    coordinator.tasks.write_blocker = lambda: {"id": "fix-1", "task_type": "fix", "status": "running", "progress": 0.25}
+    service = LimitLadderQueryService(market, coordinator=coordinator)
+    first = service.status(trade_date)
+    second = service.status(trade_date)
+    assert first["queue"]["deadline_at"] == second["queue"]["deadline_at"]
+    assert first["queue"]["waited_seconds"] >= 125
+    assert first["queue"]["blocking_task"]["id"] == "fix-1"
+    assert "params" not in first["queue"]["blocking_task"]
+
+
 def test_orphaned_calculating_state_rebuilds_once_and_reuses_active_task(market):
     trade_date = date(2026, 8, 28)
     MarketRepository(market).upsert_trade_calendar(
@@ -474,7 +574,7 @@ def test_orphaned_calculating_state_rebuilds_once_and_reuses_active_task(market)
         [trade_date],
     )
 
-    class RecoveringRepository:
+    class RecoveringRepository(_FakeRepository):
         active = None
 
         def get_active_for_date(self, selected_date):

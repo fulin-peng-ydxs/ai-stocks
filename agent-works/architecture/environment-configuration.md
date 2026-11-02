@@ -152,6 +152,8 @@ flowchart TD
 
 `reload_settings()` 只清 `get_settings()` 缓存并重读 YAML。`GET /api/config` 返回 YAML-only 的 `get_settings()` 结果；`POST /api/config/reload` 适用于人工修改 YAML 后刷新基线缓存，不负责写数据库覆盖层。
 
+`limit_ladder.queue_timeout_sec` 是天梯排队的 YAML 基线，默认 900 秒，范围 30～86400 秒；不开放 `app_config` 覆盖。共享写准入、日期任务协调与页面返回的绝对期限使用同一缓存值，reload 或重启后生效；期限始终从请求首次创建时间计算。
+
 股本历史自动轮询的 YAML 基线参数为 `datasource.capital_review_batch_size`（默认 50，0 关闭）和 `capital_review_interval_days`（默认 7）；读取有效配置时生效，未增加 Web 覆盖项。它们控制日常采集内部复查，不改变调度任务的启停。
 
 ### 3. 生效配置与数据库覆盖层

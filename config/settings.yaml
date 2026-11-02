@@ -136,6 +136,10 @@ backtest:
     transfer_fee_rate: 0.00001      # 过户费
     slippage: 0.002                 # 滑点 0.2%（买上浮/卖下浮）
 
+# ── 连板天梯 ──
+limit_ladder:
+  queue_timeout_sec: 900          # 最长排队 15 分钟；首次请求起计，轮询/重启不续期
+
 # ── 调度 ──
 scheduler:
   enabled: false                    # 默认关闭，手动 CLI 跑

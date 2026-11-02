@@ -38,6 +38,52 @@ function router() {
 }
 
 describe('LimitLadderCard', () => {
+  it('显示阻塞任务和等待时间，超时后旧快照仍可读且能重新排队', async () => {
+    const waiting: LimitLadderResult = { ...result, business_code: 'SNAPSHOT_WAITING', snapshot_status: 'waiting',
+      queue: { queued_at: '2026-11-02T12:00:00Z', deadline_at: '2026-11-02T12:15:00Z',
+        waited_seconds: 125, remaining_seconds: 775,
+        blocking_task: { id: 'fix-1', task_type: 'fix', status: 'running', progress: 0.25, job_name: '分时补采' } } }
+    const wrapper = mount(LimitLadder, {
+      props: { result: waiting, filters: { ...DEFAULT_LIMIT_LADDER_FILTERS }, loading: false, error: '', canViewSectors: false },
+      global: { plugins: [ElementPlus, router()] },
+    })
+    expect(wrapper.text()).toContain('已等待 2 分 5 秒')
+    expect(wrapper.text()).toContain('分时补采')
+    expect(wrapper.text()).toContain('25.00%')
+    await wrapper.setProps({ result: { ...waiting, business_code: 'SNAPSHOT_QUEUE_TIMEOUT',
+      snapshot_status: 'queue_timeout', queue_retry_allowed: true, task_error: '后台已停止等待' } })
+    expect(wrapper.text()).toContain('天梯排队等待已超时')
+    expect(wrapper.text()).toContain('甲软件')
+    await wrapper.get('[data-testid="limit-ladder-stale-notice"] button').trigger('click')
+    expect(wrapper.emitted('retry')).toHaveLength(1)
+    await wrapper.setProps({ result: { ...waiting, business_code: 'SNAPSHOT_QUEUE_TIMEOUT',
+      snapshot_status: 'queue_timeout', queue_retry_allowed: false } })
+    expect(wrapper.text()).toContain('请联系有重算权限的管理员重算当日')
+    expect(wrapper.find('[data-testid="limit-ladder-stale-notice"] button').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('写任务繁忙时展示等待，保留旧快照并在开始计算后切换状态', async () => {
+    const waiting = { ...result, business_code: 'SNAPSHOT_WAITING', snapshot_status: 'waiting' }
+    const wrapper = mount(LimitLadder, {
+      props: { result: { ...waiting, has_snapshot: false, snapshot: null, layers: [] },
+        filters: { ...DEFAULT_LIMIT_LADDER_FILTERS }, loading: false, error: '', canViewSectors: false },
+      global: { plugins: [ElementPlus, router()] },
+    })
+    expect(wrapper.text()).toContain('天梯计算已排队')
+    expect(wrapper.text()).toContain('完成后将自动计算并刷新')
+    expect(wrapper.text()).not.toContain('失败')
+    expect(wrapper.find('[data-testid="limit-ladder-state"] button').exists()).toBe(false)
+    await wrapper.setProps({ result: waiting })
+    expect(wrapper.text()).toContain('下方保留最后成功版本')
+    expect(wrapper.text()).toContain('甲软件')
+    await wrapper.setProps({ result: { ...waiting, business_code: 'SNAPSHOT_PENDING',
+      snapshot_status: 'calculating', has_snapshot: false, snapshot: null, layers: [] } })
+    expect(wrapper.text()).toContain('天梯快照正在计算')
+    expect(wrapper.text()).not.toContain('天梯计算已排队')
+    wrapper.unmount()
+  })
+
   it('筛选请求期间保留热点入口及键盘焦点', async () => {
     const wrapper = mount(LimitLadder, {
       props: { result, tradeDate: result.trade_date, filters: { ...DEFAULT_LIMIT_LADDER_FILTERS }, loading: false, error: '', canViewSectors: false },

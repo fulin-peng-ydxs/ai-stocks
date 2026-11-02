@@ -147,10 +147,28 @@ TASK_CAPABILITIES: dict[str, dict] = {
 class ConcurrentTaskError(ConflictError):
     """同类写任务已在运行（FR-DM-11，映射 409）。"""
 
-    def __init__(self, task_type: str, running_id: str):
+    def __init__(self, task_type: str, running_id: str, *, queued: bool = False):
         self.task_type = task_type
         self.running_id = running_id
-        super().__init__(f"已有同类任务在运行: {task_type}（{running_id}）")
+        self.queued = queued
+        message = (
+            "已有连板天梯请求在排队，请等待其执行后再试"
+            if queued else f"已有同类任务在运行: {task_type}（{running_id}）"
+        )
+        super().__init__(message)
+
+    @property
+    def user_message(self) -> str:
+        """共享业务入口统一说明运行互斥与排队优先，避免把等待命令冒充运行任务。"""
+        return str(self) if self.queued else f"已有写任务在运行（{self.task_type}），请稍后再试"
+
+    @property
+    def conflict_details(self) -> dict:
+        """等待意图使用命令 ID，不能冒充可在任务中心打开的运行任务 ID。"""
+        return (
+            {"running_id": None, "waiting_command_id": self.running_id}
+            if self.queued else {"running_id": self.running_id}
+        )
 
 
 class TaskCancelled(Exception):
@@ -283,6 +301,48 @@ class AsyncTaskService:
             list(WRITE_TASK_TYPES))
         return None if df.empty else (df.iloc[0]["id"], df.iloc[0]["task_type"])
 
+    def _check_writer_admission(
+        self, task_type: str, params: dict, trigger_event_id: str | None = None,
+    ) -> None:
+        """创建锁内统一核对绝对期限、单写互斥和天梯等待顺序；续跑同样不得插队。"""
+        from datetime import UTC, timedelta
+
+        from backend.services.limit_ladder_task_policy import (
+            check_queue_deadline,
+            queue_timeout_seconds,
+        )
+
+        if task_type == "limit_ladder_recompute":
+            check_queue_deadline(params.get("queue_deadline_at"))
+        busy = self._running_write()
+        if busy:
+            raise ConcurrentTaskError(busy[1], busy[0])
+        if not is_postgres_task_runtime(self.c):
+            return
+        # 和 pending 落库处于同一 PG 创建事务。已派发及过期意图均不预留槽位，
+        # 因而关闭页面、调度重试与后台续跑都不能让有效等待请求持续饥饿。
+        waiting = self.c.query_df(
+            "SELECT l.command_id FROM limit_ladder_task_ledger l "
+            "WHERE l.status='requested' AND l.created_at>? "
+            "AND NOT EXISTS (SELECT 1 FROM async_task t WHERE t.trigger_event_id=l.command_id) "
+            "ORDER BY l.created_at,l.command_id LIMIT 1",
+            [datetime.now(UTC) - timedelta(seconds=queue_timeout_seconds())],
+        )
+        if not waiting.empty:
+            first = str(waiting.iloc[0]["command_id"])
+            if task_type != "limit_ladder_recompute" or trigger_event_id != first:
+                raise ConcurrentTaskError("limit_ladder_recompute", first, queued=True)
+
+    def write_blocker(self) -> dict | None:
+        """对外只返回单写槽位的安全摘要，供等待页面解释原因。"""
+        ph = ",".join("?" * len(WRITE_TASK_TYPES))
+        rows = self.c.query_df(
+            f"SELECT id,task_type,status,progress FROM async_task "
+            f"WHERE task_type IN ({ph}) AND status IN ('pending','running') "
+            "ORDER BY created_at LIMIT 1", list(WRITE_TASK_TYPES),
+        )
+        return None if rows.empty else _row(rows.iloc[0])
+
     # ── 实时日志 ──
     def _max_log_seq(self, tid: str) -> int:
         import pandas as pd
@@ -385,9 +445,7 @@ class AsyncTaskService:
                 if not existing.empty:
                     return str(existing.iloc[0]["id"])
             if task_type in WRITE_TASK_TYPES:
-                busy = self._running_write()
-                if busy:
-                    raise ConcurrentTaskError(busy[1], busy[0])
+                self._check_writer_admission(task_type, params, trigger_event_id)
             tid = self._new_id(task_type)
             chain_id = chain_id or tid
             now = datetime.now()
@@ -435,9 +493,7 @@ class AsyncTaskService:
         )
         with _TASK_CREATE_LOCK, storage_lock:
             if task_type in WRITE_TASK_TYPES:
-                busy = self._running_write()
-                if busy:
-                    raise ConcurrentTaskError(busy[1], busy[0])
+                self._check_writer_admission(task_type, params)
             with _CANCEL_LOCK:
                 # 续跑复用原 task id；仅在本次重新排队前清除上一轮已消费的取消标记。
                 _CANCELLED.discard(tid)
@@ -2396,12 +2452,23 @@ def _h_limit_ladder_recompute(params: dict, ctx: TaskContext) -> dict:
     if not coordinator.mark_running(command_id, ctx.tid):
         raise RuntimeError("连板天梯命令已进入终态，拒绝重复执行")
 
-    ctx.set_phase("limit_ladder", phase_total=3, phase_done=0, current_item=raw_date)
-    ctx.log(f"阶段 1/3：校验 {raw_date} 点时股票池与采集终态")
+    def report_phase(phase: str) -> None:
+        """计算入口回报真实执行阶段，避免把历史查询和快照发布全显示成初始 5%。"""
+        index, progress, label = {
+            "coverage": (0, 0.10, "校验点时股票池与采集终态"),
+            "calculation": (1, 0.35, "计算连板高度与历史窗口"),
+            "publication": (2, 0.80, "冻结窗口指标并发布快照"),
+        }[phase]
+        message = f"阶段 {index + 1}/3：{label}（{raw_date}）"
+        ctx.set_phase("limit_ladder", phase_total=3, phase_done=index, current_item=raw_date)
+        ctx.progress(progress, message)
+        ctx.log(message)
+
     try:
         outcome = LimitLadderSnapshotService(ctx.svc.market).materialize(
             trade_date,
             task_id=ctx.tid,
+            phase_callback=report_phase,
         )
         coverage = outcome.coverage.to_dict()
         summary = {
@@ -2430,8 +2497,7 @@ def _h_limit_ladder_recompute(params: dict, ctx: TaskContext) -> dict:
                 "message": f"{raw_date} 连板天梯未发布：{reason}",
                 **summary,
             }
-        ctx.set_phase("limit_ladder", phase_total=3, phase_done=2, current_item=raw_date)
-        ctx.log(f"阶段 2/3：不可变快照已原子切换 {outcome.snapshot_id}")
+        ctx.log(f"阶段 3/3：不可变快照已原子切换 {outcome.snapshot_id}")
         try:
             coordinator.mark_terminal(
                 command_id,

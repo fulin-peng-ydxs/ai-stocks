@@ -41,8 +41,8 @@ def create_task(body: TaskIn) -> ApiResponse:
     try:
         tid = AsyncTaskService().create(body.task_type, body.params or {})
     except ConcurrentTaskError as e:
-        return err(409, f"已有同类任务在运行（{e.task_type}），请等待其完成或稍后再试",
-                   {"running_id": e.running_id})
+        return err(409, e.user_message,
+                   e.conflict_details)
     except ValueError as e:
         return err(400, str(e))
     return ok({"task_id": tid})
@@ -69,7 +69,7 @@ def resume_task(task_id: str) -> ApiResponse:
     try:
         AsyncTaskService().resume(task_id)
     except ConcurrentTaskError as e:
-        return err(409, f"已有同类任务在运行（{e.task_type}）", {"running_id": e.running_id})
+        return err(409, e.user_message, e.conflict_details)
     except ValueError as e:
         return err(400, str(e))
     return ok({"task_id": task_id})

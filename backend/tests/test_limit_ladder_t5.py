@@ -25,6 +25,35 @@ from backend.storage.limit_ladder_task_repository import (
 from backend.storage.repository import MarketRepository
 
 
+@pytest.fixture(autouse=True)
+def isolate_ladder_reconciliation_and_outbox(monkeypatch):
+    """对账与审计只能消费当前用例创建的命令，不能收敛共享开发库真实任务。"""
+    command_ids = set()
+    create_requested = LimitLadderTaskRepository.create_requested
+
+    def create(self, command):
+        create_requested(self, command)
+        command_ids.add(command.command_id)
+
+    def active(self):
+        return self.pg.query_df(
+            "SELECT * FROM limit_ladder_task_ledger WHERE command_id=ANY(%s) "
+            "AND status IN ('requested','running') ORDER BY created_at,command_id",
+            [list(command_ids)],
+        ).to_dict("records")
+
+    def pending(self, *, limit=100):
+        return self.pg.query_df(
+            "SELECT * FROM limit_ladder_audit_outbox WHERE command_id=ANY(%s) "
+            "AND status='pending' AND (next_retry_at IS NULL OR next_retry_at<=now()) "
+            "ORDER BY created_at LIMIT %s", [list(command_ids), limit],
+        ).to_dict("records")
+
+    monkeypatch.setattr(LimitLadderTaskRepository, "create_requested", create)
+    monkeypatch.setattr(LimitLadderTaskRepository, "list_active", active)
+    monkeypatch.setattr(LimitLadderTaskRepository, "list_pending_outbox", pending)
+
+
 class _FakeTasks:
     def __init__(self):
         self.calls: list[dict] = []
@@ -32,6 +61,9 @@ class _FakeTasks:
 
     def create(self, task_type: str, params: dict, **metadata) -> str:
         with self._lock:
+            for index, call in enumerate(self.calls, 1):
+                if metadata.get("trigger_event_id") == call.get("trigger_event_id"):
+                    return f"fake-task-{index}"
             self.calls.append({"task_type": task_type, "params": params, **metadata})
             return f"fake-task-{len(self.calls)}"
 
@@ -172,6 +204,128 @@ def test_task_creation_failure_releases_date_for_next_command(pg):
         assert successful_id != failed_id
     finally:
         _cleanup(pg, [item for item in (failed_id, successful_id) if item])
+
+
+def test_busy_request_survives_restart_and_dispatches_once_when_write_slot_frees(
+    pg, market, monkeypatch,
+):
+    """真实创建入口检查写互斥，PG 请求持久化跨过孤儿时限，释放后只派发一次。"""
+    repository = LimitLadderTaskRepository(pg)
+    tasks = AsyncTaskService(market)
+    monkeypatch.setattr(tasks, "_run", lambda *args: None)
+    monkeypatch.setattr(tasks, "_audit_task", lambda **kwargs: None)
+    trade_date = _trade_date()
+    blocker = tasks.create("fix", {})
+    command_ids = []
+    audit = _FakeAudit()
+    coordinator = LimitLadderTaskCoordinator(
+        repository=repository, task_service=tasks, audit_repository=audit,
+        user_repository=_FakeUsers(),
+    )
+    try:
+        first = coordinator.ensure_date_task(trade_date, source="auto_first_load")
+        command_ids.append(first.command_id)
+        assert first.task_id is None and first.status == "requested"
+        again = coordinator.ensure_date_task(trade_date, source="auto_first_load")
+        assert again.reused and again.command_id == first.command_id
+        assert repository.get(first.command_id)["last_error"] is None
+        assert list(audit.events) == [f"{first.command_id}:requested"]
+        # 隔离本次临时命令，禁止对账共享开发库中其它真实请求。
+        monkeypatch.setattr(repository, "list_active", lambda: [
+            row for cid in command_ids if (row := repository.get(cid))["status"]
+            in {"requested", "running"}
+        ])
+        restarted = LimitLadderTaskCoordinator(
+            repository=repository, task_service=tasks, audit_repository=audit,
+            user_repository=_FakeUsers(),
+        )
+        future = datetime.now(UTC) + timedelta(hours=1)
+        restarted.reconcile(startup_at=future, now=future)
+        assert repository.get(first.command_id)["status"] == "requested"
+        assert tasks._running_write() == (blocker, "fix")
+        tasks._set(blocker, status="done")
+        restarted.reconcile(now=future)
+        restarted.reconcile(now=future)
+        rows = market.query_df(
+            "SELECT id,trigger_source FROM async_task WHERE trigger_event_id=?",
+            [first.command_id],
+        )
+        assert len(rows) == 1 and rows.iloc[0]["trigger_source"] == "system"
+        row = repository.get(first.command_id)
+        assert row["status"] == "running" and row["task_id"] == rows.iloc[0]["id"]
+        assert f"{first.command_id}:failed" not in audit.events
+    finally:
+        _cleanup(pg, command_ids)
+
+
+def test_queued_request_reports_real_dispatch_error_as_failed(pg, market, monkeypatch):
+    repository = LimitLadderTaskRepository(pg)
+    tasks = AsyncTaskService(market)
+    audit = _FakeAudit()
+    coordinator = LimitLadderTaskCoordinator(
+        repository=repository, task_service=tasks, audit_repository=audit,
+        user_repository=_FakeUsers(),
+    )
+    command_id = f"pytest_ll_dispatch_{uuid4().hex}"
+    try:
+        repository.create_requested(LimitLadderTaskCommand(
+            command_id=command_id, trade_date=_trade_date(), source="admin_recompute",
+            actor_kind="user", actor_account="pg-admin", tenant_id="pytest-ladder",
+            actor_user_id="pytest-admin", rule_version="test-v1",
+        ))
+        monkeypatch.setattr(repository, "list_active", lambda: [repository.get(command_id)])
+        monkeypatch.setattr(tasks, "create", _FailingTasks().create)
+        coordinator.reconcile()
+        row = repository.get(command_id)
+        assert row["status"] == "failed"
+        assert "forced DuckDB task creation failure" in row["last_error"]
+        assert f"{command_id}:failed" in audit.events
+    finally:
+        _cleanup(pg, [command_id])
+
+
+def test_waiting_expires_without_late_execution_and_explicit_retry_gets_new_command(
+    pg, market, monkeypatch,
+):
+    from backend.services.limit_ladder_task_policy import QUEUE_TIMEOUT_REASON
+
+    repository = LimitLadderTaskRepository(pg)
+    tasks = AsyncTaskService(market)
+    monkeypatch.setattr(tasks, "_run", lambda *args: None)
+    monkeypatch.setattr(tasks, "_audit_task", lambda **kwargs: None)
+    blocker = tasks.create("fix", {})
+    coordinator = LimitLadderTaskCoordinator(
+        repository=repository, task_service=tasks, audit_repository=_FakeAudit(),
+        user_repository=_FakeUsers(),
+    )
+    command_ids = []
+    trade_date = _trade_date()
+    try:
+        first = coordinator.ensure_date_task(trade_date, source="auto_first_load")
+        command_ids.append(first.command_id)
+        pg.execute(
+            "UPDATE limit_ladder_task_ledger SET created_at=%s WHERE command_id=%s",
+            [datetime.now(UTC) - timedelta(days=2), first.command_id],
+        )
+        monkeypatch.setattr(repository, "list_active", lambda: [
+            row for cid in command_ids if (row := repository.get(cid))["status"]
+            in {"requested", "running"}
+        ])
+        coordinator.reconcile()
+        expired = repository.get(first.command_id)
+        assert expired["status"] == "failed"
+        assert expired["last_error"] == QUEUE_TIMEOUT_REASON
+        assert repository.get_active_for_date(trade_date) is None
+        tasks._set(blocker, status="done")
+        coordinator.reconcile()
+        assert market.query_df(
+            "SELECT id FROM async_task WHERE trigger_event_id=?", [first.command_id],
+        ).empty
+        retried = coordinator.ensure_date_task(trade_date, source="auto_first_load")
+        command_ids.append(retried.command_id)
+        assert retried.command_id != first.command_id and retried.task_id is not None
+    finally:
+        _cleanup(pg, command_ids)
 
 
 def test_ensure_date_task_replaces_terminal_duck_task_in_active_pg_slot(pg, market):
@@ -534,6 +688,7 @@ def test_limit_ladder_handler_materializes_and_closes_pg_command(market, monkeyp
     assert result["snapshot_status"] == "valid"
     assert [status for status, _ in transitions] == ["running", "succeeded"]
     assert transitions[-1][1]["summary"]["coverage"]["reason_codes"] == []
+    assert [phase["phase_done"] for phase in phases] == [0, 1, 2, 3]
     assert phases[-1]["phase_done"] == 3
 
 

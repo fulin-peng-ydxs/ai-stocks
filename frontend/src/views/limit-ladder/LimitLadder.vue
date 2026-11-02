@@ -7,6 +7,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
 import { businessMessage } from '@/utils/displayText'
+import { taskDisplayLabel } from '@/api/data'
 import {
   DEFAULT_LIMIT_LADDER_FILTERS,
   type LimitLadderFilters,
@@ -62,8 +63,29 @@ const hasApproximateSt = computed(() => Boolean(
 ))
 const filteredEmpty = computed(() => props.result?.business_code === 'FILTER_EMPTY')
 const stStatusBlocked = computed(() => props.result?.business_code === 'ST_STATUS_NOT_READY')
+const waitingSnapshot = computed(() => props.result?.snapshot_status === 'waiting')
+const queueTimedOut = computed(() => props.result?.business_code === 'SNAPSHOT_QUEUE_TIMEOUT')
+const canRetryQueue = computed(() => Boolean(props.result?.queue_retry_allowed || props.canRecompute))
+const queueTimeoutDescription = computed(() => canRetryQueue.value
+  ? businessMessage(props.result?.task_error, '后台已停止等待，请在数据任务结束后重新排队')
+  : '后台已停止等待，请联系有重算权限的管理员重算当日')
+const waitingDescription = computed(() => {
+  const queue = props.result?.queue
+  if (!queue) return '天梯计算已排队：当前有数据任务正在执行，完成后将自动计算并刷新，无需重复提交。'
+  const blocker = queue.blocking_task
+  const blockerName = blocker
+    ? businessMessage(blocker.job_name, taskDisplayLabel(blocker.task_type)) : ''
+  return [
+    `天梯计算已排队，已等待 ${formatNumber(Math.floor(queue.waited_seconds / 60), 'count')} 分 ${formatNumber(queue.waited_seconds % 60, 'count')} 秒`,
+    blockerName ? `等待「${blockerName}」${typeof blocker?.progress === 'number' ? `（${formatPercent(blocker.progress, { input: 'ratio', completion: true })}）` : ''}` : '正在等待执行顺序',
+    `最多再等待 ${formatNumber(Math.ceil(queue.remaining_seconds / 60), 'count')} 分钟，超时后停止等待`,
+    '获得名额后自动计算并刷新，无需重复提交',
+  ].join(' · ')
+})
 const staleSnapshot = computed(() => (
   props.result?.business_code === 'SNAPSHOT_STALE'
+  || (waitingSnapshot.value && props.result?.has_snapshot)
+  || (queueTimedOut.value && props.result?.has_snapshot)
   || (stStatusBlocked.value && props.result?.has_snapshot)
 ))
 const pendingSnapshot = computed(() => props.result?.business_code === 'SNAPSHOT_PENDING')
@@ -73,7 +95,8 @@ const coverageBlocked = computed(() => (
   || (props.result?.coverage?.reason_codes as unknown[] | undefined)?.includes('INGEST_PARTIAL')
 ))
 const retryText = computed(() => (
-  failedSnapshot.value && props.canRecompute ? '重新计算' : '刷新状态'
+  queueTimedOut.value && props.result?.queue_retry_allowed ? '重新排队'
+    : (failedSnapshot.value || queueTimedOut.value) && props.canRecompute ? '重新计算' : '刷新状态'
 ))
 const coverageReasonLabels: Record<string, string> = {
   NOT_TRADING_DAY: '所选日期不是交易日',
@@ -104,6 +127,7 @@ const coverageReasons = computed(() => {
     : ''
 })
 const unavailableTitle = computed(() => {
+  if (queueTimedOut.value) return '天梯排队等待已超时'
   if (props.result?.business_code === 'NOT_TRADING_DAY') return '所选日期不是交易日'
   if (stStatusBlocked.value) return 'ST 状态尚未就绪'
   if (props.result?.business_code === 'SNAPSHOT_FAILED') return '天梯快照计算失败'
@@ -111,6 +135,7 @@ const unavailableTitle = computed(() => {
   return '当前交易日尚无可用快照'
 })
 const unavailableDescription = computed(() => {
+  if (queueTimedOut.value) return queueTimeoutDescription.value
   if (props.result?.business_code === 'NOT_TRADING_DAY') {
     return props.result.nearest_previous_trade_date
       ? `请切换到交易日；最近交易日为 ${props.result.nearest_previous_trade_date}`
@@ -152,6 +177,12 @@ const pendingDescription = computed(() => {
   ].filter(Boolean).join(' · ')
 })
 const staleDescription = computed(() => {
+  if (waitingSnapshot.value) {
+    return `${waitingDescription.value}；下方保留最后成功版本供核对。`
+  }
+  if (queueTimedOut.value) {
+    return `${queueTimeoutDescription.value}；下方保留最后成功版本供核对。`
+  }
   if (stStatusBlocked.value) {
     const lastSuccess = props.result?.last_success_at || props.result?.snapshot?.computed_at
     return [
@@ -194,8 +225,10 @@ function resetFilters(): void {
       class="limit-ladder__status-notice"
       data-testid="limit-ladder-stale-notice"
       tone="warning"
-      :title="stStatusBlocked ? 'ST 状态尚未就绪' : '结果已过期'"
+      :title="waitingSnapshot ? '天梯计算已排队' : queueTimedOut ? '天梯排队等待已超时' : stStatusBlocked ? 'ST 状态尚未就绪' : '结果已过期'"
       :description="staleDescription"
+      :action-text="queueTimedOut && canRetryQueue ? retryText : ''"
+      @action="$emit('retry')"
     />
     <div v-if="result?.has_snapshot && !error && !forbidden && (!loading || tradeDate === result.trade_date)" class="limit-ladder__overview" :aria-busy="loading">
       <span v-if="loading" role="status" class="muted">正在更新，热点数量暂为上次结果</span>
@@ -233,14 +266,16 @@ function resetFilters(): void {
           description="请联系系统管理员调整权限"
         />
         <AppStateBlock v-else-if="error" data-testid="limit-ladder-state" state="error" title="天梯加载失败" :description="error" retry @retry="$emit('retry')" />
+        <AppStateBlock v-else-if="waitingSnapshot && !result?.has_snapshot" data-testid="limit-ladder-state" state="loading" title="天梯计算已排队" :description="waitingDescription" :skeleton-rows="6" />
         <AppStateBlock v-else-if="pendingSnapshot" data-testid="limit-ladder-state" state="loading" title="天梯快照正在计算" :description="pendingDescription" :skeleton-rows="6" />
         <AppStateBlock
           v-else-if="!result?.has_snapshot"
           data-testid="limit-ladder-state"
           :state="result?.business_code === 'NOT_TRADING_DAY' ? 'empty' : 'error'"
+          :title="queueTimedOut ? unavailableTitle : undefined"
         >
           <div class="limit-ladder__empty-copy">
-            <strong>{{ unavailableTitle }}</strong>
+            <strong v-if="!queueTimedOut">{{ unavailableTitle }}</strong>
             <span>{{ unavailableDescription }}</span>
           </div>
           <template v-if="result?.business_code !== 'NOT_TRADING_DAY'" #extra>

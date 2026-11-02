@@ -108,6 +108,20 @@ export interface LimitLadderResult {
   invalid_reason?: string | null
   task_error?: string | null
   st_status_error?: string | null
+  queue_retry_allowed?: boolean
+  queue?: {
+    queued_at: string
+    deadline_at: string
+    waited_seconds: number
+    remaining_seconds: number
+    blocking_task: {
+      id: string
+      task_type: string
+      status: string
+      progress?: number | null
+      job_name?: string | null
+    } | null
+  } | null
   task?: {
     command_id: string
     task_id?: string | null
@@ -244,9 +258,13 @@ export function listLimitLadderTradeDates(): Promise<LimitLadderTradeDates> {
 export function getLimitLadder(
   tradeDate: string,
   filters: LimitLadderFilters,
+  options?: { retryQueue?: boolean },
 ): Promise<LimitLadderResult> {
   return http.get(`/limit-ladder/${encodeURIComponent(tradeDate)}`, {
-    params: toLimitLadderQueryParams(filters),
+    params: {
+      ...toLimitLadderQueryParams(filters),
+      ...(options?.retryQueue ? { retry_queue: true } : {}),
+    },
   })
 }
 

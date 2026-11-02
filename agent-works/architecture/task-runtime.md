@@ -24,6 +24,7 @@
 1. `create()` 验证任务类型并调用所属模块的参数归一入口；需要审计执行者的参数从请求上下文注入。
 2. `_TASK_CREATE_LOCK` 与运行态创建事务覆盖触发事件幂等查询、写槽位检查和 `pending` 落库。相同 `trigger_event_id` 已有任务时返回原任务，不重复创建。
 3. 仅 `WRITE_TASK_TYPES` 中的任务占用 DuckDB 单写槽位；有 `pending/running` 写任务时抛 `ConcurrentTaskError`，API 映射 409。只读或仅写 PG 的任务与普通 PG 资产保存不受该槽位限制。
+   [连板天梯](limit-ladder.md#查询与首次物化)在自己的 PG 日期账本保留有绝对期限的等待意图。共享创建锁与 PG 创建事务内先检查单写互斥，再让最早的有效天梯意图获得名额；新建写任务及续跑不得越过它。过期或已派发的意图不再预留名额，PG-only 与只读任务不受影响。等待意图不属于 `async_task.pending`，同一时间仍只执行一个 DuckDB 写任务。
 4. 创建任务后启动守护线程，`_run` 分派 `_HANDLERS`，保存进度、日志、结果与终态。执行失败保留已提交工作，失败是否可重试由能力和 checkpoint 决定。
 
 ```mermaid

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from uuid import uuid4
@@ -246,8 +247,11 @@ class LimitLadderSnapshotService:
         *,
         task_id: str | None = None,
         window: int = 31,
+        phase_callback: Callable[[str], None] | None = None,
     ) -> LimitLadderSnapshotOutcome:
         self.begin(trade_date, task_id=task_id)
+        if phase_callback is not None:
+            phase_callback("coverage")
         coverage = self.check_coverage(trade_date)
         if not coverage.ready:
             self.mark_invalid(
@@ -258,7 +262,11 @@ class LimitLadderSnapshotService:
             )
             return LimitLadderSnapshotOutcome("invalid", None, coverage)
         try:
+            if phase_callback is not None:
+                phase_callback("calculation")
             calculation = LimitLadderCalculator(self.c).calculate(trade_date, window=window)
+            if phase_callback is not None:
+                phase_callback("publication")
             snapshot_id = self.publish(calculation, coverage=coverage, task_id=task_id)
             return LimitLadderSnapshotOutcome("valid", snapshot_id, coverage)
         except Exception as exc:

@@ -60,6 +60,7 @@ import { hasPermission } from '@/utils/permission'
 import LimitLadder from '@/views/limit-ladder/LimitLadder.vue'
 import {
   LIMIT_LADDER_POLL_TIMEOUT_MS,
+  LIMIT_LADDER_QUEUE_FALLBACK_TIMEOUT_MS,
   limitLadderPollDelay,
   limitLadderPollTaskKey,
 } from '@/views/limit-ladder/polling'
@@ -412,7 +413,8 @@ async function reconcileAnalysisContext(): Promise<void> {
 }
 
 function needsResultRefresh(data: LimitLadderResult | null): boolean {
-  return data?.business_code === 'SNAPSHOT_PENDING'
+  return data?.snapshot_status === 'waiting'
+    || data?.business_code === 'SNAPSHOT_PENDING'
     || data?.snapshot_status === 'calculating'
     || data?.snapshot_status === 'recalculating'
     || data?.related_board_status === 'calculating'
@@ -461,11 +463,41 @@ const resultPolling = useAsyncResultPolling(
   },
 )
 
+// 等待沿用服务端绝对期限，和真正开始计算后的两分钟时限分开。
+const waitingPolling = useAsyncResultPolling(
+  () => requestLadder(true),
+  {
+    timeoutMs: LIMIT_LADDER_QUEUE_FALLBACK_TIMEOUT_MS,
+    deadlineAt: () => Date.parse(result.value?.queue?.deadline_at ?? ''),
+    delayMs: limitLadderPollDelay,
+    onTimeout: () => {
+      if (!result.value || result.value.snapshot_status !== 'waiting') return
+      requestSequence += 1
+      result.value = {
+        ...result.value,
+        business_code: 'SNAPSHOT_QUEUE_TIMEOUT',
+        snapshot_status: 'queue_timeout',
+        queue_retry_allowed: result.value.task?.source !== 'admin_recompute',
+        task: null,
+        task_error: '排队等待已超时，请刷新确认任务状态后重试',
+      }
+      resultPolling.stop()
+    },
+  },
+)
+
 function clearResultRefresh(): void {
   resultPolling.stop()
+  waitingPolling.stop()
 }
 
 function scheduleResultRefresh(): void {
+  const waiting = result.value?.snapshot_status === 'waiting'
+  waitingPolling.observe(waiting, tradeDate.value || '')
+  if (waiting) {
+    resultPolling.stop()
+    return
+  }
   if (!result.value || !needsResultRefresh(result.value)) {
     resultPolling.observe(false)
     return
@@ -473,7 +505,7 @@ function scheduleResultRefresh(): void {
   resultPolling.observe(true, limitLadderPollTaskKey(result.value))
 }
 
-async function requestLadder(background: boolean): Promise<void> {
+async function requestLadder(background: boolean, retryQueue = false): Promise<void> {
   if (!tradeDate.value) return
   const sequence = ++requestSequence
   if (!background) {
@@ -482,7 +514,9 @@ async function requestLadder(background: boolean): Promise<void> {
   }
   forbidden.value = false
   try {
-    const data = await getLimitLadder(tradeDate.value, filters.value)
+    const data = retryQueue
+      ? await getLimitLadder(tradeDate.value, filters.value, { retryQueue: true })
+      : await getLimitLadder(tradeDate.value, filters.value)
     if (sequence !== requestSequence) return
     result.value = data
     forbidden.value = false
@@ -508,9 +542,9 @@ async function requestLadder(background: boolean): Promise<void> {
   }
 }
 
-async function loadLadder(): Promise<void> {
+async function loadLadder(retryQueue = false): Promise<void> {
   clearResultRefresh()
-  await requestLadder(false)
+  await requestLadder(false, retryQueue)
 }
 
 async function refreshLadder(): Promise<void> {
@@ -532,7 +566,9 @@ async function recomputeCurrentDate(): Promise<void> {
   recomputing.value = true
   try {
     const task = await recomputeLimitLadder(tradeDate.value)
-    ElMessage.success(task.reused ? '该交易日已有重算任务，已继续跟踪' : '重算任务已提交')
+    ElMessage.success(task.task_id === null
+      ? '天梯计算已排队，当前数据任务完成后将自动执行'
+      : task.reused ? '该交易日已有重算任务，已继续跟踪' : '重算任务已提交')
     await loadLadder()
     if (!needsResultRefresh(result.value)) {
       // 提交与查询状态存在极短竞态时，强制追加一次统一轮询；若仍为 ready 即自动停止。
@@ -546,6 +582,12 @@ async function recomputeCurrentDate(): Promise<void> {
 }
 
 async function retryLadder(): Promise<void> {
+  if (result.value?.business_code === 'SNAPSHOT_QUEUE_TIMEOUT') {
+    if (result.value.queue_retry_allowed) await loadLadder(true)
+    else if (canRecompute.value) await recomputeCurrentDate()
+    else await loadLadder()
+    return
+  }
   if (result.value?.business_code === 'SNAPSHOT_FAILED' && canRecompute.value) {
     await recomputeCurrentDate()
     return
