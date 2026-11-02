@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import { computed } from 'vue'
 import TradeDisciplineSectionPanel from '@/components/trade-discipline/TradeDisciplineSectionPanel.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
@@ -28,7 +29,7 @@ const stocks = computed(() => new Map((props.stockOptions ?? []).map(stock => [s
   <div class="ledger-record" data-testid="ledger-record">
     <AppStateBlock v-if="!groups.length && !adjustments.length" state="empty" size="tiny" title="当日无买卖或调整记录" description="该交易日没有需要核对的有效规则。" />
     <TradeDisciplineSectionPanel v-for="group in groups" :key="group.ruleId" :title="group.name" :border-placement="borderPlacement" grouped data-testid="ledger-rule-record"
-      :description="`${group.versionNo ? `v${group.versionNo} · ` : ''}实际成交 ${group.trades.filter(item => !item.linked).length} 笔${group.trades.some(item => item.linked) ? ` · 关联核对 ${group.trades.filter(item => item.linked).length} 笔` : ''} · 漏买漏卖 ${group.omissions.length} 项`">
+      :description="`${group.versionNo ? `v${group.versionNo} · ` : ''}实际成交 ${formatNumber(group.trades.filter(item => !item.linked).length, 'count')} 笔${group.trades.some(item => item.linked) ? ` · 关联核对 ${formatNumber(group.trades.filter(item => item.linked).length, 'count')} 笔` : ''} · 漏买漏卖 ${formatNumber(group.omissions.length, 'count')} 项`">
       <template #actions><el-tag :type="!group.ruleId ? 'danger' : group.assessment ? checkinAssessmentTagType(group.assessment) : 'info'">{{ !group.ruleId ? '未按规则操作' : !group.confirmed ? '待打卡' : group.assessment ? checkinAssessmentLabel(group.assessment) : '待核对' }}</el-tag></template>
       <div class="ledger-record__content">
         <p v-if="group.ruleId" class="app-caption-text">财报月份交易限制：{{ group.restrictFinancialReportMonths ? financialReportMonthRestrictionText : '未启用' }}</p>

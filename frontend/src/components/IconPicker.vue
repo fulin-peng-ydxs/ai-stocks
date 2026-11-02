@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import {
   APP_BOTTOM_FLOATING_FALLBACKS,
   APP_BOTTOM_FLOATING_PLACEMENT,
@@ -74,7 +75,7 @@ function clear() {
         clearable
       />
       <div class="ip-actions">
-        <span class="ip-count">{{ filtered.length }} 个</span>
+        <span class="ip-count">{{ formatNumber(filtered.length, 'count') }} 个</span>
         <el-button text size="small" :disabled="disabled" @click="clear">清除图标</el-button>
       </div>
       <AppScrollArea class="ip-grid">

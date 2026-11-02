@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppForm from '@/components/AppForm.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
@@ -517,7 +518,7 @@ const menuPageTitle = useMenuPageTitle()
         <section class="dict-panel dict-left">
           <header class="dict-panel-head">
             <strong>字典类型</strong>
-            <span class="muted">{{ typeTotal }} 类</span>
+            <span class="muted">{{ formatNumber(typeTotal, 'count') }} 类</span>
           </header>
           <el-card shadow="never" class="filter-card dict-type-card">
             <AppControlRow class="dict-type-tools">
@@ -624,7 +625,7 @@ const menuPageTitle = useMenuPageTitle()
                   <span v-else class="muted">-</span>
                 </template>
               </AppTableColumn>
-              <AppTableColumn v-if="colVisible('sort')" label="排序" prop="sort" sortable="custom" />
+              <AppTableColumn v-if="colVisible('sort')" label="排序" prop="sort" sortable="custom" ><template #default="{ row }">{{ formatNumber(row.sort, 'count') }}</template></AppTableColumn>
               <AppTableColumn v-if="colVisible('enabled')" label="启用" prop="enabled" sortable="custom">
                 <template #default="{ row }">
                   <el-switch

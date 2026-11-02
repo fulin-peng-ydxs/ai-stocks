@@ -1,3 +1,5 @@
+import { formatPercent } from '@/utils/marketValue'
+import { formatNumber } from '@/utils/numberFormat'
 import type { IndicatorDef, ScoreProfileVersion } from '@/api/scoreProfile'
 import type { Backstop, CondTree, TradeProfileVersion } from '@/api/tradeProfile'
 import { enumText } from '@/utils/displayText'
@@ -6,9 +8,9 @@ export interface VersionRuleRow {
   id: string; name: string; state: string; params: string; rule: string; weight?: string
 }
 const numberText = (value: unknown) => typeof value === 'number' && Number.isFinite(value)
-  ? value.toLocaleString('zh-CN', { maximumSignificantDigits: 21 }) : '未记录'
+  ? formatNumber(value, 'parameter') : '未记录'
 const percentText = (value: unknown) => typeof value === 'number' && Number.isFinite(value)
-  ? value.toLocaleString('zh-CN', { style: 'percent', maximumSignificantDigits: 21 }) : '未记录'
+  ? formatPercent(value, { input: 'ratio' }) : '未记录'
 const valueText = (value: unknown): string => typeof value === 'boolean'
   ? value ? '是' : '否' : numberText(value)
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, watch } from 'vue'
 import { ElButton } from 'element-plus'
 import type { LimitLadderHotspot, LimitLadderHotspotType } from '@/api/limitLadder'
@@ -86,7 +87,7 @@ onBeforeUnmount(() => observer?.disconnect())
               v-for="(item, index) in orderedItems(kind)"
               :key="`${kind}-${item.group_key}`"
               :disabled="!item.historical_stock_count"
-              :content="`其中 ${item.historical_stock_count} 只股票因当日共同有效样本不足，沿用此前最近有效结果`"
+              :content="`其中 ${formatNumber(item.historical_stock_count, 'count')} 只股票因当日共同有效样本不足，沿用此前最近有效结果`"
               placement="top"
               popper-class="app-wrapping-popper"
             >
@@ -101,22 +102,22 @@ onBeforeUnmount(() => observer?.disconnect())
               >
                 <span class="ladder-hotspots__name">{{ item.group_name }}</span>
                 <span class="ladder-hotspots__separator" aria-hidden="true">·</span>
-                <b>{{ item.stock_count }}只</b>
-                <AppStatusDot v-if="item.historical_stock_count" :label="`含历史结果 ${item.historical_stock_count} 只`" />
+                <b>{{ formatNumber(item.stock_count, 'count') }}只</b>
+                <AppStatusDot v-if="item.historical_stock_count" :label="`含历史结果 ${formatNumber(item.historical_stock_count, 'count')} 只`" />
               </ElButton>
             </AppHoverInfo>
             <span v-if="!hotspots[kind].length" class="ladder-hotspots__empty">暂无</span>
           </div>
         </div>
         <div class="ladder-hotspots__disclosure" :class="{ 'is-unneeded': hotspots[kind].length <= layouts[kind].count }">
-          <span aria-hidden="true">展开其余 {{ hotspots[kind].length }} 项</span>
+          <span aria-hidden="true">展开其余 {{ formatNumber(hotspots[kind].length, 'count') }} 项</span>
           <ElButton
             v-if="hotspots[kind].length > layouts[kind].count"
             class="ladder-hotspots__more" type="primary" text
             :aria-controls="`ladder-hotspots-${kind}`"
             :aria-expanded="expanded[kind]"
             @click="expanded[kind] = !expanded[kind]"
-          >{{ expanded[kind] ? '收起展开项' : `展开其余 ${hotspots[kind].length - layouts[kind].count} 项` }}</ElButton>
+          >{{ expanded[kind] ? '收起展开项' : `展开其余 ${formatNumber(hotspots[kind].length - layouts[kind].count, 'count')} 项` }}</ElButton>
         </div>
       </div>
     </div>

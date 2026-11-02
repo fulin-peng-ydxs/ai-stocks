@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
@@ -417,7 +418,7 @@ async function toggleEnabled(j: ScheduledJob) {
   if (j.enabled && j.waiting_trigger_count > 0) {
     try {
       await ElMessageBox.confirm(
-        `停用后会取消当前 ${j.waiting_trigger_count} 条等待或触发中的事件，重新启用不会自动恢复。确认停用「${j.name}」？`,
+        `停用后会取消当前 ${formatNumber(j.waiting_trigger_count, 'count')} 条等待或触发中的事件，重新启用不会自动恢复。确认停用「${j.name}」？`,
         '停用调度任务',
         { confirmButtonType: 'danger', type: 'warning', confirmButtonText: '确认停用' },
       )
@@ -689,7 +690,7 @@ const menuPageTitle = useMenuPageTitle()
                 <span v-else-if="row.trigger_mode === 'dependency' && !row.next_run_time">等待上游</span>
                 <span v-else>{{ fmtTime(row.next_run_time) }}</span>
                 <el-tag v-if="row.waiting_trigger_count" size="small" effect="plain" type="warning">
-                  等待 {{ row.waiting_trigger_count }}
+                  等待 {{ formatNumber(row.waiting_trigger_count, 'count') }}
                 </el-tag>
               </span>
             </template>
@@ -887,7 +888,7 @@ const menuPageTitle = useMenuPageTitle()
           </el-form-item>
           <el-form-item label="触发延迟" required>
             <AppControlRow>
-              <el-input-number v-model="form.dependency_delay_value" data-testid="schedule-dependency-delay" :min="0" :precision="0" />
+              <el-input-number v-model="form.dependency_delay_value" data-testid="schedule-dependency-delay" :min="0" />
               <AppSelect
                 v-model="form.dependency_delay_unit"
                 data-testid="schedule-dependency-delay-unit"
@@ -913,7 +914,7 @@ const menuPageTitle = useMenuPageTitle()
           </el-form-item>
           <el-form-item label="重试延迟" required>
             <AppControlRow>
-              <el-input-number v-model="form.retry_delay_value" data-testid="schedule-retry-delay" :min="0" :precision="0" />
+              <el-input-number v-model="form.retry_delay_value" data-testid="schedule-retry-delay" :min="0" />
               <AppSelect
                 v-model="form.retry_delay_unit"
                 data-testid="schedule-retry-delay-unit"
@@ -924,7 +925,7 @@ const menuPageTitle = useMenuPageTitle()
             </AppControlRow>
           </el-form-item>
           <el-form-item label="最大重试" required>
-            <el-input-number v-model="form.max_retries" data-testid="schedule-max-retries" :min="1" :max="20" :precision="0" />
+            <el-input-number v-model="form.max_retries" data-testid="schedule-max-retries" :min="1" :max="20" />
             <AppFormHelp>不含首次执行；最多 20 次</AppFormHelp>
           </el-form-item>
         </template>

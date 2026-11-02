@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
@@ -282,8 +283,8 @@ async function confirmIgnore() {
     if (ignoreBatch.value) {
       const { count } = await ignoreQualityBatch(currentBatchFilter(), ignoreScope.value)
       ElMessage.success(ignoreScope.value === 'occurrence'
-        ? `已将 ${count} 条问题标记为本次正常`
-        : `已将 ${count} 条问题标记为整体正常；恢复监控前不再上报对应对象的同类问题`)
+        ? `已将 ${formatNumber(count, 'count')} 条问题标记为本次正常`
+        : `已将 ${formatNumber(count, 'count')} 条问题标记为整体正常；恢复监控前不再上报对应对象的同类问题`)
     } else {
       await ignoreQualityIssue(ignoreRow.value!.id, ignoreScope.value)
       ElMessage.success(ignoreScope.value === 'occurrence'
@@ -503,7 +504,7 @@ async function batchRecover() {
   batching.value = true
   try {
     const { count } = await recoverQualityBatch(currentBatchFilter())
-    ElMessage.success(`已提交批量恢复 ${count} 条，前往任务中心查看进度（可终止）`)
+    ElMessage.success(`已提交批量恢复 ${formatNumber(count, 'count')} 条，前往任务中心查看进度（可终止）`)
     router.push('/data/ingest')   // 跳任务中心看进度/实时日志
   } catch { /* 400无匹配/409并发 由拦截器提示 */ } finally { batching.value = false }
 }

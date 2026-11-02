@@ -1,3 +1,4 @@
+import { formatNumber } from '@/utils/numberFormat'
 import type { QualityIssue } from '@/api/data'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
 import { businessMessage, enumText } from '@/utils/displayText'
@@ -10,7 +11,7 @@ const records = (value: unknown): RecordValue[] => Array.isArray(value)
   ? value.filter(item => item !== null && typeof item === 'object' && !Array.isArray(item)) : []
 const text = (value: unknown) => typeof value === 'string' && value.trim() ? value : '未记录'
 const count = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
-  ? value.toLocaleString('zh-CN') : '未记录'
+  ? formatNumber(value, 'count') : '未记录'
 const quantity = (value: unknown, unit: string) => count(value) === '未记录' ? '未记录' : `${count(value)} ${unit}`
 const dateTime = (value: unknown) => formatDateTimeSeconds(typeof value === 'string' ? value : null, '未记录')
 export interface DiagnosticField { label: string; value: string }

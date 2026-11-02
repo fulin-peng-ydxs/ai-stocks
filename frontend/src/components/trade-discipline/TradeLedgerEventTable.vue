@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatTradePrice } from '@/utils/tradeNumeric'
+import { formatNumber } from '@/utils/numberFormat'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import StockStatusTag from '@/components/StockStatusTag.vue'
@@ -6,7 +8,6 @@ import type { LedgerEvent } from '@/api/tradeLedger'
 import type { StockOption } from '@/api/tradeDiscipline'
 import { computed } from 'vue'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
-import { formatDecimalString } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
 import { operationSTStatus } from '@/utils/tradeDisciplineOperations'
 
@@ -27,8 +28,8 @@ function changeLabel(event: LedgerEvent) {
       <span v-if="row.linked" class="app-caption-text">关联已有成交，不重复记账</span>
     </template></AppTableColumn>
     <AppTableColumn label="变动类型" role="status"><template #default="{ row }">{{ changeLabel(row) }}</template></AppTableColumn>
-    <AppTableColumn v-if="!adjustments" label="成交价" header-meta="元" role="number"><template #default="{ row }">{{ formatDecimalString(row.price, 4) }}</template></AppTableColumn>
-    <AppTableColumn label="数量" header-meta="股" role="number"><template #default="{ row }">{{ formatDecimalString(row.quantity, 4) }}</template></AppTableColumn>
+    <AppTableColumn v-if="!adjustments" label="成交价" header-meta="元" role="number"><template #default="{ row }">{{ formatTradePrice(row.price) }}</template></AppTableColumn>
+    <AppTableColumn label="数量" header-meta="股" role="number"><template #default="{ row }">{{ formatNumber(row.quantity, 'quantity') }}</template></AppTableColumn>
     <AppTableColumn label="金额" header-meta="元" role="number"><template #default="{ row }">{{ formatMoney(row.amount) }}</template></AppTableColumn>
     <AppTableColumn v-if="!adjustments" label="费用" header-meta="元" role="number"><template #default="{ row }">{{ formatMoney(row.fee) }}</template></AppTableColumn>
     <AppTableColumn :label="adjustments ? '调整原因' : '核对依据'" role="description"><template #default="{ row }">{{ adjustments ? row.note || '—' : [...(row.issues ?? []), ...(row.warnings ?? [])].join('；') || '无偏差' }}</template></AppTableColumn>

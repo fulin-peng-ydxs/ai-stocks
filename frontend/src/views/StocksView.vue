@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
+import { formatMarketPercent, formatReturn, marketValueClass } from '@/utils/marketValue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
@@ -665,19 +667,16 @@ function onGroupSortChange({ prop, order }: { prop: string; order: string | null
 }
 
 function fmtPct(v: number | null | undefined): string {
-  if (v === null || v === undefined) return '—'
-  return (v > 0 ? '+' : '') + v.toFixed(2) + '%'
+  return formatMarketPercent(v)
 }
 function fmtPrice(v: number | null | undefined): string {
   return formatMoney(v, { digits: 2 })
 }
 function fmtPctRatio(v: number | null | undefined): string {
-  if (v === null || v === undefined) return '—'
-  return (v > 0 ? '+' : '') + (v * 100).toFixed(2) + '%'
+  return formatReturn(v)
 }
 function pctClass(v: number | null | undefined): string {
-  if (v === null || v === undefined) return 'muted'
-  return v > 0 ? 'up' : v < 0 ? 'down' : ''
+  return marketValueClass(v)
 }
 // ── 持久化选择「购物车」：跨分页 / 跨搜索累积 ──
 const cart = ref<StockBatchItem[]>([])
@@ -1096,7 +1095,7 @@ const menuPageTitle = useMenuPageTitle()
                 >
                   <span class="app-inline-info app-inline-info--fill app-inline-info--nowrap">
                     <span class="color-dot" :style="{ backgroundColor: g.color }" />
-                    <span class="app-option-label">{{ g.name }}（{{ g.member_count }}）</span>
+                    <span class="app-option-label">{{ g.name }}（{{ formatNumber(g.member_count, 'count') }}）</span>
                   </span>
                 </el-dropdown-item>
               </el-dropdown-menu>
@@ -1104,9 +1103,9 @@ const menuPageTitle = useMenuPageTitle()
           </el-dropdown>
           <el-tag type="info" size="small" effect="plain">建组 {{ groupDetail.group_date || '—' }}</el-tag>
           <el-tag v-if="groupDetail.is_default" size="small" type="danger" effect="plain">默认</el-tag>
-          <el-tag type="info" size="small" effect="plain">{{ groupDetail.count }} 只</el-tag>
+          <el-tag type="info" size="small" effect="plain">{{ formatNumber(groupDetail.count, 'count') }} 只</el-tag>
           <span class="gb-ret">整组涨幅
-            <b :class="pctClass(groupDetail.avg_ret)">{{ fmtPctRatio(groupDetail.avg_ret) }}</b>
+            <b :class="marketValueClass(groupDetail.avg_ret, { input: 'ratio' })">{{ fmtPctRatio(groupDetail.avg_ret) }}</b>
             <span class="gb-hint">（各股自加入日起·等权平均）</span>
           </span>
           <span v-if="groupDetail.description" class="gb-desc" >{{ groupDetail.description }}</span>
@@ -1235,7 +1234,7 @@ const menuPageTitle = useMenuPageTitle()
             <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</b></template>
           </AppTableColumn>
           <AppTableColumn v-if="groupColVisible('ret')" label="截止涨幅" prop="ret" sortable="custom">
-            <template #default="{ row }"><b :class="pctClass(row.ret)">{{ fmtPctRatio(row.ret) }}</b></template>
+            <template #default="{ row }"><b :class="marketValueClass(row.ret, { input: 'ratio' })">{{ fmtPctRatio(row.ret) }}</b></template>
           </AppTableColumn>
           <AppTableColumn v-if="groupColVisible('lastDate')" label="截至当前" prop="last_date" sortable="custom">
             <template #default="{ row }">{{ row.last_date || '—' }}</template>

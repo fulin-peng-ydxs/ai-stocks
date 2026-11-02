@@ -1,3 +1,4 @@
+import { displayDirection } from '@/utils/numberFormat'
 interface MarketAxisColors {
   up: string
   down: string
@@ -12,7 +13,7 @@ export function marketAxisLabelColor(colors: MarketAxisColors, reference: number
       || reference < 0) return colors.label
     const change = reference === 0 ? numeric : (numeric / reference - 1) * 100
     // 与两位小数轴标签一致，避免浮点误差或舍入后的零值被标成涨跌。
-    const displayed = Number(change.toFixed(2))
+    const displayed = displayDirection(change) ?? 0
     return displayed > 0 ? colors.up : displayed < 0 ? colors.down : colors.label
   }
 }

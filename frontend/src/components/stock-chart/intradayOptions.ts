@@ -1,6 +1,7 @@
+import { tinyValueHint } from '@/utils/numberFormat'
 import type { EChartsOption } from 'echarts'
 import type { IntradayPoint } from '@/api/stocks'
-import { formatMarketPercent } from '@/utils/marketValue'
+import { formatMarketPercent, marketValueTone } from '@/utils/marketValue'
 import { marketAxisLabelColor, marketAxisPointerLabel } from '@/components/chartAxisLabel'
 import {
   STOCK_QUOTE_TOOLTIP_CSS,
@@ -94,7 +95,7 @@ export function buildIntradayQuoteSummary(
   const pct = preClose != null && Number.isFinite(preClose) && preClose > 0
     ? ((point.close / preClose) - 1) * 100
     : null
-  const tone = pct == null || pct === 0 ? 'neutral' : pct > 0 ? 'up' : 'down'
+  const tone = marketValueTone(pct)
   return {
     time: point.time,
     hero: { label: '', value: formatChartNumber(point.close, 2), tone },
@@ -103,7 +104,8 @@ export function buildIntradayQuoteSummary(
       { label: '均价', value: formatChartNumber(point.average_price, 2), color: theme.series.kline.ma5 },
       {
         label: '涨跌幅',
-        value: pct == null ? '--' : `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`,
+        value: formatMarketPercent(pct),
+        rawPrecision: tinyValueHint(pct, '%'),
         tone,
       },
       { label: '成交量', value: formatVolumeLots(point.volume) },
@@ -241,7 +243,7 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
           color: priceLabelColor,
           showMinLabel: false,
           showMaxLabel: false,
-          formatter: (value: number) => value.toFixed(2),
+          formatter: (value: number) => formatChartNumber(value, 2),
         },
         axisPointer: {
           label: marketAxisPointerLabel(theme, (value) => formatChartNumber(value, 2), preClose),
@@ -266,7 +268,7 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
           showMaxLabel: false,
           color: priceLabelColor,
           formatter: (value: number) => {
-            if (preClose == null || preClose <= 0) return '--'
+            if (preClose == null || preClose <= 0) return '—'
             const percentage = ((value / preClose) - 1) * 100
             return formatMarketPercent(percentage)
           },
@@ -275,7 +277,7 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         axisPointer: {
           label: marketAxisPointerLabel(theme, (value) => preClose != null
             ? formatMarketPercent(((value / preClose) - 1) * 100)
-            : '--', preClose),
+            : '—', preClose),
         },
         splitLine: { show: false },
       },

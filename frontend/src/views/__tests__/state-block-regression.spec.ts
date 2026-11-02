@@ -996,7 +996,7 @@ describe('代表性页面四态回归', () => {
     if (monitored) {
       expect(card.text()).toContain('720')
       expect(card.get('.data-metric-summary').text()).not.toContain('股票交易日')
-      expect(card.text()).toContain('目标日完整 50%')
+      expect(card.text()).toContain('目标日完整 50.00%')
       expect(wrapper.text()).not.toContain('分时监控自')
     } else {
       expect(card.text()).toContain('0行')
@@ -1047,7 +1047,9 @@ describe('代表性页面四态回归', () => {
     const wrapper = await mountView(OverviewView)
     const vm = wrapper.vm as any
     const push = vi.spyOn(router, 'push')
-    expect(vm.coveragePct(480, 481)).toBe(99.8)
+    expect(vm.coveragePct(480, 481)).toBeCloseTo(480 / 481 * 100, 10)
+    expect(vm.coveragePct(999999, 1000000)).toBe(99.99)
+    expect(vm.coveragePct(1000000, 1000000)).toBe(100)
     vm.metricAction('gaps')
     expect(push).toHaveBeenLastCalledWith({ path: '/data/quality', query: { issue_type: 'history_data_gap,stale' } })
     vm.metricAction('st-refresh')
@@ -1374,7 +1376,7 @@ describe('代表性页面四态回归', () => {
 
     expect(wrapper.find('.board-coverage-tag').text()).toBe(label)
     const fundCard = wrapper.findAll('.cov-card').find((card) => card.text().includes('资金流覆盖'))!
-    expect(fundCard.find('.cov-pct').text()).toBe('0%')
+    expect(fundCard.find('.cov-pct').text()).toBe('0.00%')
     expect(fundCard.text()).toContain('0/481 个板块')
     if (ignored) expect(fundCard.text()).toContain(`缺失已人工确认 ${ignored} 个`)
     if (ignored && !confirmed) expect(fundCard.text()).toContain('待补采 1 个')
@@ -2161,6 +2163,26 @@ describe('代表性页面四态回归', () => {
     wrapper.unmount()
     press(document.body)
     expect(trainingApi.revealNext).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([0, -0.000001, -0.01, null])('训练结算按可见回撤判色并格式化成交数量：%s', async drawdown => {
+    const wrapper = await mountView(TrainingView)
+    ;(wrapper.vm as any).view = {
+      id: 'numeric-display-case', status: 'completed', mode: 'multi',
+      n_rounds: 1234, initial_capital: 100000, fee_enabled: true,
+      total_return: 0, score: 85, grade: 'A', win_rate: 0,
+      max_drawdown: drawdown, n_trades: 12345, review_note: '',
+      created_at: '2026-11-02T10:00:00', completed_at: '2026-11-02T11:00:00', rounds: [],
+    }
+    await flushPromises()
+    const kpis = wrapper.findAll('.kpi')
+    const value = kpis.find(node => node.find('label').text() === '最大回撤')!.get('b')
+    expect(value.text()).toBe(drawdown == null ? '—' : drawdown === -0.01 ? '-1.00%' : '0.00%')
+    expect(value.classes().includes('down')).toBe(drawdown === -0.01)
+    expect(value.classes()).not.toContain('up')
+    expect(kpis.find(node => node.find('label').text() === '成交笔数')!.text()).toContain('12,345')
+    expect(kpis.find(node => node.find('label').text() === '回合数')!.text()).toContain('1,234')
+    wrapper.unmount()
   })
 
   it('训练历史加载失败显示错误态', async () => {

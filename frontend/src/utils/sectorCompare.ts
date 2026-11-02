@@ -77,7 +77,7 @@ export function sectorValueClass(value: number | null | undefined): 'up' | 'down
 
 function pct(last: number, ref: number): number | null {
   if (!Number.isFinite(last) || !Number.isFinite(ref) || ref === 0) return null
-  return +(((last - ref) / ref) * 100).toFixed(2)
+  return ((last - ref) / ref) * 100
 }
 
 /** 区间累计涨跌：以序列首个有效收盘为基准，(close_t / base - 1)。无效收盘（0/NaN）置 null。 */

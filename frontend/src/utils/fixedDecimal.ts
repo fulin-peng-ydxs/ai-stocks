@@ -1,3 +1,5 @@
+import { formatNumber } from '@/utils/numberFormat'
+
 /**
  * 将普通十进制值转换为定点最小单位。解析基于字符串而非二进制浮点运算，
  * 适合金额上限、额度等只允许固定小数位的比较与求和。
@@ -73,11 +75,5 @@ export function formatDecimalString(
   value: string | null | undefined,
   digits = 2,
 ): string {
-  if (value === null || value === undefined || value === '') return '—'
-  if (!Number.isInteger(digits) || digits < 0) return value
-  const match = /^([+-]?)(\d+)(?:\.(\d*))?$/.exec(value)
-  if (!match || (match[3]?.length ?? 0) > digits) return value
-  const whole = match[2]!.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-  if (digits === 0) return `${match[1]}${whole}`
-  return `${match[1]}${whole}.${(match[3] ?? '').padEnd(digits, '0')}`
+  return formatNumber(value, 'decimal', { digits, grouped: true })
 }

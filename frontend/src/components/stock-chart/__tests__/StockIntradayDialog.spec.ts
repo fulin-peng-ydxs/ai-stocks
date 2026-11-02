@@ -95,7 +95,7 @@ describe('StockIntradayDialog', () => {
     expect(wrapper.text()).toContain('开盘3.60最高3.62')
     expect(wrapper.text()).toContain('最低3.59涨幅+1.69%')
     expect(wrapper.text()).toContain('振幅0.85%换手率6.80%')
-    expect(wrapper.text()).toContain('成交量10手')
+    expect(wrapper.text()).toContain('成交量10 手')
     expect(wrapper.text()).toContain('成交额3,610')
   })
 

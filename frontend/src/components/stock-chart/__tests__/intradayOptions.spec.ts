@@ -72,7 +72,7 @@ describe('buildIntradayOption', () => {
     expect(option.yAxis[1].axisPointer.label.formatter({ value: 8.82 })).toBe('{d|-10.00%}')
     expect(option.yAxis[0].axisPointer.label.rich.u.color).toBe(theme.up)
     expect(option.yAxis[1].axisPointer.label.rich.d.color).toBe(theme.down)
-    expect(option.yAxis[2].axisPointer.label.formatter({ value: 15_000 })).toBe('1.50万手')
+    expect(option.yAxis[2].axisPointer.label.formatter({ value: 15_000 })).toBe('1.50 万手')
     expect(option.yAxis[0].interval).toBe(option.yAxis[1].interval)
     expect((9.8 - option.yAxis[0].min) / option.yAxis[0].interval).toBeCloseTo(2)
     expect(option.yAxis[0].axisLabel).toMatchObject({
@@ -100,7 +100,7 @@ describe('buildIntradayOption', () => {
     expect(option.series[1].lineStyle.color).toBe('#orange')
     expect(option.series[2].data.map((item: any) => item.itemStyle.color))
       .toEqual(['#red', '#red', '#green'])
-    expect(option.yAxis[2].axisLabel.formatter(15_000)).toBe('1.50万手')
+    expect(option.yAxis[2].axisLabel.formatter(15_000)).toBe('1.50 万手')
     expect(option.axisPointer.link).toEqual([{ xAxisIndex: [0, 1] }])
     expect(option.legend).toBeUndefined()
     expect(option.title).toBeUndefined()
@@ -124,7 +124,7 @@ describe('buildIntradayOption', () => {
     expect(option.yAxis[1].axisLabel.color(10)).toBe(theme.label)
     expect(option.yAxis[1].axisLabel.show).toBe(false)
     expect(option.yAxis[0].axisPointer.label.formatter({ value: 10 })).toBe('{n|10.00}')
-    expect(option.yAxis[1].axisPointer.label.formatter({ value: 10 })).toBe('{n|--}')
+    expect(option.yAxis[1].axisPointer.label.formatter({ value: 10 })).toBe('{n|—}')
     expect(option.series[0].markLine).toBeUndefined()
   })
 
@@ -150,12 +150,12 @@ describe('buildIntradayOption', () => {
     for (const preClose of [null, 0, -1, Number.NaN]) {
       const summary = buildIntradayQuoteSummary(point, preClose, theme)
       expect(summary.hero).toMatchObject({ value: '10.10', tone: 'neutral' })
-      expect(summary.metrics[1]).toMatchObject({ value: '--', tone: 'neutral' })
+      expect(summary.metrics[1]).toMatchObject({ value: '—', tone: 'neutral' })
     }
     expect(buildIntradayQuoteSummary(point, point.close, theme).metrics[1])
       .toMatchObject({ value: '0.00%', tone: 'neutral' })
     expect(buildIntradayQuoteSummary(point, 11, theme).metrics[1].tone).toBe('down')
-    expect(buildIntradayQuoteSummary(point, 10, theme).metrics[2].value).toBe('10手')
+    expect(buildIntradayQuoteSummary(point, 10, theme).metrics[2].value).toBe('10 手')
   })
 
   it.each([

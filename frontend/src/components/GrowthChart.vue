@@ -5,7 +5,8 @@ import * as echarts from 'echarts'
 import { useEChartsTheme } from '@/components/chartTheme'
 import { initVectorEChart } from '@/components/echartsRenderer'
 import type { GrowthPoint } from '@/api/training'
-import { formatMarketPercent } from '@/utils/marketValue'
+import { formatMarketPercent, formatMarketPercentDetail } from '@/utils/marketValue'
+import { formatNumber, type NumericValue } from '@/utils/numberFormat'
 import { marketAxisLabelColor, marketAxisPointerLabel } from '@/components/chartAxisLabel'
 import { marketCompareChangeColors } from '@/components/marketCompareChart'
 
@@ -14,13 +15,14 @@ const el = ref<HTMLDivElement | null>(null)
 const theme = useEChartsTheme()
 let chart: echarts.ECharts | null = null
 let resizeListening = false
+const formatScore = (value: NumericValue) => formatNumber(value, 'score')
 
 function render() {
   if (!chart) return
   const t = theme.value
   const labels = props.data.map((_, i) => `#${i + 1}`)
   const scores = props.data.map((p) => p.score)
-  const rets = props.data.map((p) => (p.total_return == null ? null : +(p.total_return * 100).toFixed(2)))
+  const rets = props.data.map((p) => (p.total_return == null ? null : p.total_return * 100))
   chart.setOption({
     animation: false,
     backgroundColor: t.background,
@@ -44,7 +46,8 @@ function render() {
     yAxis: [
       { type: 'value', min: 0, max: 100,
         axisLine: { show: false },
-        axisLabel: { color: t.label, fontSize: t.typography.compact },
+        axisLabel: { color: t.label, fontSize: t.typography.compact, formatter: formatScore },
+        axisPointer: { label: { formatter: ({ value }: { value: NumericValue }) => formatScore(value) } },
         splitLine: { lineStyle: { color: t.split } } },
       { type: 'value', position: 'right',
         axisLine: { show: false },
@@ -60,10 +63,12 @@ function render() {
     ],
     series: [
       { name: '评分', type: 'line', data: scores, smooth: true, connectNulls: true,
+        tooltip: { valueFormatter: formatScore },
         showSymbol: true, symbolSize: 5,
         lineStyle: { color: t.focus, width: 2 }, itemStyle: { color: t.focus },
         areaStyle: { color: t.area } },
       { name: '收益%', type: 'line', yAxisIndex: 1, data: rets, smooth: true, connectNulls: true,
+        tooltip: { valueFormatter: formatMarketPercentDetail },
         showSymbol: true, symbolSize: 5,
         lineStyle: { color: t.accent, width: 2 }, itemStyle: { color: t.accent } },
     ],

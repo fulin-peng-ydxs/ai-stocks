@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber as formatNumeric } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import { enumText } from '@/utils/displayText'
 import {
@@ -136,7 +137,6 @@ let shellStatusRequestId = 0
 let shellStatusTimer: number | undefined
 let removeBeforeUnload: (() => void) | undefined
 
-const numberFormatter = new Intl.NumberFormat('zh-CN')
 const latestTradeDateText = computed(() =>
   formatDateOnly(dataStatus.value?.latest_trade_date ?? latestReadableTradeDate.value))
 const latestTradeDisciplineDate = computed(
@@ -215,7 +215,7 @@ async function syncGlobalPreferences() {
 }
 
 function formatNumber(value: number | null | undefined): string {
-  return typeof value === 'number' ? numberFormatter.format(value) : '—'
+  return formatNumeric(value, 'count')
 }
 
 function formatDateOnly(value: string | null | undefined): string {

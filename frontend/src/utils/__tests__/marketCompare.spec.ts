@@ -42,8 +42,8 @@ describe('marketCompare', () => {
 
     expect(result.dates).toEqual(dates.map((bar) => bar.date))
     expect(result.closesByCode.A).toEqual([10, 10, 12])
-    expect(result.valuesByCode.A).toEqual([0, 0, 20])
-    expect(result.valuesByCode.B).toEqual([0, -10, 10])
+    expect(result.valuesByCode.A).toEqual([expect.closeTo(0, 10), expect.closeTo(0, 10), expect.closeTo(20, 10)])
+    expect(result.valuesByCode.B).toEqual([expect.closeTo(0, 10), expect.closeTo(-10, 10), expect.closeTo(10, 10)])
   })
 
   it('纯对比（不对比指数）中个别序列上市前空档只留空，不否决整体且各自从自身起点起算', () => {
@@ -53,12 +53,12 @@ describe('marketCompare', () => {
 
     const fixed = alignPriceComparison([oldStock, newStock], 2, null, dates)
     expect(fixed.dates).toEqual(dates.map((bar) => bar.date))
-    expect(fixed.valuesByCode.A).toEqual([0, 10, 20])
-    expect(fixed.valuesByCode.B).toEqual([null, 0, 10])
+    expect(fixed.valuesByCode.A).toEqual([expect.closeTo(0, 10), expect.closeTo(10, 10), expect.closeTo(20, 10)])
+    expect(fixed.valuesByCode.B).toEqual([null, expect.closeTo(0, 10), expect.closeTo(10, 10)])
 
     const all = alignPriceComparison([oldStock, newStock], ALL_DAYS, null, dates)
     expect(all.dates).toEqual(dates.map((bar) => bar.date))
-    expect(all.valuesByCode.B).toEqual([null, 0, 10])
+    expect(all.valuesByCode.B).toEqual([null, expect.closeTo(0, 10), expect.closeTo(10, 10)])
   })
 
   it('对比指数时个别序列上市较晚只缩短基准期，不否决整体且统一从共同基期起算', () => {
@@ -69,9 +69,9 @@ describe('marketCompare', () => {
 
     const result = alignPriceComparison([oldStock, newStock], 2, benchmark, dates)
     expect(result.dates).toEqual([dates[1]!.date, dates[2]!.date])
-    expect(result.valuesByCode.A).toEqual([0, 9.09])     // 老股从共同基期(次新股上市日)起算
-    expect(result.valuesByCode.B).toEqual([0, 10])
-    expect(result.valuesByCode.IDX).toEqual([0, 0.99])
+    expect(result.valuesByCode.A).toEqual([0, expect.closeTo(100 / 11, 10)])     // 老股从共同基期(次新股上市日)起算
+    expect(result.valuesByCode.B).toEqual([expect.closeTo(0, 10), expect.closeTo(10, 10)])
+    expect(result.valuesByCode.IDX).toEqual([0, expect.closeTo(100 / 101, 10)])
   })
 
   it('空的显式市场日历不会退回股票日期，且股票页指标包含 30/60 日', () => {

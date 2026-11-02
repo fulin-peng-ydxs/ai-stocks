@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { displayDirection } from '@/utils/numberFormat'
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import type { Bar } from '@/api/stocks'
@@ -20,7 +21,7 @@ import {
   type PriceCompareMetric,
   type PriceCompareSeries,
 } from '@/utils/marketCompare'
-import { formatMarketPercent } from '@/utils/marketValue'
+import { formatMarketPercent, formatMarketPercentDetail, formatPercentPointsDetail } from '@/utils/marketValue'
 
 export interface StockCompareSeries {
   code: string
@@ -131,22 +132,20 @@ function render(): void {
       const content = rows.map((row: any) => {
         const relative = Number(row.value)
         const valid = row.value != null && Number.isFinite(relative)
-        const relativeText = valid ? formatMarketPercent(relative) : '--'
-        const color = !valid || relative === 0
-          ? changeColors.neutral
-          : relative > 0 ? changeColors.up : changeColors.down
+        const relativeText = valid ? formatMarketPercentDetail(relative) : '—'
+        const color = displayDirection(valid ? relative : null) === 1 ? changeColors.up
+          : displayDirection(valid ? relative : null) === -1 ? changeColors.down : changeColors.neutral
         const isBenchmark = row.seriesName === benchmarkName
         const benchmarkValue = benchmarkData?.[Number(row.dataIndex)]
         const excess = valid && !isBenchmark && typeof benchmarkValue === 'number'
-          ? +(relative - benchmarkValue).toFixed(2)
+          ? relative - benchmarkValue
           : null
-        const excessColor = excess == null || excess === 0
-          ? currentTheme.label
-          : excess > 0 ? changeColors.up : changeColors.down
+        const excessColor = displayDirection(excess) === 1 ? changeColors.up
+          : displayDirection(excess) === -1 ? changeColors.down : currentTheme.label
         return chartTooltipRowHtml(
           `<span>${row.marker ?? ''}${escapeChartHtml(row.seriesName)}</span>`,
           `<span style="text-align:right"><strong style="color:${color}">${relativeText}</strong>`
-            + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${formatMarketPercent(excess)}</small>`)
+            + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${formatPercentPointsDetail(excess)}</small>`)
             + '</span>',
         )
       }).join('')

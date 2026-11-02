@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
@@ -29,10 +30,10 @@ let measureVersion = 0
 
 const paginationLayout = computed(() => {
   if (layoutTier.value === 2) {
-    return 'total, sizes, prev, pager, next'
+    return 'slot, sizes, prev, pager, next'
   }
   if (layoutTier.value === 1) {
-    return 'total, prev, pager, next'
+    return 'slot, prev, pager, next'
   }
   return 'prev, pager, next'
 })
@@ -105,7 +106,9 @@ function onSizeChange(value: number) {
       background
       @current-change="onCurrentChange"
       @size-change="onSizeChange"
-    />
+    >
+      <span class="el-pagination__total" role="status">共 {{ formatNumber(total, 'count') }} 条</span>
+    </el-pagination>
   </div>
 </template>
 

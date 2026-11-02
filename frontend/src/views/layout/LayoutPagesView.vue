@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import { provideTradeDisciplineCategories, tradeConditionMeta } from '@/composables/useTradeDisciplineCategories'
@@ -661,7 +662,7 @@ const menuPageTitle = useMenuPageTitle()
                 <span class="source-path app-caption-text">{{ selectedPage.path }} · {{ selectedPage.pageKey }}</span>
               </div>
               <div class="source-facts">
-                <span>槽位 <strong>{{ selectedPage.layout.slots.length }}</strong></span>
+                <span>槽位 <strong>{{ formatNumber(selectedPage.layout.slots.length, 'count') }}</strong></span>
                 <span>页面密度 <strong>{{ pageDensityLabel }}</strong></span>
                 <span>组件设置 <strong>{{ selectedPage.supportsComponentConfig ? '可配置' : '未开放' }}</strong></span>
               </div>
@@ -789,7 +790,7 @@ const menuPageTitle = useMenuPageTitle()
                     <el-collapse-item name="diagnostic">
                       <template #title>
                         <span class="diagnostic-title">配置依据与诊断</span>
-                        <el-tag type="info" size="small" effect="plain">{{ focusedDiagnosticRows.length }} 项</el-tag>
+                        <el-tag type="info" size="small" effect="plain">{{ formatNumber(focusedDiagnosticRows.length, 'count') }} 项</el-tag>
                       </template>
                       <div class="section-subtitle diagnostic-intro">查看当前组件的默认值来源、可覆盖范围与不可编辑原因。</div>
                       <AppDataTable v-if="focusedDiagnosticRows.length" :data="focusedDiagnosticRows" max-height="220" size="small" class="diagnostic-table" embedded>

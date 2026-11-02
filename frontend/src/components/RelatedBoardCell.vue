@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber, tinyValueHint } from '@/utils/numberFormat'
 import { computed } from 'vue'
 import { getActivePinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
@@ -43,9 +44,9 @@ const sectorLocation = computed(() => sectorDetailLocation(
   props.returnPath,
 ))
 
-function formatCorrelation(value: number): string {
-  if (!Number.isFinite(value)) return '—'
-  return value.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 4 })
+const formatCorrelation = (value: number) => {
+  const hint = tinyValueHint(value, '', 4)
+  return formatNumber(value, 'coefficient') + (hint ? `（${hint}）` : '')
 }
 </script>
 
@@ -81,8 +82,8 @@ function formatCorrelation(value: number): string {
         <div><dt>综合相关度</dt><dd>{{ formatCorrelation(board.score) }}</dd></div>
         <div><dt>20 日相关度</dt><dd>{{ formatCorrelation(board.corr_20) }}</dd></div>
         <div><dt>60 日相关度</dt><dd>{{ formatCorrelation(board.corr_60) }}</dd></div>
-        <div><dt>20 日有效样本</dt><dd>{{ board.sample_20 }}</dd></div>
-        <div><dt>60 日有效样本</dt><dd>{{ board.sample_60 }}</dd></div>
+        <div><dt>20 日有效样本</dt><dd>{{ formatNumber(board.sample_20, 'count') }}</dd></div>
+        <div><dt>60 日有效样本</dt><dd>{{ formatNumber(board.sample_60, 'count') }}</dd></div>
         <div><dt>数据截止日</dt><dd>{{ asOfDate || '—' }}</dd></div>
         <div v-if="board.history"><dt>计算基准</dt><dd>{{ benchmark?.name || benchmark?.code || '—' }}</dd></div>
       </dl>

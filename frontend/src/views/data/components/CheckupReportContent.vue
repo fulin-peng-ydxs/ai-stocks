@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import { computed, ref, watch } from 'vue'
 import { ElLink, ElTag } from 'element-plus'
 import AppDetailSection from '@/components/AppDetailSection.vue'
@@ -20,7 +21,7 @@ const warningCount = computed(() => props.report.warning_count
   ?? props.report.groups.flatMap(g => g.checks).filter(c => status(c) === 'warn').length)
 const headerType = computed(() => !props.report.all_ok ? 'danger' : warningCount.value ? 'warning' : 'success')
 const title = computed(() => !props.report.all_ok ? `${props.report.fails.length} 项未通过`
-  : warningCount.value ? `体检通过，${warningCount.value} 项提醒` : '全部通过')
+  : warningCount.value ? `体检通过，${formatNumber(warningCount.value, 'count')} 项提醒` : '全部通过')
 const keyOf = (group: string, check: CheckupCheck) => `${group}:${check.name}`
 const groups = computed(() => props.report.groups.map(group => ({
   ...group,
@@ -42,7 +43,7 @@ function toggle(key: string) {
   <div class="checkup-report">
     <header class="report-head">
       <ElTag :type="headerType" effect="light">{{ title }}</ElTag>
-      <span>{{ report.passed }} 通过 · {{ warningCount }} 提醒项 / {{ report.total }} 检查项</span>
+      <span>{{ formatNumber(report.passed, 'count') }} 通过 · {{ formatNumber(warningCount, 'count') }} 提醒项 / {{ formatNumber(report.total, 'count') }} 检查项</span>
     </header>
     <p class="checkup-scope">检查范围按各项规则确定：历史数据检查覆盖已入库历史；当前快照、运行就绪度和跨源抽样按各项说明。这里没有统一的近 90 个交易日限制。</p>
     <AppStateBlock v-if="!report.groups.length" state="empty" title="暂无体检明细" description="重新运行数据结构体检后查看结果" />
@@ -62,7 +63,7 @@ function toggle(key: string) {
           </p>
           <section v-for="(detail, detailIndex) in check.details" :key="detailIndex" class="checkup-detail-group">
             <p class="checkup-context">
-              <span>{{ detail.label }} · 共 {{ detail.total }} 条<span v-if="detail.total > detail.rows.length">，展示 {{ detail.rows.length }} 条样例</span></span>
+              <span>{{ detail.label }} · 共 {{ formatNumber(detail.total, 'count') }} 条<span v-if="detail.total > detail.rows.length">，展示 {{ formatNumber(detail.rows.length, 'count') }} 条样例</span></span>
               <span v-if="detail.context">{{ detail.context }}</span>
             </p>
             <AppDataTable :data="detail.rows" embedded size="small" row-key="id"

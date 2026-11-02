@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsApplyButton from '@/components/PageSettingsApplyButton.vue'
@@ -98,6 +99,10 @@ function persistRatios(ratios: number[]): void {
 }
 
 function updateRatio(index: number, value: number | undefined): void {
+  if (value != null && !Number.isInteger(value)) {
+    ElMessage.warning('高度百分比需为整数')
+    return
+  }
   persistRatios(redistributePercentages(index, value))
 }
 
@@ -163,7 +168,6 @@ watch(
             :min="1"
             :max="100 - (chartTypes.length - 1)"
             :step="1"
-            :precision="0"
             controls-position="right"
             :aria-label="`${chartTypeLabels[type]}${canApplyCurrentRatios === false ? '默认' : '已配置'}高度百分比`"
             @update:model-value="updateRatio(index, $event)"

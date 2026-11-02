@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { requestRuntimeText, taskRequestFields } from '../requestRuntime'
 
 describe('请求运行指标', () => {
+  it('来源与任务的累计、并发和状态数量统一分组', () => {
+    const runtime = { requests: 12345, failures: 1234, network_seconds: 0, wait_seconds: 0,
+      completed: 0, elapsed_seconds: 0, work_concurrency: 1234, configured_work_concurrency: 5678,
+      states: { network: 1234, write_queue: 12345 } }
+    expect(requestRuntimeText(runtime)).toContain('累计请求 12,345 次 · 技术失败 1,234 次')
+    const fields = taskRequestFields(runtime)
+    expect(fields.find(field => field.label === '工作并发')?.value).toBe('1,234（系统默认；本阶段配置 5,678）')
+    expect(fields.find(field => field.label === '工作状态')?.value).toContain('网络 1,234 · 等待额度 0 · 等待落库 12,345')
+  })
   it('历史任务缺指标时不补零', () => {
     expect(taskRequestFields()).toEqual([])
     expect(requestRuntimeText()).toContain('暂不可用')
@@ -10,7 +19,7 @@ describe('请求运行指标', () => {
   it('来源真实失败与耗时独立于探活结果展示', () => {
     const text = requestRuntimeText({ requests: 20, failures: 2, network_seconds: 12.5,
       wait_seconds: 3, active: 2, waiting: 1, observed_rate: 4.5 })
-    expect(text).toContain('网络在途 2 · 等待额度 1 · 近一分钟 4.5 次/秒')
+    expect(text).toContain('网络在途 2 · 等待额度 1 · 近一分钟 4.50 次/秒')
     expect(text).toContain('累计请求 20 次 · 技术失败 2 次 · 网络 12.5 秒 · 额度等待 3.0 秒')
   })
 

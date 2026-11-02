@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
@@ -359,7 +360,7 @@ const menuPageTitle = useMenuPageTitle()
         <!-- 左：角色列表 -->
         <div class="app-surface rm-col rm-left">
           <div class="rm-col-head">
-            <span class="rm-head-title">角色 <span class="mini">{{ roles.length }}</span></span>
+            <span class="rm-head-title">角色 <span class="mini">{{ formatNumber(roles.length, 'count') }}</span></span>
           </div>
           <AppScrollArea :as="AppAsyncRegion"
             class="rm-col-body"
@@ -384,7 +385,7 @@ const menuPageTitle = useMenuPageTitle()
                 {{ r.name }}
                 <SystemBuiltinTag v-if="r.is_builtin" />
               </div>
-              <div v-if="r.member_count != null" class="role-desc">关联用户 {{ r.member_count }} 名</div>
+              <div v-if="r.member_count != null" class="role-desc">关联用户 {{ formatNumber(r.member_count, 'count') }} 名</div>
             </div>
           </AppScrollArea>
         </div>
@@ -399,7 +400,7 @@ const menuPageTitle = useMenuPageTitle()
               </h2>
               <div class="rmeta">
                 <template v-if="activeRole">
-                  角色码 {{ activeRole.code }}<span v-if="activeRole.member_count != null"> · 关联用户 {{ activeRole.member_count }} 名</span>
+                  角色码 {{ activeRole.code }}<span v-if="activeRole.member_count != null"> · 关联用户 {{ formatNumber(activeRole.member_count, 'count') }} 名</span>
                   <span v-if="!activeIsSystemRole"> · {{ activeRole.tenant_assignable ? '允许租户分配' : '仅平台可分配' }}</span>
                   <span v-if="activeIsSystemRole" class="lock-note"> · 全量权限锁定，不可编辑</span>
                 </template>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatTradePrice } from '@/utils/tradeNumeric'
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import { computed, ref, watch } from 'vue'
@@ -16,7 +18,6 @@ import {
   type TradeDisciplineCheckin,
 } from '@/api/tradeDiscipline'
 import { getErrorMessage } from '@/utils/error'
-import { formatDecimalString } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
 import { actionSubtypeLabel } from '@/utils/tradeDisciplineRuleTypes'
 import { conditionFactLabel, holdingCountWarning } from '@/utils/tradeDisciplineConditions'
@@ -153,8 +154,8 @@ watch(
         <h4>履约结论</h4>
         <dl class="fact-grid">
           <div><dt>用户自评</dt><dd><el-tag :type="checkinAssessmentTagType(detail.assessment)" effect="plain">{{ checkinAssessmentLabel(detail.assessment) }}</el-tag></dd></div>
-          <div><dt>操作状态</dt><dd>{{ detail.no_operation ? '今日无操作' : `${detail.operations.length} 笔操作` }}</dd></div>
-          <div><dt>当日最大同时持仓数</dt><dd>{{ detail.peak_positions ?? '未记录' }}</dd></div>
+          <div><dt>操作状态</dt><dd>{{ detail.no_operation ? '今日无操作' : `${formatNumber(detail.operations.length, 'count')} 笔操作` }}</dd></div>
+          <div><dt>当日最大同时持仓数</dt><dd>{{ formatNumber(detail.peak_positions, 'count', { empty: '未记录' }) }}</dd></div>
           <div v-if="detail.assessment !== 'complied'"><dt>未履约事项</dt><dd data-testid="revision-violation-items">{{ checkinViolationItemsText(detail.violation_items) }}</dd></div>
           <div><dt>未履约原因</dt><dd>{{ detail.reason_name_snapshot || '—' }}</dd></div>
           <div><dt>记录时间</dt><dd>{{ formatDateTimeSeconds(detail.created_at || detail.amended_at || detail.submitted_at) }}</dd></div>
@@ -198,7 +199,7 @@ watch(
             <template #default="{ row }">{{ row.stock_rule_name || '—' }} / {{ row.action_rule_name || '—' }}</template>
           </AppTableColumn>
           <AppTableColumn label="成交事实" role="description">
-            <template #default="{ row }">价 {{ formatMoney(row.price, { digits: 4 }) }} · 量 {{ formatDecimalString(row.quantity, 4) }} · 额 {{ formatMoney(row.amount) }} · 费 {{ formatMoney(row.fee) }}</template>
+            <template #default="{ row }">价 {{ formatTradePrice(row.price) }} · 量 {{ formatNumber(row.quantity, 'quantity') }} · 额 {{ formatMoney(row.amount) }} · 费 {{ formatMoney(row.fee) }}</template>
           </AppTableColumn>
           <AppTableColumn label="选股事实" role="description">
             <template #default="{ row }">
@@ -223,7 +224,7 @@ watch(
 
       <section v-if="ruleVersion" class="detail-card" data-testid="revision-rule-snapshot">
         <h4>规则版本快照</h4>
-        <p>当日最大同时持仓 {{ detail.peak_positions ?? '未记录' }} 只 · 规则上限 {{ ruleVersion.max_positions ?? '不限' }}</p>
+        <p>当日最大同时持仓 {{ formatNumber(detail.peak_positions, 'count', { empty: '未记录' }) }} 只 · 规则上限 {{ formatNumber(ruleVersion.max_positions, 'count', { empty: '不限' }) }}</p>
         <p v-if="holdingCountWarning(ruleVersion.max_positions, detail.peak_positions)" class="app-caption-text">{{ holdingCountWarning(ruleVersion.max_positions, detail.peak_positions) }}</p>
         <dl class="fact-grid">
           <div><dt>规则名称</dt><dd>{{ ruleVersion.name }}</dd></div>

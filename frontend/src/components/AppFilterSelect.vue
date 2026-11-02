@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppSelect from '@/components/AppSelect.vue'
 import AppMultiSelect, { type AppMultiSelectOption } from '@/components/AppMultiSelect.vue'
 import { computed } from 'vue'
@@ -131,7 +132,7 @@ function onChange(value: string[] | string) {
         <span class="app-filter-select__selection-summary">{{ allSelectedLabel }}</span>
       </template>
       <template v-else-if="multiple && displayMode === 'count' && hasSelection" #tag>
-        <span class="app-filter-select__selection-summary">已选 {{ selectedCount }}</span>
+        <span class="app-filter-select__selection-summary">已选 {{ formatNumber(selectedCount, 'count') }}</span>
       </template>
       <el-option
         v-for="item in multiple ? [] : options"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
@@ -330,7 +331,7 @@ const menuPageTitle = useMenuPageTitle()
         <div class="page-head">
           <div>
             <h2 class="app-page-title">{{ menuPageTitle }}</h2>
-            <p class="page-subtitle">管理颜色、圆角、边框与阴影等全局视觉预设（共 {{ presetCount }} 套）。</p>
+            <p class="page-subtitle">管理颜色、圆角、边框与阴影等全局视觉预设（共 {{ formatNumber(presetCount, 'count') }} 套）。</p>
           </div>
           <AppControlRow class="page-head-actions">
             <el-button @click="importExportVisible = true">导入导出</el-button>

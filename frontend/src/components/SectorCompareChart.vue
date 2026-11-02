@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber, displayDirection } from '@/utils/numberFormat'
 // 板块对比图：多板块同图对比。趋势类指标（累计/单日/N 日滚动涨跌幅）以折线叠加，各板块指数
 // 量级差异大（几百~几千点），统一换算成涨跌幅（%）后同图比较；截面类指标（最新资金净流入、
 // 所选行情日累计成员涨跌）改用柱状对比。趋势线统一按市场交易日对齐、停牌日前向延续，并从共同有效
@@ -29,7 +30,7 @@ import {
   type PriceCompareSeries,
 } from '@/utils/marketCompare'
 import { formatMoney } from '@/utils/money'
-import { formatMarketPercent } from '@/utils/marketValue'
+import { formatMarketPercent, formatMarketPercentDetail, formatPercentPointsDetail } from '@/utils/marketValue'
 import { marketAxisLabelColor } from '@/components/chartAxisLabel'
 
 // 单个板块的序列：code/name 标识 + 该板块的日线 bars（升序）
@@ -146,22 +147,20 @@ function renderLine() {
       const content = rows.map((item: any) => {
         const value = typeof item.value === 'number' ? item.value : Number(item.value)
         const valid = item.value != null && Number.isFinite(value)
-        const color = !valid || value === 0
-          ? changeColors.neutral
-          : value > 0 ? changeColors.up : changeColors.down
-        const valueText = valid ? formatMarketPercent(value) : '--'
+        const color = displayDirection(valid ? value : null) === 1 ? changeColors.up
+          : displayDirection(valid ? value : null) === -1 ? changeColors.down : changeColors.neutral
+        const valueText = valid ? formatMarketPercentDetail(value) : '—'
         const isBenchmark = item.seriesName === benchmarkName
         const benchmarkValue = benchmarkData?.[Number(item.dataIndex)]
         const excess = valid && !isBenchmark && typeof benchmarkValue === 'number'
-          ? +(value - benchmarkValue).toFixed(2)
+          ? value - benchmarkValue
           : null
-        const excessColor = excess == null || excess === 0
-          ? t.label
-          : excess > 0 ? changeColors.up : changeColors.down
+        const excessColor = displayDirection(excess) === 1 ? changeColors.up
+          : displayDirection(excess) === -1 ? changeColors.down : t.label
         return chartTooltipRowHtml(
           `<span>${item.marker ?? ''}${escapeChartHtml(item.seriesName)}</span>`,
           `<span style="text-align:right"><strong style="color:${color}">${valueText}</strong>`
-            + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${formatMarketPercent(excess)}</small>`)
+            + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${formatPercentPointsDetail(excess)}</small>`)
             + '</span>',
         )
       }).join('')
@@ -222,12 +221,12 @@ function renderBar() {
         const content = rows.map((item: any) => {
           const value = typeof item.value === 'number' ? item.value : Number(item.value)
           const valid = item.value != null && Number.isFinite(value)
-          const color = !valid || value === 0 ? t.text : value > 0 ? upColor : downColor
+          const color = displayDirection(valid ? value : null) === 1 ? upColor : displayDirection(valid ? value : null) === -1 ? downColor : t.text
           const valueText = valid
             ? (props.metric === 'inflow'
               ? `${formatMoney(value, { forceSign: true })}${unit}`
-              : `${value > 0 ? '+' : ''}${value.toFixed(2)}${unit}`)
-            : '--'
+              : unit === '%' ? formatMarketPercentDetail(value) : `${formatNumber(value, 'count', { forceSign: true })}${unit}`)
+            : '—'
           return chartTooltipRowHtml(
             `<span>${item.marker ?? ''}${escapeChartHtml(item.seriesName)}</span>`,
             `<span style="text-align:right"><strong style="color:${color}">${valueText}</strong></span>`,
@@ -254,7 +253,7 @@ function renderBar() {
           ? (value: number) => `${formatMoney(value)}${unit}`
           : unit === '%'
             ? formatMarketPercent
-            : (value: number) => `${value}${unit}`,
+            : (value: number) => `${formatNumber(value, 'count')}${unit}`,
       },
       splitLine: { lineStyle: { color: t.split } },
     },

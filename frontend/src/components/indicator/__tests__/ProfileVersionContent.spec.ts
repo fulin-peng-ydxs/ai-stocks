@@ -41,8 +41,8 @@ describe('方案历史版本业务展示', () => {
     expect(wrapper.text()).toContain('任一启用条件满足')
     expect(wrapper.text()).toContain('等于 是')
     expect(wrapper.text()).toContain('未设置条件')
-    expect(wrapper.text()).toContain('止盈0%')
-    expect(wrapper.text()).toContain('止损5%')
+    expect(wrapper.text()).toContain('止盈0.00%')
+    expect(wrapper.text()).toContain('止损5.00%')
     expect(wrapper.text()).toContain('最长持有10 个交易日')
     await wrapper.get('button.app-summary-disclosure-card__summary').trigger('click')
     await wrapper.setProps({ version: score })
@@ -62,6 +62,6 @@ describe('方案历史版本业务展示', () => {
     const version = { ...score, items: [{ ...score.items[0], weight: 0.29, params: { period: 0.000000001 } }] }
     const row = scoreVersionRows(version, definitions)[0]
     expect(row.params).toContain('0.000000001')
-    expect(row.weight).toBe('29%')
+    expect(row.weight).toBe('29.00%')
   })
 })

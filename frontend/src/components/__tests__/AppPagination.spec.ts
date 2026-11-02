@@ -22,13 +22,14 @@ const ElPaginationStub = defineComponent({
     layout: { type: String, required: true },
   },
   emits: ['current-change', 'size-change'],
-  setup(props, { emit }) {
+  setup(props, { emit, slots }) {
     return () => h('div', {
       class: 'el-pagination',
       'data-layout': props.layout,
       'data-pager-count': String(props.pagerCount),
       'data-size': props.size,
     }, [
+      props.layout.includes('slot') ? slots.default?.() : null,
       h('button', { class: 'page-change', onClick: () => emit('current-change', 2) }, 'page'),
       h('button', { class: 'size-change', onClick: () => emit('size-change', 100) }, 'size'),
     ])
@@ -55,7 +56,7 @@ beforeEach(() => {
     get() {
       if (
         this.classList.contains('el-pagination')
-        && this.getAttribute('data-layout') === 'total, sizes, prev, pager, next'
+        && this.getAttribute('data-layout') === 'slot, sizes, prev, pager, next'
       ) {
         return fullLayoutScrollWidth
       }
@@ -89,8 +90,9 @@ describe('AppPagination', () => {
     await nextTick()
 
     const pagination = wrapper.get('.el-pagination')
-    expect(pagination.attributes('data-layout')).toBe('total, sizes, prev, pager, next')
+    expect(pagination.attributes('data-layout')).toBe('slot, sizes, prev, pager, next')
     expect(pagination.attributes('data-pager-count')).toBe('7')
+    expect(wrapper.text()).toContain('共 5,018 条')
     expect(pagination.attributes('data-size')).toBe('default')
   })
 
@@ -100,7 +102,7 @@ describe('AppPagination', () => {
     await nextTick()
 
     const pagination = wrapper.get('.el-pagination')
-    expect(pagination.attributes('data-layout')).toBe('total, prev, pager, next')
+    expect(pagination.attributes('data-layout')).toBe('slot, prev, pager, next')
     expect(pagination.attributes('data-pager-count')).toBe('5')
     expect(pagination.attributes('data-size')).toBe('small')
   })
@@ -115,7 +117,7 @@ describe('AppPagination', () => {
     availableWidth = 700
     resizeCallback?.([], {} as ResizeObserver)
     await nextTick()
-    expect(wrapper.get('.el-pagination').attributes('data-layout')).toBe('total, sizes, prev, pager, next')
+    expect(wrapper.get('.el-pagination').attributes('data-layout')).toBe('slot, sizes, prev, pager, next')
   })
 
   it('内容长度超过容器时继续降级，不只依赖固定断点猜测宽度', async () => {
@@ -124,7 +126,7 @@ describe('AppPagination', () => {
     await nextTick()
     await nextTick()
 
-    expect(wrapper.get('.el-pagination').attributes('data-layout')).toBe('total, prev, pager, next')
+    expect(wrapper.get('.el-pagination').attributes('data-layout')).toBe('slot, prev, pager, next')
     expect(wrapper.get('.el-pagination').attributes('data-pager-count')).toBe('5')
   })
 

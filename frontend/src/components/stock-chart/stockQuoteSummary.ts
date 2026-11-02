@@ -7,6 +7,8 @@ export interface StockQuoteMetric {
   color?: string
   /** 常驻摘要通过 HelpHint 图标承接说明；说明正文不参与字符容量计算。 */
   hint?: string
+  /** 展示舍入为零的非零值，在详情和悬浮中保留原精度。 */
+  rawPrecision?: string
 }
 export interface StockQuoteHero extends StockQuoteMetric { details?: StockQuoteMetric[] }
 export interface StockQuoteSupplement extends StockQuoteMetric { details?: StockQuoteMetric[] }
@@ -154,7 +156,7 @@ export function stockQuoteSummaryHtml(
       const metric = column[rowIndex]
       if (!metric) return '<td></td><td></td>'
       return `<th style="padding:0 0 0 ${scaledPx(6)};text-align:left;color:${palette.label};font-weight:var(--app-font-weight-regular);white-space:nowrap"><span style="${widthCss(widths?.columns[columnIndex]?.label)}">${metric.label}</span></th>`
-        + `<td style="padding:0 0 0 ${scaledPx(6)};text-align:right;color:${metric.color ?? colorOf(metric.tone, palette)};white-space:nowrap"><span style="${widthCss(widths?.columns[columnIndex]?.value)}">${metric.value}</span></td>`
+        + `<td style="padding:0 0 0 ${scaledPx(6)};text-align:right;color:${metric.color ?? colorOf(metric.tone, palette)};white-space:nowrap"><span style="${widthCss(widths?.columns[columnIndex]?.value)}">${metric.value}</span>${metric.rawPrecision ? ` <small>${metric.rawPrecision}</small>` : ''}</td>`
     }).join('')
     return `<tr style="height:${scaledPx(16)}">${hero}${metrics}</tr>`
   }).join('')

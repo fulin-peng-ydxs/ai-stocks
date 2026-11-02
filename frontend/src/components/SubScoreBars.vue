@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import { computed } from 'vue'
 import { SCORE_DIMS, type SubScores } from '@/api/board'
 import { useStatusColorPalette } from './chartTheme'
@@ -19,8 +20,8 @@ function heatColor(r: number): string {
 
 const cells = computed(() =>
   SCORE_DIMS.map((d) => {
-    const val = props.sub ? Number(props.sub[d.key] ?? 0) : 0
-    const ratio = d.max ? val / d.max : 0
+    const val = props.sub?.[d.key] ?? null
+    const ratio = d.max ? (val ?? 0) / d.max : 0
     return { ...d, val, ratio, color: heatColor(ratio) }
   }),
 )
@@ -33,7 +34,7 @@ const cells = computed(() =>
         <div v-for="c in cells" :key="c.key" class="tip-row">
           <span class="tip-dot" :style="{ background: c.color }" />
           <span class="tip-label">{{ c.label }}</span>
-          <span class="tip-val">{{ c.val }} / {{ c.max }}</span>
+          <span class="tip-val">{{ formatNumber(c.val, 'score') }} / {{ formatNumber(c.max, 'score') }}</span>
         </div>
       </div>
     </template>

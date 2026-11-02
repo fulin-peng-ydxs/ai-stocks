@@ -101,7 +101,7 @@ function computeRelativeValues(closes: readonly (number | null)[]): (number | nu
   const base = firstIndex >= 0 ? closes[firstIndex] : null
   return base == null || base === 0
     ? closes.map(() => null)
-    : closes.map((close) => close == null ? null : +((close / base - 1) * 100).toFixed(2))
+    : closes.map((close) => close == null ? null : (close / base - 1) * 100)
 }
 
 export function alignPriceComparison(
@@ -166,5 +166,5 @@ export function priceReturn(
   const first = closes[0]
   const last = closes[closes.length - 1]
   if (first == null || last == null || first === 0) return null
-  return +((last / first - 1) * 100).toFixed(2)
+  return (last / first - 1) * 100
 }

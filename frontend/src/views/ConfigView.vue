@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
+import { formatPercent } from '@/utils/marketValue'
 import AppForm from '@/components/AppForm.vue'
 import { REQUEST_CONFIG_FINGERPRINT, requestRuntimeText } from '@/utils/requestRuntime'
 import AppTableCard from '@/components/AppTableCard.vue'
@@ -650,7 +652,7 @@ async function toggleEnabled(row: IndicatorDef) {
 async function removeDef(row: IndicatorDef) {
   const refs = await getIndicatorReferences(row.key)
   if (refs.count) {
-    ElMessage.warning(`该指标被 ${refs.count} 个方案版本引用，并关联 ${refs.backtest_count} 条回测，不能删除`)
+    ElMessage.warning(`该指标被 ${formatNumber(refs.count, 'count')} 个方案版本引用，并关联 ${formatNumber(refs.backtest_count, 'count')} 条回测，不能删除`)
     return
   }
   try {
@@ -1892,7 +1894,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                   @publish="publishScoreProfile"
                   @copy="copyCurrentScoreProfile"
                 />
-                <span class="wsum" :class="{ bad: weightSum !== 100 }">权重合计 {{ weightSum }}%</span>
+                <span class="wsum" :class="{ bad: weightSum !== 100 }">权重合计 {{ formatPercent(weightSum, { input: 'percent' }) }}</span>
                 <div class="spacer" />
                 <el-button v-permission="'score-profile:save'" :disabled="profileReadonly || !scoreFormChanged" :loading="saving" type="primary" @click="save">保存</el-button>
                 <el-button v-permission="'score-profile:delete'" v-if="curId && !isNew && !profileReadonly" type="danger" plain @click="remove">删除</el-button>
@@ -2033,7 +2035,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                           :disabled="profileReadonly || !itemEnabled(row)"
                           @input="(v: number) => onWeightChange($index, v)"
                         />
-                        <span class="wval">{{ Math.round(row.weight * 100) }}%</span>
+                        <span class="wval">{{ formatPercent(row.weight, { input: 'ratio' }) }}</span>
                       </div>
                     </template>
                   </AppTableColumn>
@@ -2056,7 +2058,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <!-- 试算 -->
             <AppControlRow class="run-head" size="default" data-testid="score-run-controls">
               <span class="run-title">试算榜单</span>
-              <el-tag v-if="runRows.length" type="info" size="small" round>共 {{ runRows.length }} 只</el-tag>
+              <el-tag v-if="runRows.length" type="info" size="small" round>共 {{ formatNumber(runRows.length, 'count') }} 只</el-tag>
               <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" default-latest />
               <el-button v-permission="'score:run'" :loading="running" @click="tryRun">
                 <template #icon><el-icon><VideoPlay /></el-icon></template>
@@ -2080,7 +2082,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               :rows="displayRunRows"
               :columns="scoreRunColumns"
               :title="runDate || '最新交易日'"
-              :meta="`${runRows.length} 只`"
+              :meta="`${formatNumber(runRows.length, 'count')} 只`"
               :run-date="runDate"
               :loading="running"
               :score-keys="subKeys"
@@ -2622,7 +2624,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <div class="ver-head">
           <b>v{{ v.version }}</b>
           <span class="hint">{{ formatDateTimeMinutes(v.saved_at) }}</span>
-          <span class="hint">{{ v.items.length }} 项指标</span>
+          <span class="hint">{{ formatNumber(v.items.length, 'count') }} 项指标</span>
           <div class="spacer" />
           <AppRowActions :actions="scoreVersionRowActions(v)" :inline-limit="1" />
         </div>
@@ -2801,7 +2803,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             size="compact"
           />
           <div v-if="defReferences?.count" class="indicator-reference-summary">
-            当前被 {{ defReferences.count }} 个方案版本引用，关联 {{ defReferences.backtest_count }} 条回测。
+            当前被 {{ formatNumber(defReferences.count, 'count') }} 个方案版本引用，关联 {{ formatNumber(defReferences.backtest_count, 'count') }} 条回测。
           </div>
         </section>
       </AppForm>

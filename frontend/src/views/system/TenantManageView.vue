@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
@@ -401,7 +402,7 @@ const menuPageTitle = useMenuPageTitle()
             <template #default="{ row }">{{ row.admin_account || '—' }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('userCount')" label="用户数" prop="userCount" role="number" sortable="custom">
-            <template #default="{ row }">{{ row.user_count ?? 0 }}</template>
+            <template #default="{ row }">{{ formatNumber(row.user_count, 'count') }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('created')" label="创建时间" prop="created" sortable="custom">
             <template #default="{ row }">{{ formatDateTimeSeconds(row.created_at) }}</template>

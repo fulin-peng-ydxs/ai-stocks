@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
@@ -744,7 +745,7 @@ function exportCsv() {
     h.rank ?? '', h.code, h.name ?? '', ...(showBoard ? [h.board ?? ''] : []),
     ...relatedColumns.flatMap((column) => relatedBoardExportValues(h.related_boards, column.type)),
     h.total_score ?? '', h.grade ?? '',
-    ...subScoreKeys.map((key) => Math.round(h.sub_scores[key] ?? 0)), h.score_status,
+    ...subScoreKeys.map((key) => h.sub_scores[key] ?? ''), h.score_status,
   ])
   downloadCsv(`筛选结果_${result.value.date}.csv`, headers, data)
 }
@@ -1031,7 +1032,7 @@ const menuPageTitle = useMenuPageTitle()
           <AppFormHelp>含表达式/带参指标需全市场逐股求值，约十几秒</AppFormHelp>
           <!-- ready 摘要：结果可回溯——命中数、是否排除 ST、按哪个只读方案口径跑的；交易日由日期选择器展示，不重复 -->
           <div v-if="result" class="run-meta">
-            共 <b>{{ result.count }}</b> 只 · 评分方案「{{ result.score_profile_name }}」v{{ result.score_profile_version }}
+            共 <b>{{ formatNumber(result.count, 'count') }}</b> 只 · 评分方案「{{ result.score_profile_name }}」v{{ result.score_profile_version }}
             · {{ result.include_st ? '全市场排名含 ST' : '全市场排名不含 ST' }}
             · {{ result.exclude_st ? '筛选结果已排除 ST' : '筛选结果保留 ST' }}
             <template v-if="profileReadonly && loadedProfile"> · 按筛选方案「{{ loadedProfile.name }}」运行</template>
@@ -1060,7 +1061,7 @@ const menuPageTitle = useMenuPageTitle()
               :rows="displayHits"
               :columns="resultColumns"
               :title="runDate || '最新交易日'"
-              :meta="`${result.count} 只候选`"
+              :meta="`${formatNumber(result.count, 'count')} 只候选`"
               :run-date="runDate"
               :loading="loading"
               :border="tableBorder('result')"

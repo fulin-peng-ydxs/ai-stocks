@@ -106,10 +106,10 @@ describe('buildKlineQuoteSummary', () => {
       { label: '开盘', value: '9.80', tone: 'down' },
       { label: '最高', value: '10.40', tone: 'up' },
       { label: '最低', value: '9.50', tone: 'down' },
-      { label: '涨跌幅', value: '+1.01%', tone: 'up' },
-      { label: '振幅', value: '9.09%' },
-      { label: '换手率', value: '1.00%' },
-      { label: '成交量', value: '1000手' },
+      { label: '涨跌幅', value: '+1.01%', tone: 'up', rawPrecision: undefined },
+      { label: '振幅', value: '9.09%', rawPrecision: undefined },
+      { label: '换手率', value: '1.00%', rawPrecision: undefined },
+      { label: '成交量', value: '1,000 手' },
       { label: '成交额', value: '—' },
     ])
   })
@@ -580,8 +580,8 @@ describe('workspaceOptions', () => {
       '9.50',
       '+1.01%',
       '9.09%',
-      '1000手',
-      '100万',
+      '1,000 手',
+      '100.00 万元',
       '1.00%',
     ]) {
       expect(content).toContain(`>${value}<`)
@@ -773,4 +773,15 @@ describe('workspaceOptions', () => {
     expect(second[1]).toBeCloseTo(0.25)
     expect(second[2]).toBeCloseTo(0.15)
   })
+})
+
+it('极小行情涨跌在详情与悬浮中提供原值，零主值保持中性', () => {
+  const summary = buildKlineQuoteSummary({
+    open: 10, high: 10.000001, low: 10, close: 10.000001, preClose: 10,
+    volume: 1, amount: 1, turnoverRate: 0.000001,
+  }, { showChangeDetail: true })
+  expect(summary.hero.tone).toBe('neutral')
+  expect(summary.hero.details?.[0]).toMatchObject({ value: '0.00', tone: 'neutral' })
+  expect(summary.metrics[3]).toMatchObject({ value: '0.00%', tone: 'neutral', rawPrecision: expect.stringContaining('原始值') })
+  expect(summary.metrics[5]).toMatchObject({ value: '0.00%', rawPrecision: '原始值 0.000001%' })
 })

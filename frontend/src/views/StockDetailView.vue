@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatPercent } from '@/utils/marketValue'
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -52,7 +54,7 @@ import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
 import StockGroupFavoriteButton from '@/components/StockGroupFavoriteButton.vue'
 import StockBoardMembershipPanel from '@/components/StockBoardMembershipPanel.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
-import { MACD_INDICATOR_FIELDS } from '@/components/stock-chart/indicatorFields'
+import { MACD_INDICATOR_FIELDS, formatIndicatorValue } from '@/components/stock-chart/indicatorFields'
 import StockIntradayDialog from '@/components/stock-chart/StockIntradayDialog.vue'
 import StockQuoteSummary from '@/components/stock-chart/StockQuoteSummary.vue'
 import {
@@ -393,8 +395,8 @@ function buildHeaderSummary(
       {
         label: '流通股', value: formatShares(bar ? bar.float_share : quote.float_share, '—'),
       },
-      { label: '量比', value: volumeRatio == null ? '—' : volumeRatio.toFixed(2) },
-      { label: '市盈率', value: !isLatestDate || quote.pe_ttm == null ? '—' : quote.pe_ttm.toFixed(2) },
+      { label: '量比', value: formatNumber(volumeRatio, 'ratio') },
+      { label: '市盈率', value: formatNumber(isLatestDate ? quote.pe_ttm : null, 'ratio') },
     ],
   })
 }
@@ -471,12 +473,6 @@ const macdState = computed<MacdPanelState>(() => {
   return hasCompleteMacd.value ? 'ready' : 'insufficient'
 })
 
-function fmt(v: unknown): string {
-  if (v === null || v === undefined) return '—'
-  if (typeof v === 'boolean') return v ? '是' : '否'
-  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2)
-  return String(v)
-}
 // ── 买卖指标方案评估（v2.0：替代固定买点引擎）──
 // R3/R5/R7/R10：方案选择统一走 AssetProfileSelect——下拉只加载「我的」source=mine 纯 owner，
 // 「搜索」入口打开共享搜索抽屉（系统内置/租户公开/全体公开）；「加载查看」注入临时只读项
@@ -1183,8 +1179,8 @@ onBeforeUnmount(() => {
           >
             <span class="nav-label">
               {{ stockSet.label }}
-              <span v-if="inSet" class="nav-pos">{{ setIndex + 1 }}/{{ collectionTotal }}</span>
-              <span v-else class="nav-pos muted">不在集合内 · 共 {{ collectionTotal }} 只</span>
+              <span v-if="inSet" class="nav-pos">{{ setIndex + 1 }}/{{ formatNumber(collectionTotal, 'count') }}</span>
+              <span v-else class="nav-pos muted">不在集合内 · 共 {{ formatNumber(collectionTotal, 'count') }} 只</span>
             </span>
             <el-button-group class="nav-btns">
               <el-button :loading="setLoading" :disabled="!prevCode && !canLoadPrev" @click="gotoNeighbor(-1)">
@@ -1256,13 +1252,13 @@ onBeforeUnmount(() => {
                   @close.stop="removeSelectedGroup(g.id)"
                 >{{ g.name }}</el-tag>
                 <el-tag type="info" v-if="hiddenSelectedGroupCount" class="group-select-tag more" size="small">
-                  +{{ hiddenSelectedGroupCount }}
+                  +{{ formatNumber(hiddenSelectedGroupCount, 'count') }}
                 </el-tag>
               </template>
               <el-option v-for="g in groups" :key="g.id" :value="g.id" :label="g.name">
                 <span class="app-inline-info app-inline-info--fill app-inline-info--nowrap">
                   <span class="color-dot" :style="{ backgroundColor: g.color }" />
-                  <span class="app-option-label">{{ g.name }}（{{ g.member_count }}）</span>
+                  <span class="app-option-label">{{ g.name }}（{{ formatNumber(g.member_count, 'count') }}）</span>
                 </span>
               </el-option>
             </AppSelect>
@@ -1392,7 +1388,7 @@ onBeforeUnmount(() => {
                   v-for="f in visibleIndicatorFields"
                   :key="f.key"
                   :label="f.label"
-                  :value="latest ? fmt(latest[f.key]) : null"
+                  :value="latest ? formatIndicatorValue(latest[f.key], f.key) : null"
                 />
               </AppDetailFields>
               <p class="note">注：RS 相对强度为全市场横截面指标，个股单独查询不计算；请在策略筛选/每日榜单中查看。</p>
@@ -1478,9 +1474,9 @@ onBeforeUnmount(() => {
                 </div>
                 <div v-if="tradeEval.backstop && (tradeEval.backstop.take_profit || tradeEval.backstop.stop_loss || tradeEval.backstop.max_hold_days)" class="backstop">
                   兜底：
-                  <span v-if="tradeEval.backstop.take_profit">止盈 {{ (tradeEval.backstop.take_profit * 100).toFixed(0) }}%</span>
-                  <span v-if="tradeEval.backstop.stop_loss"> · 止损 {{ (tradeEval.backstop.stop_loss * 100).toFixed(0) }}%</span>
-                  <span v-if="tradeEval.backstop.max_hold_days"> · 最多持 {{ tradeEval.backstop.max_hold_days }} 日</span>
+                  <span v-if="tradeEval.backstop.take_profit">止盈 {{ formatPercent(tradeEval.backstop.take_profit, { input: 'ratio' }) }}</span>
+                  <span v-if="tradeEval.backstop.stop_loss"> · 止损 {{ formatPercent(tradeEval.backstop.stop_loss, { input: 'ratio' }) }}</span>
+                  <span v-if="tradeEval.backstop.max_hold_days"> · 最多持 {{ formatNumber(tradeEval.backstop.max_hold_days, 'count') }} 日</span>
                 </div>
               </div>
             </div>

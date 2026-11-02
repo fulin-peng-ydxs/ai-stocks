@@ -587,7 +587,7 @@ describe('账户日结简化填报', () => {
     try {
       await flushPromises()
       expect(wrapper.findAll('th.is-right').map(node => node.text())).toEqual([
-        '操作数', '买入额', '卖出额', '持仓峰值', '修订',
+        '操作数', '买入额元', '卖出额元', '持仓峰值', '修订',
       ])
       expect(wrapper.find('.app-table-column--action').exists()).toBe(false)
       await wrapper.findAll('button').find(node => node.text() === '2026-10-23')!.trigger('click')

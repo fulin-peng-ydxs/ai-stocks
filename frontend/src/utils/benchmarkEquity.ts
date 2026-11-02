@@ -11,7 +11,7 @@ export function normalizeBenchmarkEquity(bars: SectorBar[], initCap: number): (n
   const base = bars.find((b) => Number.isFinite(b.close) && b.close !== 0)?.close
   if (base == null || base === 0) return bars.map(() => null)
   return bars.map((b) =>
-    Number.isFinite(b.close) && b.close !== 0 ? +(initCap * (b.close / base)).toFixed(2) : null,
+    Number.isFinite(b.close) && b.close !== 0 ? initCap * (b.close / base) : null,
   )
 }
 

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
+import { formatPercent } from '@/utils/marketValue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { computed, ref } from 'vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -141,7 +143,7 @@ const unavailableDescription = computed(() => {
 const pendingDescription = computed(() => {
   const task = props.result?.task
   const progress = typeof task?.progress === 'number'
-    ? `当前进度 ${Math.round(task.progress * 100)}%`
+    ? `当前进度 ${formatPercent(task.progress, { input: 'ratio', completion: true })}`
     : ''
   return [
     `天梯快照正在计算：${businessMessage(task?.message, '正在校验行情完整性并生成快照')}`,
@@ -198,9 +200,9 @@ function resetFilters(): void {
     <div v-if="result?.has_snapshot && !error && !forbidden && (!loading || tradeDate === result.trade_date)" class="limit-ladder__overview" :aria-busy="loading">
       <span v-if="loading" role="status" class="muted">正在更新，热点数量暂为上次结果</span>
       <section v-if="!loading" class="limit-ladder__summary" aria-label="天梯摘要">
-        <div><span>当前股票</span><strong class="is-total" data-testid="limit-ladder-summary-total">{{ result.summary.stock_count }}</strong><small>只</small></div>
+        <div><span>当前股票</span><strong class="is-total" data-testid="limit-ladder-summary-total">{{ formatNumber(result.summary.stock_count, 'count') }}</strong><small>只</small></div>
         <div><span>最高板位</span><strong class="is-highest">{{ result.summary.highest_board ?? '—' }}</strong><small>板</small></div>
-        <div><span>首板股票</span><strong class="is-first">{{ result.summary.first_board_count }}</strong><small>只</small></div>
+        <div><span>首板股票</span><strong class="is-first">{{ formatNumber(result.summary.first_board_count, 'count') }}</strong><small>只</small></div>
         <div v-if="hasApproximateSt" class="limit-ladder__summary-meta"><el-tag type="warning" effect="plain" size="small">历史 ST 含近似口径</el-tag></div>
         <el-button
           class="limit-ladder__hotspots-toggle"
@@ -258,7 +260,7 @@ function resetFilters(): void {
         <AppStateBlock v-else-if="!result.layers.length" data-testid="limit-ladder-state" state="empty"><div class="limit-ladder__empty-copy"><strong>当日无涨停股票</strong><span>这是合法的空快照，不代表加载失败。</span></div></AppStateBlock>
         <div v-else class="limit-ladder__layers" aria-label="连板天梯分层">
           <section v-for="layer in sortedLayers" :key="layer.consecutive_days" class="limit-ladder__layer" :data-testid="`limit-ladder-layer-${layer.consecutive_days}`">
-            <header class="limit-ladder__layer-head"><span>{{ layer.consecutive_days }}B</span><strong>{{ layer.consecutive_days===1?'首板':`${layer.consecutive_days} 连板` }}</strong><small>{{ layer.stock_count }} 只</small></header>
+            <header class="limit-ladder__layer-head"><span>{{ formatNumber(layer.consecutive_days, 'count') }}B</span><strong>{{ layer.consecutive_days===1?'首板':`${layer.consecutive_days} 连板` }}</strong><small>{{ formatNumber(layer.stock_count, 'count') }} 只</small></header>
             <div class="limit-ladder__cards"><LimitLadderCard v-for="stock in layer.stocks" :key="stock.code" :stock="stock" :window="filters.window" :can-view-sectors="canViewSectors" :selected="stock.code === selectedCode" :return-path="returnPath" @select="$emit('select',$event)" /></div>
           </section>
         </div>

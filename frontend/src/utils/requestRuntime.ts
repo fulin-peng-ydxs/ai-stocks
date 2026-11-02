@@ -1,3 +1,4 @@
+import { formatNumber } from '@/utils/numberFormat'
 /** 来源与任务共用的运行统计口径；缺少旧指标时保留未知，不补零伪装已测量。 */
 export interface RequestRuntime {
   requests: number
@@ -34,7 +35,7 @@ export interface TaskRequestRuntime {
 
 export function requestRuntimeText(runtime?: RequestRuntime | null): string {
   if (!runtime) return '运行指标暂不可用'
-  return `网络在途 ${runtime.active ?? 0} · 等待额度 ${runtime.waiting ?? 0} · 近一分钟 ${(runtime.observed_rate ?? 0).toFixed(1)} 次/秒；累计请求 ${runtime.requests} 次 · 技术失败 ${runtime.failures} 次 · 网络 ${runtime.network_seconds.toFixed(1)} 秒 · 额度等待 ${runtime.wait_seconds.toFixed(1)} 秒`
+  return `网络在途 ${formatNumber(runtime.active, 'count')} · 等待额度 ${formatNumber(runtime.waiting, 'count')} · 近一分钟 ${formatNumber(runtime.observed_rate, 'decimal')} 次/秒；累计请求 ${formatNumber(runtime.requests, 'count')} 次 · 技术失败 ${formatNumber(runtime.failures, 'count')} 次 · 网络 ${formatNumber(runtime.network_seconds, 'seconds')} 秒 · 额度等待 ${formatNumber(runtime.wait_seconds, 'seconds')} 秒`
 }
 
 /** 来源清单与任务详情共用的诊断说明，避免把内容摘要误认为需要填写的配置 ID。 */
@@ -55,16 +56,16 @@ export function taskRequestFields(runtime?: TaskRequestRuntime | null): TaskRequ
   if (!runtime) return []
   const states = runtime.states ?? {}
   const configured = runtime.configured_work_concurrency == null
-    ? `启动时默认 ${runtime.default_concurrency ?? '未记录'}`
-    : `本阶段配置 ${runtime.configured_work_concurrency}`
+    ? `启动时默认 ${formatNumber(runtime.default_concurrency, 'count', { empty: '未记录' })}`
+    : `本阶段配置 ${formatNumber(runtime.configured_work_concurrency, 'count')}`
   return [
-    { label: '工作并发', value: runtime.work_concurrency == null ? '未记录' : `${runtime.work_concurrency}（${runtime.concurrency_origin === 'task' ? '任务覆盖' : '系统默认'}；${configured}）`, help: '本阶段有效工作单元上限，受待采标的数限制；实际网络在途还受来源共享额度约束。' },
-    { label: '工作状态', value: `网络 ${states.network ?? 0} · 等待额度 ${states.source_wait ?? 0} · 等待落库 ${states.write_queue ?? 0} · 处理 ${states.processing ?? 0} · 重试退避 ${states.retry_wait ?? 0}` },
-    { label: '真实请求', value: `${runtime.requests} 次，技术失败 ${runtime.failures} 次` },
-    { label: '累计网络耗时', value: `${runtime.network_seconds.toFixed(1)} 秒` },
-    { label: '累计额度等待', value: `${runtime.wait_seconds.toFixed(1)} 秒` },
-    { label: '累计重试退避', value: runtime.retry_wait_seconds == null ? '未记录' : `${runtime.retry_wait_seconds.toFixed(1)} 秒`, help: '失败或空响应后的重试间隔，独立于网络和来源额度等待；并发时按线程累计，不等于任务墙钟耗时。' },
-    { label: '数据库累计耗时', value: `等锁 ${(runtime.db_wait_seconds ?? 0).toFixed(1)} 秒 · 执行 ${(runtime.db_execute_seconds ?? 0).toFixed(1)} 秒 · ${runtime.db_queries ?? 0} 次` },
+    { label: '工作并发', value: runtime.work_concurrency == null ? '未记录' : `${formatNumber(runtime.work_concurrency, 'count')}（${runtime.concurrency_origin === 'task' ? '任务覆盖' : '系统默认'}；${configured}）`, help: '本阶段有效工作单元上限，受待采标的数限制；实际网络在途还受来源共享额度约束。' },
+    { label: '工作状态', value: `网络 ${formatNumber(states.network ?? 0, 'count')} · 等待额度 ${formatNumber(states.source_wait ?? 0, 'count')} · 等待落库 ${formatNumber(states.write_queue ?? 0, 'count')} · 处理 ${formatNumber(states.processing ?? 0, 'count')} · 重试退避 ${formatNumber(states.retry_wait ?? 0, 'count')}` },
+    { label: '真实请求', value: `${formatNumber(runtime.requests, 'count')} 次，技术失败 ${formatNumber(runtime.failures, 'count')} 次` },
+    { label: '累计网络耗时', value: `${formatNumber(runtime.network_seconds, 'seconds')} 秒` },
+    { label: '累计额度等待', value: `${formatNumber(runtime.wait_seconds, 'seconds')} 秒` },
+    { label: '累计重试退避', value: runtime.retry_wait_seconds == null ? '未记录' : `${formatNumber(runtime.retry_wait_seconds, 'seconds')} 秒`, help: '失败或空响应后的重试间隔，独立于网络和来源额度等待；并发时按线程累计，不等于任务墙钟耗时。' },
+    { label: '数据库累计耗时', value: `等锁 ${formatNumber(runtime.db_wait_seconds, 'seconds')} 秒 · 执行 ${formatNumber(runtime.db_execute_seconds, 'seconds')} 秒 · ${formatNumber(runtime.db_queries, 'count')} 次` },
     { label: '当前阶段预计剩余', value: runtime.eta_seconds == null ? '样本不足或阶段已变化' : `约 ${Math.ceil(runtime.eta_seconds / 60)} 分钟` },
     {
       label: REQUEST_CONFIG_FINGERPRINT.label,

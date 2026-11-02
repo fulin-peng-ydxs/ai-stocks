@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -320,7 +321,7 @@ const menuPageTitle = useMenuPageTitle()
               <HelpTip title="系统组件说明" :width="420">
                 <HelpTipItem question="当前目录包含哪些组件">
                   <ul>
-                    <li>共 {{ totalCount }} 种组件，{{ consumedCount }} 种已被页面消费，{{ configurableCount }} 种已开放 Web 配置。</li>
+                    <li>共 {{ formatNumber(totalCount, 'count') }} 种组件，{{ formatNumber(consumedCount, 'count') }} 种已被页面消费，{{ formatNumber(configurableCount, 'count') }} 种已开放 Web 配置。</li>
                   </ul>
                 </HelpTipItem>
                 <HelpTipItem question="如何查看和配置">
@@ -357,7 +358,7 @@ const menuPageTitle = useMenuPageTitle()
           <el-collapse-item v-for="group in groups" :key="group.category" :name="group.category">
             <template #title>
               <span class="cat-title">{{ group.label }}</span>
-              <span class="cat-count">{{ group.rows.length }}</span>
+              <span class="cat-count">{{ formatNumber(group.rows.length, 'count') }}</span>
             </template>
             <AppDataTable :data="group.rows" row-key="kind" size="small" embedded>
               <AppTableColumn label="组件">

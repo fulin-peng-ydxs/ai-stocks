@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import { financialReportMonthRestrictionText } from '@/utils/tradeDisciplineConditions'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -460,8 +461,8 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
         </template>
         <template v-if="!loading && initialized && context?.initialized_on && tradeDate >= context.initialized_on" #description>
           <AppControlRow class="ledger-summary" justify="end" aria-live="polite">
-            <strong>{{ mode === 'positions' ? '已提交持仓' : preview ? '填写后预计持仓' : context?.snapshot ? '当日收盘持仓' : '期初持仓' }} {{ positionCount }} 只</strong>
-            <span v-if="mode === 'checkin' && shown">当日峰值 {{ shown.peak_positions }} 只</span>
+            <strong>{{ mode === 'positions' ? '已提交持仓' : preview ? '填写后预计持仓' : context?.snapshot ? '当日收盘持仓' : '期初持仓' }} {{ formatNumber(positionCount, 'count') }} 只</strong>
+            <span v-if="mode === 'checkin' && shown">当日峰值 {{ formatNumber(shown.peak_positions, 'count') }} 只</span>
             <span v-if="mode === 'checkin' && shown">买入 {{ formatMoney(shown.buy_amount) }} · 卖出 {{ formatMoney(shown.sell_amount) }} · 费用 {{ formatMoney(shown.fee) }}</span>
             <el-tag v-if="mode === 'checkin' && shown" :type="shown.assessment ? checkinAssessmentTagType(shown.assessment) : 'info'">{{ label(shown.assessment) }}</el-tag>
             <span v-if="mode === 'checkin' && context?.snapshot" class="app-caption-text">r{{ context.current_revision_no }}</span>
@@ -482,7 +483,7 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
           <div class="ledger-opening-layout">
             <TradeDisciplineSectionPanel title="期初股票" description="有持仓请逐只录入；空仓无需添加股票。">
               <AppControlRow justify="between" class="ledger-opening-toolbar">
-                <span class="app-caption-text">已添加 {{ openingRows.length }} 条持仓</span>
+                <span class="app-caption-text">已添加 {{ formatNumber(openingRows.length, 'count') }} 条持仓</span>
                 <el-button v-if="canSubmit" v-permission="'trade-discipline:checkin-submit'" :icon="Plus" @click="addOpeningRow">添加期初股票</el-button>
               </AppControlRow>
               <div v-if="!openingRows.length" class="ledger-opening-empty">
@@ -531,11 +532,11 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
                 <span v-else>{{ row.stock_name || row.stock_code }}</span>
               </template>
             </AppTableColumn>
-            <AppTableColumn prop="quantity" label="数量" />
-            <AppTableColumn prop="available_quantity" label="可卖数量" />
+            <AppTableColumn prop="quantity" label="数量" header-meta="股"><template #default="{ row }">{{ formatNumber(row.quantity, 'quantity') }}</template></AppTableColumn>
+            <AppTableColumn prop="available_quantity" label="可卖数量" header-meta="股"><template #default="{ row }">{{ formatNumber(row.available_quantity, 'quantity') }}</template></AppTableColumn>
             <AppTableColumn label="总成本" header-meta="元" role="number"><template #default="{ row }">{{ row.cost == null ? '未录入' : formatMoney(row.cost) }}</template></AppTableColumn>
             <AppTableColumn label="市值" header-meta="元" role="number"><template #default="{ row }">{{ row.market_value == null ? '暂无行情' : formatMoney(row.market_value) }}</template></AppTableColumn>
-            <AppTableColumn label="浮动盈亏" header-meta="元" role="number"><template #default="{ row }"><span :class="marketValueClass(row.unrealized_pnl == null ? null : Number(row.unrealized_pnl))">{{ row.unrealized_pnl == null ? '数据不完整' : formatMoney(row.unrealized_pnl, { forceSign: true }) }}</span></template></AppTableColumn>
+            <AppTableColumn label="浮动盈亏" header-meta="元" role="number"><template #default="{ row }"><span :class="marketValueClass(row.unrealized_pnl)">{{ row.unrealized_pnl == null ? '数据不完整' : formatMoney(row.unrealized_pnl, { forceSign: true }) }}</span></template></AppTableColumn>
             <AppTableColumn prop="quote_date" label="估值日期" />
             <AppTableColumn label="所属规则" role="name"><template #default="{ row }">{{ ruleName(row.rule_id) }}</template></AppTableColumn>
           </AppDataTable>
@@ -655,11 +656,11 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
       <AppDataTable v-else :data="history" :loading="historyBusy" :border="tableBorder" :default-sort="defaultSort" empty-text="尚无交易日记录" @sort-change="emit('sort-change', $event)">
         <AppTableColumn v-if="columnVisible('trade_date')" prop="trade_date" label="交易日" sortable="custom"><template #default="{ row }"><el-button data-button-kind="navigation" link type="primary" class="app-table-field-link" @click="openDetail(row)">{{ row.trade_date }}</el-button></template></AppTableColumn>
         <AppTableColumn v-if="columnVisible('assessment')" label="履约结果" role="status"><template #default="{ row }">{{ row.withdrawn ? '已撤回' : label(row.snapshot.assessment) }}</template></AppTableColumn>
-        <AppTableColumn v-if="columnVisible('operation_count')" label="操作数" role="number"><template #default="{ row }">{{ row.snapshot.operation_count ?? row.snapshot.events.filter((e: LedgerEvent) => e.kind === 'trade').length }}</template></AppTableColumn>
-        <AppTableColumn v-if="columnVisible('buy_amount')" label="买入额" role="number"><template #default="{ row }">{{ formatMoney(row.snapshot.buy_amount) }}</template></AppTableColumn>
-        <AppTableColumn v-if="columnVisible('sell_amount')" label="卖出额" role="number"><template #default="{ row }">{{ formatMoney(row.snapshot.sell_amount) }}</template></AppTableColumn>
-        <AppTableColumn v-if="columnVisible('peak_positions')" label="持仓峰值" role="number"><template #default="{ row }">{{ row.snapshot.peak_positions }}</template></AppTableColumn>
-        <AppTableColumn v-if="columnVisible('current_revision_no')" prop="current_revision_no" label="修订" role="number" />
+        <AppTableColumn v-if="columnVisible('operation_count')" label="操作数" role="number"><template #default="{ row }">{{ formatNumber(row.snapshot.operation_count ?? row.snapshot.events.filter((e: LedgerEvent) => e.kind === 'trade').length, 'count') }}</template></AppTableColumn>
+        <AppTableColumn v-if="columnVisible('buy_amount')" label="买入额" header-meta="元" role="number"><template #default="{ row }">{{ formatMoney(row.snapshot.buy_amount) }}</template></AppTableColumn>
+        <AppTableColumn v-if="columnVisible('sell_amount')" label="卖出额" header-meta="元" role="number"><template #default="{ row }">{{ formatMoney(row.snapshot.sell_amount) }}</template></AppTableColumn>
+        <AppTableColumn v-if="columnVisible('peak_positions')" label="持仓峰值" role="number"><template #default="{ row }">{{ formatNumber(row.snapshot.peak_positions, 'count') }}</template></AppTableColumn>
+        <AppTableColumn v-if="columnVisible('current_revision_no')" prop="current_revision_no" label="修订" role="number" ><template #default="{ row }">{{ formatNumber(row.current_revision_no, 'count') }}</template></AppTableColumn>
       </AppDataTable>
 
     </template>
@@ -677,7 +678,7 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
       <el-collapse v-model="detailRuleIds">
         <el-collapse-item v-for="rule in detailSnapshot?.rules ?? []" :key="rule.rule_id" :name="rule.rule_id">
           <template #title><span>{{ rule.name }} · v{{ rule.version_no }}</span></template>
-          <p>资金预算 {{ formatMoney(rule.capital) }} · 持股上限 {{ rule.max_positions ?? '不限' }}</p>
+          <p>资金预算 {{ formatMoney(rule.capital) }} · 持股上限 {{ formatNumber(rule.max_positions, 'count', { empty: '不限' }) }}</p>
           <p>财报月份交易限制：{{ rule.restrict_financial_report_months ? financialReportMonthRestrictionText : '未启用' }}</p>
           <p v-for="stockRule in rule.stock_rules" :key="stockRule.detail_id!">{{ stockRule.name }}：{{ stockRule.content }} {{ stockRule.checklist_items?.map(i => i.text).join('；') }}</p>
           <p v-for="actionRule in rule.action_rules" :key="actionRule.detail_id!">{{ actionRule.name }}：{{ actionRule.content }}</p>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatPercent } from '@/utils/marketValue'
+import { formatNumber, progressPercent } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import { enumText } from '@/utils/displayText'
 import { ArrowRight } from '@element-plus/icons-vue'
@@ -286,7 +288,7 @@ async function loadExactCount(row: CatalogTable) {
 
 function formatRowCount(row: CatalogTable): string {
   if (row.row_count == null) return '—'
-  const value = row.row_count.toLocaleString('zh-CN')
+  const value = formatNumber(row.row_count, 'count')
   return row.row_count_mode === 'estimated' ? `约 ${value}` : value
 }
 
@@ -296,7 +298,7 @@ function formatBytes(value: number | null): string {
   let size = value
   let index = 0
   while (size >= 1024 && index < units.length - 1) { size /= 1024; index += 1 }
-  return `${size.toLocaleString('zh-CN', { maximumFractionDigits: index === 0 ? 0 : 1 })} ${units[index]}`
+  return `${formatNumber(size, index === 0 ? 'count' : 'decimal')} ${units[index]}`
 }
 
 const DB_LABEL = { duckdb: 'DuckDB', postgres: 'PostgreSQL' } as const
@@ -430,8 +432,8 @@ function layerSummaryText(layer: QualityLayer): string {
 }
 function layerDetails(layer: QualityLayer) {
   return [
-    { label: '达标股票', value: `${layer.pass_stocks.toLocaleString()} / ${layer.total.toLocaleString()} 只` },
-    { label: '未达标股票', value: `${Math.max(layer.total - layer.pass_stocks, 0).toLocaleString()} 只` },
+    { label: '达标股票', value: `${formatNumber(layer.pass_stocks, 'count')} / ${formatNumber(layer.total, 'count')} 只` },
+    { label: '未达标股票', value: `${formatNumber(Math.max(layer.total - layer.pass_stocks, 0), 'count')} 只` },
     { label: '问题统计', value: layerSummaryText(layer) },
   ]
 }
@@ -612,11 +614,11 @@ function boardUpdateStatus(status?: string): { label: string; type: 'success' | 
   return { label: status ? '状态未识别' : '未记录', type: 'info' }
 }
 function coverageText(ready: number | undefined, total: number | undefined): string {
-  return `${ready ?? 0}/${total ?? 0}`
+  return `${formatNumber(ready, 'count')}/${formatNumber(total, 'count')}`
 }
 function coveragePct(ready: number | undefined, total: number | undefined): number {
   if (!total) return 0
-  return Math.round(((ready ?? 0) / total) * 1000) / 10
+  return progressPercent((ready ?? 0) / total)
 }
 // 与分层质量模型同阈值的状态档：ready/total ≥ 99% 绿、≥ 90% 橙、其余红。
 function coverageStatus(ready: number | undefined, total: number | undefined): 'success' | 'warning' | 'exception' {
@@ -729,9 +731,9 @@ const menuPageTitle = useMenuPageTitle()
                 <div class="layer-progress">
                   <el-progress :percentage="coveragePct(l.pass_stocks, l.total)" :show-text="false"
                     :status="l.pass_rate >= 0.99 ? 'success' : l.pass_rate >= 0.9 ? 'warning' : 'exception'" />
-                  <span>{{ coveragePct(l.pass_stocks, l.total) }}%</span>
+                  <span>{{ formatPercent(l.total ? l.pass_stocks / l.total : null, { input: 'ratio', completion: true }) }}</span>
                 </div>
-                <div class="layer-foot">{{ l.pass_stocks.toLocaleString() }} / {{ l.total.toLocaleString() }} 只达标</div>
+                <div class="layer-foot">{{ formatNumber(l.pass_stocks, 'count') }} / {{ formatNumber(l.total, 'count') }} 只达标</div>
               </template>
               <span v-else class="hint">尚无可检查股票</span>
             </div>
@@ -810,7 +812,7 @@ const menuPageTitle = useMenuPageTitle()
                 <template #description>
                   {{ assetMode === 'planned'
                     ? '规划维度不参与物理表统计'
-                    : `当前显示 ${displayedAssets.length} 张；展开可查看真实字段并按需精确统计` }}
+                    : `当前显示 ${formatNumber(displayedAssets.length, 'count')} 张；展开可查看真实字段并按需精确统计` }}
                 </template>
               </AppTabToolbar>
 
@@ -1126,13 +1128,13 @@ const menuPageTitle = useMenuPageTitle()
                 <div class="board-hero-main">
                   <span class="board-eyebrow">同花顺板块源</span>
                   <div class="board-title-line">
-                    <span class="board-total">{{ ov.board.board_dict }}</span>
+                    <span class="board-total">{{ formatNumber(ov.board.board_dict, 'count') }}</span>
                     <span class="board-title-text">个概念 / 行业板块</span>
                   </div>
                   <div class="board-type-row" aria-label="板块类型分布">
-                    <span>概念 <b>{{ ov.board.concept_count }}</b></span>
-                    <span>行业 <b>{{ ov.board.industry_count }}</b></span>
-                    <span>综合覆盖 <b>{{ boardOverallCoverage }}%</b></span>
+                    <span>概念 <b>{{ formatNumber(ov.board.concept_count, 'count') }}</b></span>
+                    <span>行业 <b>{{ formatNumber(ov.board.industry_count, 'count') }}</b></span>
+                    <span>综合覆盖 <b>{{ formatPercent(boardOverallCoverage, { input: 'percent', completion: true }) }}</b></span>
                   </div>
                 </div>
                 <div class="board-hero-status" :class="{ 'is-warning': ov.board.open_issues > 0 }">
@@ -1171,7 +1173,7 @@ const menuPageTitle = useMenuPageTitle()
                             <HelpHint :text="item.desc" :label="`${item.label}口径说明`" />
                           </div>
                         </div>
-                        <div class="cov-pct" :class="[item.confirmed ? 'confirmed' : item.status === 'success' ? 'done' : item.status]">{{ item.target ? item.pct + '%' : '—' }}</div>
+                        <div class="cov-pct" :class="[item.confirmed ? 'confirmed' : item.status === 'success' ? 'done' : item.status]">{{ item.target ? formatPercent(item.target ? (item.ready ?? 0) / item.target : null, { input: 'ratio', completion: true }) : '—' }}</div>
                       </div>
                       <el-progress
                         v-if="item.target"
@@ -1210,8 +1212,8 @@ const menuPageTitle = useMenuPageTitle()
                           <span class="issue-tag">{{ item.label }}</span>
                           <span class="issue-hint">{{ item.hint }}</span>
                         </span>
-                        <el-button data-button-kind="navigation" v-if="ISSUE_TYPE_LABEL[item.key]" link type="primary" @click="gotoQuality(undefined, item.key)">查看 {{ item.count }} 项<el-icon class="el-icon--right"><ArrowRight /></el-icon></el-button>
-                        <span v-else class="hint">{{ item.count }} 项</span>
+                        <el-button data-button-kind="navigation" v-if="ISSUE_TYPE_LABEL[item.key]" link type="primary" @click="gotoQuality(undefined, item.key)">查看 {{ formatNumber(item.count, 'count') }} 项<el-icon class="el-icon--right"><ArrowRight /></el-icon></el-button>
+                        <span v-else class="hint">{{ formatNumber(item.count, 'count') }} 项</span>
                       </div>
                     </div>
                     <div v-else class="issue-ok-card">

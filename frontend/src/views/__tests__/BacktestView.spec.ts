@@ -253,6 +253,48 @@ beforeEach(() => {
 })
 
 describe('BacktestView 金额格式契约', () => {
+  it.each([0, -0.000001, 0.000001, -0.01, 0.01])('超额命中率按可见精度判色并格式化信号总量：%s', async excess => {
+    const wrapper = await mountView()
+    const layers = { ...validLayers(), total_signals: 12345,
+      grades_order: ['A'], horizons: [10], thresholds: [0.1],
+      base_rate: { N10_X10: { n: 12345, hit_rate: 0.5 } },
+      by_grade: { A: { n_signals: 1234, N10_X10: { n: 1234, hit_rate: 0.5 + excess, excess, reliable: true } } },
+    }
+    ;(wrapper.vm as any).sig = layers
+    await nextTick()
+    await flushPromises()
+    const cell = wrapper.get('.excess')
+    expect(cell.classes()).not.toContain('pos')
+    expect(cell.classes().includes('up')).toBe(excess === 0.01)
+    expect(cell.classes().includes('down')).toBe(excess === -0.01)
+    expect(cell.text()).toBe(excess === 0.01 ? '+1.00 个百分点' : excess === -0.01 ? '-1.00 个百分点' : '0.00 个百分点')
+    expect(wrapper.text()).toContain('总信号 12,345')
+    expect(wrapper.text()).toContain('A (n=1,234)')
+    wrapper.unmount()
+  })
+  it.each([
+    { metrics: { profit_factor: null }, expected: '∞', neutral: false },
+    { metrics: {}, expected: '—', neutral: true },
+    { metrics: { profit_factor: 0 }, expected: '0.00', neutral: true },
+    { metrics: { profit_factor: 1.005 }, expected: '1.01', neutral: false },
+    { metrics: { profit_factor: NaN }, expected: '—', neutral: true },
+    { metrics: { profit_factor: Infinity }, expected: '—', neutral: true },
+  ])('盈亏比区分无亏损、字段缺失和有限值：$expected', async ({ metrics, expected, neutral }) => {
+    const wrapper = await mountView()
+    ;(wrapper.vm as any).strat = {
+      run_id: 'profit-factor-case',
+      metrics: { total_return: 0.07, annual_return: 0, max_drawdown: 0, sharpe: 0,
+        calmar: 0, win_rate: 1, n_trades: 1, avg_hold_days: 1, excess_return: 0, ...metrics },
+      layers: validLayers(), trades: [], equity: [],
+    }
+    await nextTick()
+    const card = wrapper.findAll('.metric').find(node => node.find('.m-label').text() === '盈亏比')!
+    expect(card.get('.m-val').text()).toBe(expected)
+    expect(card.classes().includes('good')).toBe(!neutral)
+    expect(card.classes()).not.toContain('bad')
+    wrapper.unmount()
+  })
+
   it('页面级模式切换独立于参数工具栏并复用 PageSegmented', async () => {
     const wrapper = await mountView()
     const rail = wrapper.get('.backtest-mode-rail')

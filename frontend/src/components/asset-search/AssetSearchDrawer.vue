@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 // 统一「资产搜索抽屉」（R5/R7/R14）：系统内置/租户公开/全体公开三来源分段 + 防抖关键字 +
@@ -454,7 +455,7 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
       <!-- 非空才渲染分页 footer：total=0 时空态已由表格 #empty 显示「暂无…」，
            「共 0 条」+ 分页控件冗余且无意义；错误/无权态 total=0 时同样隐藏（P3）。 -->
       <div v-if="canBrowse && total > 0" class="asset-search__footer">
-        <span class="asset-search__count app-caption-text">共 {{ total }} 条{{ SOURCE_LABEL[source] }}{{ assetLabel }}</span>
+        <span class="asset-search__count app-caption-text">共 {{ formatNumber(total, 'count') }} 条{{ SOURCE_LABEL[source] }}{{ assetLabel }}</span>
         <AppPagination
           :current-page="page"
           :page-size="pageSize"

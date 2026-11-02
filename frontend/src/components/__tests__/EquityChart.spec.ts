@@ -137,7 +137,7 @@ describe('EquityChart 基准对比渲染', () => {
     ])
     expect(html).toContain('+5.00%')
     expect(html).toContain('+1.00%')
-    expect(html).toContain('超额 +4.00%')
+    expect(html).toContain('超额 +4.00 个百分点')
     expect(option.yAxis[1]!.axisLabel.formatter(12.3456)).toBe('+12.35%')
     wrapper.unmount()
   })

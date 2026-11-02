@@ -31,7 +31,7 @@ const columns = computed(() => {
             :key="`${detail.label}-${detail.value}`"
             :class="`is-${detail.tone || 'neutral'}`"
             :style="{ width: widths?.hero.details[index] }"
-          >{{ detail.value }}</span>
+          >{{ detail.value }}<HelpHint v-if="detail.hint || detail.rawPrecision" :text="detail.hint || detail.rawPrecision || ''" /></span>
         </div>
       </div>
     </div>
@@ -39,7 +39,7 @@ const columns = computed(() => {
       <div v-for="metric in column" :key="metric.label" class="stock-quote-summary__metric">
         <dt :style="{ width: widths?.columns[index]?.label }">
           <span>{{ metric.label }}</span>
-          <HelpHint v-if="metric.hint" :text="metric.hint" />
+          <HelpHint v-if="metric.hint || metric.rawPrecision" :text="metric.hint || metric.rawPrecision || ''" />
         </dt>
         <dd :style="{ width: widths?.columns[index]?.value, color: metric.color }" :class="`is-${metric.tone || 'neutral'}`">{{ metric.value }}</dd>
       </div>

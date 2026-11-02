@@ -26,7 +26,7 @@ describe('money formatter', () => {
 
   it('万元和亿元缩放后仍对数值部分使用三位分隔', () => {
     expect(formatCompactMoneyYuan(1_234_567_890_000, { digits: 2 }))
-      .toBe('12,345.68 亿')
-    expect(formatCompactMoneyYuan(12_345_000, { digits: 1 })).toBe('1,234.5 万')
+      .toBe('12,345.68 亿元')
+    expect(formatCompactMoneyYuan(12_345_000, { digits: 1 })).toBe('1,234.5 万元')
   })
 })

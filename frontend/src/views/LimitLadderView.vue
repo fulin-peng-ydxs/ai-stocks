@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -241,7 +242,7 @@ const {
   onLimitReached: (limit) => ElMessage.warning(`最多对比${limit}只股票`),
 })
 const workspaceMeta = computed(() => result.value?.has_snapshot
-  ? `${result.value.summary.stock_count} 只 · ${filters.value.window} 日口径`
+  ? `${formatNumber(result.value.summary.stock_count, 'count')} 只 · ${filters.value.window} 日口径`
   : '等待快照')
 const ladderReturnPath = '/limit-ladder?restore=1'
 

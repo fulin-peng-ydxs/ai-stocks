@@ -431,15 +431,15 @@ function panelDisplayTitle(type: ChartType): string {
 function panelMetrics(type: ChartType): Metric[] {
   if (!rows.value.length) {
     if (type === 'kline') {
-      return KLINE_MA_DEFINITIONS.map(({ label }) => ({ label, value: '--' }))
+      return KLINE_MA_DEFINITIONS.map(({ label }) => ({ label, value: '—' }))
     }
     if (type === 'volume') {
       return [
-        { label: '总量', value: '--' },
-        ...VOLUME_MA_DEFINITIONS.map(({ label }) => ({ label, value: '--' })),
+        { label: '总量', value: '—' },
+        ...VOLUME_MA_DEFINITIONS.map(({ label }) => ({ label, value: '—' })),
       ]
     }
-    return ['MACD', 'DIFF', 'DEA'].map((label) => ({ label, value: '--' }))
+    return ['MACD', 'DIFF', 'DEA'].map((label) => ({ label, value: '—' }))
   }
   if (type === 'kline') {
     return klineMetrics(rows.value, periodSeries.value.warmupBars, metricIndex.value)
@@ -448,7 +448,7 @@ function panelMetrics(type: ChartType): Metric[] {
     return volumeMetrics(rows.value, periodSeries.value.warmupBars, metricIndex.value)
   }
   if (effectivePeriod.value === 'day' && props.macdState !== 'ready') {
-    return ['MACD', 'DIFF', 'DEA'].map((label) => ({ label, value: '--' }))
+    return ['MACD', 'DIFF', 'DEA'].map((label) => ({ label, value: '—' }))
   }
   return macdMetrics(rows.value, metricIndex.value)
 }

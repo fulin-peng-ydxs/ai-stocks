@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
+import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
 import AppSelect from '@/components/AppSelect.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Bar, IndicatorRow } from '@/api/stocks'
@@ -170,13 +172,11 @@ const adjustLabel = computed(() => (
 ))
 
 function formatPercent(value: number | null): string {
-  if (value == null || !Number.isFinite(value)) return '—'
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
+  return formatMarketPercent(value)
 }
 
 function percentTone(value: number | null): 'up' | 'down' | 'muted' | 'neutral' {
-  if (value == null || !Number.isFinite(value)) return 'muted'
-  return value > 0 ? 'up' : value < 0 ? 'down' : 'neutral'
+  return marketValueClass(value) || 'neutral'
 }
 
 const metricStripItems = computed<MarketMetricStripItem[]>(() => props.compareMetrics.map((metric) => {
@@ -580,7 +580,7 @@ onBeforeUnmount(() => {
         <template v-else>{{ benchmarkCode
           ? '各股票与指数按共同基期归零；'
           : '各股票从各自首个有效值起算；'
-        }}{{ failedCount ? `${failedCount}只股票加载失败。` : '停牌期间沿用最后有效收盘。' }}</template>
+        }}{{ failedCount ? `${formatNumber(failedCount, 'count')}只股票加载失败。` : '停牌期间沿用最后有效收盘。' }}</template>
       </span>
       <span v-else>{{ adjustLabel }}行情；K线、量能和MACD按交易日联动。</span>
       <el-button

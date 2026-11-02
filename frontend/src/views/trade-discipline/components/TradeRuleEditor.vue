@@ -644,7 +644,7 @@ defineExpose({
             <FixedDecimalInput v-model="form.capital" grouped data-testid="rule-capital-input" />
           </el-form-item>
           <el-form-item label="最大同时持仓数">
-            <el-input-number :model-value="form.max_positions ?? undefined" :min="1" :max="2147483647" :precision="0" :step="1" :controls="false" placeholder="不限" data-testid="rule-max-positions" @update:model-value="form.max_positions = $event ?? null" />
+            <el-input-number :model-value="form.max_positions ?? undefined" :min="1" :max="2147483647" :step="1" :controls="false" placeholder="不限" data-testid="rule-max-positions" @update:model-value="form.max_positions = $event ?? null" />
             <AppFormHelp>本套规则同时持有的不同股票数量上限，留空不限。</AppFormHelp>
           </el-form-item>
           <el-form-item label="资金分配">

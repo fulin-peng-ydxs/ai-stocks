@@ -200,6 +200,10 @@ function expandOperation(index: number, section?: ConditionSection, itemId?: str
 /** 提交校验与摘要使用同一判断，主动展开出错成交；交割单金额修正只提示差异。 */
 function validate(): string | null {
   for (const [index, operation] of props.modelValue.entries()) {
+    if (props.automatic && (!Number.isInteger(operation.display_order) || operation.display_order < 1)) {
+      expandOperation(index)
+      return `操作 ${index + 1}：顺序必须为正整数`
+    }
     const issue = operationIssue(operation)
     if (!issue || issue === '金额不一致') continue
     const missing = checklistMissingItem(selectedStockRule(operation), operation)
@@ -412,7 +416,7 @@ defineExpose({ expandOperation, validate })
               <AppDatePicker :model-value="operation.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" format="YYYY-MM-DD HH:mm" :disabled="disabled || operation.linked" @update:model-value="update(index, { operated_at: $event })" />
             </el-form-item>
             <el-form-item v-if="automatic" label="同时间顺序" required class="operation-field operation-field--order">
-              <el-input-number class="app-control-width-fill" :model-value="operation.display_order" :min="1" :precision="0" :controls="false" :disabled="disabled || operation.linked" @update:model-value="update(index, { display_order: $event ?? 1 })" />
+              <el-input-number class="app-control-width-fill" :model-value="operation.display_order" :min="1" :controls="false" :disabled="disabled || operation.linked" @update:model-value="update(index, { display_order: $event ?? 1 })" />
             </el-form-item>
             <el-form-item v-if="!automatic || version.rule_id" label="选股规则" required class="operation-field operation-field--rule">
               <AppSelect

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessage } from 'element-plus'
 import FixedDecimalInput from '@/views/trade-discipline/components/FixedDecimalInput.vue'
 
 describe('FixedDecimalInput', () => {
@@ -35,6 +35,22 @@ describe('FixedDecimalInput', () => {
 
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     expect(input.element.value).toBe('12.34')
+  })
+
+  it('编辑过程保留尾小数点和尾零，超精度明确提示且不静默截断', async () => {
+    const warning = vi.spyOn(ElMessage, 'warning').mockImplementation(() => ({ close: vi.fn() }))
+    const wrapper = mount(FixedDecimalInput, {
+      props: { modelValue: '1', grouped: true }, global: { plugins: [ElementPlus] },
+    })
+    const input = wrapper.findComponent({ name: 'ElInput' })
+    input.vm.$emit('focus', new FocusEvent('focus'))
+    input.vm.$emit('update:modelValue', '1.')
+    input.vm.$emit('update:modelValue', '1.20')
+    input.vm.$emit('update:modelValue', '1.201')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('update:modelValue')).toEqual([['1.'], ['1.20']])
+    expect(warning).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('小数最多 2 位') }))
+    warning.mockRestore()
   })
 
   it('把省略整数位的小数补为十进制字符串，不转为 number', async () => {

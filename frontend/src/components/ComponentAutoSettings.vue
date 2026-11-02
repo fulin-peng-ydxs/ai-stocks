@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppSelect from '@/components/AppSelect.vue'
 /**
  * 「组件特性」唯一渲染器——由组件种类字段定义 + pageRegistry 的实例元数据自动驱动，
@@ -462,6 +463,10 @@ function saveRuntimeNumber(slotId: string, field: string): void {
   void runApply(slotId, field, () => props.config.setComponentKnob(slotId, field, value))
 }
 function setNumericField(slot: AutoSlot, field: ComponentFieldDef, value: number): void {
+  if (field.control === 'int' && !Number.isInteger(value)) {
+    ElMessage.warning(`${field.label}需为整数`)
+    return
+  }
   props.config.setComponentKnob(slot.slotId, field.key, value)
   if (field.key !== 'masterRatio' || !slot.fields.includes('masterRatioProfiles')) return
   const sample = masterRatioSample(slot.slotId)
@@ -611,7 +616,7 @@ function setSort(slotId: string, field: string, order: string): void {
         >
           <el-checkbox v-for="field in s.meta.searchFields" :key="field.key" :value="field.key">{{ field.label }}</el-checkbox>
         </el-checkbox-group>
-        <p class="ca-search-hint" role="status">{{ selectedCommonFields(s).length === 2 ? '已选 2 项；替换时先取消一项' : `已选 ${selectedCommonFields(s).length}/2 项，选满后自动保存` }}</p>
+        <p class="ca-search-hint" role="status">{{ selectedCommonFields(s).length === 2 ? '已选 2 项；替换时先取消一项' : `已选 ${formatNumber(selectedCommonFields(s).length, 'count')}/2 项，选满后自动保存` }}</p>
         <AppRowActions v-if="clearable && isOverridden(s.slotId, 'commonFields')" :actions="clearFieldActions(s.slotId, 'commonFields')" :inline-limit="1" />
         <el-button v-if="applyFailed(s.slotId, 'commonFields')" text :disabled="selectedCommonFields(s).length !== 2" :loading="isApplying(s.slotId, 'commonFields')" @click="runApply(s.slotId, 'commonFields', () => {})">保存失败，重试</el-button>
       </PageSettingItem>
@@ -913,7 +918,6 @@ function setSort(slotId: string, field: string, order: string): void {
           :min="field.min"
           :max="field.max"
           :step="field.control === 'int' ? 10 : 0.1"
-          :precision="field.control === 'int' ? 0 : undefined"
           controls-position="right"
           @update:model-value="(value: number | undefined) => {
             if (value != null) setNumericField(s, field, value)

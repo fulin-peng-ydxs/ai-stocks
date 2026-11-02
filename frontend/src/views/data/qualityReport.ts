@@ -1,3 +1,4 @@
+import { formatNumber } from '@/utils/numberFormat'
 import type { CheckupCheck, CheckupIssueItem, QualityIssue } from '@/api/data'
 import { ISSUE_TYPE_LABEL } from '@/api/data'
 import type { AdaptiveColumnRole } from '@/components/table/adaptiveColumnWidth'
@@ -37,7 +38,7 @@ export function checkupSummaryText(check: CheckupCheck): string {
     }
     return types.map(type => {
       const label = ISSUE_TYPE_LABEL[type].split('·').pop()
-      return `${label} ${counts[type].toLocaleString('zh-CN')} 项`
+      return `${label} ${formatNumber(counts[type], 'count')} 项`
     }).join(' · ')
   } catch {
     return '历史统计格式无法识别，请重新运行结构体检'
@@ -123,7 +124,7 @@ export function qualityDetailText(detail: string): string {
   const recorded = (value: unknown): string => typeof value === 'number' && Number.isFinite(value)
     ? String(value) : typeof value === 'string' && value.trim() ? value : '未记录'
   const countText = (value: unknown): string => typeof value === 'number'
-    && Number.isSafeInteger(value) && value >= 0 ? String(value) : '未记录'
+    && Number.isSafeInteger(value) && value >= 0 ? formatNumber(value, 'count') : '未记录'
   const timestamp = (value: unknown, fallback: string): string => formatDateTimeSeconds(
     typeof value === 'string' ? value : null, fallback,
   )

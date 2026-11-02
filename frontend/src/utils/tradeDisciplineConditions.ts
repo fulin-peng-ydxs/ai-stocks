@@ -1,6 +1,6 @@
+import { formatTradePrice } from '@/utils/tradeNumeric'
 import type { CheckinOperation, ChecklistCategory, ConditionFact, DraftStockRule, StockChecklistItem, StockChecklistResult } from '@/api/tradeDiscipline'
 import { decimalToMinorUnits } from './fixedDecimal'
-import { formatMoney } from './money'
 import { operationSTStatus } from './tradeDisciplineOperations'
 
 export const conditionFilterOptions = [
@@ -154,8 +154,8 @@ export function stockConditionSummary(rule?: DraftStockRule): string {
   if (!rule) return ''
   const parts: string[] = []
   if (rule.price_min || rule.price_max) {
-    const low = rule.price_min ? formatMoney(rule.price_min, { digits: 4 }) : ''
-    const high = rule.price_max ? formatMoney(rule.price_max, { digits: 4 }) : ''
+    const low = rule.price_min ? formatTradePrice(rule.price_min) : ''
+    const high = rule.price_max ? formatTradePrice(rule.price_max) : ''
     parts.push(`股价 ${low && high ? `${low}～${high}` : low ? `≥${low}` : `≤${high}`} 元`)
   }
   for (const [key, label] of [['st_filter', 'ST'], ['loss_filter', '亏损'], ['st_risk_filter', 'ST风险']] as const) {

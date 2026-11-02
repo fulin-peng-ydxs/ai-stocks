@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
@@ -412,7 +413,7 @@ const {
 } = useStockAnalysisSelection(analysisSourceItems, {
   onLimitReached: (limit) => ElMessage.warning(`最多对比${limit}只股票`),
 })
-const boardListMeta = computed(() => `${total.value} 只 · 点击行切换走势`)
+const boardListMeta = computed(() => `${formatNumber(total.value, 'count')} 只 · 点击行切换走势`)
 
 function handleBoardRowClick(item: ScoreRunRow): void {
   selectAnalysisItem(item)
@@ -622,7 +623,7 @@ async function exportCsv(): Promise<void> {
     const headers = ['全市场排名', '代码', '名称', '板块', '综合分', '评级', ...subKeys.value.map((k) => nameOf(k))]
     const data = res.list.map((r) => [
       r.rank ?? '', r.code, r.name ?? '', r.board ?? '', r.total_score ?? '', r.grade ?? '',
-      ...subKeys.value.map((k) => Math.round(r.sub_scores[k] ?? 0)),
+      ...subKeys.value.map((k) => r.sub_scores[k] ?? ''),
     ])
     downloadCsv(
       `每日榜单_${selected.name}_${res.run_date || runDate.value || 'latest'}.csv`,

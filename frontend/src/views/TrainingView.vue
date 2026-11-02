@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatReturn, formatPercent, marketValueClass } from '@/utils/marketValue'
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
@@ -274,7 +276,7 @@ function presetHands(p: number): number {
 }
 const activePresets = computed(() => (isAmount.value ? amountPresets.value : handsPresets.value))
 function presetLabel(p: number): string {
-  return isAmount.value ? `${formatMoney(p, { digits: 0 })} 元` : `${p}手`
+  return isAmount.value ? `${formatMoney(p)} 元` : `${formatNumber(p, 'quantity')} 手`
 }
 function buyPresetDisabled(p: number): boolean { const h = presetHands(p); return h < 1 || h > maxBuyHands.value }
 
@@ -431,14 +433,14 @@ function roundEquityPoints(rd: DetailRound, initCap: number) {
     return {
       trade_date: winBars[i] ? winBars[i].date : `D${i}`,
       equity: eq, cash: 0, position_value: 0, n_positions: 0,
-      benchmark_equity: firstOpen ? +(initCap * (bClose / firstOpen)).toFixed(2) : eq,
-      drawdown: peak > 0 ? +(eq / peak - 1).toFixed(4) : 0,
+      benchmark_equity: firstOpen ? initCap * (bClose / firstOpen) : eq,
+      drawdown: peak > 0 ? eq / peak - 1 : 0,
     }
   })
 }
 
 // ── 格式化 ──
-const pct = (v: number | null | undefined) => v == null ? '--' : (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%'
+const pct = formatReturn
 const modeText = (m: string) => m === 'single' ? '单股' : '多股'
 const gradePalette = useStatusColorPalette()
 // 评级色统一消费语义色板：S=警示金、A=成功绿、B=主色蓝、C=中性灰、D=危险红。
@@ -545,8 +547,8 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               <AppFormHelp class="cfg-range-help">日期留空使用全部历史</AppFormHelp>
               <div class="cfg-summary" role="group" aria-label="本次训练参数">
                 <span>本次：</span>
-                <span v-if="sessionConfig.mode === 'multi'">{{ settings.n_rounds }} 回合 ·</span>
-                <span>每回合 {{ settings.window_days }} 个交易日 ·</span>
+                <span v-if="sessionConfig.mode === 'multi'">{{ formatNumber(settings.n_rounds, 'count') }} 回合 ·</span>
+                <span>每回合 {{ formatNumber(settings.window_days, 'count') }} 个交易日 ·</span>
                 <span>初始资金 {{ formatMoney(settings.initial_capital) }} 元</span>
                 <el-button text type="primary" @click="settingsOpen = true">调整参数</el-button>
               </div>
@@ -584,7 +586,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
         </el-card>
 
         <AppTableCard class="hist-card">
-          <template #header><span class="card-title">训练历史</span><span class="card-sub">共 {{ history.total }} 局，点行回看</span></template>
+          <template #header><span class="card-title">训练历史</span><span class="card-sub">共 {{ formatNumber(history.total, 'count') }} 局，点行回看</span></template>
           <AppStateBlock
             v-if="historyLoading && !history.list.length"
             state="loading"
@@ -613,7 +615,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
             @size-change="changeHistoryPageSize"
             @row-click="(r:SessionRow)=>openSession(r.id)">
             <AppTableColumn label="模式">
-              <template #default="{ row }">{{ modeText(row.mode) }}·{{ row.n_rounds }}</template>
+              <template #default="{ row }">{{ modeText(row.mode) }}·{{ formatNumber(row.n_rounds, 'count') }}</template>
             </AppTableColumn>
             <AppTableColumn label="评级">
               <template #default="{ row }">
@@ -622,19 +624,19 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               </template>
             </AppTableColumn>
             <AppTableColumn label="评分" prop="score" sortable="custom">
-              <template #default="{ row }">{{ row.score != null ? row.score.toFixed(1) : '--' }}</template>
+              <template #default="{ row }">{{ formatNumber(row.score, 'score') }}</template>
             </AppTableColumn>
             <AppTableColumn label="收益" prop="total_return" sortable="custom">
-              <template #default="{ row }"><span :class="(row.total_return ?? 0) >= 0 ? 'up' : 'down'">{{ pct(row.total_return) }}</span></template>
+              <template #default="{ row }"><span :class="marketValueClass(row.total_return, { input: 'ratio' })">{{ pct(row.total_return) }}</span></template>
             </AppTableColumn>
             <AppTableColumn label="胜率" prop="win_rate" sortable="custom">
-              <template #default="{ row }">{{ row.win_rate != null ? (row.win_rate * 100).toFixed(0) + '%' : '--' }}</template>
+              <template #default="{ row }">{{ formatPercent(row.win_rate, { input: 'ratio' }) }}</template>
             </AppTableColumn>
             <AppTableColumn label="开始时间" prop="created_at" sortable="custom">
               <template #default="{ row }">{{ formatDateTimeMinutes(row.created_at) }}</template>
             </AppTableColumn>
             <AppTableColumn label="结束时间" prop="completed_at" sortable="custom">
-              <template #default="{ row }">{{ formatDateTimeMinutes(row.completed_at, '--') }}</template>
+              <template #default="{ row }">{{ formatDateTimeMinutes(row.completed_at, '—') }}</template>
             </AppTableColumn>
             <AppTableColumn label="操作" role="action-compact">
               <template #default="{ row }">
@@ -668,7 +670,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
             </HelpTip>
           </h2>
           <p class="page-subtitle app-inline-info">
-            <span>回合 {{ view!.cur_round + 1 }}/{{ view!.n_rounds }} · 第 {{ round.cursor_idx + 1 }}/{{ round.window_days }} 个交易日 · 盲测中</span>
+            <span>回合 {{ view!.cur_round + 1 }}/{{ formatNumber(view!.n_rounds, 'count') }} · 第 {{ round.cursor_idx + 1 }}/{{ formatNumber(round.window_days, 'count') }} 个交易日 · 盲测中</span>
             <el-tag type="info" v-if="round.board" size="small" effect="plain">{{ round.board }}</el-tag>
           </p>
         </div>
@@ -715,15 +717,15 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
         <div v-permission="'training:trade'" v-loading="actionPending" :aria-busy="actionPending" class="action-panel">
           <p class="muted">快捷键：→ 下一日／末日结算，B 买入当前量，S 卖出当前量；仅在输入框、控件和弹窗外生效。</p>
           <div class="acct">
-            <div class="acct-item"><label>可用资金（可买上限）</label><b class="lim">{{ formatMoney(round.cash, { digits: 0, empty: '--' }) }}</b></div>
-            <div class="acct-item"><label>持仓（可卖上限）</label><b class="lim">{{ round.pos_hands }} 手</b><span class="muted">@{{ formatMoney(round.pos_avg_price) }}</span></div>
-            <div class="acct-item"><label>浮动盈亏</label><b :class="round.unrealized_pnl >= 0 ? 'up' : 'down'">{{ formatMoney(round.unrealized_pnl, { digits: 0, empty: '--' }) }}</b></div>
-            <div class="acct-item"><label>总资产</label><b>{{ formatMoney(round.equity, { digits: 0, empty: '--' }) }}</b><span :class="(round.equity - view!.initial_capital) >= 0 ? 'up' : 'down'">{{ pct((round.equity - view!.initial_capital) / view!.initial_capital) }}</span></div>
+            <div class="acct-item"><label>可用资金（可买上限）</label><b class="lim">{{ formatMoney(round.cash) }}</b></div>
+            <div class="acct-item"><label>持仓（可卖上限）</label><b class="lim">{{ formatNumber(round.pos_hands, 'quantity') }} 手</b><span class="muted">@{{ formatMoney(round.pos_avg_price) }}</span></div>
+            <div class="acct-item"><label>浮动盈亏</label><b :class="marketValueClass(round.unrealized_pnl)">{{ formatMoney(round.unrealized_pnl, { forceSign: true }) }}</b></div>
+            <div class="acct-item"><label>总资产</label><b>{{ formatMoney(round.equity) }}</b><span :class="marketValueClass((round.equity - view!.initial_capital) / view!.initial_capital, { input: 'ratio' })">{{ pct((round.equity - view!.initial_capital) / view!.initial_capital) }}</span></div>
             <div class="acct-item"><label>当前价</label><b>{{ formatMoney(round.cur_close) }}</b></div>
           </div>
 
           <div v-if="round.pending" class="pending">
-            <span>待成交（次日开盘）：<b :class="round.pending.side === 'buy' ? 'up' : 'down'">{{ round.pending.side === 'buy' ? '买入' : '卖出' }} {{ round.pending.hands }} 手</b></span>
+            <span>待成交（次日开盘）：<b :class="round.pending.side === 'buy' ? 'up' : 'down'">{{ round.pending.side === 'buy' ? '买入' : '卖出' }} {{ formatNumber(round.pending.hands, 'quantity') }} 手</b></span>
             <el-button text type="info" size="small" @click="doCancel">撤单</el-button>
           </div>
 
@@ -742,15 +744,15 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               />
               <span class="unit">{{ isAmount ? '元' : '手' }}</span>
               <span class="hint" v-if="!isAmount">
-                约需 ¥{{ formatMoney(estCost, { digits: 0, empty: '--' }) }} · 最多可买
+                约需 ¥{{ formatMoney(estCost) }} · 最多可买
                 <AppHoverInfo content="点击填入全仓">
-                  <el-button class="hl" text @click="fillBuyMax">{{ maxBuyHands }}</el-button>
+                  <el-button class="hl" text @click="fillBuyMax">{{ formatNumber(maxBuyHands, 'quantity') }}</el-button>
                 </AppHoverInfo> 手
               </span>
               <span class="hint" v-else>
                 可用资金 <AppHoverInfo content="点击全额填入">
-                       <el-button class="hl" text @click="fillBuyMax">{{ `¥${formatMoney(cash, { digits: 0, empty: '--' })}` }}</el-button>
-                     </AppHoverInfo> · 本单 ≈ {{ orderHands }} 手
+                       <el-button class="hl" text @click="fillBuyMax">{{ `¥${formatMoney(cash)}` }}</el-button>
+                     </AppHoverInfo> · 本单 ≈ {{ formatNumber(orderHands, 'quantity') }} 手
               </span>
             </div>
 
@@ -788,10 +790,10 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           <AppDataTable :data="round.trades" height="100%" size="small" empty-text="尚无成交">
             <AppTableColumn label="相对日"><template #default="{ row }">D{{ row.rel_day }}</template></AppTableColumn>
             <AppTableColumn label="方向"><template #default="{ row }"><span :class="row.side === 'buy' ? 'up' : 'down'">{{ row.side === 'buy' ? '买入' : '卖出' }}</span></template></AppTableColumn>
-            <AppTableColumn label="成交价"><template #default="{ row }">{{ formatMoney(row.price) }}</template></AppTableColumn>
-            <AppTableColumn label="手数"><template #default="{ row }">{{ row.hands }}</template></AppTableColumn>
-            <AppTableColumn label="盈亏"><template #default="{ row }"><span v-if="row.pnl != null" :class="row.pnl >= 0 ? 'up' : 'down'">{{ formatMoney(row.pnl, { digits: 0, empty: '--' }) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
-            <AppTableColumn label="收益率"><template #default="{ row }"><span v-if="row.return_pct != null" :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
+            <AppTableColumn label="成交价" header-meta="元"><template #default="{ row }">{{ formatMoney(row.price) }}</template></AppTableColumn>
+            <AppTableColumn label="手数"><template #default="{ row }">{{ formatNumber(row.hands, 'quantity') }}</template></AppTableColumn>
+            <AppTableColumn label="盈亏" header-meta="元"><template #default="{ row }"><span v-if="row.pnl != null" :class="marketValueClass(row.pnl)">{{ formatMoney(row.pnl, { forceSign: true }) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
+            <AppTableColumn label="收益率"><template #default="{ row }"><span v-if="row.return_pct != null" :class="marketValueClass(row.return_pct, { input: 'ratio' })">{{ pct(row.return_pct) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
             <AppTableColumn label="理由"><template #default="{ row }">{{ row.reason || (row.auto_close ? '到期清算' : '') }}</template></AppTableColumn>
           </AppDataTable>
         </AppTableCard>
@@ -807,9 +809,9 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           <h2 class="app-page-title title-row">
             {{ resultPageTitle }}
             <span class="grade-big app-data-emphasis" :style="{ color: gradeColor(detail.grade) }">{{ detail.grade }}</span>
-            <span class="score-tip">综合评分 {{ detail.score?.toFixed(1) }}</span>
+            <span class="score-tip">综合评分 {{ formatNumber(detail.score, 'score') }}</span>
           </h2>
-          <p class="page-subtitle">{{ modeText(detail.mode) }} · {{ detail.n_rounds }} 回合 · {{ formatDateTimeMinutes(detail.created_at) }}</p>
+          <p class="page-subtitle">{{ modeText(detail.mode) }} · {{ formatNumber(detail.n_rounds, 'count') }} 回合 · {{ formatDateTimeMinutes(detail.created_at) }}</p>
         </div>
         <AppControlRow class="page-head-actions">
           <div class="ops">
@@ -824,11 +826,11 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
     <template #main>
     <AppScrollArea class="result-body">
         <div class="kpi-row">
-          <div class="kpi"><label>平均收益</label><b :class="(detail.total_return ?? 0) >= 0 ? 'up' : 'down'">{{ pct(detail.total_return) }}</b></div>
-          <div class="kpi"><label>胜率</label><b>{{ detail.win_rate != null ? (detail.win_rate * 100).toFixed(0) + '%' : '--' }}</b></div>
-          <div class="kpi"><label>最大回撤</label><b class="down">{{ pct(detail.max_drawdown) }}</b></div>
-          <div class="kpi"><label>成交笔数</label><b>{{ detail.n_trades }}</b></div>
-          <div class="kpi"><label>回合数</label><b>{{ detail.n_rounds }}</b></div>
+          <div class="kpi"><label>平均收益</label><b :class="marketValueClass(detail.total_return, { input: 'ratio' })">{{ pct(detail.total_return) }}</b></div>
+          <div class="kpi"><label>胜率</label><b>{{ formatPercent(detail.win_rate, { input: 'ratio' }) }}</b></div>
+          <div class="kpi"><label>最大回撤</label><b :class="marketValueClass(detail.max_drawdown, { input: 'ratio' })">{{ pct(detail.max_drawdown) }}</b></div>
+          <div class="kpi"><label>成交笔数</label><b>{{ formatNumber(detail.n_trades, 'count') }}</b></div>
+          <div class="kpi"><label>回合数</label><b>{{ formatNumber(detail.n_rounds, 'count') }}</b></div>
         </div>
 
         <el-card shadow="never" class="score-rule-card">
@@ -872,7 +874,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
                 <el-tag type="info" v-if="rd.board" size="small" effect="plain">{{ rd.board }}</el-tag>
               </span>
               <span class="muted">{{ rd.start_date }} ~ {{ rd.end_date }}</span>
-              <span class="round-ret">你 <b :class="(rd.round_return ?? 0) >= 0 ? 'up' : 'down'">{{ pct(rd.round_return) }}</b> · 满仓持有 <b :class="(rd.benchmark_return ?? 0) >= 0 ? 'up' : 'down'">{{ pct(rd.benchmark_return) }}</b> · 回撤 <b class="down">{{ pct(rd.max_drawdown) }}</b></span>
+              <span class="round-ret">你 <b :class="marketValueClass(rd.round_return, { input: 'ratio' })">{{ pct(rd.round_return) }}</b> · 满仓持有 <b :class="marketValueClass(rd.benchmark_return, { input: 'ratio' })">{{ pct(rd.benchmark_return) }}</b> · 回撤 <b :class="marketValueClass(rd.max_drawdown, { input: 'ratio' })">{{ pct(rd.max_drawdown) }}</b></span>
             </div>
           </template>
           <div class="round-grid">
@@ -909,10 +911,10 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
             <AppTableColumn label="决策日"><template #default="{ row }">{{ row.decide_date }}</template></AppTableColumn>
             <AppTableColumn label="成交日"><template #default="{ row }">{{ row.fill_date }}</template></AppTableColumn>
             <AppTableColumn label="方向"><template #default="{ row }"><span :class="row.side === 'buy' ? 'up' : 'down'">{{ row.side === 'buy' ? '买入' : '卖出' }}</span></template></AppTableColumn>
-            <AppTableColumn label="成交价"><template #default="{ row }">{{ formatMoney(row.price) }}</template></AppTableColumn>
-            <AppTableColumn label="手数"><template #default="{ row }">{{ row.hands }}</template></AppTableColumn>
-            <AppTableColumn label="盈亏"><template #default="{ row }"><span v-if="row.pnl != null" :class="row.pnl >= 0 ? 'up' : 'down'">{{ formatMoney(row.pnl, { digits: 0, empty: '--' }) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
-            <AppTableColumn label="收益率"><template #default="{ row }"><span v-if="row.return_pct != null" :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
+            <AppTableColumn label="成交价" header-meta="元"><template #default="{ row }">{{ formatMoney(row.price) }}</template></AppTableColumn>
+            <AppTableColumn label="手数"><template #default="{ row }">{{ formatNumber(row.hands, 'quantity') }}</template></AppTableColumn>
+            <AppTableColumn label="盈亏" header-meta="元"><template #default="{ row }"><span v-if="row.pnl != null" :class="marketValueClass(row.pnl)">{{ formatMoney(row.pnl, { forceSign: true }) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
+            <AppTableColumn label="收益率"><template #default="{ row }"><span v-if="row.return_pct != null" :class="marketValueClass(row.return_pct, { input: 'ratio' })">{{ pct(row.return_pct) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
             <AppTableColumn label="理由"><template #default="{ row }">{{ row.reason || (row.auto_close ? '到期清算' : '') }}</template></AppTableColumn>
           </AppDataTable>
         </el-card>
@@ -1128,7 +1130,5 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 .review-card :deep(.el-textarea__inner) { resize: vertical; }
 .review-actions { margin-top: 10px; text-align: right; flex: 0 0 auto; }
 
-.up { color: var(--el-color-danger); }
-.down { color: var(--el-color-success); }
 @container app-viewport (max-width: 1100px) { .round-grid { grid-template-columns: 1fr; } }
 </style>

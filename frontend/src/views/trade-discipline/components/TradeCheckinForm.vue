@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import type { StockConditionPanelDefaults } from '@/layout/configPanel'
@@ -458,8 +459,8 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
           <p v-if="knownViolations.length && !readonly" class="condition-warning" role="status">已发现规则违规，不能选择“已履约”；请填写未履约情况或逐笔记录部分履约。</p>
           <div v-if="context.version.max_positions != null || form.peak_positions != null" class="holding-count" data-testid="checkin-holding-count">
             <el-form-item label="当日最大同时持仓数" :required="context.version.max_positions != null">
-              <el-input-number v-model="form.peak_positions" :min="0" :max="2147483647" :precision="0" :step="1" :controls="false" :disabled="readonly" placeholder="填写实际数量" data-testid="checkin-peak-positions" />
-              <AppFormHelp>本套规则上限 {{ context.version.max_positions ?? '不限' }} 只；填写当日峰值，包含此前持仓，同股多笔只算一只。无操作也可能仍有持仓。</AppFormHelp>
+              <el-input-number v-model="form.peak_positions" :min="0" :max="2147483647" :step="1" :controls="false" :disabled="readonly" placeholder="填写实际数量" data-testid="checkin-peak-positions" />
+              <AppFormHelp>本套规则上限 {{ formatNumber(context.version.max_positions, 'count', { empty: '不限' }) }} 只；填写当日峰值，包含此前持仓，同股多笔只算一只。无操作也可能仍有持仓。</AppFormHelp>
             </el-form-item>
             <p v-if="holdingCountWarning(context.version.max_positions, form.peak_positions)" class="condition-warning" role="status">{{ holdingCountWarning(context.version.max_positions, form.peak_positions) }}</p>
           </div>

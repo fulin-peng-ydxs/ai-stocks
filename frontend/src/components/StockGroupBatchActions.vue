@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
@@ -111,7 +112,7 @@ async function removeFromGroup(): Promise<void> {
   if (!props.activeGroupId || !selected.value.length) return
   const count = selected.value.length
   await removeMembers(props.activeGroupId, selected.value.map((item) => item.code))
-  ElMessage.success(`已移出 ${count} 只`)
+  ElMessage.success(`已移出 ${formatNumber(count, 'count')} 只`)
   const target = props.activeGroupId
   selected.value = []
   emit('changed', target, 'remove')
@@ -122,7 +123,7 @@ async function removeFromGroup(): Promise<void> {
   <el-card v-if="selected.length" shadow="never" class="stock-batch-card">
     <div class="stock-batch-row">
       <div class="stock-batch-info">
-        <span class="stock-batch-count">已选 <b>{{ selected.length }}</b> 只</span>
+        <span class="stock-batch-count">已选 <b>{{ formatNumber(selected.length, 'count') }}</b> 只</span>
         <AppScrollArea class="stock-batch-chips">
           <el-tag type="info"
             v-for="item in selected.slice(0, 30)"
@@ -133,7 +134,7 @@ async function removeFromGroup(): Promise<void> {
           >
             {{ item.name || item.code }}
           </el-tag>
-          <span v-if="selected.length > 30" class="stock-batch-more">… 等 {{ selected.length }} 只</span>
+          <span v-if="selected.length > 30" class="stock-batch-more">… 等 {{ formatNumber(selected.length, 'count') }} 只</span>
         </AppScrollArea>
       </div>
       <AppControlRow class="stock-batch-ops">
@@ -172,7 +173,7 @@ async function removeFromGroup(): Promise<void> {
       </el-form-item>
     </AppForm>
     <div class="stock-batch-codes">
-      将加入 {{ selected.length }} 只：{{ selected.slice(0, 8).map(item => item.name || item.code).join('、') }}{{ selected.length > 8 ? ' …' : '' }}
+      将加入 {{ formatNumber(selected.length, 'count') }} 只：{{ selected.slice(0, 8).map(item => item.name || item.code).join('、') }}{{ selected.length > 8 ? ' …' : '' }}
     </div>
     <template #footer>
       <el-button @click="createVisible = false">取消</el-button>
@@ -188,7 +189,7 @@ async function removeFromGroup(): Promise<void> {
           filterable
           width="fill"
         >
-          <el-option v-for="group in groups" :key="group.id" :value="group.id" :label="`${group.name}（${group.member_count}）`" />
+          <el-option v-for="group in groups" :key="group.id" :value="group.id" :label="`${group.name}（${formatNumber(group.member_count, 'count')}）`" />
         </AppSelect>
       </el-form-item>
       <el-form-item label="加入日期">
@@ -196,7 +197,7 @@ async function removeFromGroup(): Promise<void> {
         <AppFormHelp>作为这批股票的涨幅基准</AppFormHelp>
       </el-form-item>
     </AppForm>
-    <div class="stock-batch-codes">将加入 {{ selected.length }} 只（已在组内的保留原加入日期）</div>
+    <div class="stock-batch-codes">将加入 {{ formatNumber(selected.length, 'count') }} 只（已在组内的保留原加入日期）</div>
     <template #footer>
       <el-button @click="addVisible = false">取消</el-button>
       <el-button v-permission="'stock-group:member-update'" type="primary" :loading="adding" @click="submitAdd">加入</el-button>

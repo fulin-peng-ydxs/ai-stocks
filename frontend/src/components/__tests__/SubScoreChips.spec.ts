@@ -23,7 +23,7 @@ describe('SubScoreChips', () => {
       ['sub-score-chip', 'mid'],
       ['sub-score-chip', 'lo'],
     ])
-    expect(chips[0].text()).toBe('放量突破(固定20×2)97')
+    expect(chips[0].text()).toBe('放量突破(固定20×2)97.0')
     expect(chips[0].attributes('title')).toBeUndefined()
 
     expect(chips[0].attributes('title')).toBeUndefined()

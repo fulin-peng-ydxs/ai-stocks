@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import { computed, ref, watch } from 'vue'
 import type { IndicatorDef, ScoreProfileVersion } from '@/api/scoreProfile'
 import type { TradeProfileVersion } from '@/api/tradeProfile'
@@ -31,7 +32,7 @@ const trade = computed(() => 'backstop' in props.version ? props.version : null)
     <AppDetailFields v-if="score">
       <AppDetailField label="ST 股票" :value="typeof score.include_st === 'boolean' ? score.include_st ? '纳入' : '排除' : '未记录'" />
       <AppDetailField v-for="(value, grade) in score.grade_thresholds" :key="grade"
-        :label="`${grade} 档阈值`" :value="Number.isFinite(value) ? value : '未记录'" />
+        :label="`${grade} 档阈值`" :value="formatNumber(value, 'parameter')" />
     </AppDetailFields>
     <AppDetailSection v-for="group in groups" :key="group.label" :title="group.label">
       <p v-if="group.relation" class="profile-version-relation">{{ group.relation }}</p>

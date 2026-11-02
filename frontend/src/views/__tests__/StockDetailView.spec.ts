@@ -850,8 +850,8 @@ describe('StockDetailView 三图数据协调', () => {
     expect(summary).toContain('开盘:9.40:neutral')
     expect(summary).toContain('涨跌幅:+1.06%:up')
     expect(summary).toContain('振幅:5.32%:neutral')
-    expect(summary).toContain('成交量:1000手:neutral')
-    expect(summary).toContain('成交额:100万:neutral')
+    expect(summary).toContain('成交量:1,000 手:neutral')
+    expect(summary).toContain('成交额:100.00 万元:neutral')
     const headerMetrics = wrapper.getComponent({ name: 'StockQuoteSummary' })
       .props('summary').metrics
     expect(headerMetrics.slice(8, 12).map((item: { label: string }) => item.label))
@@ -911,7 +911,7 @@ describe('StockDetailView 三图数据协调', () => {
 
     workspace.vm.$emit('activeBarChange', small)
     await nextTick()
-    expect(values()).toMatchObject({ 总市值: '900.00 万', 流通市值: '500.00 万', 总股本: '1.00亿股', 流通股: '8,000.00万股' })
+    expect(values()).toMatchObject({ 总市值: '900.00 万元', 流通市值: '500.00 万元', 总股本: '1.00 亿股', 流通股: '8,000.00 万股' })
     const hints = summary.props('summary').metrics.filter((metric: { hint?: string }) => metric.hint)
     expect(hints).toHaveLength(1)
     expect(hints[0]).toMatchObject({
@@ -922,7 +922,7 @@ describe('StockDetailView 三图数据协调', () => {
     expect(hints[0].hint).toContain('同日股本 × 未复权收盘价')
     workspace.vm.$emit('activeBarChange', large)
     await nextTick()
-    expect(values()).toMatchObject({ 总市值: '20.00 亿', 流通市值: '10.00 亿', 总股本: '2.00亿股', 流通股: '9,000.00万股' })
+    expect(values()).toMatchObject({ 总市值: '20.00 亿元', 流通市值: '10.00 亿元', 总股本: '2.00 亿股', 流通股: '9,000.00 万股' })
     expect(summary.props('widths')).toBe(widths)
     expect(stocksApi.getBars).toHaveBeenCalledTimes(requests)
 
@@ -933,7 +933,7 @@ describe('StockDetailView 三图数据协调', () => {
     expect(values()).toMatchObject({ 总市值: '—', 流通市值: '—', 成交额: '—', 换手率: '—', 涨跌幅: '—', 总股本: '—', 流通股: '—' })
     workspace.vm.$emit('activeBarChange', null)
     await nextTick()
-    expect(values()).toMatchObject({ 总市值: '100.00 亿', 流通市值: '80.00 亿', 总股本: '10.00亿股' })
+    expect(values()).toMatchObject({ 总市值: '100.00 亿元', 流通市值: '80.00 亿元', 总股本: '10.00 亿股' })
     expect(summary.props('widths')).toBe(widths)
     wrapper.unmount()
   })
@@ -949,7 +949,7 @@ describe('StockDetailView 三图数据协调', () => {
     workspace.vm.$emit('activeBarChange', aggregateKlineBars(source, period)[0])
     await nextTick()
     expect(summary.props('summary').metrics.slice(8, 10).map((item: { value: string }) => item.value))
-      .toEqual(['20.00 亿', '10.00 亿'])
+      .toEqual(['20.00 亿元', '10.00 亿元'])
     source[1]!.total_mv = null
     source[1]!.float_mv = null
     workspace.vm.$emit('activeBarChange', aggregateKlineBars(source, period)[0])

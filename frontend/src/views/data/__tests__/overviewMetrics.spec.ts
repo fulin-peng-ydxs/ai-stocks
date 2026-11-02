@@ -37,7 +37,7 @@ describe('概览信息层级', () => {
       latest_complete_stocks: 1, latest_expected_stocks: 2,
     }
     const metric = overviewMetrics(fixture({ intraday })).find((item) => item.key === 'intraday')!
-    expect(metric.summary).toBe('目标日完整 50%')
+    expect(metric.summary).toBe('目标日完整 50.00%')
     expect(metric.info.kind).toBe('details')
     if (metric.info.kind !== 'details') throw new Error('分时应提供事实明细')
     expect(metric.info.rows).toContainEqual({ label: '目标日完整 / 应采', value: '1 / 2 只' })
@@ -60,7 +60,7 @@ describe('概览信息层级', () => {
   it('按最高现存严重程度摘要，不在高危为零时掩盖中危问题', () => {
     const metrics = overviewMetrics(fixture({ quality: { score: 100, open: 7, by_severity: { high: 0, mid: 6, low: 1 }, by_layer: [] } }))
     expect(metrics.find((item) => item.key === 'quality')).toMatchObject({ summary: '中危 6 项', tone: 'warning' })
-    expect(metrics.find((item) => item.key === 'score')).toMatchObject({ value: '100', tone: 'success' })
+    expect(metrics.find((item) => item.key === 'score')).toMatchObject({ value: '100.0', tone: 'success' })
   })
   it('只有指数时完整率与处理入口仍有效，不跳转空的逐股表', () => {
     const intraday = { stocks: 0, indices: 6, monitoring_start: '2026-10-08', target_end: '2026-10-22',
@@ -68,6 +68,15 @@ describe('概览信息层级', () => {
       latest_expected_stocks: 0, latest_complete_stocks: 0,
       latest_expected_indices: 6, latest_complete_indices: 6 }
     expect(overviewMetrics(fixture({ intraday })).find(m => m.key === 'intraday'))
-      .toMatchObject({ summary: '目标日完整 100%', action: 'intraday-quality', actionLabel: '查看分时问题' })
+      .toMatchObject({ summary: '目标日完整 100.00%', action: 'intraday-quality', actionLabel: '查看分时问题' })
   })
+})
+
+it('完成性覆盖从原始分子分母展示，不能被后端预舍入的100掩盖缺口', () => {
+  const metric = overviewMetrics(fixture({ st_status: {
+    expected: 1_000_000, present: 999_999, accurate: 999_999, coverage_rate: 100,
+    updated_at: null, refresh_state: null,
+    ready: false, missing: 1, approximate: 0, latest_date: '2026-10-30', first_date: null,
+  } })).find(item => item.key === 'stStatus')!
+  expect(metric.value).toBe('>99.99%')
 })

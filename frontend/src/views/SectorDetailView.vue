@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
+import { formatPercent } from '@/utils/marketValue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowLeft, DArrowLeft, DArrowRight, Star, StarFilled } from '@element-plus/icons-vue'
@@ -543,8 +545,8 @@ onMounted(async () => {
           <div class="metric"><span>5 日涨幅</span><strong :class="pctClass(detail?.pct_5d)">{{ fmtPct(detail?.pct_5d) }}</strong></div>
           <div class="metric"><span>20 日涨幅</span><strong :class="pctClass(detail?.pct_20d)">{{ fmtPct(detail?.pct_20d) }}</strong></div>
           <div class="metric"><span>即时净流入</span><strong :class="pctClass(detail?.net_inflow)">{{ fmtInflow(detail?.net_inflow) }}</strong></div>
-          <div class="metric"><span>成员涨 / 跌</span><strong><span class="up">{{ detail?.up_count ?? '—' }}</span> / <span class="down">{{ detail?.down_count ?? '—' }}</span></strong></div>
-          <div class="metric"><span>最近快照返回</span><strong>{{ detail?.member_count ?? '—' }} <small>只</small></strong></div>
+          <div class="metric"><span>成员涨 / 跌</span><strong><span class="up">{{ formatNumber(detail?.up_count, 'count') }}</span> / <span class="down">{{ formatNumber(detail?.down_count, 'count') }}</span></strong></div>
+          <div class="metric"><span>最近快照返回</span><strong>{{ formatNumber(detail?.member_count, 'count') }} <small>只</small></strong></div>
           <div class="metric metric--leader"><span>成员领涨</span><strong>{{ detail?.leader_stock || '—' }} <em :class="pctClass(detail?.leader_pct)">{{ fmtPct(detail?.leader_pct) }}</em></strong></div>
         </AppScrollArea>
 
@@ -636,7 +638,7 @@ onMounted(async () => {
             >
               <template #actions>
                 <span class="permission-hint">
-                  {{ memberTotal }} 条 · {{ canViewStocks ? '点击查看行情' : '无个股查看权限' }}
+                  {{ formatNumber(memberTotal, 'count') }} 条 · {{ canViewStocks ? '点击查看行情' : '无个股查看权限' }}
                 </span>
               </template>
               <AppControlRow class="member-filter-row" aria-label="成分股筛选">
@@ -697,7 +699,7 @@ onMounted(async () => {
                   <template #default="{ row }"><strong class="app-data-text" :class="pctClass(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</strong></template>
                 </AppTableColumn>
                 <AppTableColumn v-if="colVisible('turnover')" label="换手率" prop="turnover_rate" role="number">
-                  <template #default="{ row }"><span class="app-data-text">{{ fmtPct(row.turnover_rate) }}</span></template>
+                  <template #default="{ row }"><span class="app-data-text">{{ formatPercent(row.turnover_rate, { input: 'percent' }) }}</span></template>
                 </AppTableColumn>
                 <AppTableColumn v-if="canViewStocks" label="操作" role="action-compact">
                   <template #default="{ row }">

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessage } from 'element-plus'
 import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 
 describe('StockChartSettingSection', () => {
@@ -31,6 +31,17 @@ describe('StockChartSettingSection', () => {
     expect(inputs.map((input) => input.props('modelValue'))).toEqual([35, 30, 35])
     expect(wrapper.emitted('saveDefaultRatios')?.at(-1)).toEqual([[0.35, 0.3, 0.35]])
     expect(wrapper.text()).toContain('合计 100%')
+  })
+
+  it('整数比例超精度时提示，不自动舍入并保存', async () => {
+    const warning = vi.spyOn(ElMessage, 'warning').mockImplementation(() => ({ close: vi.fn() }))
+    const wrapper = mountSection()
+    const input = wrapper.findAllComponents({ name: 'ElInputNumber' })[0]
+    expect(input.props('precision')).toBeUndefined()
+    await input.vm.$emit('update:modelValue', 59.5)
+    expect(wrapper.emitted('saveDefaultRatios')).toBeUndefined()
+    expect(warning).toHaveBeenCalledWith('高度百分比需为整数')
+    warning.mockRestore()
   })
 
   it('工作区存在时回显尺寸档案与安全约束后的配置基线', () => {

@@ -1,3 +1,5 @@
+import { formatPercent } from '@/utils/marketValue'
+import { formatNumber } from '@/utils/numberFormat'
 import type { IntradayCoverage, Overview } from '@/api/data'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
 import type { DataMetricInfo } from '@/components/data/DataMetricCard.vue'
@@ -15,7 +17,7 @@ export interface OverviewMetric {
   action?: OverviewAction
   testId?: string
 }
-const count = (value?: number | null): string => value == null ? '—' : value.toLocaleString('zh-CN')
+const count = (value?: number | null): string => value == null ? '—' : formatNumber(value, 'count')
 const date = (value?: string | null): string => value?.slice(0, 10) || '—'
 
 /** 表格只保留需要行动的覆盖状态；完整分项由同一单元格的统计详情承接。 */
@@ -39,7 +41,7 @@ export function overviewMetrics(overview: Overview | null): OverviewMetric[] {
     || (intraday?.latest_expected_indices && intraday.latest_complete_indices == null))
     ? null : (intraday?.latest_complete_stocks ?? 0) + (intraday?.latest_complete_indices ?? 0)
   const latestCoverage = latestExpected
-    ? `目标日完整 ${latestComplete == null ? '—' : ((latestComplete / latestExpected) * 100).toLocaleString('zh-CN', { maximumFractionDigits: 1 }) + '%'}`
+    ? `目标日完整 ${formatPercent(latestComplete == null ? null : latestComplete / latestExpected, { input: 'ratio', completion: true })}`
     : monitored ? '尚无应采目标日' : intraday ? '尚未开始监控' : '尚无统计'
   return [
     {
@@ -80,7 +82,7 @@ export function overviewMetrics(overview: Overview | null): OverviewMetric[] {
       testId: 'overview-intraday-card',
     },
     {
-      key: 'stStatus', label: 'ST 点时事实', value: count(st?.coverage_rate), unit: '%',
+      key: 'stStatus', label: 'ST 点时事实', value: formatPercent(st?.expected && st.accurate != null ? st.accurate / st.expected : null, { input: 'ratio', completion: true }),
       summary: st ? st.ready ? '权威覆盖就绪' : '权威覆盖待补齐' : '尚无统计',
       tone: st?.ready === false ? 'danger' : undefined,
       info: { kind: 'details',
@@ -105,7 +107,7 @@ export function overviewMetrics(overview: Overview | null): OverviewMetric[] {
       actionLabel: '查看板块', action: 'board', testId: 'overview-board-card',
     },
     {
-      key: 'score', label: '日线四层评分', value: count(quality?.score),
+      key: 'score', label: '日线四层评分', value: formatNumber(quality?.score, 'score'),
       tone: quality ? quality.score >= 90 ? 'success' : quality.score >= 70 ? 'warning' : 'danger' : undefined,
       info: { kind: 'help', text: '当前在市股票日线四层全部达标的占比，范围为 0～100；分时质量独立统计，不计入此评分。' },
     },

@@ -107,8 +107,8 @@ describe('SectorCompareChart', () => {
     expect(content).toContain('2026-08-11 · 累计涨跌')
     expect(content).toContain('color:#f04438">+5.00%')
     expect(content).toContain('color:#0ea968">-2.00%')
-    expect(content).toContain('超额 +3.00%')
-    expect(content).toContain('超额 -4.00%')
+    expect(content).toContain('超额 +3.00 个百分点')
+    expect(content).toContain('超额 -4.00 个百分点')
     expect(content.match(/超额/g)).toHaveLength(2)
     const emptyContent = option.tooltip.formatter([
       { axisValueLabel: '2026-08-11', seriesName: '缺失板块', value: null, dataIndex: 5, marker: '' },

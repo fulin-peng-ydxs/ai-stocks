@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -245,9 +246,9 @@ function statusTagStyle(value: string | null | undefined) {
 }
 
 function formatDuration(value: number | null | undefined): string {
-  if (value == null) return '-'
-  if (value >= 1000) return `${(value / 1000).toFixed(1)}s`
-  return `${value}ms`
+  if (value == null || !Number.isFinite(value)) return '—'
+  if (value >= 1000) return `${formatNumber(value / 1000, 'seconds')} 秒`
+  return `${formatNumber(value, 'milliseconds')} 毫秒`
 }
 
 function formatChangeValue(value: unknown): string {
@@ -541,17 +542,17 @@ const menuPageTitle = useMenuPageTitle()
         <div class="audit-summary">
           <div class="metric">
             <span>范围事件</span>
-            <b>{{ summary?.total ?? 0 }}</b>
+            <b>{{ formatNumber(summary?.total ?? 0, 'count') }}</b>
             <em>{{ retentionHint }}</em>
           </div>
           <div class="metric">
             <span>失败 / 拒绝</span>
-            <b class="warn">{{ summary?.failed ?? 0 }}</b>
+            <b class="warn">{{ formatNumber(summary?.failed ?? 0, 'count') }}</b>
             <em>含失败、拒绝和异常</em>
           </div>
           <div class="metric">
             <span>安全事件</span>
-            <b class="danger">{{ summary?.by_category?.security ?? 0 }}</b>
+            <b class="danger">{{ formatNumber(summary?.by_category?.security ?? 0, 'count') }}</b>
             <em>登录失败、账号锁定等</em>
           </div>
         </div>

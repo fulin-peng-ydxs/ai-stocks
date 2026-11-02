@@ -120,8 +120,8 @@ describe('StockCompareChart', () => {
       tooltip: { formatter: (params: unknown[]) => string }
       yAxis: Array<{ axisLabel: { formatter: string | ((value: number) => string) } }>
     }
-    expect(option.series[0]?.data).toEqual([0, 10])
-    expect(option.series[1]?.data).toEqual([0, -5])
+    expect(option.series[0]?.data).toEqual([expect.closeTo(0, 10), expect.closeTo(10, 10)])
+    expect(option.series[1]?.data).toEqual([expect.closeTo(0, 10), expect.closeTo(-5, 10)])
     expect(option.series[0]!.lineStyle.width).toBeGreaterThan(option.series[1]!.lineStyle.width)
     const concreteFormatter = option.yAxis[0]!.axisLabel.formatter
     expect(typeof concreteFormatter === 'function' ? concreteFormatter(0) : '').toBe('10.00')
@@ -161,13 +161,13 @@ describe('StockCompareChart', () => {
     await nextTick()
 
     const option = echartsMock.setOption.mock.calls.at(-1)?.[0] as any
-    expect(option.series[0].data).toEqual([0, 0, 20])
-    expect(option.series[1].data).toEqual([0, 1, 10])
+    expect(option.series[0].data).toEqual([expect.closeTo(0, 10), expect.closeTo(0, 10), expect.closeTo(20, 10)])
+    expect(option.series[1].data).toEqual([expect.closeTo(0, 10), expect.closeTo(1, 10), expect.closeTo(10, 10)])
     expect(option.series[1].lineStyle.type).toBe('dashed')
     const content = option.tooltip.formatter([
       { axisValueLabel: dates[2], dataIndex: 2, seriesIndex: 0, seriesName: '平安银行 · 000001.SZ', value: 20, marker: '' },
     ])
-    expect(content).toContain('color:#f04438">超额 +10.00%')
+    expect(content).toContain('color:#f04438">超额 +10.00 个百分点')
     wrapper.unmount()
   })
 
@@ -190,8 +190,8 @@ describe('StockCompareChart', () => {
     const option = echartsMock.setOption.mock.calls.at(-1)?.[0] as {
       series: Array<{ data: (number | null)[] }>
     }
-    expect(option.series[0]?.data).toEqual([0, 0])     // 平安银行：有数据序列自首值为 0%
-    expect(option.series[1]?.data).toEqual([null, 0])  // 浦发银行：上市前留空，自首个有效值 0%
+    expect(option.series[0]?.data).toEqual([expect.closeTo(0, 10), expect.closeTo(0, 10)])     // 平安银行：有数据序列自首值为 0%
+    expect(option.series[1]?.data).toEqual([null, expect.closeTo(0, 10)])  // 浦发银行：上市前留空，自首个有效值 0%
     wrapper.unmount()
   })
 })

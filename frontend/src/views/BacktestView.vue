@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { formatReturn, formatPercent, formatPercentPoints, marketValueClass } from '@/utils/marketValue'
+import { formatNumber, displayDirection, tinyValueHint } from '@/utils/numberFormat'
+import { downloadCsv } from '@/utils/csv'
 import AppForm from '@/components/AppForm.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -678,8 +681,8 @@ function toRunOption(r: RunSummary) {
   return {
     id: runKey(r), label: `${who}·${year}`,
     range: `${(r.date_start || '').slice(0, 10)} ~ ${(r.date_end || '').slice(0, 10)}`,
-    color: ret == null ? '' : ret >= 0 ? 'var(--market-up-color)' : 'var(--market-down-color)',
-    retTxt: ret == null ? '' : (ret >= 0 ? '+' : '') + (ret * 100).toFixed(1) + '%',
+    color: marketValueClass(ret, { input: 'ratio' }) === 'up' ? 'var(--market-up-color)' : marketValueClass(ret, { input: 'ratio' }) === 'down' ? 'var(--market-down-color)' : '',
+    retTxt: formatReturn(ret),
     displaySource: assetDisplaySource(r.source),
     ownerLabel: r.owner_label,
   }
@@ -1258,25 +1261,18 @@ async function onRunRerunDone(result: unknown) {
 // 导出当前回测的逐笔交易为 CSV（带 BOM，Excel 中文不乱码）
 function exportTradesCsv() {
   if (!strat.value?.trades.length) return
-  const headers = ['代码', '买入日', '买价', '卖出日', '卖价', '收益率', '盈亏(元)', '持有交易日', '卖出原因', '买入分档', '买入当日榜单排名']
-  const lines = strat.value.trades.map((t) => {
+  const headers = ['代码', '买入日', '买价(元)', '卖出日', '卖价(元)', '收益率(比例)', '盈亏(元)', '持有交易日', '卖出原因', '买入分档', '买入当日榜单排名']
+  const rows = strat.value.trades.map((t) => {
     const tags = sellTags(t)
     const reason = tags.length ? tags.join('/') : t.exit_reason
-    const buyGrade = t.grade || (t.entry_score != null ? `无评级(${t.entry_score.toFixed(0)})` : '')
+    const buyGrade = t.grade || (t.entry_score != null ? `无评级(${t.entry_score})` : '')
     return [
       t.code, t.entry_date, t.entry_price, t.exit_date, t.exit_price,
-      (t.return_pct * 100).toFixed(2) + '%', t.pnl, t.hold_days, reason, buyGrade,
+      t.return_pct, t.pnl, t.hold_days, reason, buyGrade,
       t.entry_rank ?? '',
-    ].join(',')
+    ]
   })
-  const csv = '﻿' + [headers.join(','), ...lines].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `回测交易_${strat.value.run_id}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadCsv(`回测交易_${strat.value.run_id}.csv`, headers, rows)
 }
 
 onMounted(async () => {
@@ -1350,7 +1346,7 @@ async function runRobustTest() {
 const robustIsPct = computed(() =>
   ['industry_max_pct'].includes(robustParam.value))
 function sweepValLabel(v: number): string {
-  return robustIsPct.value ? (v * 100).toFixed(0) + '%' : String(v)
+  return robustIsPct.value ? formatPercent(v, { input: 'ratio' }) : formatNumber(v, 'parameter')
 }
 
 function buildBody(): RunParams {
@@ -1526,24 +1522,24 @@ function retryResult() {
 }
 
 // —— 展示辅助 ——
-const pct = (v: number | null | undefined, d = 1) =>
-  v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(d) + '%'
-const num = (v: number | null | undefined, d = 2) => (v == null ? '—' : v.toFixed(d))
+const pct = formatReturn
+const num = (v: number | null | undefined) => formatNumber(v, 'ratio')
 
 const metricCards = computed(() => {
   const m = strat.value?.metrics
   if (!m) return []
   return [
-    { label: '累计收益', val: pct(m.total_return), good: m.total_return >= 0 },
-    { label: '超额(vs基准)', val: pct(m.excess_return), good: m.excess_return >= 0 },
-    { label: '年化收益', val: pct(m.annual_return), good: m.annual_return >= 0, hint: '短区间年化会被放大，仅长周期可信' },
-    { label: '最大回撤', val: pct(m.max_drawdown), good: false },
-    { label: '夏普', val: num(m.sharpe), good: m.sharpe >= 0 },
-    { label: '卡玛', val: num(m.calmar), good: m.calmar >= 0 },
-    { label: '胜率', val: pct(m.win_rate, 0), good: m.win_rate >= 0.5 },
-    { label: '盈亏比', val: m.profit_factor == null ? '∞' : num(m.profit_factor), good: (m.profit_factor ?? 99) >= 1 },
-    { label: '交易数', val: String(m.n_trades), good: true, neutral: true },
-    { label: '平均持有(日)', val: num(m.avg_hold_days, 1), good: true, neutral: true },
+    { label: '累计收益', val: pct(m.total_return), hint: tinyValueHint(m.total_return, '%', 2, 2), neutral: displayDirection(m.total_return, 2, 2) === 0, good: m.total_return >= 0 },
+    { label: '超额(vs基准)', val: formatPercentPoints(m.excess_return, 'ratio'), hint: tinyValueHint(m.excess_return, ' 个百分点', 2, 2), neutral: displayDirection(m.excess_return, 2, 2) === 0, good: m.excess_return >= 0 },
+    { label: '年化收益', val: pct(m.annual_return), neutral: displayDirection(m.annual_return, 2, 2) === 0, good: m.annual_return >= 0, hint: '短区间年化会被放大，仅长周期可信' },
+    { label: '最大回撤', val: pct(m.max_drawdown), hint: tinyValueHint(m.max_drawdown, '%', 2, 2), neutral: displayDirection(m.max_drawdown, 2, 2) === 0, good: false },
+    { label: '夏普', val: num(m.sharpe), neutral: !displayDirection(m.sharpe), good: m.sharpe >= 0 },
+    { label: '卡玛', val: num(m.calmar), neutral: !displayDirection(m.calmar), good: m.calmar >= 0 },
+    { label: '胜率', val: formatPercent(m.win_rate, { input: 'ratio' }), neutral: !displayDirection(m.win_rate, 2, 2), good: m.win_rate >= 0.5 },
+    // 后端以 null 表示有盈利且无亏损的无限盈亏比；旧结果未提供字段才是缺失。
+    { label: '盈亏比', val: m.profit_factor === null ? '∞' : num(m.profit_factor), neutral: m.profit_factor !== null && !displayDirection(m.profit_factor), good: (m.profit_factor ?? 99) >= 1 },
+    { label: '交易数', val: formatNumber(m.n_trades, 'count'), good: true, neutral: true },
+    { label: '平均持有(日)', val: formatNumber(m.avg_hold_days), good: true, neutral: true },
   ]
 })
 
@@ -1551,7 +1547,7 @@ const metricCards = computed(() => {
 const layerKeys = computed(() => {
   const out: { key: string; label: string }[] = []
   for (const n of HORIZONS) for (const x of THRESHOLDS)
-    out.push({ key: `N${n}_X${Math.round(x * 100)}`, label: `${n}日≥${Math.round(x * 100)}%` })
+    out.push({ key: `N${n}_X${Math.round(x * 100)}`, label: `${n}日≥${formatPercent(x, { input: 'ratio' })}` })
   return out
 })
 const layersData = computed(() => strat.value?.layers ?? sig.value)
@@ -1563,7 +1559,7 @@ const layerRows = computed(() => {
     const e = L.by_grade[g] as Record<string, LayerCell | number>
     const cells: Record<string, LayerCell> = {}
     for (const lk of layerKeys.value) cells[lk.key] = e[lk.key] as LayerCell
-    rows.push({ name: `${g} (n=${e.n_signals})`, isBase: false, cells })
+    rows.push({ name: `${g} (n=${formatNumber(e.n_signals as number | undefined, 'count')})`, isBase: false, cells })
   }
   rows.push({ name: '全市场基线 (base rate)', isBase: true, cells: L.base_rate })
   return rows
@@ -1698,7 +1694,7 @@ async function openTradeChart(row: TradeRow) {
     const marks: TradeMarker[] = []
     for (const t of ts) {
       marks.push({ date: ymd(t.entry_date), kind: 'buy', label: `买${t.grade ? '·' + t.grade : ''}` })
-      const ret = (t.return_pct >= 0 ? '+' : '') + (t.return_pct * 100).toFixed(1) + '%'
+      const ret = formatReturn(t.return_pct)
       marks.push({ date: ymd(t.exit_date), kind: 'sell', label: `卖·${exitText(t)}\n${ret}` })
     }
     dlgMarkers.value = marks
@@ -1718,7 +1714,7 @@ async function openTradeChart(row: TradeRow) {
       if (i == null) return null
       const base = data.bars[i].close
       const j = data.bars[i + off]
-      return j && base ? +(j.close / base - 1).toFixed(4) : null
+      return j && base ? j.close / base - 1 : null
     }
     dlgTrades.value = ts.map((t) => ({
       ...t, fwd10: fwd(t.exit_date, 10), fwd30: fwd(t.exit_date, 30), fwd120: fwd(t.exit_date, 120),
@@ -2193,10 +2189,10 @@ const menuPageTitle = useMenuPageTitle()
                   <template #default="{ row }"><b>{{ sweepValLabel(row.value) }}</b></template>
                 </AppTableColumn>
                 <AppTableColumn label="累计收益" role="number">
-                  <template #default="{ row }"><span :class="row.total_return >= 0 ? 'up' : 'down'">{{ pct(row.total_return) }}</span></template>
+                  <template #default="{ row }"><span :class="marketValueClass(row.total_return, { input: 'ratio' })">{{ pct(row.total_return) }}</span></template>
                 </AppTableColumn>
                 <AppTableColumn label="超额" role="number">
-                  <template #default="{ row }"><span :class="row.excess_return >= 0 ? 'up' : 'down'">{{ pct(row.excess_return) }}</span></template>
+                  <template #default="{ row }"><span :class="marketValueClass(row.excess_return, { input: 'ratio' })">{{ formatPercentPoints(row.excess_return, 'ratio') }}</span></template>
                 </AppTableColumn>
                 <AppTableColumn label="最大回撤" role="number">
                   <template #default="{ row }">{{ pct(row.max_drawdown) }}</template>
@@ -2205,10 +2201,10 @@ const menuPageTitle = useMenuPageTitle()
                   <template #default="{ row }">{{ num(row.sharpe) }}</template>
                 </AppTableColumn>
                 <AppTableColumn label="胜率" role="number">
-                  <template #default="{ row }">{{ pct(row.win_rate) }}</template>
+                  <template #default="{ row }">{{ formatPercent(row.win_rate, { input: 'ratio' }) }}</template>
                 </AppTableColumn>
                 <AppTableColumn label="交易数" role="number">
-                  <template #default="{ row }">{{ row.n_trades ?? '—' }}</template>
+                  <template #default="{ row }">{{ formatNumber(row.n_trades, 'count') }}</template>
                 </AppTableColumn>
               </AppDataTable>
 
@@ -2221,10 +2217,10 @@ const menuPageTitle = useMenuPageTitle()
                   <template #default="{ row }"><b>{{ row.seg }}</b><span class="opt-range">{{ row.range[0] }}~{{ row.range[1] }}</span></template>
                 </AppTableColumn>
                 <AppTableColumn label="累计收益" role="number">
-                  <template #default="{ row }"><span :class="row.total_return >= 0 ? 'up' : 'down'">{{ pct(row.total_return) }}</span></template>
+                  <template #default="{ row }"><span :class="marketValueClass(row.total_return, { input: 'ratio' })">{{ pct(row.total_return) }}</span></template>
                 </AppTableColumn>
                 <AppTableColumn label="超额" role="number">
-                  <template #default="{ row }"><span :class="row.excess_return >= 0 ? 'up' : 'down'">{{ pct(row.excess_return) }}</span></template>
+                  <template #default="{ row }"><span :class="marketValueClass(row.excess_return, { input: 'ratio' })">{{ formatPercentPoints(row.excess_return, 'ratio') }}</span></template>
                 </AppTableColumn>
                 <AppTableColumn label="最大回撤" role="number">
                   <template #default="{ row }">{{ pct(row.max_drawdown) }}</template>
@@ -2233,7 +2229,7 @@ const menuPageTitle = useMenuPageTitle()
                   <template #default="{ row }">{{ num(row.sharpe) }}</template>
                 </AppTableColumn>
                 <AppTableColumn label="胜率" role="number">
-                  <template #default="{ row }">{{ pct(row.win_rate) }}</template>
+                  <template #default="{ row }">{{ formatPercent(row.win_rate, { input: 'ratio' }) }}</template>
                 </AppTableColumn>
               </AppDataTable>
             </el-collapse-item>
@@ -2245,7 +2241,7 @@ const menuPageTitle = useMenuPageTitle()
       <el-card v-if="layersData" shadow="never" class="block">
         <div class="block-title">
           分层命中率 vs 全市场基线（超额）
-          <span class="sub">区间 {{ layersData.date_start }} ~ {{ layersData.date_end }}，总信号 {{ layersData.total_signals }}</span>
+          <span class="sub">区间 {{ layersData.date_start }} ~ {{ layersData.date_end }}，总信号 {{ formatNumber(layersData.total_signals, 'count') }}</span>
         </div>
         <AppDataTable :data="layerRows" size="small" embedded>
           <AppTableColumn label="分档">
@@ -2256,10 +2252,10 @@ const menuPageTitle = useMenuPageTitle()
           <AppTableColumn v-for="lk in layerKeys" :key="lk.key" :label="lk.label" role="comparison-number">
             <template #default="{ row }">
               <template v-if="row.cells[lk.key] && row.cells[lk.key].hit_rate != null">
-                <span class="hit">{{ (row.cells[lk.key].hit_rate * 100).toFixed(1) }}%</span>
+                <span class="hit">{{ formatPercent(row.cells[lk.key].hit_rate, { input: 'ratio' }) }}</span>
                 <span v-if="!row.isBase && row.cells[lk.key].excess != null"
-                      class="excess" :class="{ pos: row.cells[lk.key].excess >= 0 }">
-                  {{ pct(row.cells[lk.key].excess, 1) }}
+                      class="excess" :class="marketValueClass(row.cells[lk.key].excess, { input: 'ratio' })">
+                  {{ formatPercentPoints(row.cells[lk.key].excess, 'ratio') }}
                 </span>
                 <AppHoverInfo v-if="!row.isBase && row.cells[lk.key].reliable === false" content="样本量过小，不采信">
                   <span tabindex="0" class="unreliable">·样本少</span>
@@ -2278,7 +2274,7 @@ const menuPageTitle = useMenuPageTitle()
       <!-- 逐笔交易（策略）-->
       <el-card v-if="hasTradeRows" shadow="never" class="block trade-block app-card-body-fill">
         <AppControlRow class="block-title">
-          逐笔交易（{{ strat!.trades.length }} 笔）
+          逐笔交易（{{ formatNumber(strat!.trades.length, 'count') }} 笔）
           <span class="sub">点任一行 → 在 K 线上看该股的买卖点与原因（不跳转）</span>
           <el-button class="export-btn" @click="exportTradesCsv">导出 CSV</el-button>
         </AppControlRow>
@@ -2300,15 +2296,15 @@ const menuPageTitle = useMenuPageTitle()
             </template>
           </AppTableColumn>
           <AppTableColumn label="买入" prop="entry_date" sortable :sort-by="(r:any)=>r.entry_date" />
-          <AppTableColumn label="买价"><template #default="{ row }">{{ formatMoney(row.entry_price) }}</template></AppTableColumn>
+          <AppTableColumn label="买价" header-meta="元"><template #default="{ row }">{{ formatMoney(row.entry_price) }}</template></AppTableColumn>
           <AppTableColumn label="卖出" prop="exit_date" sortable :sort-by="(r:any)=>r.exit_date" />
-          <AppTableColumn label="卖价"><template #default="{ row }">{{ formatMoney(row.exit_price) }}</template></AppTableColumn>
+          <AppTableColumn label="卖价" header-meta="元"><template #default="{ row }">{{ formatMoney(row.exit_price) }}</template></AppTableColumn>
           <AppTableColumn v-if="tradeColVisible('ret')" label="收益" prop="return_pct" sortable :sort-by="(r:any)=>r.return_pct">
             <template #default="{ row }">
-              <span :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct, 2) }}</span>
+              <span :class="marketValueClass(row.return_pct, { input: 'ratio' })">{{ pct(row.return_pct) }}</span>
             </template>
           </AppTableColumn>
-          <AppTableColumn v-if="tradeColVisible('hold')" label="持有" header-meta="日" prop="hold_days" sortable :sort-by="(r:any)=>r.hold_days" />
+          <AppTableColumn v-if="tradeColVisible('hold')" label="持有" header-meta="日" prop="hold_days" sortable :sort-by="(r:any)=>r.hold_days"><template #default="{ row }">{{ formatNumber(row.hold_days, 'count') }}</template></AppTableColumn>
           <AppTableColumn v-if="tradeColVisible('reason')" label="卖出原因">
             <template #default="{ row }">
               <template v-if="sellTags(row).length">
@@ -2321,7 +2317,7 @@ const menuPageTitle = useMenuPageTitle()
             <template #default="{ row }">
               <ScoreGradeTag v-if="row.grade" :grade="row.grade" />
               <AppHoverInfo v-else-if="row.entry_score != null" content="综合分未达「观察」档阈值，但因候选池内排名靠前而买入">
-                <span tabindex="0" class="muted">无评级·{{ row.entry_score.toFixed(0) }}分</span>
+                <span tabindex="0" class="muted">无评级·{{ formatNumber(row.entry_score, 'score') }}分</span>
               </AppHoverInfo>
               <span v-else class="muted">—</span>
             </template>
@@ -2344,12 +2340,12 @@ const menuPageTitle = useMenuPageTitle()
         <!-- 左上角：本笔交易摘要（收益率/买入金额/卖出金额/股数）-->
         <div v-if="dlgSummary" class="dlg-summary">
           <div class="ds-item"><span class="ds-k">本笔收益</span>
-            <span class="ds-v" :class="dlgSummary.ret >= 0 ? 'up' : 'down'">{{ pct(dlgSummary.ret, 2) }}</span></div>
-          <div class="ds-item"><span class="ds-k">买入金额</span><span class="ds-v">{{ formatCompactMoneyYuan(dlgSummary.buyAmt, { digits: 1 }) }}</span></div>
-          <div class="ds-item"><span class="ds-k">卖出金额</span><span class="ds-v">{{ formatCompactMoneyYuan(dlgSummary.sellAmt, { digits: 1 }) }}</span></div>
-          <div class="ds-item"><span class="ds-k">股数</span><span class="ds-v">{{ dlgSummary.shares.toLocaleString() }}</span></div>
+            <span class="ds-v" :class="marketValueClass(dlgSummary.ret, { input: 'ratio' })">{{ pct(dlgSummary.ret) }}</span></div>
+          <div class="ds-item"><span class="ds-k">买入金额</span><span class="ds-v">{{ formatCompactMoneyYuan(dlgSummary.buyAmt) }}</span></div>
+          <div class="ds-item"><span class="ds-k">卖出金额</span><span class="ds-v">{{ formatCompactMoneyYuan(dlgSummary.sellAmt) }}</span></div>
+          <div class="ds-item"><span class="ds-k">股数</span><span class="ds-v">{{ formatNumber(dlgSummary.shares, 'quantity') }}</span></div>
           <div class="ds-item"><span class="ds-k">盈亏</span>
-            <span class="ds-v" :class="dlgSummary.pnl >= 0 ? 'up' : 'down'">{{ formatCompactMoneyYuan(dlgSummary.pnl, { digits: 1 }) }}</span></div>
+            <span class="ds-v" :class="marketValueClass(dlgSummary.pnl)">{{ formatCompactMoneyYuan(dlgSummary.pnl, { forceSign: true }) }}</span></div>
           <div class="ds-item">
             <span class="ds-k">买入优先级
               <HelpTip title="为什么买它？" :width="340">
@@ -2409,10 +2405,10 @@ const menuPageTitle = useMenuPageTitle()
           <AppTableColumn label="卖出" prop="exit_date" />
           <AppTableColumn label="收益">
             <template #default="{ row }">
-              <span :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct, 2) }}</span>
+              <span :class="marketValueClass(row.return_pct, { input: 'ratio' })">{{ pct(row.return_pct) }}</span>
             </template>
           </AppTableColumn>
-          <AppTableColumn label="持有" header-meta="日" prop="hold_days" />
+          <AppTableColumn label="持有" header-meta="日" prop="hold_days"><template #default="{ row }">{{ formatNumber(row.hold_days, 'count') }}</template></AppTableColumn>
           <AppTableColumn label="卖出原因">
             <template #default="{ row }">
               <template v-if="sellTags(row).length">
@@ -2424,7 +2420,7 @@ const menuPageTitle = useMenuPageTitle()
           <AppTableColumn label="买入档">
             <template #default="{ row }">
               <ScoreGradeTag v-if="row.grade" :grade="row.grade" />
-              <span v-else-if="row.entry_score != null" class="muted">无评级·{{ row.entry_score.toFixed(0) }}分</span>
+              <span v-else-if="row.entry_score != null" class="muted">无评级·{{ formatNumber(row.entry_score, 'score') }}分</span>
               <span v-else class="muted">—</span>
             </template>
           </AppTableColumn>
@@ -2432,13 +2428,13 @@ const menuPageTitle = useMenuPageTitle()
             <template #default="{ row }">{{ row.entry_rank ? '#' + row.entry_rank : '—' }}</template>
           </AppTableColumn>
           <AppTableColumn label="卖后10日">
-            <template #default="{ row }"><span :class="row.fwd10 == null ? '' : row.fwd10 >= 0 ? 'up' : 'down'">{{ pct(row.fwd10, 1) }}</span></template>
+            <template #default="{ row }"><span :class="row.fwd10 == null ? '' : marketValueClass(row.fwd10, { input: 'ratio' })">{{ pct(row.fwd10) }}</span></template>
           </AppTableColumn>
           <AppTableColumn label="卖后30日">
-            <template #default="{ row }"><span :class="row.fwd30 == null ? '' : row.fwd30 >= 0 ? 'up' : 'down'">{{ pct(row.fwd30, 1) }}</span></template>
+            <template #default="{ row }"><span :class="row.fwd30 == null ? '' : marketValueClass(row.fwd30, { input: 'ratio' })">{{ pct(row.fwd30) }}</span></template>
           </AppTableColumn>
           <AppTableColumn label="卖后半年">
-            <template #default="{ row }"><span :class="row.fwd120 == null ? '' : row.fwd120 >= 0 ? 'up' : 'down'">{{ pct(row.fwd120, 1) }}</span></template>
+            <template #default="{ row }"><span :class="row.fwd120 == null ? '' : marketValueClass(row.fwd120, { input: 'ratio' })">{{ pct(row.fwd120) }}</span></template>
           </AppTableColumn>
         </AppDataTable>
         <div class="dlg-hint" style="margin-top:6px">
@@ -2739,8 +2735,7 @@ const menuPageTitle = useMenuPageTitle()
 .metric.good .m-val { color: var(--market-up-color); }
 .metric.bad .m-val { color: var(--market-down-color); }
 .hit { font-weight: var(--app-font-weight-section); font-variant-numeric: tabular-nums; }
-.excess { display: block; font-size: var(--app-font-size-caption); color: var(--market-down-color); }
-.excess.pos { color: var(--market-up-color); }
+.excess { display: block; font-size: var(--app-font-size-caption); }
 .unreliable { display: block; font-size: var(--app-font-size-caption); color: var(--app-warning-text); }
 .base { color: var(--el-text-color-secondary); }
 .legend-line { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 8px; }

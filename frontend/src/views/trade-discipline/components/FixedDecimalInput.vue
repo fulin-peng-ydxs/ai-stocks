@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
-import { formContextKey } from 'element-plus'
+import { ElMessage, formContextKey } from 'element-plus'
 import { isFixedDecimalInput } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
 
@@ -38,6 +38,8 @@ function update(raw: string): void {
   const candidate = ungrouped.startsWith('.') ? `0${ungrouped}` : ungrouped
   if (isFixedDecimalInput(candidate, props.scale, props.integerDigits)) {
     emit('update:modelValue', candidate)
+  } else {
+    ElMessage.warning({ message: `请输入非负数，整数最多 ${props.integerDigits} 位、小数最多 ${props.scale} 位`, grouping: true })
   }
 }
 </script>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { LimitLadderStock, LimitLadderWindow } from '@/api/limitLadder'
@@ -78,7 +79,7 @@ function selectCard(): void {
       </span>
 
       <span v-if="shortHistory" class="limit-ladder-card__history" data-testid="limit-ladder-short-history">
-        窗口仅 {{ stock.actual_trade_days }} 日 · 自 {{ stock.window_start_date || '—' }} 起
+        窗口仅 {{ formatNumber(stock.actual_trade_days, 'count') }} 日 · 自 {{ stock.window_start_date || '—' }} 起
       </span>
     </el-button>
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -100,7 +101,7 @@ function leadingControlsOf(column: RankedStockColumn): number {
       :leading-controls="leadingControlsOf(column)"
     >
       <template #default="{ row }">
-        <template v-if="column.key === 'rank'">{{ row.rank ?? '—' }}</template>
+        <template v-if="column.key === 'rank'">{{ formatNumber(row.rank, 'count') }}</template>
         <span v-else-if="column.key === 'code'" class="app-inline-info app-inline-info--nowrap">
           <span>{{ row.code }}</span>
           <StockStatusTag
@@ -140,7 +141,7 @@ function leadingControlsOf(column: RankedStockColumn): number {
           :return-path="returnPath"
         />
         <template v-else-if="column.key === 'score'">
-          <strong v-if="row.total_score != null" class="score">{{ row.total_score }}</strong>
+          <strong v-if="row.total_score != null" class="score">{{ formatNumber(row.total_score, 'score') }}</strong>
           <span v-else class="muted">{{ row.score_status === 'excluded_st' ? '该方案未纳入 ST' : '—' }}</span>
         </template>
         <template v-else-if="column.key === 'grade'">

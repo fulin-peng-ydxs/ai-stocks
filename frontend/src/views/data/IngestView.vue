@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatPercent } from '@/utils/marketValue'
+import { progressPercent, formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import { taskRequestFields } from '@/utils/requestRuntime'
@@ -247,7 +249,7 @@ function taskPhaseText(t: AsyncTask): string {
   const cp = cap?.checkpoint
   const done = cp?.phase_done
   const total = cp?.phase_total
-  const count = (typeof done === 'number' && typeof total === 'number' && total > 0) ? `${done}/${total}` : ''
+  const count = (typeof done === 'number' && typeof total === 'number' && total > 0) ? `${formatNumber(done, 'count')}/${formatNumber(total, 'count')}` : ''
   return [phaseText, count, item ? String(item) : ''].filter(Boolean).join(' · ')
 }
 function canCancelTask(t: AsyncTask): boolean {
@@ -1002,7 +1004,7 @@ const menuPageTitle = useMenuPageTitle()
                   依赖{{ row.job_name ? `·${row.job_name}` : '' }}
                 </el-tag>
                 <el-tag v-else-if="row.trigger_source === 'retry'" type="danger" size="small" effect="plain">
-                  重试{{ row.job_name ? `·${row.job_name}` : '' }}{{ row.retry_count ? ` #${row.retry_count}` : '' }}
+                  重试{{ row.job_name ? `·${row.job_name}` : '' }}{{ row.retry_count ? ` #${formatNumber(row.retry_count, 'count')}` : '' }}
                 </el-tag>
                 <el-tag v-else-if="row.trigger_source === 'system'" type="primary" size="small" effect="plain">
                   系统{{ row.job_name ? `·${row.job_name}` : '' }}
@@ -1023,7 +1025,7 @@ const menuPageTitle = useMenuPageTitle()
             </AppTableColumn>
             <AppTableColumn label="进度">
               <template #default="{ row }">
-                <el-progress :percentage="Math.round((row.progress ?? 0) * 100)" :stroke-width="10"
+                <el-progress :percentage="progressPercent(row.progress)" :format="() => formatPercent(row.progress, { input: 'ratio', completion: true })" :stroke-width="10"
                   :status="taskOutcomeDisplay(row).progressStatus" />
               </template>
             </AppTableColumn>
@@ -1117,7 +1119,7 @@ const menuPageTitle = useMenuPageTitle()
                 </el-tag>
               </template>
             </AppTableColumn>
-            <AppTableColumn label="行数" prop="row_count" role="number" />
+            <AppTableColumn label="行数" prop="row_count" role="number" ><template #default="{ row }">{{ formatNumber(row.row_count, 'count') }}</template></AppTableColumn>
             <AppTableColumn label="区间">
               <template #default="{ row }">{{ row.date_start ? `${row.date_start} ~ ${row.date_end || row.date_start}` : '—' }}</template>
             </AppTableColumn>
@@ -1249,7 +1251,7 @@ const menuPageTitle = useMenuPageTitle()
         <el-tag :type="taskStatusType(logTask)" size="small" effect="dark">{{ taskStatusLabel(logTask) }}</el-tag>
         <span class="lm-msg">{{ taskOutcomeDisplay(logTask).message }}</span>
         <span v-if="taskPhaseText(logTask)" class="lm-phase">{{ taskPhaseText(logTask) }}</span>
-        <el-progress :percentage="Math.round((logTask.progress ?? 0) * 100)" :stroke-width="8" style="flex:1" />
+        <el-progress :percentage="progressPercent(logTask.progress)" :format="() => formatPercent(logTask?.progress, { input: 'ratio', completion: true })" :stroke-width="8" style="flex:1" />
         <el-checkbox v-model="autoScroll" size="small">自动滚动</el-checkbox>
       </div>
       <div v-if="logTaskFinished" class="log-followups">
@@ -1288,16 +1290,16 @@ const menuPageTitle = useMenuPageTitle()
             data-testid="correlation-task-result"
           >
             <AppDetailField label="目标日期" :value="correlationResult.target_date" />
-            <AppDetailField label="目标股票" :value="correlationResult.target_stock_count ?? 0" />
-            <AppDetailField label="候选关系" :value="correlationResult.candidate_relation_count ?? 0" />
-            <AppDetailField label="行业冠军" :value="correlationResult.industry_champion_count ?? 0" />
-            <AppDetailField label="概念冠军" :value="correlationResult.concept_champion_count ?? 0" />
-            <AppDetailField label="空结果" :value="correlationResult.empty_result_count ?? 0" />
-            <AppDetailField label="回退上证" :value="correlationResult.fallback_count ?? 0" />
-            <AppDetailField label="跳过股票" :value="correlationResult.skipped_count ?? 0" />
-            <AppDetailField label="失败数" :value="correlationResult.failed_count ?? 0" />
-            <AppDetailField label="计算耗时" :value="`${correlationResult.calculation_seconds ?? 0} 秒`" />
-            <AppDetailField label="写入耗时" :value="`${correlationResult.write_seconds ?? 0} 秒`" />
+            <AppDetailField label="目标股票" :value="formatNumber(correlationResult.target_stock_count, 'count')" />
+            <AppDetailField label="候选关系" :value="formatNumber(correlationResult.candidate_relation_count, 'count')" />
+            <AppDetailField label="行业冠军" :value="formatNumber(correlationResult.industry_champion_count, 'count')" />
+            <AppDetailField label="概念冠军" :value="formatNumber(correlationResult.concept_champion_count, 'count')" />
+            <AppDetailField label="空结果" :value="formatNumber(correlationResult.empty_result_count, 'count')" />
+            <AppDetailField label="回退上证" :value="formatNumber(correlationResult.fallback_count, 'count')" />
+            <AppDetailField label="跳过股票" :value="formatNumber(correlationResult.skipped_count, 'count')" />
+            <AppDetailField label="失败数" :value="formatNumber(correlationResult.failed_count, 'count')" />
+            <AppDetailField label="计算耗时" :value="`${formatNumber(correlationResult.calculation_seconds, 'seconds')} 秒`" />
+            <AppDetailField label="写入耗时" :value="`${formatNumber(correlationResult.write_seconds, 'seconds')} 秒`" />
             <AppDetailField label="基准分布" :value="correlationBenchmarkText()" />
             <AppDetailField label="写入状态" :value="correlationWriteStatus()" />
           </AppDetailFields>
@@ -1310,12 +1312,12 @@ const menuPageTitle = useMenuPageTitle()
             <AppDetailField label="交易日" :value="ladderResult.trade_date" />
             <AppDetailField label="快照状态" :value="ladderResult.snapshot_status" />
             <AppDetailField label="快照 ID" :value="ladderResult.snapshot_id" mono />
-            <AppDetailField label="股票池" :value="ladderResult.coverage?.pool_count ?? 0" />
-            <AppDetailField label="有效行情" :value="ladderResult.coverage?.valid_bar_count ?? 0" />
-            <AppDetailField label="确认停牌" :value="ladderResult.coverage?.confirmed_suspension_count ?? 0" />
-            <AppDetailField label="缺失" :value="ladderResult.coverage?.missing_count ?? 0" />
-            <AppDetailField label="非法行情" :value="ladderResult.coverage?.invalid_bar_count ?? 0" />
-            <AppDetailField label="未知规则" :value="ladderResult.coverage?.unsupported_rule_count ?? 0" />
+            <AppDetailField label="股票池" :value="formatNumber(ladderResult.coverage?.pool_count, 'count')" />
+            <AppDetailField label="有效行情" :value="formatNumber(ladderResult.coverage?.valid_bar_count, 'count')" />
+            <AppDetailField label="确认停牌" :value="formatNumber(ladderResult.coverage?.confirmed_suspension_count, 'count')" />
+            <AppDetailField label="缺失" :value="formatNumber(ladderResult.coverage?.missing_count, 'count')" />
+            <AppDetailField label="非法行情" :value="formatNumber(ladderResult.coverage?.invalid_bar_count, 'count')" />
+            <AppDetailField label="未知规则" :value="formatNumber(ladderResult.coverage?.unsupported_rule_count, 'count')" />
             <AppDetailField label="采集终态" :value="ladderResult.coverage?.ingest_terminal_status" />
           </AppDetailFields>
         </AppScrollArea>

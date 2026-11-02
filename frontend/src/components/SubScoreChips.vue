@@ -1,12 +1,13 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 const props = defineProps<{
   scoreKeys: readonly string[]
   scores?: Record<string, number | null | undefined>
   labelOf: (key: string) => string
 }>()
 
-function roundedScore(key: string): number {
-  return Math.round(props.scores?.[key] ?? 0)
+function roundedScore(key: string): string {
+  return formatNumber(props.scores?.[key], 'score')
 }
 
 function scoreLevel(key: string): string {

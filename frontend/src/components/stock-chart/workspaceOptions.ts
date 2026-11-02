@@ -654,14 +654,14 @@ export function buildKlineOption(context: OptionContext) {
           label: {
             show: true,
             ...marketAxisPointerLabel(context.theme, (value) => referencePrice == null
-              ? '--' : formatMarketPercent(((value / referencePrice) - 1) * 100), referencePrice),
+              ? '—' : formatMarketPercent(((value / referencePrice) - 1) * 100), referencePrice),
           },
         },
         axisLabel: {
           color: priceLabelColor,
           fontSize: context.theme.typography.axis,
           formatter: (value: number) => {
-            if (referencePrice == null) return '--'
+            if (referencePrice == null) return '—'
             const percentage = ((value / referencePrice) - 1) * 100
             return formatMarketPercent(percentage)
           },

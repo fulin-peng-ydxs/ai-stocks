@@ -1,3 +1,4 @@
+import { formatNumber } from '@/utils/numberFormat'
 import { chartCssVariable, type EChartsTheme } from '@/components/chartTheme'
 import { formatMarketPercent } from '@/utils/marketValue'
 import { marketAxisLabelColor, marketAxisPointerLabel } from '@/components/chartAxisLabel'
@@ -41,8 +42,8 @@ function percentExtent(series: NamedSeries[]): { min: number; max: number } {
 
 function concreteValueFormatter(base: number | null | undefined) {
   return (percentage: number) => {
-    if (base == null || !Number.isFinite(base) || base <= 0) return '--'
-    return (base * (1 + percentage / 100)).toFixed(2)
+    if (base == null || !Number.isFinite(base) || base <= 0) return '—'
+    return formatNumber(base * (1 + percentage / 100), 'price')
   }
 }
 

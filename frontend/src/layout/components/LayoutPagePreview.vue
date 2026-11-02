@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 /**
  * 页面布局工作台 · 结构示意预览（P5 / M8-C）。
  *
@@ -95,7 +96,7 @@ function parentLabel(s: SlotSpec): string | null {
           aria-label="预览宽度"
         />
         <div v-else class="uniform-layout-note">
-          三档宽度均为 <strong>{{ uniformColumnCount }} 列</strong>，无需切换
+          三档宽度均为 <strong>{{ formatNumber(uniformColumnCount, 'count') }} 列</strong>，无需切换
         </div>
       </div>
       <div class="preview-context-note">

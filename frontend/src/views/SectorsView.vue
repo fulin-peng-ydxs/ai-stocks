@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppSelect from '@/components/AppSelect.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
@@ -1107,7 +1108,7 @@ const menuPageTitle = useMenuPageTitle()
         v-model:analysis-visible="analysisPanelVisible"
         eyebrow="强弱排行"
         :title="marketDate || tradeDate || '最新交易日'"
-        :meta="`${total} 个${listScope === 'watchlist' ? '自选' : '板块'}`"
+        :meta="`${formatNumber(total, 'count')} 个${listScope === 'watchlist' ? '自选' : '板块'}`"
         list-aria-label="板块强弱排行"
         :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
         :master-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
@@ -1184,7 +1185,7 @@ const menuPageTitle = useMenuPageTitle()
                       {{ row.name }}
                     </el-button>
                     <span v-if="row.available === false">{{ row.board_type === 'concept' ? '概念' : '行业' }} · 已失效</span>
-                    <span v-else>{{ row.board_type === 'concept' ? '概念' : '行业' }} · 最近快照 {{ row.member_count ?? '—' }}只</span>
+                    <span v-else>{{ row.board_type === 'concept' ? '概念' : '行业' }} · 最近快照 {{ formatNumber(row.member_count, 'count') }}只</span>
                   </div>
                 </div>
               </template>

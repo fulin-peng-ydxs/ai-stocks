@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import { computed, ref } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import PermissionResourceList from './PermissionResourceList.vue'
@@ -58,7 +59,7 @@ const resourceStats = computed(() => {
         <el-icon class="pt-caret"><ArrowDown /></el-icon>
         <span class="pt-group-title">{{ node.label }}</span>
         <span v-if="resourceStats.total" class="pt-summary">
-          已选 {{ resourceStats.selected }}/{{ resourceStats.total }}
+          已选 {{ formatNumber(resourceStats.selected, 'count') }}/{{ formatNumber(resourceStats.total, 'count') }}
         </span>
         <span v-if="node.sysLocked" class="pt-system-only">仅系统管理员</span>
       </button>
@@ -111,7 +112,7 @@ const resourceStats = computed(() => {
         :aria-label="`${node.label}功能权限 ${resourceStats.selected}/${resourceStats.total}`"
         @click="resourcesOpen = !resourcesOpen"
       >
-        功能权限 {{ resourceStats.selected }}/{{ resourceStats.total }}
+        功能权限 {{ formatNumber(resourceStats.selected, 'count') }}/{{ formatNumber(resourceStats.total, 'count') }}
         <el-icon class="pt-resource-caret" :class="{ open: resourcesOpen }"><ArrowDown /></el-icon>
       </el-button>
       <span v-else class="pt-summary">无功能点</span>

@@ -25,6 +25,7 @@
     "check:scrollbars": "node scripts/check-scrollbars.mjs",
     "check:borders": "node scripts/check-borders.mjs",
     "check:control-rows": "node scripts/check-control-rows.mjs",
+    "check:numbers": "node scripts/check-numbers.mjs",
     "check:design": "node scripts/check-design.mjs",
     "check:contracts": "node scripts/check-design-contracts.mjs",
     "check:contracts:docs": "node scripts/check-design-contracts.mjs --docs",

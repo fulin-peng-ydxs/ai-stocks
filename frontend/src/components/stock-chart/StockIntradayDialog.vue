@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { tinyValueHint } from '@/utils/numberFormat'
+import { formatMarketPercent, formatPercent, marketValueTone } from '@/utils/marketValue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { getIntraday, type StockIntraday } from '@/api/stocks'
 import AppDialog from '@/components/AppDialog.vue'
@@ -43,7 +45,7 @@ const summary = computed<StockQuoteSummaryModel | null>(() => {
   const pct = data.value.pre_close && data.value.pre_close > 0
     ? ((last.close / data.value.pre_close) - 1) * 100
     : null
-  const tone: StockQuoteTone = pct == null || pct === 0 ? 'neutral' : pct > 0 ? 'up' : 'down'
+  const tone: StockQuoteTone = marketValueTone(pct)
   const amplitude = data.value.pre_close && data.value.pre_close > 0
     ? ((high - low) / data.value.pre_close) * 100
     : null
@@ -54,9 +56,9 @@ const summary = computed<StockQuoteSummaryModel | null>(() => {
       { label: '开盘', value: formatChartNumber(open, 2) },
       { label: '最高', value: formatChartNumber(high, 2) },
       { label: '最低', value: formatChartNumber(low, 2) },
-      { label: '涨幅', value: pct == null ? '--' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`, tone },
-      { label: '振幅', value: amplitude == null ? '--' : `${amplitude.toFixed(2)}%` },
-      { label: '换手率', value: data.value.turnover_rate == null ? '--' : `${data.value.turnover_rate.toFixed(2)}%` },
+      { label: '涨幅', value: formatMarketPercent(pct), tone, rawPrecision: tinyValueHint(pct, '%') },
+      { label: '振幅', value: formatPercent(amplitude, { input: 'percent' }) },
+      { label: '换手率', value: formatPercent(data.value.turnover_rate, { input: 'percent' }) },
       { label: '成交量', value: formatVolumeLots(volume) },
       { label: '成交额', value: formatAmount(amount) },
     ],

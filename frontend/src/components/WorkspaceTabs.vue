@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatNumber } from '@/utils/numberFormat'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { acceptsKeyboardEvent } from '@/utils/keyboard'
@@ -125,7 +126,7 @@ async function clear() {
         @click="setCollapsed(!collapsed)"
       ><ArrowRight class="workspace-tabs-chevron" /></AppIconButton>
       <span class="workspace-tabs-label">工作区</span>
-      <span class="workspace-tabs-count" :aria-label="`${workspaceTabs.length} 个已打开页面`">{{ workspaceTabs.length }}</span>
+      <span class="workspace-tabs-count" :aria-label="`${workspaceTabs.length} 个已打开页面`">{{ formatNumber(workspaceTabs.length, 'count') }}</span>
       <AppIconButton
         label="清除其他页签"
         tooltip="保留当前页签，清除其他页签"

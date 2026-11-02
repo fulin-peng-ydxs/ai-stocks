@@ -16,6 +16,7 @@ export interface BacktestMetrics {
   calmar: number
   sortino: number
   win_rate: number
+  /** null 专指有盈利且无亏损（无限盈亏比），不是字段缺失；无盈利且无亏损为 0。 */
   profit_factor: number | null
   avg_hold_days: number
   n_trades: number

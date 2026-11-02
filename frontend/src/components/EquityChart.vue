@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { displayDirection } from '@/utils/numberFormat'
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import type { EquityPoint } from '@/api/backtest'
@@ -7,7 +8,7 @@ import { chartCssVariable, useEChartsTheme } from '@/components/chartTheme'
 import { chartTooltipRowHtml } from '@/components/chartTooltipHtml'
 import { initVectorEChart } from '@/components/echartsRenderer'
 import { formatMoney } from '@/utils/money'
-import { formatMarketPercent } from '@/utils/marketValue'
+import { formatMarketPercent, formatMarketPercentDetail, formatPercentPointsDetail } from '@/utils/marketValue'
 import { marketAxisLabelColor, marketAxisPointerLabel } from '@/components/chartAxisLabel'
 
 // showBenchmark：缺省 true（默认展示基准）；父页显式传 false（回测选「不对比指数」）时整条基准线隐藏。
@@ -41,7 +42,7 @@ function render() {
   const ddAreaColor = chartCssVariable('--el-color-danger-light-9', ddColor)
   const dates = props.points.map((p) => p.trade_date)
   const equity = props.points.map((p) => p.equity)
-  const dd = props.points.map((p) => +(p.drawdown * 100).toFixed(2))
+  const dd = props.points.map((p) => p.drawdown * 100)
   // 父页显式关掉对比（showBenchmark=false）时整条基准线隐藏；否则：
   // 有 extraBenchmark 渲染该指数虚线，无则渲染 points 自带基准实线（训练结算「满仓持有」场景）。
   const showBenchmark = props.showBenchmark
@@ -95,20 +96,20 @@ function render() {
         const idx = rows[0]?.dataIndex ?? 0
         const retOf = (v: unknown, first: number) =>
           Number.isFinite(v) && first ? ((v as number) / first - 1) * 100 : null
-        const fmtRet = (r: number | null) => r == null ? '--' : formatMarketPercent(r)
-        const colorOf = (r: number | null) => (r == null || r === 0 ? t.text : r > 0 ? upColor : downColor)
+        const fmtRet = (r: number | null) => r == null ? '—' : formatMarketPercentDetail(r)
+        const colorOf = (r: number | null) => (displayDirection(r) === 1 ? upColor : displayDirection(r) === -1 ? downColor : t.text)
         // 超额=组合相对首日涨跌幅 − 基准相对首日涨跌幅（仅组合行、且基准可见时显示）
         const portfolioRet = retOf(equity[idx], firstEquity)
         const benchRet = retOf(bench[idx], firstBench)
         const excess = showBenchmark && portfolioRet != null && benchRet != null
-          ? +(portfolioRet - benchRet).toFixed(2) : null
+          ? portfolioRet - benchRet : null
         const content = rows.map((item) => {
           const isDd = item.seriesName === '回撤'
           const r = isDd ? null : (item.seriesName === '组合净值' ? portfolioRet : benchRet)
           const val = isDd ? Number(item.value) : r
-          const valText = isDd ? (Number.isFinite(val) ? formatMarketPercent(val as number) : '--') : fmtRet(r)
+          const valText = isDd ? (Number.isFinite(val) ? formatMarketPercentDetail(val as number) : '—') : fmtRet(r)
           const excessHtml = !isDd && item.seriesName === '组合净值' && excess != null
-            ? `<small style="display:block;color:${colorOf(excess)}">超额 ${formatMarketPercent(excess)}</small>` : ''
+            ? `<small style="display:block;color:${colorOf(excess)}">超额 ${formatPercentPointsDetail(excess)}</small>` : ''
           return chartTooltipRowHtml(
             `<span>${item.marker ?? ''}${item.seriesName ?? ''}</span>`,
             `<span style="text-align:right"><strong style="color:${colorOf(isDd ? val : r)}">${valText}</strong>${excessHtml}</span>`,
@@ -129,7 +130,7 @@ function render() {
       { scale: true, axisLine: { show: false }, axisLabel: {
         color: t.label,
         fontSize: t.typography.axis,
-        formatter: (value: number) => formatMoney(value, { digits: 0, empty: '--' }),
+        formatter: (value: number) => formatMoney(value),
       },
         splitLine: { lineStyle: { color: t.split } } },
       { gridIndex: 1, axisLine: { show: false }, splitNumber: 2,
