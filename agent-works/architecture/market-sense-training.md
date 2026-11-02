@@ -21,19 +21,19 @@
 
 `_settle_pending` 仍保留 buy 分支，仅兼容历史遗留的 buy pending（按次日开盘价结算），新会话买入不再走此路径（`training_service.py`）。
 
-**盲测脱敏（双层保护）**。① 服务层：`_bars_for_view(reveal_dates=False)`（`training_service.py:118`）将 `date` 字段替换为相对日标签 `D±N`，response 中不含 `code`/`name`/真实日期；`get_view`（running 态）固定走脱敏路径，仅 `get_detail`（completed 态）才展示真实身份。② API 层：`reveal` 接受 `cursor_idx` 乐观校验——前端已知的游标与服务端不符则拒绝，防多标签页并发推进导致状态错乱（`training_service.py:400`）。盲测阶段仍返回回合所属**板块（主板/创业板/科创板）**：其为宽泛分类且与选股过滤同口径，不指向具体个股，供训练台标注用。
+**盲测脱敏（双层保护）**。① 服务层：`_bars_for_view(reveal_dates=False)`（`training_service.py`）将 `date` 字段替换为相对日标签 `D±N`，response 中不含 `code`/`name`/真实日期；`get_view`（running 态）固定走脱敏路径，仅 `get_detail`（completed 态）才展示真实身份。② API 层：`reveal` 接受 `cursor_idx` 乐观校验——前端已知的游标与服务端不符则拒绝，防多标签页并发推进导致状态错乱（`training_service.py`）。盲测阶段仍返回回合所属**板块（主板/创业板/科创板）**：其为宽泛分类且与选股过滤同口径，不指向具体个股，供训练台标注用。
 
-**点时安全 K 线**。`_bars_for_view` 查询条件严格为 `trade_date <= cursor_date`（`training_service.py:128`），从不返回 cursor 之后的 bar；`adj_factor_clean` 用 `COALESCE(adj_factor_clean, adj_factor)` 兜底，与全系统口径一致（`qfq-factor-rootfix` 规范）。
+**点时安全 K 线**。`_bars_for_view` 查询条件严格为 `trade_date <= cursor_date`（`training_service.py`），从不返回 cursor 之后的 bar；`adj_factor_clean` 用 `COALESCE(adj_factor_clean, adj_factor)` 兜底，与全系统口径一致（`qfq-factor-rootfix` 规范）。
 
 **训练 MACD 脱敏附带**。`_bars_for_view` 末尾对返回 bars 的脱敏前复权 close 直接计算 `compute_macd`（12/26/9，严格后向），每根 bar 附 `macd_diff/macd_dea/macd_hist`（保留 3 位小数，暖机不足为 null）与 `macd_golden_cross/macd_dead_cross`（金叉/死叉信号，个股详情 MACD 面板同款）。不在前端走 `/api/stocks/{code}/indicators`（会按真实 code 查询，泄盲测身份）；数值与真实 qfq 有基准差异但方向/形态一致，训练中与结算回看共用。
 
-**综合评分公式**（`_settle_session`，`training_service.py:610`）：
+**综合评分公式**（`_settle_session`，`training_service.py`）：
 ```
 score = 超额收益得分×0.40 + 绝对收益得分×0.25 + 回撤控制得分×0.20 + 胜率得分×0.15
 ```
 各维度线性映射到 0~100：超额 = `clamp01((ret - bench + 0.10) / 0.20)`，绝对 = `clamp01((ret + 0.20) / 0.40)`，回撤 = `clamp01((mdd + 0.25) / 0.25)`，胜率 = `win_rate`。评级阈值 S≥90 / A≥80 / B≥70 / C≥60 / D<60。multi 模式各回合独立账户，整局收益取各回合平均。
 
-**资金曲线回放**（`_round_equity_curve`，`training_service.py:556`）：按成交记录逐日模拟 cash 与 pos 变化，用前复权收盘价估值；最大回撤 `_max_drawdown`（`training_service.py:581`）按峰值跌幅算，供结算统计与评分使用。
+**资金曲线回放**（`_round_equity_curve`，`training_service.py`）：按成交记录逐日模拟 cash 与 pos 变化，用前复权收盘价估值；最大回撤 `_max_drawdown`（`training_service.py`）按峰值跌幅算，供结算统计与评分使用。
 
 **随机抽样校验**（`create_session`）：最大重试 80 次（`MAX_PICK_RETRY`），每次随机起点 → `MarketRepository.get_universe_asof` 取当日候选池 → 校验：起点前 ≥60 历史交易日（`MIN_HISTORY`）、起点后有 ≥window_days 连续交易日数据、窗口内不退市；multi 模式用 `used_codes` 集合去重。
 
@@ -101,10 +101,12 @@ _settle_session()
 | — | 打开某局详情 | `GET /sessions/{id}` |
 | — | 删除某局 | `DELETE /sessions/{id}` |
 
-**涉及表**（`backend/storage/ddl.py`）：
+**涉及表**（当前事实源为 `backend/storage/pg_ddl.py` 的 `DDL_TRAINING_SESSION`、`DDL_TRAINING_ROUND`、`DDL_TRAINING_TRADE`；`backend/storage/ddl.py` 仅保留迁移用旧 DuckDB 定义）：
 - `training_session`：一局训练，含配置快照（mode/n_rounds/window_days/initial_capital/filters/fee_enabled）、运行状态（status/cur_round）、汇总指标（total_return/score/grade/win_rate/max_drawdown/n_trades）、复盘笔记（review_note）。
 - `training_round`：一个回合，含真实股票信息（code/start_date/end_date，running 态对前端不可见）、`base_factor`（复权基准）、`price_limit_pct`（涨跌停板块倍率）、实时账户状态（cash/pos_shares/pos_cost/pos_avg_price/realized_pnl）、pending JSON（T+1 意图）、游标（cursor_date/cursor_idx）。
 - `training_trade`：逐笔成交，含 decide_date（决策日）/ fill_date（成交日）/ rel_day（相对日，盲测展示用）/ 前复权展示价 / 手数 / 费用 / pnl / return_pct / reason / auto_close。
+
+三表均带 `tenant_id + owner_user_id`：主键依次为 `(tenant_id, owner_user_id, id)`、`(tenant_id, owner_user_id, session_id, seq)`、`(tenant_id, owner_user_id, session_id, round_seq, seq)`。会话、回合和成交关联以及读写均必须携带同一归属。
 
 **前端视图类型**（`frontend/src/api/training.ts`）：
 - `RunningView`：running 态视图，`round` 字段中含脱敏 bars（相对日标签）+ markers + 账户状态 + 板块（宽泛分类），无 code/name/真实日期。

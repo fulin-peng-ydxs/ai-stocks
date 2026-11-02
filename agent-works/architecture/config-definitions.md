@@ -71,16 +71,16 @@
 
 - **统一解析入口**：评分项、买卖条件和筛选 `ind` 叶子都通过 `resolve_indicator(indicator, params, snap)` 取值——优先取 `key+params` 对应的内部列，其次取兼容同名列，再解析内置别名与 `ma`/`hhv` 带参映射。
 - **表达式型指标补列**：评分/筛选/买卖在求值前调用 `IndicatorEngine.attach_columns` 或区间版 `attach_range_columns`。同一批请求只加载一次历史行情；同一 key 的不同参数写入不同内部列，因此可以在一个方案中同时引用多个参数实例而不会相互覆盖。
-- **方案校验依赖指标目录**：`ScoreProfileRepo.save` / `TradeProfileRepo.save` 保存前从 `IndicatorDefRepo` 取全部已知 key 作为 `known_keys`（score_profile.py:178-180、trade_profile.py:136-138），校验方案里引用的指标都存在；评分项还校验权重为正、打分方式 ∈ `bool/band/linear`。
+- **方案校验依赖指标目录**：`ScoreProfileRepo.save` / `TradeProfileRepo.save` 保存前从 `IndicatorDefRepo` 取全部已知 key 作为 `known_keys`（`backend/scoring/score_profile.py`、`backend/signals/trade_profile.py`），校验方案里引用的指标都存在；评分项还校验权重为正、打分方式 ∈ `bool/band/linear`。
 
 ### 评分配置与执行边界
 
 方案保存指标引用、参数、启停、`bool/band/linear` 打分结构、权重、评级阈值和 `include_st`。具体映射、权重归一、稳定排名与缓存物化由 [选股与榜单](screening-and-board.md) 维护；配置层只校验并保存这些输入，不建立第二套评分公式。
 
-### 买卖条件树（trade_profile.py:1-101）
+### 买卖条件树（`backend/signals/trade_profile.py`）
 
-- 节点 `{"op":"AND"|"OR","children":[...]}`，叶子 `{"indicator","params","cmp","value"}`，`cmp ∈ ==/!=/>/>=/</<=/between`（`_CMP`，trade_profile.py:25-33）。
-- `backstop` 兜底 `{take_profit, stop_loss, max_hold_days}` 可空；校验要求"卖出条件树与兜底至少配一个"（`validate_trade_profile`，trade_profile.py:89-100）。
+- 节点 `{"op":"AND"|"OR","children":[...]}`，叶子 `{"indicator","params","cmp","value"}`，`cmp ∈ ==/!=/>/>=/</<=/between`（`_CMP`）。
+- `backstop` 兜底 `{take_profit, stop_loss, max_hold_days}` 可空；校验要求"卖出条件树与兜底至少配一个"（`validate_trade_profile`）。
 - 内置默认「趋势买卖」方案：买入条件为多头排列 `bull_arrange == true` 且放量突破 `is_vol_breakout == true`；卖出条件为跌破 20 日均线；兜底为止盈 20%、止损 8%、最长持仓 30 日。
 - 买卖方案本身只定义买入/卖出信号，不保存独立股票池。预览接口按运行日全市场 `wide_snapshot` 评估条件，并按 `stock_st_status_daily` 准确点时事实强制排除当日 ST；事实未就绪时拒绝预览。市值、板块、上市天数、一字涨停等过滤需要写入买入条件或由回测筛选方案承接。
 
@@ -94,14 +94,14 @@
 | 筛选方案 | `backend/api/profiles.py` | `GET/POST /api/profiles`、`GET .../{pid}`、`GET .../{pid}/versions`、`DELETE .../{pid}`、`POST .../{pid}/visibility`、`POST .../{pid}/copy`、`POST /api/screen/run` |
 | 配置生效 | `backend/api/config.py`、`backend/api/data_admin.py` | YAML 基线 reload 与 Web 系统设置；加载优先级见 [environment-configuration.md](environment-configuration.md) |
 
-- 评分试算 `/api/score-profiles/run`（score_profiles.py:56-107）：已保存方案走**评分快照层**（`ScoreSnapshotRepo.get_board`，命中即用/失效重算），未保存的 inline 方案当场 `score_day` 实时算不入库。
+- 评分试算 `/api/score-profiles/run`（`backend/api/score_profiles.py::run_score_profile`）：已保存方案走**评分快照层**（`ScoreSnapshotRepo.get_board`，命中即用/失效重算），未保存的 inline 方案当场 `score_day` 实时算不入库。
 - 已保存评分方案的缓存 owner、物化键、综合指纹和 ST 输入版本由 [选股与榜单](screening-and-board.md) 维护；配置页只消费试算结果。
 - 三类方案 `/copy` 请求体可传 `version`；后端在可见性校验后按来源真实 `tenant_id + owner_user_id + id + version` 读取版本快照，副本固定从 v1、private 开始。只读公开方案的历史版本操作只能“复制此版本为我的”，不得把历史内容载入为可写原方案。
-- 配置页和筛选页的外部“加载查看”状态不进入 mine 数组。已加载方案在页面会话内按 ref 去重保留，切换或清空选择不会移除；行内“×”只移除对应临时预览，不调用删除接口；方案删除只由编辑区右上角独立按钮承接。移除事件以临时项身份为准，不依赖 `readonly`（本人名下系统内置资产也可能可编辑）；事件携带被移除项是否为当前选择；移除未选中项不影响编辑器。仅移除当前项时，先取消在途详情并清空方案身份、参数、只读态、试算/筛选结果和错误，再刷新 mine，刷新失败仍保持空白新建态。
+- 外部方案候选的保留、选择和移除统一遵守 [DESIGN 资产选择契约](../../DESIGN.md#弹窗与抽屉)。配置页移除当前预览时，`onScoreTempRemoved/onTradeTempRemoved` 先使在途详情失效，清空对应方案身份、评分项或买卖树及兜底、只读态、试算结果和错误，再刷新 mine；刷新失败仍保持空白新建态。筛选页的清理对象见[选股与榜单](screening-and-board.md#2-策略筛选页)。
 
 ### 前端配置中心
 
-`frontend/src/views/ConfigView.vue` 是统一配置入口，四个 Tab（ConfigView.vue:32/537-842）：
+`frontend/src/views/ConfigView.vue` 是统一配置入口，四个 Tab：
 
 - **评分规则**（score）：编辑 `items`（指标+打分方式+权重）、试算榜单预览；
 - **技术指标**（tech）：展示统一业务计算周期与指标目录表（名称/标识/分类/类型/来源/参数/表达式/启用/操作），可启停、改分类、新建自定义；
@@ -202,14 +202,14 @@ flowchart LR
 ### 配置买卖方案
 
 1. 前端编辑买/卖条件树（选指标 key + 参数 + 比较符 + 阈值）与可选兜底 → `POST /api/trade-profiles`。
-2. `TradeProfileRepo.save`（trade_profile.py:140-171）取已知指标 key 校验树合法性 → 比对是否实质变更 → 变更则 `version+1`，写主表 + version 表。
-3. 试算：`POST /api/trade-profiles/preview`（trade_profiles.py:61-96）对某交易日全市场（排除 ST）`wide_snapshot` + `attach_columns` + `eval_conditions`，返回命中数与样例。
+2. `TradeProfileRepo.save`（`backend/signals/trade_profile.py`）取已知指标 key 校验树合法性 → 比对是否实质变更 → 变更则 `version+1`，写主表 + version 表。
+3. 试算：`POST /api/trade-profiles/preview`（`backend/api/trade_profiles.py::preview_conditions`）对某交易日全市场（排除 ST）`wide_snapshot` + `attach_columns` + `eval_conditions`，返回命中数与样例。
 4. 回测引用 `trade_profile_id`/opaque `profile_ref` + 运行时版本（`backtest_run` 记录版本与签名）做买/卖/兜底信号；公开买卖方案按可见性解析，不写入方案 owner 的运行结果。
 
 ### 配置评分方案
 
 1. 前端编辑指标项（indicator + params + weight + scoring）与分档阈值 → `POST /api/score-profiles`。
-2. `ScoreProfileRepo.save`（score_profile.py:176-208）`validate_profile` 校验（权重为正、打分方式合法、指标可解析或为已知自定义）→ 版本递增 → 写主表 + version 表。
+2. `ScoreProfileRepo.save`（`backend/scoring/score_profile.py`）`validate_profile` 校验（权重为正、打分方式合法、指标可解析或为已知自定义）→ 版本递增 → 写主表 + version 表。
 3. 试算：`POST /api/score-profiles/run`（已保存走快照层、未保存实时算）→ 返回 Top N（含分项达标分 `sub_scores`）。
 4. 每日榜单复用 `ScoreSnapshotRepo`；回测排名与评分验证按区间动态计算，但复用同一 `wide_snapshot`、表达式补列和 `ScoreProfileModel` 口径，不重复读取已完成的同区间指标快照。
 
@@ -230,4 +230,4 @@ flowchart LR
 | 中 | 指标定义变更影响历史方案 | 被当前或历史方案引用的计算结构需要保持稳定 | 遵守技术指标的引用锁定；禁用不改写历史定义，删除前审计引用 |
 | <span style="color:#16a34a">●</span> 低 | 方案版本按 JSON 字符串全等去重 | 字段顺序差异可能产生多余版本 | 前端保存前稳定 JSON 顺序 |
 | <span style="color:#16a34a">●</span> 低 | 配置覆盖层回落静默 | DB 异常时会回落 YAML，改参不生效缺少信号 | 按 [environment-configuration.md](environment-configuration.md) 的风险清单排查日志、PG 和 overridden 状态 |
-| <span style="color:#16a34a">●</span> 低 | 表达式型指标异常被吞为 None | 坏表达式或缺数只表现为空值（engine.py:214-215） | 新指标先小样本试算，确认缺失率 |
+| <span style="color:#16a34a">●</span> 低 | 表达式型指标异常被吞为 None | 坏表达式或缺数只表现为空值（`backend/indicators/engine.py::_eval_expr_indicator`） | 新指标先小样本试算，确认缺失率 |

@@ -10,48 +10,48 @@
 
 ## 核心技术
 
-**事件驱动引擎（逐日先卖后买）**。`backend/backtest/engine.py:223` `BacktestEngine.run` 按交易日逐日循环：执行日 `D` 成交的是信号日 `D-1` 做出的决策——`engine.py:315` `sig = days[i-1]`，`T` 日选股/卖出判定、`T+1` 开盘成交。每日四步：①评估并执行卖出（`engine.py:319`）②选股+买入（`engine.py:377`）③估值（`engine.py:428`）④记账资金曲线。卖出在买入之前，先释放仓位再填新仓。
+**事件驱动引擎（逐日先卖后买）**。`backend/backtest/engine.py::BacktestEngine.run` 按交易日逐日循环：执行日 `D` 成交的是信号日 `D-1` 做出的决策，`T` 日选股/卖出判定、`T+1` 开盘成交。每日四步：①评估并执行卖出；②选股+买入；③估值；④记账资金曲线。卖出在买入之前，先释放仓位再填新仓。
 
 **撮合 Broker 与成本模型**。`backend/backtest/broker.py` 是防撮合失真的核心：
-- 可成交性按传入的 `pct` 判定。`limit_prices`（`broker.py:20`）用 `Decimal(..., ROUND_HALF_UP)` 按 `pre_close×(1±pct)` 取到分算涨跌停价；`can_buy_at_open`（`broker.py:27`）要求开盘价严格低于涨停价（开盘即封涨停买不到），`can_sell_at_open`（`broker.py:33`）要求开盘价严格高于跌停价（封死跌停卖不出）。`pct` 在 `engine._load_prices` 中通过共享 `backend.market_rules.price_limit_pct_for` 按代码、交易日、板块与准确点时 ST 事实生成；历史限幅与规则生效日统一见 [ST 架构](st-status.md)，不得把当前板块比例投影至全部历史。区间存在缺失、非权威事实或未发布刷新批次时回测直接失败，不按当前名称或默认非 ST 继续运行。回测签名中的 ST 数据版本保留事实更新时间的微秒精度并包含刷新发布状态，源端短时间内连续纠错后不会错误复用旧运行。
-- 停牌（执行日无 bar）不可成交，触发卖出但封死/停牌 → 加入 `pending_sells` 顺延到下一可交易日（`engine.py:354-356`）。
-- 整手取整：买入按 100 股整手 floor，现金不足时逐步缩减 `lot_size`（`broker.py:99-109`）。
-- 方向性滑点：买入价上浮 `×(1+slippage)`、卖出价下浮 `×(1-slippage)`（`broker.py:95`/`broker.py:134`）。
-- 费用：佣金双边（费率/最低值取大）+ 印花税（仅卖）+ 过户费（`broker.py:79-88`）。默认参数见 `backend/config/settings.py:106`（佣金率 0.00025/最低 5 元、印花税 0.001、过户费 0.00001、滑点 0.002）。
+- 可成交性按传入的 `pct` 判定。`backend/market_rules.py::limit_prices` 用 `Decimal(..., ROUND_HALF_UP)` 按 `pre_close×(1±pct)` 取到分算涨跌停价；`can_buy_at_open` 要求开盘价严格低于涨停价（开盘即封涨停买不到），`can_sell_at_open` 要求开盘价严格高于跌停价（封死跌停卖不出）。`pct` 在 `engine._load_prices` 中通过共享 `backend.market_rules.price_limit_pct_for` 按代码、交易日、板块与准确点时 ST 事实生成；历史限幅与规则生效日统一见 [ST 架构](st-status.md)，不得把当前板块比例投影至全部历史。区间存在缺失、非权威事实或未发布刷新批次时回测直接失败，不按当前名称或默认非 ST 继续运行。回测签名中的 ST 数据版本保留事实更新时间的微秒精度并包含刷新发布状态，源端短时间内连续纠错后不会错误复用旧运行。
+- 停牌（执行日无 bar）不可成交，触发卖出但封死/停牌 → 加入 `pending_sells` 顺延到下一可交易日（`BacktestEngine.run`）。
+- 整手取整：买入按 100 股整手 floor，现金不足时逐步缩减 `lot_size`（`Broker.buy`）。
+- 方向性滑点：买入价上浮 `×(1+slippage)`、卖出价下浮 `×(1-slippage)`（`Broker.buy/sell_all`）。
+- 费用：佣金双边（费率/最低值取大）+ 印花税（仅卖）+ 过户费（`Broker._buy_costs/_sell_costs`）。默认参数见 `backend/config/settings.py::CostConfig`（佣金率 0.00025/最低 5 元、印花税 0.001、过户费 0.00001、滑点 0.002）。
 
 **复权一致：后复权记账 + 原始价判可成交性**。`engine._load_prices` 与 `forward.compute_forward_returns` 统一消费 `backend/price_adjustment.py`：选择 `COALESCE(adj_factor_clean, adj_factor)` 后校验为正有限数，再计算后复权价格；输入缺失或非法时抛出 `DataQualityError`，不默认补 1。成交/估值/净值/收益率统一在后复权（hfq）基准下进行，无需随查询截止日重定基准；涨跌停可成交性仍用**原始** `open`/`pre_close` 判定，因为涨跌停是按原始价 round 到分的市场规则。批量读取和向量计算保留，不改成逐股查询。价格消费版本纳入新运行签名，旧用户回测资产不自动重算；消费与展示的完整契约见 [采集架构](stock-collection.md#价格消费与复权换算)。
 
-**前向收益（hfq、无未来函数）**。`backend/backtest/forward.py` `compute_forward_returns` 回答「信号后 N 日内最高摸到多少涨幅」：入场价取信号日**下一根可得 bar** 的 hfq 开盘价（`forward.py:94` `shift(-1)`，停牌自然顺延到复牌首日，与撮合一致），窗口 `[T+1..T+N]` 内 hfq high 的反向滚动最大（`forward.py:99`）。比值消去公共复权基准故等于真实复权收益；`adj_factor` 是历史已知值，用未来 N 日价格是「评估」而非「信号生成」，无未来函数。右沿数据不足完整 N 日窗口的信号标 `eval_<N>=False`（按市场日历判定，`forward.py:108-113`），默认从命中率中排除以免低估。
+**前向收益（hfq、无未来函数）**。`backend/backtest/forward.py::compute_forward_returns` 回答「信号后 N 日内最高摸到多少涨幅」：入场价取信号日**下一根可得 bar** 的 hfq 开盘价（`shift(-1)`，停牌自然顺延到复牌首日，与撮合一致），窗口 `[T+1..T+N]` 内 hfq high 的反向滚动最大。比值消去公共复权基准故等于真实复权收益；`adj_factor` 是历史已知值，用未来 N 日价格是「评估」而非「信号生成」，无未来函数。右沿数据不足完整 N 日窗口的信号标 `eval_<N>=False`（按市场日历判定），默认从命中率中排除以免低估。
 
-**评分验证的分层超额 / base rate**。`backend/backtest/signal.py` `SignalAnalyzer.analyze`：区间逐日全市场打分→分档（主升浪核心/龙头候选/观察），对每个 `(code, 信号日)` 算前向最大涨幅，`base_rate(N,X)` = 同期**全部已评分票**的无条件命中率（`signal.py:104`），各分档命中率减 base rate 即**超额命中率**（`signal.py:124`），并附样本量 `n` 与 `reliable`（`n≥min_samples`，默认 30，`signal.py:126`）。base rate 必算——牛市里随便选都高命中，唯有超额能反映模型真实能力。base rate 口径含退市股（全市场截面派生），防幸存者偏差。
+**评分验证的分层超额 / base rate**。`backend/backtest/signal.py::SignalAnalyzer.analyze`：区间逐日全市场打分→分档（主升浪核心/龙头候选/观察），对每个 `(code, 信号日)` 算前向最大涨幅，`base_rate(N,X)` = 同期**全部已评分票**的无条件命中率，各分档命中率减 base rate 即**超额命中率**，并附样本量 `n` 与 `reliable`（`n≥min_samples`，默认 30）。base rate 必算——牛市里随便选都高命中，唯有超额能反映模型真实能力。base rate 口径含退市股（全市场截面派生），防幸存者偏差。
 
-**防未来机制（贯穿）**。① `T` 日决策、`T+1` 成交（`engine.py:315`）；② 卖出旧式信号 `below_ma` 用后向滚动均线（`engine.py:67-71`）；③ 筛选表达式预计算虽用 `≤date_end` 全序列，但每个调仓日只读该日及之前的布尔值（`precompute.py:8`）；④ 前向收益仅用于事后评估，不回流进信号。
+**防未来机制（贯穿）**。① `BacktestEngine.run` 保证 `T` 日决策、`T+1` 成交；② `_load_prices` 为卖出旧式信号 `below_ma` 计算后向滚动均线；③ `backend/backtest/precompute.py::HitPrecomputer` 虽用 `≤date_end` 全序列，但每个调仓日只读该日及之前的布尔值；④ 前向收益仅用于事后评估，不回流进信号。
 
 **证券更码**。点时股票池与指标横截面统一读取 `backend/market_identity.py`，生效日前只纳入旧代码，当日起只纳入新代码；历史图表和暖机输入保留连续行情。更码日持仓沿用原股份、现金、成本和入场记录，不新增买卖或费用。新旧代码可能拥有不同后复权基准，撮合引擎仅使用生效日前共同交易日的原始收盘核验与有效因子比校准后续报价；锚点缺失或冲突时拒绝运行。T 日旧码选股与卖出条件仍在 T 日求值，T+1 按当日真实代码成交，延期卖出同步迁移。逐笔 `exit_detail` 保留原因及更码记录；前向收益跨更码时改用同一证券连续 HFQ 序列，不将旧码停止当成真实退市。身份版本纳入指标/评分缓存及新回测签名，既有用户历史记录保留。
 
-**稳健性测试**。`backend/backtest/robustness.py` 复用 `BacktestService.run_strategy(persist=False)` 不污染历史：`param_sweep` 固定其它参数扫单参数多取值看绩效是否平滑（`robustness.py:33`）；`in_out_sample` 区间一分为二做样本内外切分防过拟合（`robustness.py:42`）；同期基准（默认中证 500，可选沪深 300、上证指数、科创 50、深证成指、创业板指）即天然对照组，超额即相对全市场的优势。
+**稳健性测试**。`backend/backtest/robustness.py` 复用 `BacktestService.run_strategy(persist=False)` 不污染历史：`param_sweep` 固定其它参数扫单参数多取值看绩效是否平滑；`in_out_sample` 区间一分为二做样本内外切分防过拟合；同期基准（默认中证 500，可选沪深 300、上证指数、科创 50、深证成指、创业板指）即天然对照组，超额即相对全市场的优势。
 
 **性能优化**。① `HitPrecomputer` 一次批量读取有界历史行情，把 AST 的 expr 叶子算成 `(code,date)->bool` 查找表，并通过 `attach_range_columns` 一次补齐所有注册表 `ind` 叶子；绝对价格阈值表达式会在运行前按价格量纲明确拒绝，避免统一 qfq 基准导致静默误判。② 策略回测、买卖树和分层分析共享同一 `IndicatorEngine` 实例，区间快照及同一 `key+params` 表达式实例只计算一次。
 
 ## 业务架构
 
-回测分两条路径（API `kind` 区分，见 `backend/api/backtest.py:33`）：
+回测分两条路径（API `kind` 区分，见 `backend/api/backtest.py::BacktestRunIn`）：
 
-**① 策略回测（`kind=strategy`）**——`BacktestEngine.run`。输入：筛选方案（候选池）+ 评分方案（排序）+ 买卖方案（买/卖/兜底）+ 本金/TopN/调仓周期/行业上限/基准。流程产出净值曲线、绩效、逐笔成交（含 `exit_reason` 与部分命中时的 `exit_detail` 命中指标标签）。当前回测页要求新运行明确选择评分方案和买卖方案；后端仍保留未传买卖方案时的旧式信号兼容能力，用于读取旧历史或内部调用。同时附带同区间的分层分析（`backtest_service.py:170`）。
+**① 策略回测（`kind=strategy`）**——`BacktestEngine.run`。输入：筛选方案（候选池）+ 评分方案（排序）+ 买卖方案（买/卖/兜底）+ 本金/TopN/调仓周期/行业上限/基准。流程产出净值曲线、绩效、逐笔成交（含 `exit_reason` 与部分命中时的 `exit_detail` 命中指标标签）。当前回测页要求新运行明确选择评分方案和买卖方案；后端仍保留未传买卖方案时的旧式信号兼容能力，用于读取旧历史或内部调用。同时附带同区间的分层分析（`BacktestService.run_strategy`）。
 
 **② 评分验证（`kind=score_check`，旧值 `signal` 兼容）**——`SignalAnalyzer.analyze`。输入：评分方案 + 持有期（horizons）+ 涨幅阈值（thresholds）。输出分层命中率与超额命中率，纯向量化、与卖出规则解耦，不涉及撮合/资金。
 
-两条路径都引用三类方案：筛选方案（`screen_profile`）、评分方案（`score_profile`）、买卖方案（`trade_profile`），运行时可接收 opaque `profile_ref` 并按 `private / tenant / public` 可见性解析真实 owner，解析各自 `version` 后参与去重签名（`backtest_service.py:61`）。使用他人公开方案运行时，结果仍写当前执行者归属。
+两条路径都引用三类方案：筛选方案（`screen_profile`）、评分方案（`score_profile`）、买卖方案（`trade_profile`），运行时可接收 opaque `profile_ref` 并按 `private / tenant / public` 可见性解析真实 owner，解析各自 `version` 后参与去重签名（`BacktestService._resolve_versions/_signature`）。使用他人公开方案运行时，结果仍写当前执行者归属。
 
-**编排服务** `backend/services/backtest_service.py` `BacktestService`：`run_strategy`/`run_signal` 跑回测算绩效+分层并落库；`prepare` 在运行前算签名（全条件指纹：日期+三方案及版本+所有数值参数，`backtest_service.py:57`）并查同条件已完成历史，供前端弹框选择「加载历史/重跑覆盖」；落库采用覆盖语义——同签名旧记录先 purge 保证每个条件组合历史唯一（`backtest_service.py:101`）。`backtest_run` 支持 `private / tenant / public` 可见性，公开记录对 viewer 只读；发布到租户前会校验参数引用的筛选/评分/买卖方案至少租户可见，发布到全体前会校验三类依赖均全体公开，并把历史 params 与 `backtest_run` 三类 profile 列从 legacy id 规范化为真实 owner 的 opaque `profile_ref`，同步刷新 signature 且清理同 owner 下其他等价签名记录，同时从公开 params 清除仅供审计留痕的 `source_run_ref`，避免 viewer 复用时命中自己的同名私有方案，并保持同条件历史唯一且不泄漏不可见来源 run 标识。发布校验会为三类方案获取统一资产可见性锁；方案收窄可见性使用同一锁并在事务内把引用它且范围更大的回测同步降为 tenant/private，保留结果数据，消除并发发布窗口。历史列表对已规范化的筛选/评分/买卖 opaque ref 批量读取方案名称和版本，避免逐行 `get_visible()`；详情读取 `backtest_metrics/equity/trade` 时按 run 的真实 `tenant_id + owner_user_id` 查询，不用 viewer 归属猜测从表。
+**编排服务** `backend/services/backtest_service.py::BacktestService`：`run_strategy`/`run_signal` 跑回测算绩效+分层并落库；`prepare` 在运行前算签名（全条件指纹：日期+三方案及版本+所有数值参数，`_signature`）并查同条件已完成历史，供前端弹框选择「加载历史/重跑覆盖」；落库采用覆盖语义——同签名旧记录先 purge 保证每个条件组合历史唯一（`_purge_signature`）。`backtest_run` 支持 `private / tenant / public` 可见性，公开记录对 viewer 只读；发布到租户前会校验参数引用的筛选/评分/买卖方案至少租户可见，发布到全体前会校验三类依赖均全体公开，并把历史 params 与 `backtest_run` 三类 profile 列从 legacy id 规范化为真实 owner 的 opaque `profile_ref`，同步刷新 signature 且清理同 owner 下其他等价签名记录，同时从公开 params 清除仅供审计留痕的 `source_run_ref`，避免 viewer 复用时命中自己的同名私有方案，并保持同条件历史唯一且不泄漏不可见来源 run 标识。发布校验会为三类方案获取统一资产可见性锁；方案收窄可见性使用同一锁并在事务内把引用它且范围更大的回测同步降为 tenant/private，保留结果数据，消除并发发布窗口。历史列表对已规范化的筛选/评分/买卖 opaque ref 批量读取方案名称和版本，避免逐行 `get_visible()`；详情读取 `backtest_metrics/equity/trade` 时按 run 的真实 `tenant_id + owner_user_id` 查询，不用 viewer 归属猜测从表。
 
 **涉及表**（`backend/storage/pg_ddl.py`；`ddl.py` 为迁移保留的旧 DuckDB 定义）：
-- `backtest_run`（`:344`）：任务，含 kind/三方案 id 及 version/signature/区间/params(JSON)/status/visibility/published_at/published_by。
-- `backtest_trade`（`:367`）：逐笔成交，含 entry/exit 价（hfq 含滑点）、`exit_reason`、`exit_detail`、收益率/盈亏/持有日、买入时分档与排名（grade/entry_score/entry_rank/entry_pick_rank/entry_pool）。
-- `backtest_equity`（`:392`）：逐日净值（equity/cash/position_value/n_positions/drawdown/benchmark_equity）。
-- `backtest_metrics`（`:407`）：一行一 run 的绩效（total/annual return、max_drawdown、sharpe/calmar/sortino、win_rate、profit_factor 等，`backend/backtest/metrics.py`）+ 分层命中率 JSON（`hit_rate_by_grade`）。
+- `backtest_run`：任务，含 kind/三方案 id 及 version/signature/区间/params(JSON)/status/visibility/published_at/published_by。
+- `backtest_trade`：逐笔成交，含 entry/exit 价（hfq 含滑点）、`exit_reason`、`exit_detail`、收益率/盈亏/持有日、买入时分档与排名（grade/entry_score/entry_rank/entry_pick_rank/entry_pool）。
+- `backtest_equity`：逐日净值（equity/cash/position_value/n_positions/drawdown/benchmark_equity）。
+- `backtest_metrics`：一行一 run 的绩效（total/annual return、max_drawdown、sharpe/calmar/sortino、win_rate、profit_factor 等，`backend/backtest/metrics.py`）+ 分层命中率 JSON（`hit_rate_by_grade`）。
 
-**API**（`backend/api/backtest.py`）：`POST /run`（同步执行并落库）、`POST /prepare`（查重）、`POST /robust`（稳健性，不落历史）、`GET /runs`（按 kind 和 `source=mine|tenant|public` 列可见历史）、`GET /runs/{run_ref}`（详情）、`POST /runs/{run_ref}/visibility`（owner 发布/收回，仅 `done` 可公开，且公开范围不能超过引用方案可见范围）、`DELETE /runs/{run_ref}`（owner-only）。前端 `frontend/src/views/BacktestView.vue` 按 kind 分别加载历史、不混展，跑前先 `prepare` 弹框；评分/选股/买卖方案下拉统一展示名称、版本和归属标签，技术 ref/id 仅作为 value 传递；新运行要求选择评分方案，策略回测还要求选择买卖方案；任一运行参数或临时方案变化都会使旧结果和历史归属失效。系统/公开方案的“加载查看”保留为选择器会话候选，切换到我的方案只释放当前运行快照，候选仍可再次选用；再次选择时恢复“本次运行”展示，运行以该快照 ref 为准，不写入 mine 选值。“×”仅移除对应候选，未选中候选的移除不改变当前运行参数；重置参数清空会话候选，刷新页面不保留。历史区页头「回测记录」只加载本人 `source=mine` 且限最近 100 条用于精确选择，首屏不默认选中或载入，用户可以主动选择记录或直接手动配置；租户公开/全体公开记录统一由「浏览公开回测」抽屉承接；删除本人历史记录会清除结果和来源、保留当前表单参数并回到未选择态，不自动载入下一条；只有非 owner 只读公开记录显示“复用参数”入口，用于明确切换为 viewer 自己的重跑并记录复用审计。回测结果区统一呈现初始空态、首次加载态、失败可重试态和有结果态，已有结果刷新时保留原结果。
+**API**（`backend/api/backtest.py`）：`POST /run`（同步执行并落库）、`POST /prepare`（查重）、`POST /robust`（稳健性，不落历史）、`GET /runs`（按 kind 和 `source=mine|tenant|public` 列可见历史）、`GET /runs/{run_ref}`（详情）、`POST /runs/{run_ref}/visibility`（owner 发布/收回，仅 `done` 可公开，且公开范围不能超过引用方案可见范围）、`DELETE /runs/{run_ref}`（owner-only）。前端 `frontend/src/views/BacktestView.vue` 按 kind 分别加载历史、不混展，跑前先 `prepare` 弹框；评分/选股/买卖方案下拉统一展示名称、版本和归属标签，技术 ref/id 仅作为 value 传递；新运行要求选择评分方案，策略回测还要求选择买卖方案；任一运行参数或临时方案变化都会使旧结果和历史归属失效。方案候选遵守 [DESIGN 资产选择契约](../../DESIGN.md#弹窗与抽屉)。回测将 mine 选值与外部运行快照分离：切换到我的方案只释放当前运行快照，再次选择外部候选时恢复“本次运行”展示，运行以快照 ref 为准，不写入 mine 选值；快照不可解析时明示失效并阻止执行；重置参数清空会话候选。历史区页头「回测记录」只加载本人 `source=mine` 且限最近 100 条用于精确选择，首屏不默认选中或载入，用户可以主动选择记录或直接手动配置；租户公开/全体公开记录统一由「浏览公开回测」抽屉承接；删除本人历史记录会清除结果和来源、保留当前表单参数并回到未选择态，不自动载入下一条；只有非 owner 只读公开记录显示“复用参数”入口，用于明确切换为 viewer 自己的重跑并记录复用审计。回测结果区统一呈现初始空态、首次加载态、失败可重试态和有结果态，已有结果刷新时保留原结果。
 
 **回测页交互契约**：公开记录「加载查看」只生成选择器外只读快照，不写入 mine 候选，也不把 opaque ref 投影到 ElSelect；关闭快照恢复进入公开查看前的表单、结果和运行按钮状态。从公开态切换 mine 记录时，必须先成功取得详情再原子切换，失败保留原公开快照。历史快速切换、加载中关闭和复用参数请求共用请求代次守卫，按 kind 隔离，迟到响应不得覆盖当前状态或串入另一模式。历史候选下拉与输入框同宽并优先向下展开，名称可省略，日期和收益固定可见；公开抽屉的类型和状态使用中文业务文案，不暴露内部枚举。选股方案空值文案固定表达“不额外使用选股方案”，不得写成“全市场候选”。删除记录保留参数时，确认与成功反馈必须明确说明“参数保留”；移除外部方案预览则清空对应外部参数，两种语义不得混用。策略回测和评分验证复用后再次运行都透传 `source_run_ref`。
 
@@ -153,9 +153,9 @@ flowchart LR
 **跑一次策略回测**：
 1. 前端组织参数（区间/筛选+评分+买卖方案 ref 或旧 id/TopN/本金/调仓周期/止盈止损/行业上限/基准）→ `POST /prepare` 查同条件历史；命中则提示「加载/覆盖」。公开资产必须优先传 `profile_ref`，避免跨 owner 复用退化为当前 owner 私有 id。
 2. `POST /run` → `run_strategy`/`run_signal`：按可见性解析筛选/评分/买卖方案版本、算签名、purge 同签名旧记录、写 `running`。公开回测“复用参数”会额外传 `source_run_ref`，该字段只用于运行时 params 留痕和 `asset_reuse` 审计，不参与签名；策略回测和评分验证/信号分析成功落库后都会记录复用审计。发布公开 run 时，服务端会按 run 真实 owner 解析历史 params 里的 opaque ref 或 legacy id，阻断引用私有方案的公开发布，把可公开依赖写回为 owner opaque ref，清除 `source_run_ref`，并按规范化后的 signature 清理其他等价记录。
-3. `BacktestEngine.run`：预载行情（向前缓冲 ma_period 个交易日算均线，`engine.py:266`）；构建逐日评分榜 + 买/卖树命中（`_decision_data`，`engine.py:176`）；可选筛选方案通过 `ProfileRepo.get_visible(..., include_owner=True)` 解析后交给 `HitPrecomputer` 做命中预计算。
+3. `BacktestEngine.run`：通过 `_load_prices` 预载行情（向前缓冲 ma_period 个交易日算均线）；通过 `_decision_data` 构建逐日评分榜 + 买/卖树命中；可选筛选方案通过 `ProfileRepo.get_visible(..., include_owner=True)` 解析后交给 `HitPrecomputer` 做命中预计算。
 4. 逐日循环：信号日 `D-1` 评估卖出（卖树命中/止盈/止损/到期）→ 执行日 `D` 开盘撮合（涨跌停/停牌检查，不可成交则顺延）→ 选股（信号日截面按评分降序，过候选池+买树+行业上限）→ `D` 开盘买入（整手+滑点+费用）→ `D` 收盘估值记净值。
-5. 区间末对仍持仓者按最后可得价强平（`exit_reason=区间末强平/停牌·退市强平`，`engine.py:444`），不悬空。
+5. 区间末对仍持仓者按最后可得价强平（`exit_reason=区间末强平/停牌·退市强平`），不悬空。
 6. `compute_metrics` 算绩效 + 同区间 `SignalAnalyzer` 算分层 → 落 `backtest_equity`/`backtest_trade`/`backtest_metrics`，写 `done`。
 
 **跑一次评分验证**：
@@ -174,11 +174,11 @@ CLI 仍须满足服务的方案、资产归属与数据条件；完整参数取�
 
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
-| <span style="color:#dc2626">●</span> 高 | 回测 API 仍为同步执行（`backend/api/backtest.py:7`） | 长区间/大 universe 下 HTTP 可能超时，并发回测会受 DuckDB 单写锁影响 | 长区间先缩小样本验证；后续应改异步任务 + 进度轮询 |
+| <span style="color:#dc2626">●</span> 高 | 回测 API 仍为同步执行（`backend/api/backtest.py::run_backtest`） | 长区间/大 universe 下 HTTP 可能超时，并发回测会受 DuckDB 单写锁影响 | 长区间先缩小样本验证；后续应改异步任务 + 进度轮询 |
 | <span style="color:#f59e0b">●</span> 中 | Baostock ST 源端临时不可用或纠错 | ST 刷新保持 `failed` 会阻断新回测；源端纠错会改变历史撮合结果 | 依赖自动重连/任务续跑恢复；回测参数保存 ST 数据版本，事实变更后重新运行并对比 |
 | <span style="color:#f59e0b">●</span> 中 | 回测裸表达式不接受绝对价格阈值 | `C>50` 受前复权基准影响，无法安全地跨日一次批算 | 改用价格比率、同量纲比较，或沉淀为具备明确点时口径的注册表指标 |
 | <span style="color:#f59e0b">●</span> 中 | 开盘可成交性只近似涨跌停，不建模盘中流动性 | 大额或冷门股可能高估可成交规模 | 对冷门股策略降低仓位假设，后续加入成交量约束 |
-| <span style="color:#f59e0b">●</span> 中 | 信号质量分档固定为三档（`signal.py:28`） | 自定义评分方案的新分档名不会进入分层统计 | 自定义方案沿用既有分档，或扩展分层配置 |
+| <span style="color:#f59e0b">●</span> 中 | 信号质量分档固定为三档（`SignalAnalyzer.analyze`） | 自定义评分方案的新分档名不会进入分层统计 | 自定义方案沿用既有分档，或扩展分层配置 |
 | <span style="color:#16a34a">●</span> 低 | 前向收益使用窗口内最高价 | 命中率代表"最高摸到"，不等于可实现收益 | 只用于评分预测力比较，不作为收益预期 |
-| <span style="color:#16a34a">●</span> 低 | 年化按 242 个交易日、无风险利率默认 0（`metrics.py:14`） | 极短区间年化/夏普统计意义有限 | 短区间重点看逐笔、回撤和样本量 |
-| <span style="color:#16a34a">●</span> 低 | 止盈/止损/到期按信号日 close 判定，次日开盘成交（`engine.py:329`） | 触发价与成交价存在一日跳空偏差 | 属真实交易约束，复盘时结合逐笔成交看 |
+| <span style="color:#16a34a">●</span> 低 | 年化按 242 个交易日、无风险利率默认 0（`backend/backtest/metrics.py::compute_metrics`） | 极短区间年化/夏普统计意义有限 | 短区间重点看逐笔、回撤和样本量 |
+| <span style="color:#16a34a">●</span> 低 | 止盈/止损/到期按信号日 close 判定，次日开盘成交（`BacktestEngine.run`） | 触发价与成交价存在一日跳空偏差 | 属真实交易约束，复盘时结合逐笔成交看 |

@@ -9,9 +9,9 @@
 ## 核心技术
 
 ### 个股列表：服务端排序 + 分页
-列表查询全部在 SQL 层完成筛选、排序、分页，不在前端排全量（`backend/api/stocks.py:23` `list_stocks`）。
-- 排序字段走白名单映射防注入：`_STOCK_SORT_COLS`（`stocks.py:20`）只放行 `pct_chg / name / industry / code`，其余回落 `pct_chg`；`sort_order` 仅 `asc/desc`。排序统一 `... NULLS LAST, sb.code ASC`（`stocks.py:58`），停牌（当日无行情）的 NULL 涨跌幅恒排末尾，并以 code 作稳定次序键。
-- 当日涨跌幅按交易日 `LEFT JOIN daily_bar` 现算 `(close/pre_close-1)*100`（`stocks.py:62`），`trade_date` 缺省取 `max(trade_date)`。
+列表查询全部在 SQL 层完成筛选、排序、分页，不在前端排全量（`backend/api/stocks.py` `list_stocks`）。
+- 排序字段走白名单映射防注入：`_STOCK_SORT_COLS`（`stocks.py`）只放行 `pct_chg / close / name / industry / code`，其余回落 `pct_chg`；`sort_order` 仅 `asc/desc`。排序统一 `... NULLS LAST, sb.code ASC`（`stocks.py`），停牌（当日无行情）的 NULL 涨跌幅恒排末尾，并以 code 作稳定次序键。
+- 当日涨跌幅按交易日 `LEFT JOIN daily_bar` 现算 `(close/pre_close-1)*100`（`stocks.py`），`trade_date` 缺省取 `max(trade_date)`。
 - 退市/ST 口径：`board='退市'` 只看 `delist_date IS NOT NULL`，其余板块一律 `delist_date IS NULL` 排除退市；`board='ST'` 与 `exclude_st` 均读取查询日 `stock_st_status_daily` 的准确点时事实，缺失或刷新批次未发布时拒绝返回残缺结果。
 - 行业/概念筛选统一使用同花顺 `board_dict + board_member` 累计归属，选项由 `GET /stocks/membership-options` 按行业、概念稳定返回，列表与分组接口共同消费 `membership_board_code`。指定历史交易日时排除 `first_seen_date` 明确晚于该日的关系；存量空日期视为历史已存在。该口径不同于列表“行业”列的证监会行业分类。
 - 只有认证上下文具备 `stock-group:view`（或 system）时才构造 `StockGroupRepo` 并批量调用 `groups_for_codes`；无权限时统一返回空 `groups`，不读取分组资产，也不会因仓库构造而创建默认分组。前端同时隐藏分组列、分组视图和对应页面设置元数据。
@@ -30,12 +30,12 @@
 行情 403 是详情页主权限边界：立即清除行情、指标、报价和评估派生数据并取消其它通道，后续 pending/普通失败均不重新展示旧数据，只有新的行情成功响应才解除 permission 状态。MACD 指标请求普通失败则只让 MACD 面板进入局部错误态，K线与量能继续可用。
 
 ### 买卖信号：由当前买卖方案推导
-个股详情的买卖信号不是固定引擎，而是用「当前选定的买卖指标方案」在该股当日快照上现算（`GET /stocks/{code}/trade-eval`，`stocks.py:156`）：
+个股详情的买卖信号不是固定引擎，而是用「当前选定的买卖指标方案」在该股当日快照上现算（`GET /stocks/{code}/trade-eval`，`stocks.py`）：
 - 前端选择值透传列表返回的 opaque `profile_ref`；后端由 `TradeProfileRepo.get_visible(profile_ref_or_id)` 解析真实 owner，支持 owner 旧裸 ID、同租户和公开方案，不可见 private 方案统一按不存在处理。
 - 取得买/卖条件树后，用 `IndicatorEngine.wide_snapshot` 取单股当日截面，`attach_columns` 预补条件树用到的全部指标列（`collect_indicators`）。
-- `eval_conditions` 递归按 AND/OR 合并叶子比较得买入/卖出命中布尔（`trade_profile.py:43`）；`_describe_tree`（`stocks.py:123`）把条件树拍平为每个叶子的中文标签 + 该股是否成立明细，供详情页逐条展示。
+- `eval_conditions` 递归按 AND/OR 合并叶子比较得买入/卖出命中布尔（`trade_profile.py`）；`_describe_tree`（`stocks.py`）把条件树拍平为每个叶子的中文标签 + 该股是否成立明细，供详情页逐条展示。
 - 点时安全：只用 `≤ 当日` 数据，方案所用指标均非横截面，单股快照求值即正确。
-- 旧的 `GET /stocks/{code}/signal`（`stocks.py:105`）仍在，按 `ScreenScoreService.compute_signals` 给出 `buy_point` 文案 + `risk_flags` + K线买点标记，与方案评估互补。
+- 旧的 `GET /stocks/{code}/signal`（`stocks.py`）仍在，按 `ScreenScoreService.compute_signals` 给出 `buy_point` 文案 + `risk_flags` + K线买点标记，与方案评估互补。
 
 ### K线、量能与 MACD 三图工作区
 
@@ -56,9 +56,9 @@
 - 对比指数时统一从首个共同有效日期起算并据此计算超额，个别序列上市较晚只缩短基准期、不否决整体；纯股票间对比时各序列从自身首个有效值起算、上市前留空，不因个别序列缺起点而否决整体。完全没有共同有效日期时显示不可比较状态。日历失败或为空时进入可重试错误态，重试只重拉日历；单只股票失败时保留已成功曲线，重试只请求失败股票。
 
 ### 分组篮子：跨页多选累积与导航
-- 选择购物车（`StocksView.vue:216` `cart`）在前端维护，按 code 去重，跨分页/跨搜索/跨普通查询与分组视图累积，切换上下文（切分组）才清空（`StocksView.vue:142`）。表头全选只对「当前页」做并/差集（`toggleAllCur`，`StocksView.vue:232`）。
-- 进入详情时把「当前集合」写入 `stockSet` store（`stores/stockSet.ts`，localStorage 持久化）：来源可为分组成员、列表当前页或勾选集。集合记录有序 `items`、`query`（可续拉）、`total`、`loadedPages`、`pageSize`。
-- 上一只/下一只导航（`StockDetailView.vue:73` `gotoNeighbor`）：先取集合内相邻 code；到达已加载边界且 `query` 存在时，按 `loadSetPage` 续拉上/下一页并合并（`appendPage` 按页号决定 unshift/push），实现跨页连续翻看。连点用 AbortController 取消在途 + 140ms 防抖只发最终一次（`StockDetailView.vue:137,183`）。
+- 选择购物车（`StocksView.vue` `cart`）在前端维护，按 code 去重，跨分页/跨搜索/跨普通查询与分组视图累积，切换上下文（切分组）才清空（`StocksView.vue`）。表头全选只对「当前页」做并/差集（`toggleAllCur`，`StocksView.vue`）。
+- 进入详情时把「当前集合」写入 `stockSet` store（`frontend/src/stores/stockSet.ts`）：来源可为分组成员、列表当前页或勾选集，记录有序 `items`、`query`（可续拉）、`total`、`loadedPages`、`pageSize`。通过 `pageSessionStorage` 按租户、用户隔离写入当前 Tab 的 sessionStorage；刷新可恢复，关闭 Tab、退出登录或切换身份时清理，并移除旧 localStorage 快照。存储失败的降级及共享机制见[布局专题的会话生命周期](frontend-layout.md#会话生命周期与返回现场)。
+- 上一只/下一只导航（`StockDetailView.vue` `gotoNeighbor`）：先取集合内相邻 code；到达已加载边界且 `query` 存在时，按 `loadSetPage` 续拉上/下一页并合并（`appendPage` 按页号决定 unshift/push），实现跨页连续翻看。详情各数据通道通过 `beginRequest/isCurrentRequest` 取消旧请求并丢弃迟到响应，避免切股后旧数据覆盖当前股票。
 
 ## 业务架构
 
@@ -70,12 +70,12 @@
 ### 与其它模块的关系
 - 指标模块：详情快照、指标序列、买卖条件求值都依赖 `IndicatorEngine`（实时计算，无指标表）；条件树与评分共用 `resolve_indicator`。
 - 买卖方案模块：详情信号直接消费 `trade_profile`（买/卖条件树 + 兜底止盈止损/最大持仓），方案列表由 `tradeProfile` API 提供，默认选首个方案。
-- 数据管理模块：列表涨跌幅、K线、分组涨幅均读 `daily_bar`；前复权口径统一 `close*COALESCE(adj_factor_clean, adj_factor)`（`stock_group.py:240,252`）。
+- 数据管理模块：列表涨跌幅、K线、分组涨幅均读 `daily_bar`；`backend/groups/stock_group.py::StockGroupRepo._members_with_returns` 通过共享 `backend/price_adjustment.py::hfq_price_sql` 计算后复权基准价与截止价，再求分组收益；详情 K 线由 `MarketRepository.get_bars` 按请求的复权口径返回。
 - 默认自选分组：只有具备分组权限的业务链路才构造 `StockGroupRepo`；仓库按 `tenant_id + owner_user_id` 确保每个归属者存在 `grp_default_{owner_user_id}`，固定为“自选”和项目默认色，不可改名/改色/删除。
 
 ### 涉及表
-- `stock_group`（`storage/pg_ddl.py`；`ddl.py` 为迁移保留的旧 DuckDB 定义）：分组元信息 id/name/group_date/description/color/is_default。
-- `stock_group_member`（`ddl.py:317`）：主键 `(group_id, code)`，`add_date` 为该股加入日期即涨幅基准，`note` 备注。
+- `stock_group`（`backend/storage/pg_ddl.py::DDL_STOCK_GROUP`）：主键 `(tenant_id, owner_user_id, id)`，分组元信息 name/group_date/description/color/is_default。
+- `stock_group_member`（`backend/storage/pg_ddl.py::DDL_STOCK_GROUP_MEMBER`）：主键 `(tenant_id, owner_user_id, group_id, code)`，`add_date` 为该股加入日期即涨幅基准，`note` 备注。两张表统一按请求上下文归属读写；`backend/storage/ddl.py` 的旧 DuckDB 定义仅供迁移。
 - 读：`stock_basic`（板块/退市/名称）、`daily_bar`（行情/复权）。
 
 ### 主要 API
@@ -179,8 +179,8 @@ flowchart LR
 
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
-| <span style="color:#dc2626">●</span> 高 | 分组涨幅逐成员查 SQL（`stock_group.py:229`） | 超大分组打开耗时随成员数线性放大 | 大分组控制规模；后续批量化基准价查询 |
+| <span style="color:#dc2626">●</span> 高 | 分组涨幅逐成员查 SQL（`stock_group.py`） | 超大分组打开耗时随成员数线性放大 | 大分组控制规模；后续批量化基准价查询 |
 | <span style="color:#f59e0b">●</span> 中 | 分组详情搜索/排序/分页在 Python 内存层完成 | 成员极多时需全量物化再切片 | 大分组避免复杂排序；后续下推 SQL |
-| <span style="color:#f59e0b">●</span> 中 | `add_members` 返回 added 计数含已存在成员（`stock_group.py:124`） | 前端提示数量可能偏大 | 返回实际插入数，或提示"已提交成员数" |
-| <span style="color:#16a34a">●</span> 低 | `stockSet` 依赖 localStorage 快照 | 多标签页变更后相邻导航不会同步 | 需要最新集合时从列表重新进入详情 |
+| <span style="color:#f59e0b">●</span> 中 | `add_members` 返回 added 计数含已存在成员（`stock_group.py`） | 前端提示数量可能偏大 | 返回实际插入数，或提示"已提交成员数" |
+| <span style="color:#16a34a">●</span> 低 | `stockSet` 只保留当前 Tab 会话快照 | 各 Tab 集合独立；关闭 Tab 或身份清理后不能恢复，存储不可用时刷新也会丢失 | 需要最新集合时从列表重新进入详情 |
 | <span style="color:#16a34a">●</span> 低 | `trade-eval` 指标无法计算时返回 400 | 详情页买卖评估进入局部错误态，但图表仍可用 | 检查方案引用指标、数据质量和条件明细后单独重试评估 |
