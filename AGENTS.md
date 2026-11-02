@@ -4,7 +4,7 @@
 
 - `AGENTS.md` 是本仓库 AI 协作与项目命令的权威入口，只保留当前有效、会影响执行的稳定规则；README 按使用路径选取必要命令，不独立定义第二套命令。
 - `CLAUDE.md` 只作为 Claude Code 薄入口，避免复制本文件内容；仓库事实以代码、`README.md`、`DESIGN.md` 和 `agent-works/architecture/` 为准。
-- 前端页面规范以 `DESIGN.md` 和 `agent-works/configurable-layout-system/page-template.md` 为入口，不在本文件重复细则。
+- 前端页面规范以 `DESIGN.md` 和 `agent-works/configurable-layout-system/page-template.md` 为入口，布局与外观配置运行机制见 `agent-works/architecture/frontend-layout.md`，不在本文件重复细则。
 - 本文件不承载完整业务架构、视觉配方或阶段验收记录；稳定执行约束变更更新本文件，领域实现变更更新对应事实文档，测试结果留在当次交付中。
 
 ## 项目概览

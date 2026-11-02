@@ -210,6 +210,7 @@ cd frontend && npm run build && cd ..
 | [系统架构](agent-works/architecture/system-architecture.md) | 分层、运行单元、数据流、持久层和故障边界 |
 | [任务运行态](agent-works/architecture/task-runtime.md) | 后台任务、调度、可靠事件、取消续跑和恢复 |
 | [环境配置](agent-works/architecture/environment-configuration.md) | 变量、YAML、PG 覆盖层、运行档案、日志与生效规则 |
+| [前端布局实现](agent-works/architecture/frontend-layout.md) | 布局与外观的加载、合并、字段策略、保存、恢复及失败边界 |
 | [权限与租户](agent-works/architecture/system-rbac-tenant.md) | 认证、授权、资产归属及新功能接入 |
 | [数据管理](agent-works/architecture/data-management.md) | 数据目录、质量策略、问题台账和修复复检；源协议归对应采集专题 |
 | [DESIGN](DESIGN.md)／[页面模板](agent-works/configurable-layout-system/page-template.md) | 设计契约／页面实施模板与维护清单 |

@@ -11,7 +11,7 @@ typography:
 
 ## 文档边界
 
-本文维护前端页面、视觉样式、布局系统和组件配置的设计契约。自动约束由 `frontend/scripts/`、`frontend/src/layout/`、后端 layout 配置校验和相应测试实现；检查器只覆盖已编码的规则，不能代替语义审查或浏览器验收。新页面执行流程和可复制计划块由 [页面模板](agent-works/configurable-layout-system/page-template.md) 维护，服务保护与验证准入遵守 [AGENTS.md](AGENTS.md)。
+本文维护前端页面、视觉样式、布局系统和组件配置的设计契约。自动约束由 `frontend/scripts/`、`frontend/src/layout/`、后端 layout 配置校验和相应测试实现；检查器只覆盖已编码的规则，不能代替语义审查或浏览器验收。配置加载、分层合并、应用、保存与失败机制由 [前端布局实现](agent-works/architecture/frontend-layout.md) 维护；新页面执行流程和可复制计划块由 [页面模板](agent-works/configurable-layout-system/page-template.md) 维护，服务保护与验证准入遵守 [AGENTS.md](AGENTS.md)。
 
 关键事实源：
 
@@ -1009,17 +1009,17 @@ typography:
 - `PageSettingsDrawer` 的阶段或权限 `componentSlotIds` 只过滤业务组件，必须按组件种类自动保留抽屉自身的 `settings-drawer` 配置；是否允许用户调整字段仍遵守组件层策略。新增或修改白名单须通过覆盖全部开放设置页面、空白名单、阶段切换及权限分支的回归，不允许由各页面手工补公共 slot 防遗漏。
 - `布局` 和 `组件设置` 由元数据自动渲染；`业务选项` 由页面声明。布局旋钮必须按 `EditableKnob.group` 进入二级章节，基础密度归“基础布局”，完整模块显隐归“模块显示”，不得随字段增长继续在一级平铺。组件配置不得通过业务插槽再次渲染或移动到业务段，避免同一字段出现双入口、双持久化和职责漂移。
 - 设置项必须有默认值、来源展示、合法值域和重置路径；页面设置抽屉 footer 的「恢复默认」必须同时重置页面业务偏好、页面布局/组件用户层，以及抽屉自身尺寸和当前折叠态偏好。
-- 「组件设置」段与系统管理→布局配置→**页面布局**编辑器的「组件特性」**共用唯一渲染器** `components/ComponentAutoSettings.vue`（抽屉=user 层、页面布局编辑器=page 层，经 `layer`/`slotIds`/`allowedLayersOf`/`collapsibleSlot`/`clearable` 适配），不得另写第二套组件特性表单。
+- 「组件设置」段与系统管理→布局配置→**页面布局**编辑器的「组件特性」**共用唯一渲染器** `components/ComponentAutoSettings.vue`，不得另写第二套组件特性表单。两类宿主的层级与适配参数见[设置渲染实现](agent-works/architecture/frontend-layout.md#设置渲染与折叠偏好)。
 - 配置面板的“默认折叠分区”按 `componentMeta.collapseSections.parentKey` 展示组/子分区层级；父组独立一行，只有同一父组下的同级候选可以并排并自然换行。整份候选清单及有子项的父组复用 `SettingsGroup` 折叠，无子项的候选不显示箭头；父组通过标题插槽保留复选框，复选框点击和键盘操作不得触发收展。清单展开态沿用抽屉折叠偏好，和业务默认折叠 key 列表分开管理。父子默认值独立选择，不做级联勾选；继续保存稳定 key 列表，切换当前页签的候选范围时保留隐藏项选值。
-- 折叠记忆统一由 `useDrawerPreferences` 承接：三个一级分组跨页面共用；内部各级按 `pageKey + 稳定节点标识` 隔离，刷新、关闭后重开及缓存淘汰后均恢复。布局分组使用 `EditableKnob.groupKey`（存量缺省回退首字段路径），组件组使用 `slotId`，字段子组再加字段 key，业务分区必须声明同页唯一的 `PageSettingSection.sectionKey`；禁止用展示标题、数组位置或业务对象 ID 作为记忆键。记忆由 `PageSettingsDrawer` 提供上下文、`SettingsGroup` 统一读写，不逐页维护监听器，也不写进页面布局或业务默认值。批量操作与单节点操作同源；恢复默认同时清除全局一级状态及当前页面全部内部节点（含隐藏节点），其他页面内部记忆保留。按租户/用户隔离本地回退与待同步意图，串行保存，旧响应和快速刷新不得覆盖用户操作。其他容器的分组仍遵循各自调用方生命周期。
+- 折叠记忆统一复用 `useDrawerPreferences`：三个一级分组跨页面共用，内部节点按页面与稳定标识隔离；刷新、关闭后重开及缓存淘汰后均恢复。业务分区必须声明同页唯一的 `PageSettingSection.sectionKey`；禁止用展示标题、数组位置或业务对象 ID 作为记忆键，也不逐页维护监听器或写进布局、业务默认值。批量操作与单节点操作同源；恢复默认同时清除全局一级状态及当前页面全部内部节点（含隐藏节点），保留其他页面内部记忆。本地回退与待同步意图必须按租户/用户隔离，旧响应和快速刷新不得覆盖用户操作。节点键组成、上下文接线及保存队列由[实现专题](agent-works/architecture/frontend-layout.md#设置渲染与折叠偏好)维护；其他容器遵循各自调用方生命周期。
 - 设置树以单个可编辑或只读事项为叶子；普通控件内的平面下拉选项、分段按钮和复选选项不另成层级，有明确父子关系的折叠候选清单按前条处理。每个 slot，以及包含子设置或子组的具名复合标题，必须使用可折叠 `SettingsGroup`；包括 K 线范围、个股/板块分析默认项、图表组合、多图高度比例、排序字段与方向、列显隐及默认折叠候选。单图固定比例仍为叶子。禁止使用空 `PageSettingItem` 充当复合标题，或在叶子内嵌套子设置。层级由共享折叠树按最近真实视觉父组递增，`level` 仅作为无父组宿主的起始层级；内部不得手工推算深度。布局编辑器隐藏的重复 slot 标题为透明包装器，不增加缩进或折叠入口，其真实子组仍可逐层操作。抽屉根按钮只控制一级组；任一 `SettingsGroup` 存在直接子分组时，必须由共享折叠树自动提供本层“一键收起/展开下级”，不得由页面手工维护子节点清单。父级操作不改写更深层状态；在已收起组操作下级控制按钮时先展开该组，让结果可见。所有可折叠节点统一使用箭头，二级及更深标题固定为 14px，每深入一个真实分组增加一档缩进和结构线；缩进不依赖当前收展状态。叶子事项统一由 `PageSettingItem` 或 `PageToggleRow` 承载。结构约束由 `check-settings-structure.mjs` 接入 `check:design`，层级计算、逐层收展及偏好恢复由定向 Vitest 覆盖。
 - 设置抽屉中将页面当前会话值保存为默认或尺寸档案的操作，统一复用 `PageSettingsApplyButton`，视觉角色按按钮矩阵的语义轻量角色接入（`primary + plain`），整行宽度；不得在字段组件内复制颜色、宽度、边距或保存状态样式。当前页面值与已保存载荷无实质差异时禁用，提交函数二次拒绝无变化请求；按钮 `loading` 必须覆盖真实持久化周期并阻止重复提交，在请求的成功或失败分支统一释放；保存失败统一通过 `ElMessage.error` 明确提示并保留当前值供重试。普通编辑与恢复默认保持中性，危险操作才使用 `danger`。采用入口紧跟对应字段，不额外展示工作区像素、匹配阈值或档案清单等实现细节。
-- **页面可改动属性单向默认机制**：抽屉/组件配置层只提供**默认值**，页面主区可直接交互改动的属性必须用独立会话 ref 承载；重复的默认值投影统一复用 `composables/useDefaultedSessionValue.ts`，组件配置分页统一经 `composables/useComponentPageSizeSession.ts` 完成默认值解析、会话投影、归页和重载，**页面改动只进会话态、绝不写回默认值**——刷新/重进页面后重新应用抽屉默认。这样「默认」才有意义：用户临时改动不污染长期偏好。禁止可写 computed 或主区 `v-model` 直写持久层；设置抽屉内的默认值编辑，以及带有明确“设为默认”语义的显式操作，才是默认值持久化入口。初始化优先级固定为：先完成页面业务偏好与远端布局默认值水合，再应用 URL query、返回列表态等显式会话恢复，最后才接受用户交互；迟到的默认值不得清除已经恢复的显式会话覆盖。URL query/分享链接恢复只写会话 ref，不触碰默认。**会话态清单**（本就该会话级、也不进抽屉）：纯查询条件（关键字/日期口径/方案选择）、业务资产选择、运行参数（如回测日期、所选方案和当次执行参数）。
+- **页面可改动属性单向默认机制**：抽屉/组件配置层只提供**默认值**，页面主区可直接交互改动的属性必须用独立会话 ref 承载；默认值投影与组件分页分别复用 `composables/useDefaultedSessionValue.ts`、`composables/useComponentPageSizeSession.ts`，**页面改动只进会话态、绝不写回默认值**——刷新/重进页面后重新应用抽屉默认。禁止可写 computed 或主区 `v-model` 直写持久层；设置抽屉内的默认值编辑，以及带有明确“设为默认”语义的显式操作，才是默认值持久化入口。初始化优先级固定为：先完成页面业务偏好与远端布局默认值水合，再应用 URL query、返回列表态等显式会话恢复，最后才接受用户交互；迟到的默认值不得清除已经恢复的显式会话覆盖。URL query/分享链接恢复只写会话 ref，不触碰默认。**会话态清单**（本就该会话级、也不进抽屉）：纯查询条件（关键字/日期口径/方案选择）、业务资产选择、运行参数（如回测日期、所选方案和当次执行参数）。
 - **新增属性登记判断（开发闭环必经步骤）**：新增页面、改造页面或给页面/组件新增任何可交互属性后，必须逐一回答三个问题再收尾——①该属性是否需要跨会话记住（默认值/偏好）？②需要时登记到哪条链路（业务偏好进 `usePageSettings` defaults + `#business` 插槽；组件展示字段按 §7.3 进 `COMPONENT_FIELD_DEFS`/后端规则，页面 slot 自动继承，仅候选或实例例外进 `componentMeta`）？③需要默认值时页面是否已按上条单向机制消费（读默认初始化会话 ref、不写回）？三问任一答「是」却未落地，即视为本次改动未完成。反向同样成立：不再需要或语义失效的已登记项必须及时下线，不得在抽屉里堆积死项。
 
 ## 5. 布局原则
 
-所有业务页面走可配置布局系统：页面声明 `PageLayout`，通过 `<LayoutHost>` 渲染，不手写 `.v-page` / `.v-grow` / 视口高度。配置合并顺序固定为：
+所有业务页面走可配置布局系统：页面声明 `PageLayout`，通过 `<LayoutHost>` 渲染，不手写 `.v-page` / `.v-grow` / 视口高度。页面布局与普通组件字段的配置合并顺序固定为：
 
 `default < page < user`
 
@@ -1027,13 +1027,15 @@ typography:
 |---|---|---|
 | `default` | 页面原型、slot、组件代码默认值 | `frontend/src/layout/pageRegistry.ts`、组件代码 |
 | `page` | 单页面默认布局旋钮与组件默认值 | 系统管理 → 布局配置 → 页面布局 |
-| `user` | 当前登录用户的布局、组件和业务偏好 | 页面设置抽屉；PG `layout_user_config`、PG `user_preference` |
+| `user` | 当前登录用户的页面布局与普通组件覆盖 | 页面设置抽屉 |
 
-用户层的批量密度同步由 `PageDensitySyncSettings` → `pageDensitySync` → `POST /api/layout/user-density` 承接，复用 `layout:user-config` 和既有 `sys_resource`，不新增权限或覆盖默认授权。服务端只合并 `density`，归属取请求上下文；前端通过 `useRemoteLayoutConfig` 排空在途保存并同步缓存实例，后续编辑仍写原页面。
+视觉预设独立控制外观 token，不参与上述页面布局覆盖链路；业务偏好与专用全局偏好按各自通道保存和消费。
 
-用户层以 PostgreSQL 为权威：页面布局和组件字段写入真实 pageKey 的 `layout_user_config`，页面业务偏好、主题、导航模式、界面比例、K 线偏好和跨页面设置抽屉偏好写入 `user_preference`。回测日期、方案选择和当次运行参数只属于会话态，不得写入用户偏好。localStorage 只允许作为未登录/离线 fallback、旧偏好迁移源和登录前主题读取，不得作为登录用户配置权威，也不得保存页面查询现场。列表进入详情再返回所需的现场统一使用按租户和用户隔离的 sessionStorage：刷新可恢复，返回页消费一次，关闭 Tab、退出登录或切换身份后清理。
+批量密度同步只允许修改当前登录用户的页面 `density`，不得改变页面模板、其他组件偏好或默认授权；同步期间较新的逐页选择应保留。共享入口、权限与保存屏障见 [前端布局实现](agent-works/architecture/frontend-layout.md#用户页面布局与组件字段)。
 
-页面状态生命周期统一按语义选择入口：抽屉默认值投影到当前 Vue 实例时使用 `useDefaultedSessionValue`，由 KeepAlive 保留的只是该实例内存，刷新或实例重建后重新应用默认；需要分享、前进后退或刷新复现的查询状态写入 URL；确需跨路由返回且不适合暴露在 URL 的一次性现场使用 `utils/pageSessionStorage.ts`，页面不得直接调用 localStorage/sessionStorage。`pageSessionStorage` 统一负责 page namespace、租户/用户隔离、旧键迁移和退出/身份切换清理，业务 Store 只负责状态结构及消费时机。
+用户持久偏好必须按登录身份隔离，并以 PostgreSQL 为权威；具体配置分类与权威表由[环境配置](agent-works/architecture/environment-configuration.md#3-生效配置与数据库覆盖层)维护，运行时路由由[前端布局实现](agent-works/architecture/frontend-layout.md#配置通道与调用关系)维护。会话态不得混入持久偏好，范围遵守[设置抽屉](#设置抽屉)的单向默认契约。localStorage 只允许作为未登录/离线 fallback、旧偏好迁移源和登录前主题读取，不得作为登录用户配置权威，也不得保存页面查询现场。
+
+页面状态按语义选择生命周期：默认值投影复用 `useDefaultedSessionValue`，刷新或实例重建后重新应用默认；需要分享、前进后退或刷新复现的查询状态写入 URL；不适合暴露在 URL 的跨路由返回现场使用 `utils/pageSessionStorage.ts`，不得由页面直接调用 localStorage/sessionStorage。返回现场须按租户/用户隔离，刷新可恢复、返回页消费一次，关闭 Tab、退出登录或切换身份后清理。共享入口与业务 Store 的恢复分工见[会话生命周期实现](agent-works/architecture/frontend-layout.md#会话生命周期与返回现场)。
 
 ### 5.1 新建或改造页面
 
@@ -1205,39 +1207,15 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 页面实际读取并应用字段值。
 - 复合业务组件若封装了多个可配置系统组件实例或承接页面业务口径，必须暴露并由消费页显式填写 `registryPageKey`（或等价的机器可读页面标识），并登记到 `layout/compositeComponentContracts.ts`；该契约声明必需子 slot、字段和运行时绑定。影响结果或展示口径的页面偏好统一登记到 `layout/pageBusinessPreferenceContracts.ts`，通用测试从每个直接或间接消费点反查默认值、抽屉控件与动态 prop 传递；中间组件的业务口径 prop 必须为必填且原样透传，禁止内部写死。只校验“已登记字段是否被消费”不够，因为它无法发现整个 slot 或业务偏好从未声明。
 - 配置中心和设置抽屉共用 `ComponentAutoSettings`，且同时受字段代码最大层级与管理员当前开放策略限制。
-- 普通页面从 `/layout/effective/{pageKey}` 一次获取 page/user 层和字段开放策略，前端结合本地 default 做三层合并；历史上已存但现策略禁止或实例不适用的值必须丢弃。
+- 历史上已存但现策略禁止或实例不适用的值必须丢弃；普通页面、设置控件与配置中心必须消费一致的字段策略。加载顺序与分层过滤由[实现专题](agent-works/architecture/frontend-layout.md#页面加载过滤与合并)维护。
 - `useRemoteLayoutConfig` 返回的 `componentAllowedLayers` 必须传入 `PageSettingsDrawer`；页面脚手架和 `pageRegistry.spec.ts` 同时守卫该接线，禁止只在配置中心消费管理员策略。
 - 测试覆盖自动继承、实例适用性、代码默认/页面/用户合并、策略收紧、越权、类型和值域。
 
-当前受控字段摘要：
+允许配置的能力、最大层级及实例候选统一以 `COMPONENT_FIELD_DEFS`、slot `config` 和 `componentMeta` 为准；不在 DESIGN 手写维护当前字段目录。当前字段与层级映射见[实现专题](agent-works/architecture/frontend-layout.md#当前受控字段目录)。
 
-下表只记录字段和开放层级；消费页面、slot、候选列、排序字段和 tab 项不在 DESIGN 手写维护，统一以 `COMPONENT_FIELD_DEFS`、slot `config` 和 `componentMeta` 为准。`pageRegistry.spec.ts` 校验每个适用字段都被页面真实消费，且明确例外都有原因。
+`usePageSettings` 只保留页面业务偏好，不承载通用组件展示能力。声明专用全局偏好的组件字段必须走其专用持久化入口，禁止写入页面布局用户层。`settings-drawer.bodyScroll` 只允许 page 层控制；设置抽屉的折叠能力固定开启，不开放“允许折叠”或“默认折叠分区”配置，实际交互状态按用户记忆。字段的保存目的地、旧偏好兼容与恢复实现见[前端布局实现](agent-works/architecture/frontend-layout.md#专用字段的持久化路由)。
 
-| 组件 | 字段 | 层级 | 归属事实源 |
-|---|---|---|---|
-| `filter-bar` | `commonFields` | page/user | 候选为 `componentMeta.searchFields`，默认组合在 slot.config；不足三个有效候选时运行时不提供编辑入口 |
-| `data-table` | `border` | page | 全部 `data-table` slot 自动继承；页面需实际消费 `tableBorder(slotId)` |
-| `data-table` | `pageSize` | page/user | slot `config.pagination=true` 时自动启用 |
-| `data-table` | `defaultSort` | page/user | 候选排序字段以 `componentMeta.sortFields` 为准 |
-| `data-table` | `hiddenColumns` | page/user | 候选列以 `componentMeta.columns` 为准 |
-| `wide-table` | `border` | page | 全部 `wide-table` slot 自动继承；页面需实际消费 `tableBorder(slotId)` |
-| `wide-table` | `pageSize` | page/user | slot `config.pagination=true` 时自动启用 |
-| `wide-table` | `defaultSort` | page/user | 候选排序字段以 `componentMeta.sortFields` 为准 |
-| `wide-table` | `hiddenColumns` | page/user | 候选列以 `componentMeta.columns` 为准 |
-| `section` | `visibleIndicatorFields` | page/user | 仅由指标快照分区明确开放，候选字段由受控组件定义提供 |
-| `chart` | `minHeight` | page/user | 图表 slot 以 `config.minHeight` 明确开放；自适应高度的工作台通过 `fieldApplicability.minHeight` 明确关闭并说明原因 |
-| `chart` | `klineRangePreferences` | user（全局偏好持久化） | 含 `config.stockChart` 的 K 线工作区自动启用；组件设置统一编辑跨页面共享的 K 线快捷范围与默认范围 |
-| `chart` | `stockAnalysis` | page/user | 联动股票走势工作台以 `config.stockAnalysis` 明确开放；默认模式、显示状态、对比周期、指数和指标统一由组件设置生成并单向投影到会话态 |
-| `chart` | `sectorAnalysis` | page/user | 联动板块走势工作台以 `config.sectorAnalysis` 明确开放；使用独立板块指标模型，默认模式、显示状态、对比指数、指标和周期由组件设置生成并单向投影到会话态 |
-| `tabs` | `defaultActive` | page/user | 仅在页面登记 tabs slot 且 `componentMeta.tabs` 提供候选时渲染 |
-| `settings-drawer` | `size` | page/user（全局偏好持久化） | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot；具体 slotId 不作为存储判定条件 |
-| `settings-drawer` | `bodyScroll` | page | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot |
-| `config-panel` | `collapsibleSections` | preset/page | `config-system.configPanel` |
-| `config-panel` | `defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | page/user | `config-system.configPanel`、`trade-discipline.stockConditions`（仅默认折叠适用）；分区候选以 `componentMeta.collapseSections` 为准 |
-
-`usePageSettings` 只保留页面业务偏好，不承载通用组件展示能力。
-`settings-drawer.size` 与 `chart.klineRangePreferences` 的字段元数据将 `userPersistence` 标为 `global-preference`，分别由对应专用全局偏好承接。后端布局写接口按 `(component kind, field)` 反向拒绝它们进入 `layout_user_config`，不绑定具体 pageKey 或 slotId。`settings-drawer.bodyScroll` 只能由 page 层控制。折叠能力固定开启，不开放 `collapsibleSections` 或 `defaultCollapsed` 配置；实际交互状态以内部 `collapsedSections`（全局一级）和 `collapsedGroups[pageKey]`（页面内节点关闭清单）用户偏好保存，旧 `defaultCollapsed` 偏好仅兼容读取，新写入不再产生旧字段。其他未声明 `userPersistence` 的 user 字段默认写页面布局用户层。
-页面可改动的组件字段，组件配置层只提供默认值，页面读默认初始化会话态、改动不回写，规则见「设置抽屉」节「页面可改动属性单向默认机制」。
+页面可改动的组件字段只提供默认值，页面读默认初始化会话态、改动不回写，遵守[设置抽屉](#设置抽屉)的单向默认契约。
 
 ### 7.4 页面 / 组件 / 布局变更维护闭环
 

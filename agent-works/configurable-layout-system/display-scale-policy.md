@@ -2,7 +2,7 @@
 
 ## 文档边界
 
-本文维护自动比例公式、尺寸档案匹配、用户偏好同步及配置验证契约。共享布局与视觉约束见 [DESIGN.md](../../DESIGN.md)，环境变量和配置覆盖层见 [环境配置架构](../architecture/environment-configuration.md)；本文不定义页面响应式断点，也不记录各页面实测结果。
+本文维护自动比例公式、尺寸档案匹配、用户偏好同步及配置验证契约。共享布局与视觉约束见 [DESIGN.md](../../DESIGN.md)，布局与外观的整体装配见 [前端布局实现](../architecture/frontend-layout.md)，环境变量和配置覆盖层见 [环境配置架构](../architecture/environment-configuration.md)；本文不定义页面响应式断点，也不记录各页面实测结果。
 
 策略变更须同步 `frontend/src/layout/displayScalePolicy.ts`、`displayScaleProfiles.ts`、`frontend/src/composables/useDisplayScale.ts`、配置消费方及对应前后端测试；页面与组件适配证据分别更新 [页面检查](responsive-pages.md) 和 [组件清单](responsive-components.md)，不得用缩放策略代替响应式实现。
 

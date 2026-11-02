@@ -4,7 +4,7 @@
 
 本文面向开发者，维护「复盘啦」的系统分层、运行单元、模块依赖、数据流、存储所有权及故障边界。依据为当前仓库源码、配置和启动脚本；部署定义不代表某台服务器已经按该方式运行。
 
-任务执行与调度细节归 [任务运行态](task-runtime.md)，配置来源与生效归 [环境与配置加载](environment-configuration.md)，认证和租户归 [权限架构](system-rbac-tenant.md)，领域算法归各模块正文，前端设计契约归 [DESIGN](../../DESIGN.md)。运行与首次使用见 [README](../../README.md)，命令和执行约束以 [AGENTS](../../AGENTS.md) 为准。开发阶段文档不作为本文的事实依据或维护依赖。
+任务执行与调度细节归 [任务运行态](task-runtime.md)，配置来源与存储归 [环境与配置加载](environment-configuration.md)，前端布局与外观的加载、合并和应用归 [前端布局实现](frontend-layout.md)，认证和租户归 [权限架构](system-rbac-tenant.md)，领域算法归各模块正文，前端设计契约归 [DESIGN](../../DESIGN.md)。运行与首次使用见 [README](../../README.md)，命令和执行约束以 [AGENTS](../../AGENTS.md) 为准。开发阶段文档不作为本文的事实依据或维护依赖。
 
 ## 运行单元与系统分层
 
@@ -100,7 +100,7 @@ flowchart TB
 
 `AuthMiddleware` 对受控 API 默认拒绝，在请求上下文中注入身份与归属；JWT 不携带权限集合，服务按 PG 状态和 `perm_ver` 校验。`/api/auth/me` 返回菜单与功能码，前端 store、路由守卫和 `v-permission` 消费同一结果，按钮显隐不代替后端授权。
 
-`backend/config/settings.py` 将非敏感 YAML 基线与 PG 白名单覆盖层提供给业务消费者；环境变量负责敏感值、连接和启动开关。布局预设/页面/用户层与用户偏好使用各自 PG 表，不能当成普通 `app_config`。前端通过 `LayoutHost`、页面注册和组件目录组织布局，运行时合并机制及视觉约束分别见 [环境配置](environment-configuration.md) 和 [DESIGN](../../DESIGN.md)。
+`backend/config/settings.py` 将非敏感 YAML 基线与 PG 白名单覆盖层提供给业务消费者；环境变量负责敏感值、连接和启动开关。视觉预设、页面布局配置与用户偏好使用各自 PG 表，不能当成普通 `app_config`。前端通过 `LayoutHost`、页面注册和组件目录组织布局，布局覆盖与视觉预设分通道应用；加载、合并、保存及失败机制见 [前端布局实现](frontend-layout.md)，配置来源与归属见 [环境配置](environment-configuration.md)，设计约束见 [DESIGN](../../DESIGN.md)。
 
 ## 运行装配与生命周期
 

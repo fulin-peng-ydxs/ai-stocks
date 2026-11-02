@@ -4,7 +4,7 @@
 
 本文维护环境变量、变量文件、YAML 基线配置和数据库配置覆盖层的加载顺序、生效边界、环境身份与运行档案契约。其它 README、AI 协作入口和模块文档只保留必要操作摘要及链接，不重复定义加载细节。
 
-配置字段、加载器或运行档案变化时同步本文及对应测试；调试账号场景由 [测试用户清单](../multi-tenant-rbac/test-users.md) 维护，E2E 夹具与服务切换流程由 [执行指南](../e2e-automation/guide.md) 维护，业务方案参数由对应模块架构维护。本文不保存实际连接凭据、个人环境值或当次运行结果。
+配置字段、加载器或运行档案变化时同步本文及对应测试；调试账号场景由 [测试用户清单](../multi-tenant-rbac/test-users.md) 维护，E2E 夹具与服务切换流程由 [执行指南](../e2e-automation/guide.md) 维护，业务方案参数由对应模块架构维护。布局及用户偏好的配置来源、存储与作用域由本文维护，前端加载、合并、应用和草稿保护由 [前端布局实现](frontend-layout.md) 维护。本文不保存实际连接凭据、个人环境值或当次运行结果。
 
 ## 核心技术
 
@@ -31,8 +31,8 @@ flowchart TD
 | `.env.local` | 本机后端敏感变量模板的实际文件 | `start.sh` | 由 `./start.sh` 的服务、`dev-users` 和 `e2e-user` 动作统一读取；直接 `python -m backend.cli ...` 与 `./start-web.sh` 不自动读取 |
 | `config/settings.yaml` | 非敏感默认值、路径、端口、运行参数基线 | `backend/config/settings.py` | `get_settings()` 缓存；改 YAML 后需 `/api/config/reload` 或重启刷新缓存 |
 | PostgreSQL `app_config` | Web 系统设置白名单覆盖值 | `backend/storage/app_config.py` | `get_effective_settings()` 每次重合并，下一次读取即生效；PG 不可用时回落 YAML |
-| PG 布局配置表 | 布局预设、页面默认、组件字段开放策略、页面布局/组件用户层 | `backend/storage/layout_config.py` | `effective` 一次返回 preset/page/user 层与字段策略，前端结合代码 default 按 `default < preset < page < user` 合并 |
-| PG 用户偏好表 | 主题、导航模式、页面业务偏好、K 线偏好、回测参数记忆、设置抽屉跨页面偏好 | `backend/storage/user_preference.py`、`/api/user-preferences` | 只保存当前登录用户自己的偏好；未登录或接口失败时前端使用本地 fallback |
+| PG 布局配置表 | 视觉预设、页面默认、组件字段开放策略、页面布局/组件用户层 | `backend/storage/layout_config.py` | 页面 effective 返回 page/user 层与字段策略，前端结合代码 default 合并；视觉预设独立加载和应用，见[实现专题](frontend-layout.md) |
+| PG 用户偏好表 | 明暗模式、导航模式、页面业务默认偏好、K 线偏好、设置抽屉跨页面偏好 | `backend/storage/user_preference.py`、`/api/user-preferences` | 只保存当前登录用户自己的偏好；未登录或接口失败时前端使用本地 fallback |
 | 方案/业务表 | 评分、买卖、筛选、定时任务等业务配置 | 各 repo/service | 不属于环境变量链路，按对应模块的版本和权限规则生效 |
 
 ### 路径解析与运行目录
@@ -176,11 +176,11 @@ PostgreSQL `app_config` 是当前系统设置覆盖层的权威表：
 
 | 配置类型 | 权威表 | 说明 |
 |----------|--------|------|
-| 布局预设 | PostgreSQL `layout_preset` | 系统管理员维护的布局预设层 |
+| 视觉预设 | PostgreSQL `layout_preset` | 系统管理员维护的外观目录及 token 覆盖，不作为页面布局覆盖层 |
 | 页面布局默认 | PostgreSQL `layout_page_config` | 单页面 page 层默认值 |
-| 组件字段开放策略 | PostgreSQL `layout_field_policy` | 控制组件字段可开放到 preset/page/user 的策略 |
+| 组件字段开放策略 | PostgreSQL `layout_field_policy` | 在代码最大层级内控制组件字段可开放到 page/user 的策略 |
 | 页面布局/组件用户层 | PostgreSQL `layout_user_config` | 只保存真实 pageKey 的布局与组件用户层；组件路径保存必须带真实 `PageLayout` 校验归属 |
-| 非布局用户偏好 | PostgreSQL `user_preference` | 主题、导航、K 线、页面业务偏好、回测参数记忆等 |
+| 非布局用户偏好 | PostgreSQL `user_preference` | 明暗模式、导航、界面比例、K 线和页面业务默认偏好；回测日期、方案选择及当次运行现场不属于持久偏好 |
 | 设置抽屉跨页面偏好 | PostgreSQL `user_preference` | `scope='global'`、`pref_key='settings-drawer'`；`size`、全局一级 `collapsedSections`、按页面隔离的 `collapsedGroups`，旧 `defaultCollapsed` 仅兼容读取 |
 
 #### 行情请求参数与来源能力
@@ -229,7 +229,7 @@ Cookie校验记录与实际生效凭据的指纹绑定；登录墙只对当前�
 | 数据源限流/并发/超时、回测成本、认证开关/限流、审计保留期等运行期参数 | `get_effective_settings()` |
 | 布局预设、页面默认和组件字段开放策略 | `LayoutConfigRepo` 读取 PG 布局配置表 |
 | 页面布局/组件用户偏好 | `/api/layout/users/{pageKey}`，保存真实 pageKey 且组件路径带真实 `PageLayout` |
-| 主题、导航模式、工作页签折叠、页面业务偏好、K 线偏好、回测参数记忆 | `/api/user-preferences` / `/api/user-preferences/bulk` |
+| 明暗模式、导航模式、界面比例、工作页签折叠、页面业务默认偏好、K 线偏好 | `/api/user-preferences` / `/api/user-preferences/bulk` |
 | 评分方案、买卖方案、筛选方案 | 对应 profile/version 表，不走环境变量 |
 | 定时任务定义 | `scheduled_job` 表，不再用 `scheduler.*` 作为运行态配置 |
 | 调试账号密码 | `AI_STOCKS_TEST_USER_PASSWORD` 只在 dev-users 命令运行时读取 |
@@ -248,7 +248,10 @@ localStorage 不作为登录用户配置或偏好权威。在配置与偏好链�
 | 登录前主题读取 | 首屏可先读本地主题，登录后以 `user_preference(global/theme)` 同步 |
 | 离线/接口失败 fallback | 页面可继续使用旧本地值渲染，不能宣称云端已保存 |
 | 旧偏好迁移源 | 登录后由前端迁移器一次性迁到 PG，并写迁移 marker |
-| 临时交互态 | 例如临时搜索草稿，不进 PG；页面设置折叠属于已声明的持久偏好，按 DESIGN.md“设置抽屉”执行 |
+
+公开外观目录可用于登录前首屏缓存。当前实现还将视觉预设选择 key 保存在本地，该选择尚未接入 PG 同步，属于现有持久化边界，不能据此扩大其他登录用户偏好的本地权威范围；见[前端布局实现](frontend-layout.md#视觉预设明暗模式与比例装配)。
+
+临时搜索、查询现场和当次运行参数不属于 localStorage 持久偏好；按 DESIGN 的状态生命周期选择实例会话、URL 或统一的返回现场 sessionStorage 入口。页面设置折叠属于已声明的持久偏好，按 DESIGN“设置抽屉”执行。各本地 fallback 的身份隔离现状见[前端布局实现](frontend-layout.md#权限兼容与变更影响)，不能把允许回退解释为已满足全部身份隔离要求。
 
 `stockSet` 这类“当前股票集合/工作上下文”不是配置项，也不按用户偏好权威处理；如果后续要云端化，应按用户资产或工作集单独设计。
 
