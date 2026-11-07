@@ -345,7 +345,7 @@ defineExpose({ expandOperation, validate })
     description="只填写实际成交；没有买卖时可直接提交。"
     data-testid="checkin-operation-section"
   >
-    <TradeDirectionGroupGrid :groups="operationGroups" :columns="modelValue.length ? 1 : 2">
+    <TradeDirectionGroupGrid :groups="operationGroups">
       <template #actions="{ group }">
         <el-button
           v-permission="'trade-discipline:checkin-submit'"

@@ -157,22 +157,40 @@ class IntradaySourceService:
         return self._with_candidates(self._empty_window(windows), windows)
 
     def _fetch_ths_years(self, source, code, dates):
-        """跨年目标逐年取全响应；每个请求仍经过同一限流和重试入口。"""
+        """年度未补齐时追加近期窗口；逐日选整日候选，不拼接两窗口的分钟。"""
         errors, years = [], []
-        for year in sorted({int(day[:4]) for day in dates}):
+        for year in [*sorted({int(day[:4]) for day in dates}), "last10000"]:
+            if year == "last10000":
+                if self._targets_complete(self.last_windows, dates, code):
+                    break
+                self._task_log(f"{code} 同花顺年度窗口未补齐目标日，追加近期分钟窗口")
             try:
                 frame = self._fetch_provider(source, code, "ths", request_year=year)
-                # 逐年转换一次并合并已取得的窗口，取消或后续年份失败也保留前序有效候选。
+                # 每个响应只转换一次，取消或后续窗口失败也保留前序有效候选。
                 part = self._frame_to_window(frame, "ths")
-                years.append(year)
+                if year != "last10000":
+                    years.append(year)
                 previous = self.last_windows.get("ths")
                 if previous is not None:
-                    part["rows"] = previous["rows"] + part["rows"]
+                    # 近期首日可能截断；同日选择覆盖更好的完整候选，避免覆盖倒退。
+                    groups = {}
+                    for window in (previous, part):
+                        # 全部被拒用的日期也保留诊断，不能合并时静默消失。
+                        by_day = {day: [] for day in window["day_diagnostics"]}
+                        for row in window["rows"]:
+                            by_day.setdefault(row[0][:10], []).append(row)
+                        for day, rows in by_day.items():
+                            old = groups.get(day)
+                            if old is None or candidate_rank(rows, "ths", code) > candidate_rank(
+                                old[0], "ths", code
+                            ):
+                                groups[day] = (rows, window["day_diagnostics"].get(day, {}))
+                    part["rows"] = [row for day in sorted(groups) for row in groups[day][0]]
+                    part["day_diagnostics"] = {day: value[1] for day, value in groups.items()}
                     part["raw_count"] += previous["raw_count"]
                     for key, choose in (("raw_first", min), ("raw_last", max)):
                         values = [v for v in (previous.get(key), part.get(key)) if v]
                         part[key] = choose(values) if values else None
-                    part["day_diagnostics"] = {**previous["day_diagnostics"], **part["day_diagnostics"]}
                     part["diagnostics"] = {
                         key: previous["diagnostics"].get(key, 0) + part["diagnostics"].get(key, 0)
                         for key in set(previous["diagnostics"]) | set(part["diagnostics"])
@@ -185,9 +203,9 @@ class IntradaySourceService:
                     self.ctx.check_cancel()
                 reason = f"ths/{year}:{type(exc).__name__}: {str(exc)[:200]}"
                 errors.append(reason)
-                self._task_log(f"{code} 同花顺 {year} 年请求失败：{reason}；保留其他年份候选", "warn")
-        if not years:
-            raise ValueError("同花顺目标年份均请求失败：" + "；".join(errors))
+                self._task_log(f"{code} 同花顺 {year} 窗口请求失败：{reason}；保留其他窗口候选", "warn")
+        if "ths" not in self.last_windows:
+            raise ValueError("同花顺年度及近期窗口均请求失败：" + "；".join(errors))
         return self.last_windows["ths"], errors
 
     @source_requests.request_budgeted

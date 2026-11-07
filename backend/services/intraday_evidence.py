@@ -15,7 +15,8 @@ from backend.services import eod_dates
 from backend.services.intraday_contract import PROVIDER_LABELS, required_times
 from backend.services.intraday_subjects import providers_for
 
-SOURCE_POLICY_VERSION = 2
+# 接入近期窗口后，旧年度响应不能再作为跳过新补采链路的依据。
+SOURCE_POLICY_VERSION = 3
 SOURCE_REQUEST_LIMIT = SINA_INTRADAY_REQUEST_LIMIT
 
 

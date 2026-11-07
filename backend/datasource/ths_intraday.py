@@ -1,16 +1,19 @@
-"""同花顺年度 1 分钟原始行情；年度路径只表示请求年份，不保证覆盖全年。"""
+"""同花顺年度及近期 1 分钟原始行情；两种窗口均不保证覆盖完整目标日。"""
 
 from __future__ import annotations
 
 import json
 import re
+from typing import Literal
 
 import pandas as pd
 import requests
 
 
-def fetch_ths_minutes(code: str, year: int, *, timeout: float) -> pd.DataFrame:
-    """读取完整年度响应，避免 last10000 把首日截断；不补造缺失量价。"""
+def fetch_ths_minutes(
+    code: str, year: int | Literal["last10000"], *, timeout: float,
+) -> pd.DataFrame:
+    """共用解析年度与近期窗口；近期首日可能截断，由整日覆盖门禁判断。"""
     code6 = code.split(".")[0]
     if not re.fullmatch(r"\d{6}", code6):
         raise ValueError("同花顺分钟请求须使用六位股票代码")
@@ -44,7 +47,7 @@ def fetch_ths_minutes(code: str, year: int, *, timeout: float) -> pd.DataFrame:
         fields = record.split(",")
         if len(fields) < 7 or not re.fullmatch(r"\d{12}", fields[0]):
             raise ValueError("同花顺分钟记录格式异常")
-        if int(fields[0][:4]) != year:
+        if year != "last10000" and int(fields[0][:4]) != year:
             raise ValueError("同花顺分钟记录超出请求年份")
         rows.append(fields[:7])
     # 实测原始顺序为时间、开高低收、股、元；统一成交量为手，保留小数手。
@@ -55,5 +58,5 @@ def fetch_ths_minutes(code: str, year: int, *, timeout: float) -> pd.DataFrame:
     for field in frame.columns[1:]:
         frame[field] = pd.to_numeric(frame[field], errors="coerce")
     frame["volume"] /= 100
-    frame.attrs["request_years"] = [year]
+    frame.attrs["request_years"] = [] if year == "last10000" else [year]
     return frame

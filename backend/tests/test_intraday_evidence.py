@@ -81,6 +81,16 @@ def test_boundary_archive_retained_manual_recheck_and_automatic_skip(db, monkeyp
     assert len(q.calls) == 2
 
 
+def test_old_year_only_evidence_does_not_block_recent_window(db, monkeypatch):
+    _boundary(db, monkeypatch)
+    evidence = IntradayEvidence(db)
+    states = evidence.load([CODE])
+    states[(CODE, "ths")]["evidence"]["policy_version"] = 2
+    assessment = evidence.assess(CODE, "2026-09-01", ["09:31"], states)
+    assert "ths" in assessment["providers"]
+    assert assessment["can_repair"]
+
+
 def _boundary_payload(count, original):
     rows = [r for r in original["rows"] if r[0][:10] != "2026-09-01"]
     old = [r for r in original["rows"] if r[0][:10] == "2026-09-01"][-count:]
@@ -420,7 +430,8 @@ def test_unresolved_repair_explains_missing_minute_source_end_or_error(db, monke
     ctx = Context()
     result = async_task._h_fix({"issue_ids": [issue], "recheck_source": True}, ctx)
     assert not result["ok"] and result["technical_failure"] == int(backup == "failure")
-    assert calls == (["sina", "ths"] if backup == "old" else ["sina", "ths", "ths"])
+    assert calls == (["sina", "ths", "ths"] if backup == "old" else
+                     ["sina", "ths", "ths", "ths", "ths"])
     reason = "2026-09-09 15:00:00" if backup == "old" else "RemoteDisconnected"
     for text in (DAY, "10:32", reason, "保持待处理"):
         assert text in result["message"]

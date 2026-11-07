@@ -171,3 +171,31 @@ def test_ths_year_response_validates_identity_and_normalizes_units(monkeypatch):
                      '"202610080930,16,16,16,16,100,1600"})')
     with pytest.raises(ValueError, match="超出请求年份"):
         _source().get_intraday_1m("002879.SZ", "ths", request_year=2025)
+
+
+def test_ths_recent_window_accepts_cross_year_and_checks_callback(monkeypatch):
+    """近期窗口可跨年，但仍校验标的和周期，量额与年度解析保持一致。"""
+    from backend.datasource import ths_intraday
+
+    response = SimpleNamespace(
+        text='quotebridge_v6_line_hs_000153_60_last10000({"data":'
+             '"202512311500,10,11,9,10,123,1230;202601020931,10,11,9,11,200,2200"})',
+        raise_for_status=lambda: None,
+    )
+    calls = []
+
+    def get(url, **kwargs):
+        calls.append((url, kwargs))
+        return response
+
+    monkeypatch.setattr(ths_intraday.requests, "get", get)
+    frame = _source().get_intraday_1m("000153.SZ", "ths", request_year="last10000", timeout_sec=9)
+    assert calls[0][0].endswith("/hs_000153/60/last10000.js")
+    assert calls[0][1]["timeout"] == 9
+    assert frame.volume.tolist() == [1.23, 2]
+    assert frame.amount.tolist() == [1230, 2200]
+    assert frame.timestamp.dt.year.tolist() == [2025, 2026]
+    assert frame.attrs["request_years"] == []
+    response.text = response.text.replace("hs_000153", "hs_002030")
+    with pytest.raises(ValueError, match="标的、周期或年份"):
+        _source().get_intraday_1m("000153.SZ", "ths", request_year="last10000")

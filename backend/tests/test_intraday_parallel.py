@@ -224,11 +224,12 @@ def test_daily_and_quality_repair_share_parallel_source_and_resume(db, monkeypat
     result = async_task._h_intraday_ingest({"codes": codes}, daily)
     assert result["ok"] and result["partial"] == len(codes) * 2
     # 日常任务现已包含主源归档后的定向补齐；本夹具关闭复查间隔，补齐时可重取主源。
-    assert len(calls) == len(codes) * 3 and {row[2] for row in calls} == {"sina", "ths"}
+    # 主源归档、补齐时重取主源，以及同花顺年度/近期两个窗口。
+    assert len(calls) == len(codes) * 4 and {row[2] for row in calls} == {"sina", "ths"}
     assert peaks["daily"] == 4
     checked = async_task._h_verify({"scope": "intraday", "codes": codes}, daily)
     assert checked["quality"]["intraday"]["intraday_partial"] == len(codes) * 2
-    assert len(calls) == len(codes) * 3  # 质检扫描只读本地事实，不触发在线取源。
+    assert len(calls) == len(codes) * 4  # 质检扫描只读本地事实，不触发在线取源。
 
     stage = "cancel"
     with pytest.raises(TaskCancelled):
@@ -263,7 +264,7 @@ def test_daily_and_quality_repair_share_parallel_source_and_resume(db, monkeypat
     assert {row[1] for row in calls if row[0] == "retry_failed"} == {codes[-1]}
     assert set(writes) == {main_thread}
     assert {row[3] for row in calls} == {0.2}
-    assert {row[4] for row in calls if row[2] == "ths"} == {2026}
+    assert {row[4] for row in calls if row[2] == "ths"} == {2026, "last10000"}
     assert {f"market:source:rate:v1:{name}" for name in ("sina", "ths")} <= cache.values.keys()
     assert set(db.query_df(
         "SELECT status FROM data_quality_issue WHERE id IN (SELECT unnest(?::BIGINT[]))",

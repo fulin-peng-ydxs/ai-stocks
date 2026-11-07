@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import threading
 from datetime import date, timedelta
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 import akshare as ak
 import pandas as pd
@@ -316,9 +316,9 @@ class AKShareSource(DataSource):
 
     def get_intraday_1m(
         self, code: str, provider: str = "sina", *, timeout_sec: float | None = None,
-        request_year: int | None = None,
+        request_year: int | Literal["last10000"] | None = None,
     ) -> pd.DataFrame:
-        """读取免费源的近期 1 分钟不复权窗口，并把成交量统一为手。"""
+        """读取 1 分钟不复权行情，量统一为手；同花顺支持年份或 last10000 窗口。"""
         code6 = code.split(".")[0]
         # 编排层传入同一轮生效快照，保证锁预算和实际 HTTP 超时一致。
         timeout = (

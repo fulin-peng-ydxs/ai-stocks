@@ -56,6 +56,8 @@ def pipeline(db, monkeypatch):
                 hook(provider)
             record(requests=1, network_seconds=0.001)
             frame = frames[provider]
+            if callable(frame):
+                frame = frame(kwargs)
             if isinstance(frame, Exception):
                 raise frame
             return frame.copy()
@@ -97,6 +99,25 @@ def test_complete_primary_never_requests_backup(db, pipeline):
     assert "supplement" not in result
 
 
+def test_stale_ths_year_is_completed_by_recent_window_through_task(db, pipeline):
+    """真实任务链路归档主源缺口，再用同花顺近期整日候选落库并关闭问题。"""
+    windows = []
+
+    def ths(kwargs):
+        requested = kwargs["request_year"]
+        windows.append(requested)
+        return _frame() if requested == "last10000" else pd.DataFrame()
+
+    pipeline.frames["ths"] = ths
+    result = async_task._h_intraday_ingest({"codes": [CODE]}, pipeline.context())
+    assert windows == [2026, "last10000"]
+    assert result["ok"] and result["updated"] == 1
+    assert result["quality"]["intraday_partial"] == 0
+    assert db.query_df("SELECT status FROM data_quality_issue").status.tolist() == ["resolved"]
+    assert db.query_df("SELECT DISTINCT source FROM stock_intraday_bar").source.tolist() == ["ths"]
+    assert db.query_df("SELECT count(*) n FROM stock_intraday_bar").iloc[0].n == 240
+
+
 def test_only_collection_supplement_defers_recent_requests_and_expires(db, pipeline):
     pipeline.frames["ths"] = _frame(rows=20)
     result = async_task._h_intraday_ingest({"codes": [CODE]}, pipeline.context())
@@ -134,13 +155,13 @@ def test_quality_fix_and_resume_ignore_collection_interval(db, pipeline, selecti
     result = async_task._h_fix(params, ctx)
     assert result["deferred"] == 0 and result["unchanged"] == 1
     assert result["retryable"] and result["next_retry_at"] is None
-    assert pipeline.calls[count:] == [(CODE, "sina"), (CODE, "ths")]
+    assert pipeline.calls[count:] == [(CODE, "sina"), (CODE, "ths"), (CODE, "ths")]
     assert ctx.checkpoint["phase_done"] == 1 and ctx.checkpoint["issue_done_ids"] == []
     # 同一分钟立即续跑，无需人工重新核验标记，也不等采集复查间隔到期。
     pipeline.frames["ths"] = _frame()
     final = async_task._h_fix(params, ctx)
     assert final["ok"] and final["resolved"] == 1
-    assert len(pipeline.calls) == count + 4
+    assert len(pipeline.calls) == count + 5
 
 
 def test_quality_request_failure_remains_immediately_retryable(db, pipeline):

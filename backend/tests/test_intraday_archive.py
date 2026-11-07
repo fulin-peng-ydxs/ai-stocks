@@ -788,7 +788,7 @@ def test_failed_backups_keep_partial_issue_and_resume_repairs_without_cooldown(d
     quotes.ctx = ctx
     service = IntradayArchiveService(db, quotes=quotes)
     result = service.collect(ctx=ctx, allow_fallback=True)
-    assert calls == ["sina", "ths", "ths"]
+    assert calls == ["sina", "ths", "ths", "ths", "ths"]
     assert result["inserted"] == 1 and result["failed"] == 1
     assert ctx.checkpoint["intraday_done"] == []
     assert "ConnectionError" in ctx.checkpoint["intraday_failed"][CODE]

@@ -127,7 +127,7 @@ def test_ths_multiple_target_days_use_one_request_per_year_and_keep_other_year_o
     q = _service(factory=Source)
     result = q.fetch_window("002879.SZ", ["2025-12-31", "2026-09-09", DAY],
                             allow_fallback=True, providers=("ths",))
-    assert calls == [2025, 2025, 2026]
+    assert calls == [2025, 2025, 2026, "last10000"]
     assert result["request_years"] == [2026] and len(result["rows"]) == 480
     assert q.last_observations["ths"]["outcome"] == "error"
     assert any("ths/2025" in error for error in result["errors"])
@@ -143,6 +143,68 @@ def test_complete_primary_skips_backup_with_explicit_log():
     assert calls == ["sina"]
     for name in ("同花顺",):
         assert any(f"{name}：跳过" in m and "全部目标日" in m for m, _ in q.ctx.logs)
+
+
+def test_ths_recent_repairs_stale_year_without_overwriting_complete_first_day():
+    """年度尾部陈旧、近期首日截断时分别保留更好的整日，不能按窗口覆盖。"""
+    calls = []
+    old = "2026-09-09"
+
+    class Source:
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
+            calls.append((provider, request_year))
+            if provider == "sina":
+                return _frame(rows=235)
+            if request_year == "last10000":
+                recent = pd.concat([_frame(date(2026, 9, 9), rows=10), _frame()])
+                recent["close"] = 10
+                recent["high"] = 11
+                return recent
+            return _frame(date(2026, 9, 9))
+
+    result = _service(factory=Source).fetch_window("000153.SZ", [old, DAY], allow_fallback=True)
+    ths = next(w for w in result["candidates"] if w["source"] == "ths")
+    assert calls == [("sina", None), ("ths", 2026), ("ths", "last10000")]
+    assert len(ths["rows"]) == 480
+    assert IntradaySourceService._targets_complete({"ths": ths}, [old, DAY], "000153.SZ")
+    assert ths["request_years"] == [2026] and not result["errors"]
+    assert ths["diagnostics"]["duplicate_rows"] == 0
+
+
+@pytest.mark.parametrize("recent_failure", [False, True])
+def test_ths_recent_partial_or_failure_preserves_whole_day_candidate(recent_failure):
+    """互补缺分钟不能拼成完整日；近期失败也不能丢掉已取得的年度数据。"""
+    class Source:
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
+            frame = _frame()
+            missing = "10:47"
+            if request_year == "last10000":
+                if recent_failure:
+                    raise TimeoutError("recent unavailable")
+                missing = "13:56"
+            return frame[frame.timestamp.dt.strftime("%H:%M") != missing]
+
+    result = _service(factory=Source).fetch_window(
+        "000153.SZ", [DAY], allow_fallback=True, providers=("ths",),
+    )
+    assert len(result["rows"]) == 239
+    assert not IntradaySourceService._targets_complete({"ths": result}, [DAY], "000153.SZ")
+    assert bool(result["errors"]) == recent_failure
+
+
+def test_ths_recent_can_repair_after_year_request_failed():
+    class Source:
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
+            if request_year != "last10000":
+                raise TimeoutError("year unavailable")
+            return _frame()
+
+    result = _service(factory=Source).fetch_window(
+        "000153.SZ", [DAY], allow_fallback=True, providers=("ths",),
+    )
+    assert IntradaySourceService._targets_complete({"ths": result}, [DAY], "000153.SZ")
+    assert result["request_years"] == []
+    assert any("ths/2026" in error for error in result["errors"])
 
 
 def test_ths_year_response_is_normalized_once_per_year(monkeypatch):
@@ -245,7 +307,8 @@ def test_failed_sources_are_retried_immediately_without_caching_failures():
     for _ in range(2):
         with pytest.raises(IntradayServiceUnavailable):
             service.fetch_window("002251.SZ", [DAY], allow_fallback=True, providers=("sina", "ths"))
-    assert calls == ["sina", "sina", "ths", "ths"] * 2
+    # 年度与近期两个物理窗口各自使用系统配置的两次尝试预算。
+    assert calls == ["sina", "sina", "ths", "ths", "ths", "ths"] * 2
     assert not any(":negative:" in k or ":circuit" in k for k in cache.values)
     assert not any(":window:" in k for k in cache.values)
 
@@ -260,7 +323,7 @@ def test_empty_source_responses_do_not_create_market_cache():
     result = _service(cache, Source).fetch_window(
         "002251.SZ", [DAY], allow_fallback=True, providers=("sina", "ths")
     )
-    assert result["rows"] == [] and calls == ["sina", "ths"]
+    assert result["rows"] == [] and calls == ["sina", "ths", "ths"]
     assert not any(":window:" in k for k in cache.values)
 
 
@@ -370,7 +433,7 @@ def test_backup_failures_do_not_suppress_other_stocks_or_later_repair(provider):
                                 providers=("sina", provider))
         assert len(result["rows"]) == 10 and result["errors"]
         assert any(DAY in m and "HTTP 404" in m for m, _ in q.ctx.logs)
-    assert sum(source == provider for _, source in calls) == 8
+    assert sum(source == provider for _, source in calls) == 16
     # 无需等待或清理 Redis，另一个任务可以立即修复此前失败的股票。
     recovered = True
     result = _service(cache, Source).fetch_window("000000.SZ", [DAY], allow_fallback=True,
@@ -527,7 +590,7 @@ def test_failed_remaining_backup_never_requests_removed_eastmoney():
             return _frame(rows=10)
 
     result = _service(factory=Source).fetch_window("600000.SH", [DAY], allow_fallback=True)
-    assert calls == ["sina", "ths", "ths"]
+    assert calls == ["sina", "ths", "ths", "ths", "ths"]
     assert result["source"] == "sina" and len(result["rows"]) == 10
     assert result["errors"] and "THS unavailable" in result["errors"][0]
 
