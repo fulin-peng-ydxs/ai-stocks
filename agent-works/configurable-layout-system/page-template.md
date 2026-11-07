@@ -1,4 +1,4 @@
-# 新页面开发模板与选型清单（AI 固定流程）
+# 页面开发模板与选型清单
 
 ## 文档边界
 
@@ -8,15 +8,17 @@
 
 ## 0. 开工前必读
 
-1. 读 [DESIGN.md](../../DESIGN.md) §1~§8（视觉主题、颜色预设、排版间距、组件关系、布局原则、层级、禁止事项、响应式）。
-2. 读 `frontend/src/layout/archetypes.ts`（原型预设）和 `frontend/src/layout/components.ts`（组件能力目录）。
+1. 新页面和布局改造读取 [DESIGN.md](../../DESIGN.md) §1~§8；局部改动读取受影响章节及其共享契约。
+2. 涉及布局选型或组件种类时，读 `frontend/src/layout/archetypes.ts`（原型预设）和 `frontend/src/layout/components.ts`（组件能力目录）。
 3. 涉及新增可导航页面、系统页、API 动作或按钮权限时，读 [system-rbac-tenant.md](../architecture/system-rbac-tenant.md) 的“新页面接入菜单和权限”。
-4. 守 [AGENTS.md](../../AGENTS.md) 的协作约束：原型与组件清单选定后，先给用户推荐 + 理由再开发。
+4. 方案存在实质取舍或关键交互不确定时，按 AGENTS 给出推荐与理由并确认；已有明确需求、既定原型或有效授权时直接实施。
 
-## 1. 固定流程
+## 1. 实施流程
+
+新页面执行以下适用步骤；既有页面仅执行受影响步骤，不重新选择未变化的原型或重复登记。
 
 1. 判断业务页面类型 → 按 [DESIGN.md](../../DESIGN.md) §5.3 选一个**原型**，并按本文 §2 / §4 写明选择理由。
-2. 把推荐原型 + 理由告诉用户，确认后开发。
+2. 说明原型选择依据；仅存在上述未决取舍时等待确认。
 3. 检查 DESIGN.md “真实复用组件清单”和 `frontend/src/components/**`，先复用已有真实组件；控件选型、图标按钮和系统组件种类边界按 DESIGN 执行。
 4. 优先运行 `npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型>` 生成骨架；脚手架中的 `data-scaffold-placeholder` 是未完成标记，接入真实组件和四态后必须删除；独立的 `responsive-review-pending` 按下方「响应式设计」完成设计与实测后替换为具体结论，两类未完成标记均由契约测试拦截。需要手写时必须同样添加 `responsive-review-pending` 待验收标记，再用 `createLayout(archetype, pageKey)` 起默认 `PageLayout`，按需覆盖 `slots`/`editable`/`responsive`。
 5. 模板用 `<LayoutHost :layout="effective" :component-value-of="componentValueOf">` + 具名插槽（`slot.id`）承载业务组件，浮层放 `#overlays`。表格复用 `AppDataTable + AppTableColumn`，按 [DESIGN「表格与列表」](../../DESIGN.md#表格与列表) 声明列语义和成长/嵌入模式；浮层按本文 §6.1 选型。不得在页面复制共享布局或表头、列宽及状态配方。
@@ -38,11 +40,13 @@
 5. **新开发真实 Vue 组件**：先判定页面私有业务片段、业务域复用组件或全局真实复用组件。形成稳定复用单元时维护 `DESIGN.md` 真实组件清单、至少一个实际消费点和组件/消费页测试；不要为了组件文件存在而机械新增系统 kind。
 6. **新增可配置属性**：只有属性会被页面设置或页面布局真实消费时，才进入组件配置层；视觉预设不承载组件字段。按本文 §3“新组件配置字段”同步 `COMPONENT_FIELD_DEFS`、前端 schema、后端字段和值域/归属规则、安全渲染器、页面实际效果、系统组件覆盖状态和测试。纯组件内部 props 不进入该契约。
 
-最终判定覆盖五种：复用且登记已有 slot、复用但仅作为内部实现、复用已有真实组件并新增系统 kind/配置字段、新增真实组件但不新增系统 kind、新增真实组件并完成系统 kind/配置字段闭环。任何一种都必须在开发计划的“复用与新增判断”和“维护清单”中写明。
+最终判定覆盖五种：复用且登记已有 slot、复用但仅作为内部实现、复用已有真实组件并新增系统 kind/配置字段、新增真实组件但不新增系统 kind、新增真实组件并完成系统 kind/配置字段闭环。说明本次采用的分类及需要维护的入口；局部变更可在会话中简述，不填写无关分类。
 
-## 2. 开发计划页面设计块（复制到计划里）
+## 2. 页面设计说明
 
-涉及新页面，或改造既有页面的布局、组件、设置抽屉、表格、弹窗/抽屉、页面设置入口时，开发计划必须包含本节；只改后端、接口、文案或不影响布局的业务逻辑时，在计划里写明“不涉及前端页面设计闭环”。
+- **新页面和布局改造**：使用下方模板，覆盖页面定位、布局与组件、响应式、四态、配置、复用和验证；仅填写实际存在的区域，关键例外说明理由。
+- **局部组件、样式或交互改动**：只说明受影响区域与契约、复用入口、需同步的维护项和验证范围；影响响应式时补充相应触发、恢复及状态保留设计。无需复制完整模板或逐项填写“不适用”。
+- **不涉及页面呈现的改动**：不填写本节。已有计划或会话可直接承载说明，只有用户或有效项目要求时才保存计划文件。
 
 ```md
 ## 前端页面设计闭环
@@ -79,7 +83,7 @@
 - 复用的响应式组件及消费点：
 - 低高度时固定区和主内容的空间冲突如何解决：
 - 宽屏富余分配给哪一主表 / 主图 / 概览：
-- 无辅助内容或不适用区域写明理由；不得留空或只写“自适应”。
+- 只列实际存在的区域；核心内容没有降级路径时说明如何保持可达，不以“自适应”代替设计。
 - 新增降级行为必须补最低层边界测试（触发、恢复和状态保留）；CSS 几何以实际浏览器复核为准，不用 jsdom 证明。
 - 新页面默认临时复核 1100×620 / 1366×768 / 1440×900；涉及宽屏分栏增加1920×1080，新增局部断点检查临界两侧。采用不同界面比例时确认仍按布局尺寸触发。
 - 实测须覆盖代表性长名称、多条件、大总数以及加载/空/错误态，检查核心操作可达、无整页溢出、展开/恢复不丢筛选与草稿；记录实际视口、界面比例、结果和未验证项。已有 E2E 仅满足准入时执行最小范围。
@@ -97,47 +101,13 @@
 
 - 自检结论：四态互斥、空态/错误态/重试入口按 DESIGN 处理；如有例外写明原因。
 
-### 控件与操作规范
-规则入口：[DESIGN.md](../../DESIGN.md) §4「按钮与输入」和 §7「使用规范与禁用事项」。
+### 控件、排版与主题
+按 [DESIGN.md](../../DESIGN.md) §2–§4 选择共享入口，只记录本次选型与例外，不复制尺寸、颜色和交互配方。
 
-- 主 / 次 / 危险操作选型，以及轻量导航 link / 本地命令 text 的真实行为与声明：
-- 按钮位置：按真实影响范围判断，不按动词机械归类；作用于整页或页面唯一主任务的主操作放 `.page-head-actions`、位于 `PageSettingsTrigger` 左侧并使用默认 32px 尺寸；当前页签、局部表单、选中对象或局部区块命令留在对应区域工具区；区域内再按内容和相邻结构选择对齐，筛选与对象选择从左起排，独立纯命令组优先右对齐，具体判断及共享入口见 DESIGN.md §4「按钮与输入」。
-- 下拉选型：普通下拉使用 `AppSelect`，筛选/紧凑多选使用 `AppFilterSelect`，已有领域选择器继续复用；默认搜索、短枚举关闭及远程搜索边界见 DESIGN「按钮与输入」。禁止页面直接使用原生 `el-select` 或 HTML `<select>`。面板默认按内容扩展到共享上限后换行，等宽例外按 DESIGN「按钮与输入」登记，消费页无需重复配置定位。
-- 控件宽度：`AppSelect` 的 `width` 使用 `compact / short / medium / long / wide / fill` 档位（如 `width="short"`）；普通控件按内容容量选择 `.app-control-width-compact/short/medium/long/wide/fill` 中能完整承载常态内容的最小档位；多选 `AppFilterSelect` 必须按使用场景声明 `visibleTagCount=1..3`，由组件确定可见值、`+N` 与宽度档位，或使用 `displayMode=count` 只显示“已选 N”；不得另加宽度 class 或内联宽度；独立复合组件例外必须使用具名 class 并说明理由。
-- 自定义条目顺序：按 [DESIGN.md「自定义顺序」](../../DESIGN.md#自定义顺序) 选择共享组件，核对允许调整的范围、稳定标识及业务保存流程。
-- 排序操作：统一复用 `AppSortControl`，并作为所属筛选/操作栏的最后一个控件；空间不足保持 DOM 顺序整体换行。
-- 图标关闭/移除临时界面：使用 `AppCloseButton`；库内置关闭由全局适配，档位、状态、适用范围和业务边界统一引用 DESIGN §4，不私写配方。
-- 纯图标操作：使用 `AppIconButton`；异步纯图标操作使用 `:loading`；具体尺寸、默认 tooltip／显式豁免和 Unicode 禁令见 DESIGN。
-- 控件样式差异按 DESIGN §4「样式归属」通过尺寸属性或共享变体表达；核对 `design-contracts.json` 的受保护属性、精确持有者及绑定转发，覆盖输入/选择/日期、选择项、表单、表格/分页、卡片/页签和弹窗/抽屉。禁止以 scoped、deep/global、合法 token 或库组件样式属性绕过；需要文本域填充、技术文本、多行候选或紧凑/成长卡片时消费 DESIGN 登记的共享变体，不复制内部选择器。
-- 新增基础控件核对 DESIGN §4 的样式接入登记；重置、脚本写入、专项归属和根包装继承统一由 `check:contracts` 检查，例外只能登记到已有 `design-contracts.json`，不得另设页面放行列表。
-- 提示与可访问名称：图标默认用途提示与明确豁免、必要说明、禁用原因和真实截断统一引用 DESIGN §4“提示、截断与可访问名称”；分别复用 `AppIconButton` / `AppHoverInfo` / `AppActionHint` / `AppOverflowTooltipHost`，其他控件不因名称自动生成气泡。
-- 专用原生按钮例外：
-- 自检结论：
-
-- 分段选择在抽屉内由共享外壳统一启用 `fill`，抽屉外默认按内容排宽、需铺满字段时使用 `PageSegmented fill`，禁止私有宽高覆盖。编辑表单统一使用 `AppForm` 默认跟随页面密度，与相邻常规工具栏保持同档，动态字段继承尺寸；紧凑行内编辑等例外按角色区分，具体范围与例外见 [DESIGN.md「弹窗与抽屉」](../../DESIGN.md#弹窗与抽屉)，不得逐页指定默认高度；行外常规操作也由所属操作组提供尺寸，不逐控件定档。
-- 表单常显辅助说明统一使用 `AppFormHelp`；单行/多行标记、正文续行、控件列对齐及语义边界见 [DESIGN.md「表单辅助说明」](../../DESIGN.md#表单辅助说明)，不得恢复页面私有说明类或手写星号。
-
-### 字体与间距规范
-规则入口：[DESIGN.md](../../DESIGN.md) §3「字体与排版规范 / 间距与节奏规范」。
-
-- 新增或复用的语义类 / token：
-- 可导航页面标题是否通过 `useMenuPageTitle()` 消费当前菜单名称；阶段状态是否使用 `suffix` 拼接且未复制基础菜单标题：
-- 页面密度：视觉环境的一键统一是否只批量更新用户层 density、仍允许后续逐页修改；紧凑/标准/宽松是否复用共享变量矩阵（页面由 `LayoutHost` 提供，视觉环境抽屉固定使用宽松宿主），卡片、控件行、表单、表格和页面浮层是否共同消费 `--app-density-*`，且未改变字号或显式 small/large 层级：
-- 页面布局工作台预览：结构与配置是否左右分工；无响应式列数差异时是否隐藏预览宽度切换；配置诊断是否默认折叠：
-- 行内信息单元：非连续内容是否按 DESIGN §3.2 使用 ` · `、`.app-inline-info` 或 Teleport 浮层唯一 `popper-class`，且未用手工空格、`&nbsp;`、私有 `margin-left/right` 修补：
-- 排版或间距特例：
-- 页头容器对齐：`.page-head` / `.page-toolbar` 是否 `align-items: flex-start`（动作区钉标题顶）——禁止 `flex-end` / `center` 使抽屉触发钮跨页高度不一致；内嵌标题行 `.page-title-row` / `.title-row` 与右侧 `.page-head-actions` 不属此列。
-- 自检结论：
-
-### 主题底色规范
-规则入口：[DESIGN.md](../../DESIGN.md) §2「色彩体系与语义角色」。
-
-- 是否调整主题底色 / 预设：
-- 涉及 `themeSurfaces.ts` / `presets.ts`：
-- 是否涉及品牌露出：涉及时必须直接复用 `BrandMark`，不得新增场景变体或消费侧 `--brand-*` 覆盖：
-- 登录页 / 应用外壳同明暗模式、同预设下的品牌与基础表面是否一致：
-- 新增预设是否只通过运行时 `primary` 驱动两处品牌色：
-- 自检结论：
+- 控件与操作：命令影响范围、主次/危险角色、所属工具区、共享组件及 loading / disabled / focus；提示、键盘和可访问名称：
+- 表格、表单与浮层：共享入口、容量、尺寸档位、滚动与长内容承接：
+- 字体、间距与密度：语义 token / 类、菜单标题入口、继承范围及必要特例：
+- 主题或品牌变化（仅涉及此类改动时）：共享事实源、消费者与明暗模式验证：
 
 ### 配置设计
 | 类型 | 字段 | 层级 | 落点 | 说明 |
@@ -189,18 +159,12 @@
 - 是否新增页面专属业务态：
 
 ### 维护清单
-- pageRegistry：
-- COMPONENT_CATALOG：
-- COMPONENT_FIELD_DEFS：
-- componentSchemas：
-- 后端 layout_config 字段规则：
-- componentPreview：
-- DESIGN.md 真实复用组件清单：
-- DESIGN.md `page-registry` 区块：
-- RBAC 接入结论：是否触发 [system-rbac-tenant.md](../architecture/system-rbac-tenant.md)“新页面接入菜单和权限”；涉及项：
-- 测试：
-- 按钮契约：命令按钮 / 图标按钮选型、每组主按钮数量、loading / disabled / focus 状态：
-- 字体与间距契约：是否消费 typography/spacing token；行情摘要是否按 DESIGN 的行情摘要契约复用 `StockQuoteSummary`，匹配当前场景的容量和列距；是否存在合理特例、是否影响低宽度文本溢出：
+按下方 §3 矩阵列出本次需要修改的代码事实源、文档及测试；已有入口未变化时不重复登记。
+
+- 布局 / slot / kind / 字段 / 业务偏好的维护项：
+- 新增或变化的真实组件及消费点：
+- 页面登记、响应式说明与验收证据：
+- RBAC：涉及导航、API 或受控动作时按 [接入流程](../architecture/system-rbac-tenant.md#新页面接入菜单和权限) 列出菜单、功能码、守卫及授权验证：
 
 ### 验收
 - 定向运行 registry / validator / layout-contract / typography-spacing-system 与变更组件测试；只有发布门禁或明确需求才全量测试
@@ -210,9 +174,7 @@
 - 检查按钮、图标、排版、间距、表格、抽屉和四态反馈均符合 DESIGN 对应章节；例外写明原因
 ```
 
-如果缺少「响应式设计」或适用项未填写，计划视为不完整，不能直接进入开发。
-
-如果计划声明“新增布局原型 / 组件种类 / 组件配置字段”，但没有维护清单，计划视为不完整，不能直接进入开发。
+新页面和布局改造在实施前明确响应式设计；新增原型、组件种类或配置字段时明确对应维护项。缺少会影响正确性的决策时只暂停依赖部分；局部改动按本节范围完成必要说明即可。
 
 ## 3. 组件 / 布局维护矩阵
 
@@ -221,7 +183,7 @@
 | 变更类型 | 必须同步维护 | 必须验证 |
 |---|---|---|
 | 新页面 | 响应式设计与实测结论、完整组件触发清单、页面检查表、脚手架、`pageRegistry.ts`、`router/index.ts`、DESIGN 页面登记区块；四处 `pageKey` 必须一致；需要侧栏/权限时同步 RBAC 菜单与功能点 | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、权限相关测试、build、关键视口 |
-| 响应式降级变化 | DESIGN §8、`responsive-components.md` 逐文件触发清单、`responsive-pages.md` 受影响页面的当前验收行（日期、视口、已观察状态、结论与缺口；不追加过程记录）、真实消费组件、计划中的降级表；复用现有布局和组件，不新增平行配置 | `responsive-inventory.spec.ts`、边界/恢复/状态保留定向测试、尺寸断点契约、相关关键视口临时复核 |
+| 响应式降级变化 | DESIGN §8、`responsive-components.md`（`npm run docs:responsive` 同步自动列，人工核对降级与恢复）、`responsive-pages.md` 受影响页面的当前验收行（日期、视口、已观察状态、结论与缺口；不追加过程记录）、真实消费组件、计划中的降级表；复用现有布局和组件，不新增平行配置 | `responsive-inventory.spec.ts`、边界/恢复/状态保留定向测试、尺寸断点契约、相关关键视口临时复核 |
 | 新布局原型 | `archetypes.ts`、`schema.ts`、`validator.ts`、`LayoutHost.vue`、DESIGN 原型说明 | `validator.spec.ts`、布局契约测试 |
 | 新组件种类 | `COMPONENT_CATALOG`、`componentSchemas.ts`、`componentPreview.ts`、系统组件页展示 | `componentPreview.spec.ts`、`pageRegistry.spec.ts` |
 | 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py` 字段/值域/实例归属规则、`ComponentAutoSettings` 通用或专用安全渲染器、系统组件覆盖页、页面真实消费、DESIGN 字段治理入口 | `component-config-contract.spec.ts`、`componentConfig.spec.ts`、后端 layout 测试、保存/回显与策略收紧验证 |

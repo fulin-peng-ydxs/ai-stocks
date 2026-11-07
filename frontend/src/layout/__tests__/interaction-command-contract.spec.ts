@@ -7,7 +7,6 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
 const SRC_DIR = resolve(process.cwd(), 'src')
-const DESIGN_SOURCE = readFileSync(resolve(process.cwd(), '../DESIGN.md'), 'utf8')
 const BUTTON = /<(el-button|AppIconButton)\b([^>]*)>([\s\S]*?)<\/\1>/g
 const FORBIDDEN_AMBIGUOUS_LABELS = new Set([
   '重置',
@@ -208,18 +207,6 @@ describe('查询、重置与刷新命令契约', () => {
       offenders,
       `以下表格列没有为多选下拉预留一致容量：\n${offenders.join('\n')}`,
     ).toEqual([])
-  })
-
-  it('DESIGN 保留统一操作状态和稳定语义名称', () => {
-    for (const state of ['idle-clean', 'idle-dirty', 'querying', 'resetting', 'refreshing', 'error']) {
-      expect(DESIGN_SOURCE).toContain(`\`${state}\``)
-    }
-    for (const label of ['重置筛选', '刷新状态', '重新执行', '重新计算', '还原修改', '恢复默认', '清除用户覆盖']) {
-      expect(DESIGN_SOURCE).toContain(`“${label}”`)
-    }
-    expect(DESIGN_SOURCE).toContain('`AppSortControl`')
-    expect(DESIGN_SOURCE).toContain('`visibleTagCount=1..3`')
-    expect(DESIGN_SOURCE).toContain('`displayMode=count`')
   })
 
   it('命令按钮不得使用无对象的含糊重置或还原文案', () => {

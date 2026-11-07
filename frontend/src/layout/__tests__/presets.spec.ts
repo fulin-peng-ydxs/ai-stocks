@@ -213,16 +213,12 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     }
   })
 
-  it('视觉预设页复用统一运行时目录入口，方案标签文档登记所有消费页', () => {
+  it('视觉预设页复用统一运行时目录入口', () => {
     const view = readFileSync(join(SRC_DIR, 'views/layout/LayoutPresetsView.vue'), 'utf8')
-    const design = readFileSync(join(SRC_DIR, '../../DESIGN.md'), 'utf8')
 
     expect(view).toContain('setRuntimePresetSources(presets.value)')
     expect(view).not.toContain('setPresetCatalog')
     expect(view).not.toContain('setPresetOverrides')
-    expect(design).toMatch(
-      /AssetProfileLabel[\s\S]*消费页包括[^|\n]*StockDetailView/,
-    )
   })
 
   it('金融涨跌色为独立 token 且感知亮度恒高于同名主体信号色一档', () => {

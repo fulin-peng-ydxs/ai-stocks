@@ -10,7 +10,9 @@
 
 已登记的菜单与交互卡片统一消费 [DESIGN.md](../../DESIGN.md)「动效与状态过渡」及 `global.css` 共享交互样式；消费组件不另写点击位移或动画状态锁。
 
-尺寸恢复自动撤销 CSS 降级；折叠和选择等业务态不因尺寸重置。表中“委托”须同时查看被委托组件；不将静态检查写成所有业务状态已实测。新增/删除 Vue 文件、改变查询必须同步此表，`responsive-inventory.spec.ts` 检查文件及查询双向一致。JS 策略、语义行为和状态恢复仍需人工审查与定向测试。
+尺寸恢复自动撤销 CSS 降级；折叠和选择等业务态不因尺寸重置。表中“委托”须同时查看被委托组件；不将静态检查写成所有业务状态已实测。新增/删除 Vue 文件或改变 CSS 查询时，在 `frontend/` 执行 `npm run docs:responsive` 自动同步文件与查询列；行为与恢复入口、消费方由维护者核对。新增行标为“待补充”并使检查失败，补齐后重试；文件重命名时将原行路径改为新路径以保留人工说明。`npm run check` 包含只读一致性检查。JS 策略、语义行为和状态恢复仍需人工审查与定向测试。
+
+<!-- responsive-components:start -->
 
 | 文件 | 查询原文（去重） | 行为 / 恢复入口 | 直接消费方 |
 |---|---|---|---|
@@ -204,6 +206,8 @@
 | `frontend/src/views/trade-discipline/components/TradeOperationEditor.vue` | `@container trade-operation (max-width: 1180px)`<br>`@container trade-operation (max-width: 760px)` | 按成交面板自身宽度适配，避免宽屏分栏后按整页宽度误判；同时间顺序显式占列；中窄股票占整行、时间与顺序各半行，规则/金额半行；更窄全部单列，输入保留。无成交时只保留方向笔数与添加入口，不渲染空态占位。买卖规则核对独立成章，规则正文与核对控件共用AppControlRow同行排布，内容不足时自然换行；章节说明消费HelpHint，尺寸变化保留核对值。 ；同时间顺序数字框消费共享 app-control-width-fill，随已分配的字段列铺满，不保留库默认固定宽度 | TradeCheckinForm、TradeLedgerWorkspace |
 | `frontend/src/views/trade-discipline/components/TradeRuleEditor.vue` | `@container app-viewport (max-width: 1100px)`<br>`@container app-viewport (max-width: 760px)` | 规则始终单列；基础字段与资金汇总复用表单标签、顶部对齐及同档控件高度，辅助说明不改变同行对齐；窄宽状态/基础单列，更窄头部/表单换行，条件输入保留。财报月份限制复选框置于基础字段下方，帮助说明复用AppFormHelp并自然换行，受相同只读/忙态守卫。底栏在滚动视口内侧吸底，按钮随可用宽度换行，滚动起点和末尾均完整可见。 | TradeDisciplineView |
 | `frontend/src/views/trade-discipline/components/ViolationReasonCombobox.vue` | 无自身 CSS 查询 | 委托 BuiltinOptionRow。 | TradeCheckinForm（旧入口兼容） |
+
+<!-- responsive-components:end -->
 
 ### 共享键盘行为
 

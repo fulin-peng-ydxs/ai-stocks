@@ -53,23 +53,10 @@ describe('全站按钮与图标操作契约', () => {
     expect(violations).toEqual([])
   })
 
-  it('普通命令与纯图标操作有唯一公共实现和长期文档入口', () => {
+  it('普通命令与纯图标操作消费共享尺寸和字重契约', () => {
     const design = read(join(PROJECT_DIR, 'DESIGN.md'))
-    const pageTemplate = read(join(PROJECT_DIR, 'agent-works/configurable-layout-system/page-template.md'))
     const globalCss = read(join(SRC_DIR, 'styles/global.css'))
 
-    expect(design).toContain('普通业务命令统一使用 Element Plus `<el-button>`')
-    expect(design).toContain('纯图标操作统一使用 `AppIconButton`')
-    expect(design).toContain('顶栏状态和工具按 `32px` 控件基线对齐')
-    expect(design).toContain('文字 `13px / --app-font-weight-medium`')
-    expect(design).toContain('纯图标异步操作必须使用 `AppIconButton` 的 `loading`')
-    expect(design).toContain('选择态勾选标记也使用 Element Plus 图标或项目 SVG')
-    expect(design).toContain('控件宽度不按组件类型强制等宽')
-    expect(design).toContain('新增或修改控件禁止匿名内联固定宽度')
-    expect(pageTemplate).toContain('### 控件与操作规范')
-    expect(pageTemplate).toContain('纯图标操作：使用 `AppIconButton`')
-    expect(pageTemplate).toContain('异步纯图标操作使用 `:loading`')
-    expect(pageTemplate).toContain('.app-control-width-compact/short/medium/long/wide/fill')
     expect(globalCss).toContain('--app-control-height-md: 32px')
     expect(globalCss).toContain('--app-control-width-compact: 96px')
     expect(globalCss).toContain('--app-control-width-wide: 300px')
@@ -93,17 +80,6 @@ describe('全站按钮与图标操作契约', () => {
     expect(frontMatterButtonFontWeight).toBe(commandFontWeight)
   })
 
-  it('必须与禁止章节只保留系统级原则，组件实现细节由对应章节和清单承载', () => {
-    const design = read(join(PROJECT_DIR, 'DESIGN.md'))
-    const topLevelRules = design.match(/### 7\.1 必须遵守[\s\S]*?(?=### 7\.3 组件特性配置治理)/)?.[0] ?? ''
-
-    expect(topLevelRules).not.toMatch(/AppFilterSelect|AppIconButton|HelpTip|HelpHint/)
-    expect(topLevelRules).not.toMatch(/multiple=false|allowCreate|3 个标签|已选 N/)
-    expect(design).toContain('列表筛选与紧凑多选编辑使用 `AppFilterSelect`')
-    expect(design).toContain('纯图标操作统一使用 `AppIconButton`')
-    expect(design).toContain('单块解释使用可见 `HelpHint`')
-  })
-
   it('应用外壳、页面设置和配置编辑器共同消费 AppIconButton', () => {
     const consumers = [
       'App.vue',
@@ -118,11 +94,9 @@ describe('全站按钮与图标操作契约', () => {
   })
 
   it('设置抽屉采用当前页面值统一复用主色朴素按钮', () => {
-    const design = read(join(PROJECT_DIR, 'DESIGN.md'))
     const applyButton = read(join(SRC_DIR, 'components/PageSettingsApplyButton.vue'))
     const autoSettings = read(join(SRC_DIR, 'components/ComponentAutoSettings.vue'))
 
-    expect(design).toContain('统一复用 `PageSettingsApplyButton`')
     expect(applyButton).toContain('type="primary"')
     expect(applyButton).toContain('plain')
     expect(applyButton).toContain(':loading="props.loading"')

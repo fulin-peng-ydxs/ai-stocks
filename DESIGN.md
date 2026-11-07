@@ -1085,7 +1085,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 ### 5.2 页面设计闭环触发条件
 
-涉及新页面，或改造既有页面的布局、组件、设置抽屉、表格、弹窗/抽屉、页面设置入口时，开发计划必须包含页面设计闭环。只改后端、接口、文案或不影响布局的业务逻辑时，计划中写明“不涉及前端页面设计闭环”。
+新页面和布局改造执行完整页面设计闭环；局部组件、样式或交互改动只说明受影响区域、复用入口、维护项与验证范围。只改后端、接口、文案或不影响呈现的业务逻辑时，不填写页面设计模板。说明可放在已有计划或会话中，不因模板新增计划文件。
 
 页面设计闭环至少覆盖：页面定位、原型选择和理由、slot 与组件设计、四态反馈设计、配置层级、复用/新增判断、维护清单、测试与关键视口验收。声明新增布局原型、组件种类或组件配置字段时，必须同步给出维护清单。
 
@@ -1287,7 +1287,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 ### 8.1 信息优先级与降级契约
 
-新增页面和影响布局的改造必须在开发计划中逐区声明核心内容、辅助内容、触发条件、降级行为、恢复入口与滚动归属，按 `page-template.md`「响应式设计」执行；不得仅填写 `responsiveProfile` 或“自适应”作为完成结论。规则适用于手写页面和脚手架页面。
+新增页面和影响布局的改造必须在计划或会话设计说明中，针对新增或受影响区域声明核心内容、辅助内容、触发条件、降级行为、恢复入口与滚动归属，按 `page-template.md`「响应式设计」执行；不得仅填写 `responsiveProfile` 或“自适应”作为完成结论。规则适用于手写页面和脚手架页面。
 
 | 内容层级 | 空间不足时的要求 |
 |---|---|
@@ -1308,16 +1308,16 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 页面开发必须复用 `LayoutHost`、登记 `responsiveProfile` 和有 `minWidth=0` 基础断点的 `layout.responsive`；登记完整性与布局合法性由现有 registry/validator 测试约束。
 - `scaffold-page` 自动生成独立的 `responsive-review-pending` 标记；接入业务组件后仍须按模板完成响应式设计与关键视口实测，留下具体结论后替换标记。`layout-contract.spec.ts` 拒绝带标记的页面交付。手写页面同样执行模板，不得跳过复核。
 - `typography-spacing-system.spec.ts` 扫描所有 Vue/CSS 的尺寸媒体查询（包含范围语法），`layout-contract.spec.ts` 检查主体高度、布局入口和统一分页。机器测试不能证明内容优先级合理或真实渲染不溢出。
-- 新增/删除 Vue 文件、改变响应式查询或降级语义必须更新完整组件清单；`responsive-inventory.spec.ts` 检查文件、页面记录覆盖及 CSS 查询双向一致。JS 阈值、业务优先级、恢复与状态保留由人工和定向验证承担。
+- 新增/删除 Vue 文件或改变 CSS 查询时，用 `npm run docs:responsive` 同步清单自动字段；降级语义、恢复入口与消费方变化由维护者更新人工列。`check:responsive` 检查源码一致性与待补充项，`responsive-inventory.spec.ts` 保留页面记录覆盖和同步器边界回归。JS 阈值、业务优先级、恢复与状态保留由人工和定向验证承担。
 - 视口复核按模板进行，交付分别列出定向测试、浏览器实测及未验证项。普通临时复核使用内置浏览器，Playwright 仅按 E2E 准入规则执行，不要求每个新页面新增 E2E。
 
 ## 9. AI 开发入口
 
-本节只做入口，不维护可复制 prompt、计划块或验证命令。新增或改造前端页面时，固定流程、页面设计闭环、维护清单、页面登记模板和验收命令统一维护在 `agent-works/configurable-layout-system/page-template.md`。
+本节只做入口，不维护可复制 prompt、计划块或验证命令。新增或改造前端页面时，实施流程、页面设计闭环、维护清单、页面登记模板和验收命令统一维护在 `agent-works/configurable-layout-system/page-template.md`。
 
 执行边界：
 
-- 凡涉及新增或改造前端页面、布局、组件配置、抽屉、表格、样式或交互表现，必须先读取并执行 `agent-works/configurable-layout-system/page-template.md`；未在计划或回复中明确该入口和适用结论，视为执行不完整。
+- 凡涉及新增或改造前端页面、布局、组件配置、抽屉、表格、样式或交互表现，必须先读取并执行 `agent-works/configurable-layout-system/page-template.md`；按变更范围应用对应章节，无需重复声明已读取。
 - 设计规则以本文件 §1~§8 为准；代码事实以 `frontend/src/layout/`、`frontend/src/components/`、`frontend/src/styles/global.css` 和后端 layout 校验为准。
 - 页面原型、slot、滚动归属、`growMain`、组件字段和页面登记按 `page-template.md` 执行。
 - 新增组件字段必须回到 §7.3 的字段治理闭环，不在 prompt 或计划里临时声明第二套配置口径。
