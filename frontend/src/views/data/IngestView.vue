@@ -846,7 +846,7 @@ const menuPageTitle = useMenuPageTitle()
             </span></div>
         </template>
         <div class="act-grid">
-          <div class="act">
+          <div class="act app-surface">
             <div class="act-t">个股采集</div>
             <div class="act-d">日常同步 / 历史行情 / 区间重采 / 市值 / 基础资料 / 退市股历史</div>
             <AppControlRow class="act-actions">
@@ -856,7 +856,7 @@ const menuPageTitle = useMenuPageTitle()
                          @click="openIngestExecution('stock_ingest')">手动执行</el-button>
             </AppControlRow>
           </div>
-          <div class="act">
+          <div class="act app-surface">
             <div class="act-t">分时采集</div>
             <div class="act-d">已收盘1分钟分时 / 近期补采 / 区间重采 / 长期归档</div>
             <AppControlRow class="act-actions">
@@ -867,7 +867,7 @@ const menuPageTitle = useMenuPageTitle()
                          @click="openIngestExecution('intraday_ingest')">手动执行</el-button>
             </AppControlRow>
           </div>
-          <div class="act">
+          <div class="act app-surface">
             <div class="act-t">板块采集</div>
             <div class="act-d">板块字典 / 成分 / 指数 / 资金流，可选增量或全量回填</div>
             <AppControlRow class="act-actions">
@@ -885,7 +885,7 @@ const menuPageTitle = useMenuPageTitle()
         <template #header><div class="blk-head"><span>结果维护</span>
           <span class="app-caption-text">立即执行与调度配置相互独立；自动执行参数和触发时机在任务调度保存。</span></div></template>
         <div class="act-grid">
-          <div class="act">
+          <div class="act app-surface">
             <div class="act-t">走势相关重算</div>
             <div class="act-d">强制重算股票与行业、概念板块的走势相关结果，并原子发布</div>
             <AppControlRow class="act-actions">
@@ -896,7 +896,7 @@ const menuPageTitle = useMenuPageTitle()
                          @click="configureResultSchedule('stock_board_correlation')">配置调度</el-button>
             </AppControlRow>
           </div>
-          <div class="act">
+          <div class="act app-surface">
             <div class="act-t">连板天梯失效</div>
             <div class="act-d">只标记指定日期起的快照失效；访问对应日期时再重算</div>
             <AppControlRow class="act-actions">
@@ -907,7 +907,7 @@ const menuPageTitle = useMenuPageTitle()
                          @click="configureResultSchedule('limit_ladder_invalidate')">配置调度</el-button>
             </AppControlRow>
           </div>
-          <div class="act">
+          <div class="act app-surface">
             <div class="act-t">每日榜单失效</div>
             <div class="act-d">只标记评分快照失效；下次读取对应榜单时按需重算</div>
             <AppControlRow class="act-actions">
@@ -1388,7 +1388,7 @@ const menuPageTitle = useMenuPageTitle()
 .blk-head { display: flex; justify-content: space-between; align-items: center; gap: var(--app-space-3); }
 .flt { display: flex; align-items: center; gap: var(--app-space-2); }
 .act-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--app-space-3); }
-.act { border: 1px solid var(--el-border-color-lighter); border-radius: var(--layout-card-radius); padding: 12px 14px; }
+.act { padding: 12px 14px; }
 .act-t { font-weight: var(--app-font-weight-section); }
 .act-d { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin: 4px 0 10px; }
 .task-id { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }

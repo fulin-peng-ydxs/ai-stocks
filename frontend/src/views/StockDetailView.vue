@@ -1610,7 +1610,7 @@ onBeforeUnmount(() => {
 }
 .group-select-tag.more {
   color: var(--el-text-color-secondary);
-  border-color: var(--el-border-color);
+  border-color: var(--app-border-subtle);
   background: var(--app-section-bg);
 }
 .color-dot {

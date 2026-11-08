@@ -91,7 +91,7 @@ async function quickSubmit(): Promise<void> {
 </script>
 
 <template>
-  <section class="discipline-quick-card" data-testid="trade-discipline-quick-card">
+  <section class="discipline-quick-card app-surface app-surface--floating" data-testid="trade-discipline-quick-card">
     <header class="quick-head">
       <div>
         <span class="quick-kicker">今日交易纪律</span>
@@ -184,9 +184,6 @@ async function quickSubmit(): Promise<void> {
 
 <style scoped>
 .discipline-quick-card {
-  border: 1px solid var(--page-settings-section-border);
-  border-radius: var(--app-radius-floating-section);
-  background: var(--page-settings-section-bg);
   overflow: hidden;
 }
 .quick-head {

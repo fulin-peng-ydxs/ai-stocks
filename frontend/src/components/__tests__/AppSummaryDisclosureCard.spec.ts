@@ -57,6 +57,8 @@ describe('AppSummaryDisclosureCard', () => {
     const preview = wrapper.get<HTMLElement>('.app-summary-disclosure-card__preview').element
     expect(preview.textContent?.trim()).toBe(previewText)
     preview.style.textOverflow = 'ellipsis'
+    // jsdom 不加载 SFC 样式；补齐组件中真实裁切的条件，再验证截断与非截断。
+    preview.style.overflow = 'hidden'
     Object.defineProperty(preview, 'clientWidth', { value: 100, configurable: true })
     Object.defineProperty(preview, 'scrollWidth', { value: 300, configurable: true })
     expect(findOverflowTooltipTarget(preview)).toBe(preview)

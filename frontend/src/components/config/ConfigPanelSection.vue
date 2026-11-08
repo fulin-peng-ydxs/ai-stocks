@@ -49,11 +49,11 @@ function toggle() {
 </script>
 
 <template>
-  <section class="config-panel-section" :class="[`is-level-${level}`, { 'is-closed': !isOpen(), 'has-summary': !!summary }]">
+  <section class="config-panel-section" :class="[`is-level-${level}`, { 'is-closed': !isOpen(), 'has-summary': !!summary, 'app-surface': level === 1 }]">
     <div
       v-if="title || badge"
-      class="config-panel-section__head"
-      :class="{ 'is-foldable': foldable(), 'app-interaction-disclosure': foldable() }"
+      class="config-panel-section__head app-section-header"
+      :class="{ 'is-foldable': foldable(), 'app-interaction-disclosure': foldable(), 'app-section-header--plain': level === 2 }"
       :role="foldable() ? 'button' : undefined"
       :tabindex="foldable() ? 0 : undefined"
       :aria-expanded="foldable() ? isOpen() : undefined"
@@ -93,9 +93,6 @@ function toggle() {
 }
 
 .is-level-1 {
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
   overflow: hidden;
 }
 
@@ -106,7 +103,6 @@ function toggle() {
 .is-level-1 > .config-panel-section__head {
   min-height: 48px;
   padding: 11px 14px;
-  background: color-mix(in srgb, var(--app-section-bg) 58%, transparent);
 }
 
 .is-level-1 > .config-panel-section__body {
@@ -133,7 +129,6 @@ function toggle() {
   flex: 1 1 auto;
   min-width: 72px;
   height: 1px;
-  background: var(--app-border-divider);
 }
 
 .is-level-2 > .config-panel-section__body {

@@ -92,7 +92,7 @@ onBeforeUnmount(() => observer?.disconnect())
               popper-class="app-wrapping-popper"
             >
               <ElButton
-                class="ladder-hotspots__chip app-interaction-choice"
+                class="ladder-hotspots__chip app-interaction-choice app-interaction-choice--outlined app-interaction-choice--pill"
                 :data-hotspot-key="item.group_key"
                 :inert="!expanded[kind] && index >= layouts[kind].count ? true : undefined"
                 :aria-hidden="!expanded[kind] && index >= layouts[kind].count ? true : undefined"
@@ -131,7 +131,7 @@ onBeforeUnmount(() => observer?.disconnect())
 .ladder-hotspots__body { display:flex; align-items:start; gap:var(--app-space-1); min-width:0; position:relative; }
 .ladder-hotspots__viewport { flex:1; min-width:0; height:var(--ladder-hotspot-height); overflow:hidden; transition:height var(--app-motion-collapse) var(--app-motion-ease); }
 .ladder-hotspots__chips { display:flex; flex-wrap:wrap; gap:var(--app-space-1); }
-.ladder-hotspots__chip { display:inline-flex; flex:none; max-width:100%; align-items:center; gap:var(--app-space-control-gap); min-height:var(--ladder-hotspot-height); margin:0; padding:0 var(--app-space-2); border:1px solid var(--app-border-subtle); border-radius:999px; background:var(--el-bg-color); color:var(--el-text-color-regular); cursor:pointer; }
+.ladder-hotspots__chip { display:inline-flex; flex:none; max-width:100%; align-items:center; gap:var(--app-space-control-gap); min-height:var(--ladder-hotspot-height); margin:0; padding:0 var(--app-space-2); }
 /* 只提升高度声明的优先级，外观继续沿用原选择器及共享按钮配方。 */
 .ladder-hotspots__chip.el-button,
 .ladder-hotspots__more.el-button { height:var(--ladder-hotspot-height); }

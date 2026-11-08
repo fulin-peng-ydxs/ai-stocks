@@ -537,7 +537,7 @@ onMounted(async () => {
           </template>
         </MarketDetailHero>
 
-        <AppScrollArea as="section" class="metric-strip" aria-label="板块关键指标">
+        <AppScrollArea as="section" class="metric-strip app-surface" aria-label="板块关键指标">
           <div class="metric">
             <span>今日涨幅</span>
             <strong :class="pctClass(detail?.pct_today)">{{ fmtPct(detail?.pct_today) }}</strong>
@@ -758,11 +758,6 @@ onMounted(async () => {
   min-height: 0;
   height: 100%;
   overflow: hidden;
-}
-.metric-strip {
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
 }
 .sector-type {
   padding: 3px 8px;

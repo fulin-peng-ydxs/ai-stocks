@@ -38,8 +38,8 @@ const resourceStats = computed(() => {
 </script>
 
 <template>
-  <section v-if="isGroup" class="pt-group" :class="{ collapsed, locked: node.sysLocked }">
-    <div class="pt-group-head">
+  <section v-if="isGroup" class="pt-group app-surface" :class="{ collapsed, locked: node.sysLocked }">
+    <div class="pt-group-head app-section-header">
       <el-checkbox
         class="pt-node-checkbox app-choice-inline"
         :model-value="stateOf(node) === 'on'"
@@ -50,7 +50,7 @@ const resourceStats = computed(() => {
       />
       <button
         :id="groupToggleId"
-        class="pt-group-toggle"
+        class="pt-group-toggle app-section-header__trigger"
         type="button"
         :aria-expanded="!collapsed"
         :aria-controls="groupRegionId"
@@ -135,9 +135,6 @@ const resourceStats = computed(() => {
 .pt-group {
   overflow: hidden;
   margin-bottom: var(--app-space-3);
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
 }
 .pt-group-head {
   display: flex;
@@ -145,7 +142,6 @@ const resourceStats = computed(() => {
   gap: var(--app-space-2);
   min-height: 40px;
   padding: 7px 12px;
-  background: var(--app-section-bg);
   font-size: var(--app-font-size-table);
   font-weight: var(--app-font-weight-section);
 }
@@ -156,18 +152,7 @@ const resourceStats = computed(() => {
   gap: var(--app-space-2);
   min-width: 0;
   padding: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
   text-align: left;
-}
-.pt-group-toggle:focus-visible {
-  border-radius: var(--layout-control-radius);
-  outline: var(--app-focus-ring);
-  outline-offset: 2px;
 }
 .pt-group-title {
   min-width: 0;
@@ -196,7 +181,6 @@ const resourceStats = computed(() => {
 }
 .pt-group-body .pt-group {
   margin: var(--app-space-2) 0 var(--app-space-2) var(--app-space-3);
-  border-color: var(--el-border-color-lighter);
 }
 .pt-menu {
   overflow: hidden;

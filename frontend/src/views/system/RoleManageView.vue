@@ -493,7 +493,7 @@ const menuPageTitle = useMenuPageTitle()
 .rm-head-title { display: inline-flex; align-items: center; gap: var(--app-space-2); min-width: 0; }
 .rm-col-head .mini { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); font-weight: var(--app-font-weight-regular); }
 .rm-col-body { flex: 1 1 auto; min-height: 0; --app-scroll-padding-top: 10px; --app-scroll-padding-right: 14px; --app-scroll-padding-bottom: 10px; --app-scroll-padding-left: 14px; }
-.role { padding: 10px 12px; border-radius: var(--app-radius-item); cursor: pointer; margin-bottom: 4px; border: 1px solid transparent; }
+.role { padding: 10px 12px; margin-bottom: 4px; }
 
 .role-name { font-size: var(--app-font-size-body); font-weight: var(--app-font-weight-section); display: flex; align-items: center; gap: var(--app-space-2); }
 .role-desc { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 3px; }

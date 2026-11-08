@@ -540,17 +540,17 @@ const menuPageTitle = useMenuPageTitle()
         @retry="loadSummary(false)"
       >
         <div class="audit-summary">
-          <div class="metric">
+          <div class="metric app-surface">
             <span>范围事件</span>
             <b>{{ formatNumber(summary?.total ?? 0, 'count') }}</b>
             <em>{{ retentionHint }}</em>
           </div>
-          <div class="metric">
+          <div class="metric app-surface">
             <span>失败 / 拒绝</span>
             <b class="warn">{{ formatNumber(summary?.failed ?? 0, 'count') }}</b>
             <em>含失败、拒绝和异常</em>
           </div>
-          <div class="metric">
+          <div class="metric app-surface">
             <span>安全事件</span>
             <b class="danger">{{ formatNumber(summary?.by_category?.security ?? 0, 'count') }}</b>
             <em>登录失败、账号锁定等</em>
@@ -737,7 +737,7 @@ const menuPageTitle = useMenuPageTitle()
         :state-description="detailError ? '请关闭后重试' : ''"
       >
           <template v-if="activeDetail">
-            <section class="detail-hero">
+            <section class="detail-hero app-surface">
               <div class="detail-title">
                 <b>{{ targetText(activeDetail) }}</b>
                 <em v-if="targetDescription(activeDetail)">{{ targetDescription(activeDetail) }}</em>
@@ -766,7 +766,7 @@ const menuPageTitle = useMenuPageTitle()
 
             <AppDetailSection title="字段变更">
               <p v-if="!activeDetail.changes?.length" class="muted">无字段级变更</p>
-              <AppScrollArea v-else class="change-table">
+              <AppScrollArea v-else class="change-table app-surface">
                 <AppDataTable
                   :data="activeDetail.changes"
                   embedded
@@ -847,9 +847,6 @@ const menuPageTitle = useMenuPageTitle()
   gap: var(--app-space-3);
 }
 .metric {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color-overlay);
   padding: 11px 12px;
   min-width: 0;
 }
@@ -908,9 +905,6 @@ const menuPageTitle = useMenuPageTitle()
   white-space: nowrap;
 }
 .detail-hero {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color-overlay);
   padding: 12px;
   margin-bottom: 12px;
 }
@@ -946,10 +940,6 @@ const menuPageTitle = useMenuPageTitle()
   flex-wrap: wrap;
   gap: var(--app-space-control-gap);
   justify-content: flex-end;
-}
-.change-table {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-card-radius);
 }
 .change-table :deep(.cell) {
   color: var(--el-text-color-regular);

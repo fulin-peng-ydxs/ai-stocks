@@ -101,8 +101,9 @@ function targetsSelector(selector, target) {
   // .cell 等通用名称只在表格上下文中受控，不能误伤指标条等独立组件的同名类。
   if (target.contexts && !globallyApplied
     && !cssClasses(selector.slice(0, selector.length - subject.length)).some(name => target.contexts.includes(name))) return false
-  // 装饰伪元素的尺寸属于组件几何，不是按钮自身的尺寸覆盖。
-  if (/::(?:before|after|marker)\b/.test(subject)) return false
+  // 装饰伪元素默认归组件几何；共享标题的装饰线等具名角色可显式纳入材质保护。
+  const pseudoElement = subject.match(/::(before|after|marker)\b/)?.[1]
+  if (pseudoElement && !target.role.pseudoElements?.includes(pseudoElement)) return false
   // 明确排除该角色的普通名称样式不属于覆盖；排除条件不能含组合器或其它状态。
   for (const match of subject.matchAll(/:not\(([^()]+)\)/g)) {
     if (nestingDepth(subject.slice(0, match.index)) > 0) continue
@@ -537,7 +538,7 @@ export function renderDesignContract() {
     '| 状态 | 共享声明 |', '|---|---|',
     ...designContracts.listStates.map(state => `| ${state.name} | ${Object.entries(state.declarations).map(([key, value]) => `\`${key}: ${value}\``).join('；')}${state.forbidden?.length ? `；不得覆盖 ${state.forbidden.map(key => `\`${key}\``).join('、')}` : ''} |`),
     '',
-    '基础与描边列表共同消费选中浅底、键盘焦点、禁用/加载守卫及减少动画偏好，不浮起。描边变体仅显式接入时启用，当前由方案选择器承接筛选、评分、买卖方案；角色、字典和图标候选保留基础形态。消费方通过共享扩展点表达差异，不得私写状态配方。',
+    '基础与描边列表的边框占位和圆角由共享入口维护，共同消费选中浅底、键盘焦点、禁用/加载守卫及减少动画偏好，不浮起。描边列表变体仅显式接入时启用，当前由方案选择器承接筛选、评分、买卖方案；角色与字典候选保留基础列表形态。图标候选使用紧凑选择角色 `.app-interaction-choice--outlined`，由共享选择状态承接边界、主色选中和焦点。消费方通过共享扩展点表达差异，不得私写状态配方。',
     '<!-- design-contracts:end -->',
   ].join('\n')
 }

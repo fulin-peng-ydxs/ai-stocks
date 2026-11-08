@@ -615,14 +615,7 @@ watch(tradeDisciplineChangeVersion, async () => {
   --app-scroll-rows: minmax(0, 1fr);
   --app-scroll-gap: var(--app-space-3);
 }
-.panel-detail {
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
-}
-.panel-detail { min-width: 0; min-height: 0; padding: var(--app-space-5); }
 .detail-kicker { color: var(--el-color-primary); font-size: var(--app-font-size-caption); font-weight: var(--app-font-weight-section); }
-.panel-detail .app-section-title { margin: var(--app-space-1) 0 var(--app-space-4); }
 .rule-facts { display: grid; grid-template-columns: repeat(2, minmax(160px, 1fr)); gap: var(--app-space-3); margin: 0; }
 .rule-facts > div { padding: var(--app-space-3); border-bottom: 1px solid var(--el-border-color-lighter); }
 .rule-facts dt { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
@@ -634,7 +627,6 @@ watch(tradeDisciplineChangeVersion, async () => {
     --app-scroll-columns: minmax(0, 1fr);
     --app-scroll-rows: minmax(0, min(210px, 45%)) minmax(0, 1fr);
   }
-  .panel-detail { min-width: 0; }
 }
 @container app-viewport (max-width: 900px) {
   .page-head,

@@ -1796,7 +1796,7 @@ const menuPageTitle = useMenuPageTitle()
           <HelpHint text="历史记录显示最近 100 条我的回测，可通过公开回测入口浏览共享记录。" />
           <span
             v-if="externalRunOption"
-            class="temp-readonly-chip"
+            class="temp-readonly-chip app-surface app-surface--inset app-surface--dashed app-surface--section"
             data-testid="backtest-external-run"
           >
             <span class="temp-readonly-chip-prefix">正在查看：</span>
@@ -1935,7 +1935,7 @@ const menuPageTitle = useMenuPageTitle()
             <!-- 加载查看的临时只读项：选择器外展示（方案b，不破组件递归契约），显示名称非 opaque ref；本次运行口径（快照优先于 mine 选择器值） -->
             <span
               v-if="tempSelected.score || historyProfileUnavailable.score"
-              class="temp-readonly-chip"
+              class="temp-readonly-chip app-surface app-surface--inset app-surface--dashed app-surface--section"
               :data-testid="`${'backtest-score-select'}-temp`"
             >
               <template v-if="tempSelected.score">
@@ -1993,7 +1993,7 @@ const menuPageTitle = useMenuPageTitle()
               <!-- 加载查看的临时只读项：选择器外展示（方案b）；本次运行口径（快照优先于 mine 选择器值） -->
               <span
                 v-if="tempSelected.screen || historyProfileUnavailable.screen"
-                class="temp-readonly-chip"
+                class="temp-readonly-chip app-surface app-surface--inset app-surface--dashed app-surface--section"
                 data-testid="backtest-screen-select-temp"
               >
                 <template v-if="tempSelected.screen">
@@ -2049,7 +2049,7 @@ const menuPageTitle = useMenuPageTitle()
               <!-- 加载查看的临时只读项：选择器外展示（方案b）；本次运行口径（快照优先于 mine 选择器值） -->
               <span
                 v-if="tempSelected.trade || historyProfileUnavailable.trade"
-                class="temp-readonly-chip"
+                class="temp-readonly-chip app-surface app-surface--inset app-surface--dashed app-surface--section"
                 data-testid="backtest-trade-select-temp"
               >
                 <template v-if="tempSelected.trade">
@@ -2782,9 +2782,6 @@ const menuPageTitle = useMenuPageTitle()
   align-items: center;
   gap: var(--app-space-control-gap);
   padding: 2px 6px;
-  border: 1px dashed var(--el-border-color);
-  border-radius: var(--layout-control-radius, 6px);
-  background: var(--app-section-bg);
   white-space: nowrap;
 }
 .temp-readonly-chip-prefix {

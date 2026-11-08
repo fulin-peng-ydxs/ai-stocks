@@ -47,9 +47,6 @@ defineProps<{
   gap: var(--app-space-2);
   min-width: 0;
   margin-right: 0;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-control-radius);
   color: var(--el-text-color-regular);
   cursor: pointer;
 }

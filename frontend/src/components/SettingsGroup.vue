@@ -90,6 +90,7 @@ const childToggleLabel = computed(() => (
       {
         'sg-nested': !transparent() && effectiveLevel > 1,
         'sg-transparent': transparent(),
+        'app-surface app-surface--floating': !transparent() && effectiveLevel === 1,
         'sg-open': openState || !foldable(),
       },
     ]"
@@ -100,7 +101,7 @@ const childToggleLabel = computed(() => (
   >
     <div
       v-if="title || badge"
-      class="sg-head"
+      class="sg-head app-section-header app-section-header--plain"
       :class="{ 'sg-foldable': foldable(), 'app-interaction-disclosure': foldable(), 'sg-top': effectiveLevel === 1 }"
       :aria-expanded="foldable() ? openState : undefined"
       :role="foldable() ? 'button' : undefined"
@@ -136,9 +137,6 @@ const childToggleLabel = computed(() => (
 <style scoped>
 /* ── 第一层：卡片 + 箭头 ───────────────────────────── */
 .sg-l1 {
-  border: 1px solid var(--page-settings-section-border);
-  border-radius: var(--app-radius-floating-section);
-  background: var(--page-settings-section-bg);
   overflow: hidden;
 }
 .sg-l1 + .sg-l1 {
@@ -168,7 +166,6 @@ const childToggleLabel = computed(() => (
 .sg-nested > .sg-head {
   min-height: var(--app-control-height-sm);
   padding: 2px var(--app-space-1);
-  border-radius: var(--layout-control-radius);
 }
 .sg-nested > .sg-head .sg-title {
   font-size: var(--app-font-size-body);

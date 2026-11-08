@@ -32,7 +32,7 @@ const slots = useSlots()
 </script>
 
 <template>
-  <section class="app-workspace-pane" :class="{ 'is-padded': padding === 'standard', 'is-fill': fill }" :aria-label="ariaLabel || title">
+  <section class="app-workspace-pane app-surface" :class="{ 'is-padded': padding === 'standard', 'is-fill': fill }" :aria-label="ariaLabel || title">
     <header
       v-if="headerVisible"
       class="app-workspace-pane__header"
@@ -67,9 +67,6 @@ const slots = useSlots()
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
 }
 .app-workspace-pane.is-fill { flex: 1 1 auto; height: 100%; }
 .app-workspace-pane__toolbar, .app-workspace-pane__footer {

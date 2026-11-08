@@ -515,7 +515,7 @@ const menuPageTitle = useMenuPageTitle()
         class="dict-state"
       />
       <AppScrollArea v-else class="dict-workspace">
-        <section class="dict-panel dict-left">
+        <section class="dict-panel dict-left app-surface">
           <header class="dict-panel-head">
             <strong>字典类型</strong>
             <span class="muted">{{ formatNumber(typeTotal, 'count') }} 类</span>
@@ -572,7 +572,7 @@ const menuPageTitle = useMenuPageTitle()
           </AppScrollArea>
         </section>
 
-        <section class="dict-panel dict-right">
+        <section class="dict-panel dict-right app-surface">
           <header class="dict-detail-bar">
             <div class="dict-current">
               <strong>{{ activeType?.name || '未选择类型' }}</strong>
@@ -760,9 +760,6 @@ const menuPageTitle = useMenuPageTitle()
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
 }
 .dict-left {
   flex: 0 0 320px;
@@ -809,14 +806,11 @@ const menuPageTitle = useMenuPageTitle()
 }
 .dict-type-row {
   width: 100%;
-  border: 1px solid transparent;
-  border-radius: var(--app-radius-item);
   display: flex;
   align-items: center;
   gap: var(--app-space-2);
   padding: 9px 8px;
   color: var(--el-text-color-primary);
-  cursor: pointer;
   text-align: left;
 }
 .type-main {

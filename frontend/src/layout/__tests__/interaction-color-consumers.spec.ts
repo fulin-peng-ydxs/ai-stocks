@@ -6,6 +6,7 @@ import { parse as parseSfc } from '@vue/compiler-sfc'
 import { parse as parseTemplate, NodeTypes, type ElementNode, type RootNode, type TemplateChildNode } from '@vue/compiler-dom'
 import postcss from 'postcss'
 import { auditSharedStyles } from '../../../scripts/check-design-contracts.mjs'
+import { designContracts } from '../../../scripts/design-source.mjs'
 import { describe, expect, it } from 'vitest'
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -54,6 +55,64 @@ function unmarkedFieldLinks(source: string): number[] {
 }
 
 describe('共享交互样式的消费者边界', () => {
+  it('基础及描边列表共用边框和圆角，角色、字典与方案消费方不能重配材质', () => {
+    const roles = designContracts.styleRoles.filter(role => role.className === 'app-interaction-list-item')
+    const fixture = (style: string) => `<template><div class="entry app-interaction-list-item" /></template><style scoped>${style}</style>`
+    expect(roles).toHaveLength(1)
+    for (const style of ['.entry { border-radius: var(--app-radius-item); }', '.entry { border: 1px solid transparent; }', '.entry.active { background: red; }']) {
+      expect(auditSharedStyles([{ file: 'sample.vue', source: fixture(style) }], roles)).toHaveLength(1)
+    }
+    expect(auditSharedStyles([{ file: 'sample.vue', source: fixture('.entry { padding: 8px; }') }], roles)).toEqual([])
+    const sources = vueFiles(SRC_DIR).map(file => ({ file, source: readFileSync(file, 'utf8') }))
+    expect(auditSharedStyles(sources, roles)).toEqual([])
+  })
+
+  it('卡片形态的选择器权重不低于普通宿主，避免声明在后仍被覆盖', () => {
+    const css = postcss.parse(readFileSync(join(SRC_DIR, 'styles/global.css'), 'utf8'))
+    const selectors: string[] = []
+    css.walkRules(rule => {
+      if (rule.parent?.type !== 'root') return
+      if (!rule.selector.includes('.app-interaction-card')) return
+      if (rule.nodes.some(node => node.type === 'decl' && node.prop === 'border-radius')) selectors.push(rule.selector)
+    })
+    const base = selectors.find(selector => selector.endsWith('.app-interaction-target.app-interaction-card'))!
+    // 这里的三个选择器均为 html + class/attribute，无函数伪类或 ID；比较真实优先级，
+    // 不依赖 jsdom 对同属性声明的源码顺序处理来冒充浏览器的 specificity 验证。
+    const weight = (selector: string) => (selector.match(/\.[\w-]+|\[[^\]]+\]/g) ?? []).length
+    for (const shape of ['inset', 'floating']) {
+      const variant = selectors.find(selector => selector.endsWith(`.app-interaction-card--${shape}`))!
+      expect(variant, shape).toBeDefined()
+      expect(weight(variant), shape).toBeGreaterThanOrEqual(weight(base))
+      expect(selectors.indexOf(variant), shape).toBeGreaterThan(selectors.indexOf(base))
+    }
+  })
+
+  it.each([false, true])('独立候选不消费连续按钮接缝，连续组仍有单条选中接缝，disabled=%s', disabled => {
+    const css = postcss.parse(readFileSync(join(SRC_DIR, 'styles/borders.css'), 'utf8'))
+    const fixture = document.createElement('div')
+    const radios = `<label class="el-radio-button"><span class="el-radio-button__inner">一</span></label>
+      <label class="el-radio-button is-active${disabled ? ' is-disabled' : ''}"><span class="el-radio-button__inner">二</span></label>`
+    fixture.innerHTML = `<div class="el-radio-group">${radios}</div><div class="el-radio-group app-choice-button-card">${radios}</div>`
+    const root = document.documentElement
+    const previous = root.getAttribute('data-layout-preset')
+    root.dataset.layoutPreset = 'balanced'
+    document.body.append(fixture)
+    try {
+      const seamSelectors: string[] = []
+      css.walkRules(rule => {
+        if (rule.nodes.some(node => node.type === 'decl' && node.prop === 'border-right-color')) seamSelectors.push(...rule.selectors)
+      })
+      const continuous = fixture.children[0].querySelector('.el-radio-button__inner')!
+      const separate = fixture.children[1].querySelector('.el-radio-button__inner')!
+      expect(seamSelectors.some(selector => continuous.matches(selector))).toBe(true)
+      expect(seamSelectors.filter(selector => separate.matches(selector))).toEqual([])
+    } finally {
+      fixture.remove()
+      if (previous === null) delete root.dataset.layoutPreset
+      else root.dataset.layoutPreset = previous
+    }
+  })
+
   it('描边列表的颜色、边界和选中标记只由共享状态样式维护', () => {
     const role = 'app-interaction-list-item--outlined'
     const properties = ['background', 'background-color', 'border', 'border-color', 'box-shadow']

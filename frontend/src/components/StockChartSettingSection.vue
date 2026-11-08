@@ -132,7 +132,7 @@ watch(
   <div class="stock-chart-settings">
     <slot name="before" />
     <PageSettingItem label="图表一">
-      <div class="fixed-chart-value" :data-testid="`${testIdPrefix || 'chart'}-slot1-kline`">K线（固定，不可隐藏）</div>
+      <div class="fixed-chart-value app-surface app-surface--inset" :data-testid="`${testIdPrefix || 'chart'}-slot1-kline`">K线（固定，不可隐藏）</div>
     </PageSettingItem>
     <PageSettingItem label="图表二">
       <PageSegmented
@@ -153,7 +153,7 @@ watch(
       />
     </PageSettingItem>
     <PageSettingItem v-if="chartTypes.length === 1" :label="canApplyCurrentRatios === false ? '默认高度比例' : '已配置高度比例'">
-      <div class="fixed-chart-value">K线 100%（单图无需配置）</div>
+      <div class="fixed-chart-value app-surface app-surface--inset">K线 100%（单图无需配置）</div>
     </PageSettingItem>
     <SettingsGroup
       v-else
@@ -201,16 +201,13 @@ watch(
   line-height: var(--app-line-height-comfy);
 }
 .fixed-chart-value {
-  min-height: 38px;
+  min-height: var(--app-density-control-height);
   display: flex;
   align-items: center;
   padding: 0 10px;
-  border: 1px solid var(--page-settings-seg-active-border);
-  border-radius: var(--layout-control-radius);
-  background: var(--page-settings-seg-active-bg);
   color: var(--page-settings-text);
   font-size: var(--app-font-size-table);
-  font-weight: var(--app-font-weight-section);
+  font-weight: var(--app-font-weight-regular);
 }
 .ratio-composition,
 .ratio-summary {

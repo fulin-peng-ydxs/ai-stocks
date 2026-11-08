@@ -5,7 +5,6 @@ import {
   isHeavyStockIngestRecipe,
   STOCK_INGEST_RECIPE_OPTIONS,
   stockIngestFormFromTask,
-  stockIngestSummary,
 } from '@/utils/stockIngest'
 
 describe('stock ingest shared form contract', () => {
@@ -28,7 +27,6 @@ describe('stock ingest shared form contract', () => {
         date_end: '2026-08-02', concurrency: 2,
       },
     })
-    expect(stockIngestSummary(form)).toContain('1 只指定股票')
   })
 
   it('rejects an empty selected scope and reversed dates', () => {
@@ -47,7 +45,6 @@ describe('stock ingest shared form contract', () => {
     expect(buildStockIngestParams(daily).params).toMatchObject({
       recipe: 'daily_update', force_current_day: true,
     })
-    expect(stockIngestSummary(daily)).toContain('强制当日')
 
     const history = createStockIngestForm({
       recipe: 'history_backfill', force_current_day: true,

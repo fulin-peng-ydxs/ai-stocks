@@ -82,7 +82,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
 </script>
 
 <template>
-  <aside class="rule-master" aria-label="规则管理列表">
+  <aside class="rule-master app-surface" aria-label="规则管理列表">
     <AppControlRow class="rule-master__tools">
       <el-button
         v-if="canManage && showCreate"
@@ -127,7 +127,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
         <div
           v-for="rule in filteredRules"
           :key="rule.id"
-          class="rule-master__item app-interaction-target app-interaction-card"
+          class="rule-master__item app-interaction-target app-interaction-card app-interaction-card--inset"
           :class="{ active: selectedId === rule.id, 'is-selected': selectedId === rule.id }"
           role="button"
           tabindex="0"
@@ -158,9 +158,6 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
   min-height: 0;
   overflow: hidden;
   padding: var(--app-space-2);
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
   display: flex;
   flex-direction: column;
   gap: var(--app-space-2);
@@ -179,8 +176,6 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
 .rule-master__item {
   min-height: min-content;
   padding: var(--app-space-2) var(--app-space-3);
-  border: 1px solid transparent;
-  border-radius: var(--layout-control-radius);
   cursor: pointer;
 }
 .rule-master__name { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-weight: var(--app-font-weight-section); }

@@ -2344,7 +2344,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               title="正在加载方案详情…"
             />
             <!-- 买入条件 -->
-            <div class="cond-block">
+            <div class="cond-block app-surface">
               <AppControlRow class="cond-head">
                 <span class="cond-title buy">买入条件</span>
                 <el-radio-group v-model="buyLogic" :disabled="tReadonly">
@@ -2404,7 +2404,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             </div>
 
             <!-- 卖出条件 -->
-            <div class="cond-block">
+            <div class="cond-block app-surface">
               <AppControlRow class="cond-head">
                 <span class="cond-title sell">卖出条件</span>
                 <el-radio-group v-model="sellLogic" :disabled="tReadonly">
@@ -2464,7 +2464,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             </div>
 
             <!-- 兜底 -->
-            <div class="cond-block">
+            <div class="cond-block app-surface">
               <span class="cond-title">兜底(可选,卖出安全网)</span>
               <AppControlRow class="backstop-row">
                 <span class="bs-item"><label>止盈</label><el-input-number v-model="backstop.tp" :disabled="tReadonly" :controls="false" :min="0" class="app-control-width-compact" /><i>%</i></span>
@@ -2620,7 +2620,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
     <!-- 评分方案历史版本 -->
     <AppDetailDrawer v-model="sVerVisible" :title="`历史版本 · ${editName || ''}`" size="xl">
       <el-empty v-if="!sVersions.length" class="app-empty app-empty--compact" description="暂无历史版本" />
-      <div v-for="v in sVersions" :key="v.version" class="ver-item">
+      <div v-for="v in sVersions" :key="v.version" class="ver-item app-surface">
         <div class="ver-head">
           <b>v{{ v.version }}</b>
           <span class="hint">{{ formatDateTimeMinutes(v.saved_at) }}</span>
@@ -2635,7 +2635,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
     <!-- 买卖方案历史版本 -->
     <AppDetailDrawer v-model="tVerVisible" :title="`历史版本 · ${tEditName || ''}`" size="xl">
       <el-empty v-if="!tVersions.length" class="app-empty app-empty--compact" description="暂无历史版本" />
-      <div v-for="v in tVersions" :key="v.version" class="ver-item">
+      <div v-for="v in tVersions" :key="v.version" class="ver-item app-surface">
         <div class="ver-head">
           <b>v{{ v.version }}</b>
           <span class="hint">{{ formatDateTimeMinutes(v.saved_at) }}</span>
@@ -2690,12 +2690,9 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <span class="app-interaction-content">{{ templateSummary(item.key) }}</span>
             </el-button>
           </div>
-          <AppStatusNotice
-            v-else
-            title="什么是指标公式？"
-            description="它是一种只允许行情字段和安全函数的计算写法，不是 Python 或 SQL，也不能执行任意代码。"
-            size="compact"
-          />
+          <AppFormHelp v-else>
+            指标公式是一种只允许行情字段和安全函数的计算写法，不是 Python 或 SQL，也不能执行任意代码。
+          </AppFormHelp>
         </section>
 
         <section class="indicator-editor-section">
@@ -2773,7 +2770,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           </el-form-item>
         </section>
 
-        <section class="indicator-editor-section indicator-editor-section--preview">
+        <section class="indicator-editor-section indicator-editor-section--preview app-surface app-surface--section">
           <header class="indicator-editor-section__head">
             <span>{{ editingKey ? '02' : '03' }}</span>
             <div><h3>用真实行情验证</h3><p>选择一只代表性股票，确认公式能得到符合预期的结果后再保存。</p></div>
@@ -2791,7 +2788,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             title="这次验证没有得到有效结果"
             :description="defPreview.reason"
           />
-          <div v-else-if="defPreview" class="indicator-preview-result">
+          <div v-else-if="defPreview" class="indicator-preview-result app-surface app-surface--notice-success">
             <span>{{ defPreview.code }} · {{ defPreview.trade_date }}</span>
             <code>{{ defPreview.rendered_expression }}</code>
             <b>结果：{{ defPreview.value }}</b>
@@ -2934,8 +2931,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   font-family: var(--app-font-family-mono);
 }
 .ver-item {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-card-radius);
   padding: 8px 10px;
   margin-bottom: 10px;
 }
@@ -3059,7 +3054,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   min-width: 0;
   gap: var(--app-space-4);
 }
-:global(.indicator-editor-section + .indicator-editor-section) {
+:global(.indicator-editor-section + .indicator-editor-section:not(.app-surface)) {
   padding-top: var(--app-space-5);
   border-top: 1px solid var(--el-border-color-lighter);
 }
@@ -3098,25 +3093,16 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 :global(.indicator-create-mode .el-radio-button__inner) {
   width: 100%;
   justify-items: start;
-  border: 1px solid var(--el-border-color-light) !important;
-  border-radius: var(--layout-card-radius) !important;
-  box-shadow: none !important;
   text-align: left;
 }
 :global(.indicator-create-mode .el-radio-button__inner b) { color: var(--el-text-color-primary); font-size: var(--app-font-size-body); }
 :global(.indicator-create-mode .el-radio-button__inner small) { margin-top: var(--app-space-1); color: var(--el-text-color-secondary); }
-:global(.indicator-create-mode .el-radio-button.is-active .el-radio-button__inner) {
-  border-color: var(--el-color-primary) !important;
-  background: var(--el-bg-color) !important;
-  color: var(--el-color-primary) !important;
-}
 :global(.indicator-template-grid) {
   display: flex;
   flex-wrap: wrap;
   gap: var(--app-space-3);
 }
 :global(.indicator-template-grid .el-button) {
-  --app-interaction-card-border: var(--el-border-color-light);
   display: grid;
   width: min(var(--app-control-width-long), 100%);
   flex: 0 1 var(--app-control-width-long);
@@ -3125,7 +3111,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   margin: 0;
   padding: var(--app-space-3);
   justify-items: start;
-  border-color: var(--el-border-color-light);
   white-space: normal;
   text-align: left;
 }
@@ -3161,9 +3146,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 :global(.indicator-param-form-item .el-form-item__content) { display: block; }
 :global(.indicator-editor-section--preview) {
   padding: var(--app-space-4);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-card-radius);
-  background: var(--app-section-bg);
 }
 :global(.indicator-preview-controls) {
   display: flex;
@@ -3177,9 +3159,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   gap: var(--app-space-3);
   align-items: center;
   padding: var(--app-space-3);
-  border: 1px solid var(--el-color-success-light-7);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-color-success-light-9);
 }
 :global(.indicator-preview-result code) { overflow-wrap: anywhere; }
 :global(.indicator-reference-summary) {
@@ -3198,9 +3177,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .cond-block {
   margin: var(--app-space-3) 0;
   padding: 12px 14px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-fill-color-blank);
 }
 .cond-head { margin-bottom: var(--app-density-form-gap, var(--app-space-3)); }
 .cond-title {

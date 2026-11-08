@@ -23,7 +23,7 @@ function remove(index: number): void {
 
 <template>
   <div class="indicator-param-schema">
-    <div v-for="(param, index) in modelValue" :key="index" class="indicator-param-schema__row">
+    <div v-for="(param, index) in modelValue" :key="index" class="indicator-param-schema__row app-surface app-surface--section">
       <header>
         <div><b>参数 {{ index + 1 }}</b><span>{{ param.label || param.name || '未命名参数' }}</span></div>
         <AppIconButton label="删除参数" size="xs" tone="danger" :disabled="disabled" @click="remove(index)">
@@ -62,9 +62,6 @@ function remove(index: number): void {
 .indicator-param-schema { display: flex; flex-direction: column; gap: var(--app-space-3); width: 100%; }
 .indicator-param-schema__row {
   padding: var(--app-space-3);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-card-radius);
-  background: var(--app-section-bg);
 }
 .indicator-param-schema__row header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--app-space-3); }
 .indicator-param-schema__row header div { display: flex; align-items: baseline; gap: var(--app-space-2); }

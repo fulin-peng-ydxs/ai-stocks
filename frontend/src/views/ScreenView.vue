@@ -896,7 +896,7 @@ const menuPageTitle = useMenuPageTitle()
 
             <!-- 融合构建器（卡片包裹，与结果区/编辑器头区分边界，对齐买卖 cond-block） -->
             <template v-else>
-              <div class="cond-block">
+              <div class="cond-block app-surface">
               <AppControlRow class="b-group">
                 <span class="hint">组合方式</span>
                 <el-radio-group v-model="groupOp">
@@ -1094,7 +1094,7 @@ const menuPageTitle = useMenuPageTitle()
     <!-- 历史版本 -->
     <AppDetailDrawer v-model="verVisible" :title="`历史版本 · ${loadedProfile?.name || ''}`" size="xl">
       <el-empty v-if="!versions.length" class="app-empty app-empty--compact" description="暂无历史版本" />
-      <div v-for="v in versions" :key="v.version" class="ver-item">
+      <div v-for="v in versions" :key="v.version" class="ver-item app-surface">
         <div class="ver-head">
           <b>v{{ v.version }}</b>
           <span class="hint">{{ formatDateTimeMinutes(v.saved_at) }}</span>
@@ -1201,9 +1201,6 @@ const menuPageTitle = useMenuPageTitle()
 .cond-block {
   margin: var(--app-space-3) 0;
   padding: 12px 14px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-fill-color-blank);
 }
 .b-group {
   margin: 0 0 10px;
@@ -1242,8 +1239,6 @@ const menuPageTitle = useMenuPageTitle()
 }
 .complex-ast-notice { margin: var(--app-space-3) 0; }
 .ver-item {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-card-radius);
   padding: 8px 10px;
   margin-bottom: 10px;
 }

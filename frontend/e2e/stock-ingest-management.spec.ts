@@ -103,7 +103,7 @@ test.describe('个股一体化采集', () => {
     await codes.click()
     await codes.locator('input').fill('浦发')
     await page.getByRole('option', { name: '600000.SH 浦发银行' }).click()
-    await expect(dialog).toContainText('将执行：日常同步 · 1 只指定股票')
+    await expect(codes).toContainText('浦发银行')
     await dialog.getByTestId('ingest-execute-submit').click()
 
     await expect.poll(() => submitted).toEqual({
@@ -153,11 +153,11 @@ test.describe('个股一体化采集', () => {
     await expect(page.getByTestId('schedule-task-type')).toContainText('个股采集')
     await page.getByTestId('schedule-stock-recipe').click()
     await page.getByRole('option', { name: '基础资料刷新' }).click()
-    const summaryBox = await page.getByTestId('schedule-stock-summary').boundingBox()
+    const recipeBox = await page.getByTestId('schedule-stock-recipe').boundingBox()
     const dividerBox = await page.getByTestId('schedule-trigger-divider').boundingBox()
-    expect(summaryBox).not.toBeNull()
+    expect(recipeBox).not.toBeNull()
     expect(dividerBox).not.toBeNull()
-    expect(summaryBox!.y + summaryBox!.height).toBeLessThanOrEqual(dividerBox!.y)
+    expect(recipeBox!.y + recipeBox!.height).toBeLessThanOrEqual(dividerBox!.y)
     await page.getByTestId('schedule-enabled').click()
     await page.getByTestId('schedule-save').click()
 

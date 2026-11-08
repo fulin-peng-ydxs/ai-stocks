@@ -696,7 +696,7 @@ const menuPageTitle = useMenuPageTitle()
                 />
                 <AppDataTable
                   v-else
-                  class="resource-table"
+                  class="resource-table app-surface"
                   kind="wide-table"
                   :data="resourceRows"
                   :loading="resLoading"
@@ -902,8 +902,6 @@ const menuPageTitle = useMenuPageTitle()
 .resource-table {
   flex: 1 1 auto;
   overflow: hidden;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-card-radius);
 }
 .resource-table :deep(.mr-edit-row > td) { background: var(--el-fill-color-lighter); }
 .resource-table :deep(.dim) { color: var(--el-text-color-placeholder); }

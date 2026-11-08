@@ -1255,7 +1255,7 @@ onBeforeUnmount(() => {
 <template>
   <section
     ref="workspaceEl"
-    class="stock-chart-workspace app-stock-chart-frame"
+    class="stock-chart-workspace app-stock-chart-frame app-surface"
     :class="{ 'app-stock-chart-frame--embedded': embedded }"
     :style="{ minHeight: `${effectiveMinHeight}px` }"
     :data-min-height="effectiveMinHeight"
@@ -1324,7 +1324,7 @@ onBeforeUnmount(() => {
         <div class="stock-chart-panel__body">
           <div
             v-if="panel.type === 'kline' && measurementHintVisible"
-            class="stock-chart-measurement__hint"
+            class="stock-chart-measurement__hint app-surface app-surface--inset"
             :style="{
               top: `${STOCK_CHART_GRID_TOP}px`,
               right: `${STOCK_CHART_GRID_SIDE}px`,
@@ -1464,9 +1464,6 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 2;
   padding: 3px 7px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-control-radius);
-  background: color-mix(in srgb, var(--el-bg-color) 92%, transparent);
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-micro);
   display: flex;

@@ -92,7 +92,6 @@ function parentLabel(s: SlotSpec): string | null {
           v-if="!isSinglePreviewShape"
           v-model="tier"
           :options="tierOptions"
-          tone="primary"
           aria-label="预览宽度"
         />
         <div v-else class="uniform-layout-note">
@@ -105,7 +104,7 @@ function parentLabel(s: SlotSpec): string | null {
     </div>
 
     <!-- 响应式摘要只保留策略与重排边界；档位列数已在上方宽度选择器中表达。 -->
-    <div class="resp-summary">
+    <div class="resp-summary app-surface app-surface--section">
       <div class="rs-strategy">
         <el-tag size="small" type="primary" effect="plain">响应策略 · {{ summary.profileLabel }}</el-tag>
         <span class="rs-desc">{{ summary.profileDesc }}</span>
@@ -131,20 +130,21 @@ function parentLabel(s: SlotSpec): string | null {
     </div>
 
     <!-- 结构示意框：操作区固定 + 主内容区按列数排布；纯示意、不跑真实组件。 -->
-    <div class="device-frame">
+    <div class="device-frame app-surface app-surface--section">
       <div class="device-frame-head">
         <span>{{ currentTier.label }}</span>
         <span>当前 {{ currentColumns }} 列</span>
       </div>
-        <div v-if="actionSlots.length" class="region-action">
+        <div v-if="actionSlots.length" class="region-action app-surface app-surface--inset app-surface--dashed">
           <div class="region-tag">操作区（固定）</div>
           <div class="action-row">
             <button
               v-for="s in actionSlots"
               :key="s.id"
               type="button"
-              class="slot-box action"
+              class="slot-box action app-interaction-choice app-interaction-choice--outlined app-interaction-choice--card"
               :class="{ active: focused === s.id }"
+              :aria-pressed="focused === s.id"
               @click="focus(s.id)"
             >
               <span class="slot-name">{{ s.label || s.id }}</span>
@@ -153,15 +153,16 @@ function parentLabel(s: SlotSpec): string | null {
           </div>
         </div>
 
-        <div class="region-main">
+        <div class="region-main app-surface app-surface--inset app-surface--dashed">
           <div class="region-tag">主内容区（吃剩余高度）</div>
           <div class="main-grid" :style="{ gridTemplateColumns: `repeat(${currentColumns}, minmax(0, 1fr))` }">
             <button
               v-for="s in mainSlots"
               :key="s.id"
               type="button"
-              class="slot-box main"
-              :class="{ active: focused === s.id, grow: s.growMain }"
+              class="slot-box main app-interaction-choice app-interaction-choice--outlined app-interaction-choice--card"
+              :class="{ active: focused === s.id, grow: s.growMain, 'app-interaction-choice--success': s.growMain }"
+              :aria-pressed="focused === s.id"
               @click="focus(s.id)"
             >
               <div class="slot-head">
@@ -178,15 +179,16 @@ function parentLabel(s: SlotSpec): string | null {
           </div>
         </div>
 
-      <div v-if="offFlowSlots.length" class="region-off-flow">
+      <div v-if="offFlowSlots.length" class="region-off-flow app-surface app-surface--inset app-surface--dotted">
         <div class="region-tag">浮层与嵌套内容（不占页面主排版）</div>
         <div class="off-flow-grid">
             <button
               v-for="s in offFlowSlots"
               :key="s.id"
               type="button"
-              class="slot-box off"
+              class="slot-box off app-interaction-choice app-interaction-choice--outlined app-interaction-choice--card"
               :class="{ active: focused === s.id }"
+              :aria-pressed="focused === s.id"
               @click="focus(s.id)"
             >
               <span class="slot-name">{{ s.label || s.id }}</span>
@@ -235,9 +237,6 @@ function parentLabel(s: SlotSpec): string | null {
   font-weight: var(--app-font-weight-strong);
 }
 .resp-summary {
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
-  background: var(--app-section-bg);
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
@@ -278,9 +277,6 @@ function parentLabel(s: SlotSpec): string | null {
   font-size: var(--app-font-size-caption);
 }
 .device-frame {
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
-  background: var(--app-section-bg);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -297,13 +293,7 @@ function parentLabel(s: SlotSpec): string | null {
 .region-action,
 .region-main,
 .region-off-flow {
-  border: 1px dashed var(--el-border-color);
-  border-radius: var(--layout-card-radius);
   padding: 10px;
-  background: var(--el-bg-color);
-}
-.region-off-flow {
-  border-style: dotted;
 }
 .off-flow-grid {
   display: grid;
@@ -326,9 +316,6 @@ function parentLabel(s: SlotSpec): string | null {
 }
 .slot-box {
   text-align: left;
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
   padding: 10px;
   cursor: pointer;
   display: flex;
@@ -336,16 +323,8 @@ function parentLabel(s: SlotSpec): string | null {
   gap: var(--app-space-control-gap);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.slot-box:hover {
-  border-color: var(--el-color-primary);
-}
-.slot-box.active {
-  border-color: var(--el-color-primary);
-  box-shadow: 0 0 0 1px var(--el-color-primary) inset;
-}
 .slot-box.main.grow {
   min-height: 120px;
-  background: color-mix(in srgb, var(--el-color-success) 7%, var(--el-bg-color));
 }
 .slot-box.action {
   flex-direction: row;

@@ -129,7 +129,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="stock-intraday-chart app-stock-chart-frame" aria-label="价格、均价与分钟成交量分时图">
+  <div class="stock-intraday-chart app-stock-chart-frame app-surface" aria-label="价格、均价与分钟成交量分时图">
     <StockChartPanelHeader
       title="分时"
       class="stock-intraday-chart__header"

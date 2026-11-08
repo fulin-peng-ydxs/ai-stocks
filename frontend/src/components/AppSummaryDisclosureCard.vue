@@ -38,9 +38,10 @@ function toggle() {
 
 <template>
   <article
-    class="app-summary-disclosure-card"
+    class="app-summary-disclosure-card app-surface"
     :class="{
-      'is-expanded': expanded && collapsible, 'is-muted': muted,
+      'is-expanded': expanded && collapsible,
+      'app-surface--selected': expanded && collapsible && variant === 'card', 'is-muted': muted,
       'is-compact': variant === 'compact', 'is-static': !collapsible,
     }"
   >
@@ -94,14 +95,7 @@ function toggle() {
 <style scoped>
 .app-summary-disclosure-card {
   min-width: 0;
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
   overflow: hidden;
-}
-.app-summary-disclosure-card.is-expanded {
-  border-color: var(--app-border-selected);
-  box-shadow: inset 3px 0 0 var(--el-color-primary);
 }
 .app-summary-disclosure-card__bar {
   min-height: 68px;

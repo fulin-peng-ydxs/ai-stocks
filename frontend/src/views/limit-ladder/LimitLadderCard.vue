@@ -121,13 +121,8 @@ function selectCard(): void {
 
 <style scoped>
 .limit-ladder-card {
-  --app-interaction-rest-elevation: var(--el-box-shadow-lighter);
   min-width: 0;
   padding: var(--app-space-2);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
-  box-shadow: var(--el-box-shadow-lighter);
 }
 .limit-ladder-card .limit-ladder-card__select.el-button {
   --el-button-text-color: inherit;

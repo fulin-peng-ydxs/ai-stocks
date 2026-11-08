@@ -722,7 +722,7 @@ const menuPageTitle = useMenuPageTitle()
             </div>
           </template>
           <div class="quality-layer-grid">
-            <div v-for="l in ov.quality.by_layer" :key="l.layer" class="layer-card">
+            <div v-for="l in ov.quality.by_layer" :key="l.layer" class="layer-card app-surface">
               <div class="layer-name">
                 <span>{{ l.layer }} · {{ l.name_cn }}</span>
                 <DataMetricDetails :label="`${l.layer} · ${l.name_cn}`" :rows="layerDetails(l)" :notes="[l.desc]" />
@@ -1125,7 +1125,7 @@ const menuPageTitle = useMenuPageTitle()
           <AppScrollArea class="board-pane-scroll">
             <div class="app-workspace-panel overview-panel" v-if="ov?.board">
               <div class="board-hero">
-                <div class="board-hero-main">
+                <div class="board-hero-main app-surface">
                   <span class="board-eyebrow">同花顺板块源</span>
                   <div class="board-title-line">
                     <span class="board-total">{{ formatNumber(ov.board.board_dict, 'count') }}</span>
@@ -1137,7 +1137,7 @@ const menuPageTitle = useMenuPageTitle()
                     <span>综合覆盖 <b>{{ formatPercent(boardOverallCoverage, { input: 'percent', completion: true }) }}</b></span>
                   </div>
                 </div>
-                <div class="board-hero-status" :class="{ 'is-warning': ov.board.open_issues > 0 }">
+                <div class="board-hero-status app-surface" :class="{ 'is-warning': ov.board.open_issues > 0, 'app-surface--warning': ov.board.open_issues > 0 }">
                   <span class="board-status-label">质量台账待处理</span>
                   <strong>{{ ov.board.open_issues }} 项</strong>
                   <span>覆盖与鲜活度单独检查</span>
@@ -1166,7 +1166,7 @@ const menuPageTitle = useMenuPageTitle()
                     </AppControlRow>
                   </div>
                   <div class="board-coverage-grid">
-                    <div v-for="item in boardCoverageItems" :key="item.key" class="cov-card">
+                    <div v-for="item in boardCoverageItems" :key="item.key" class="cov-card app-surface">
                       <div class="cov-card-top">
                         <div>
                           <div class="cov-label">{{ item.label }}
@@ -1192,7 +1192,7 @@ const menuPageTitle = useMenuPageTitle()
                   </div>
 
                   <div class="board-freshness-strip">
-                    <div v-for="item in boardFreshnessItems" :key="item.key" class="fresh-cell" :class="{ stale: item.stale, confirmed: item.confirmed }">
+                    <div v-for="item in boardFreshnessItems" :key="item.key" class="fresh-cell app-surface" :class="{ stale: item.stale, 'app-surface--warning-border': item.stale, confirmed: item.confirmed }">
                       <span class="fresh-label">{{ item.label }}</span>
                       <strong>{{ dateOnly(item.value) }}</strong>
                       <span>{{ item.status }}</span>
@@ -1201,13 +1201,13 @@ const menuPageTitle = useMenuPageTitle()
                 </div>
 
                 <div class="board-side">
-                  <div class="board-side-block issue-panel">
+                  <div class="board-side-block issue-panel app-surface">
                     <div class="board-side-title">
                       <span>质量问题</span>
                       <HelpHint label="板块台账说明" text="显示已记录的未解决问题；零问题不等于覆盖完整，需结合覆盖进度和最近质检时间。" />
                     </div>
                     <div v-if="boardIssueItems.length" class="board-issue-list">
-                      <div v-for="item in boardIssueItems" :key="item.key" class="issue-card">
+                      <div v-for="item in boardIssueItems" :key="item.key" class="issue-card app-surface app-surface--notice-warning">
                         <span class="issue-copy">
                           <span class="issue-tag">{{ item.label }}</span>
                           <span class="issue-hint">{{ item.hint }}</span>
@@ -1216,13 +1216,13 @@ const menuPageTitle = useMenuPageTitle()
                         <span v-else class="hint">{{ formatNumber(item.count, 'count') }} 项</span>
                       </div>
                     </div>
-                    <div v-else class="issue-ok-card">
+                    <div v-else class="issue-ok-card app-surface app-surface--notice-success-border">
                       <span class="issue-ok-dot"></span>
                       <span>无待处理板块问题</span>
                     </div>
                   </div>
 
-                  <div class="board-side-block" v-if="ov.board.last_update">
+                  <div class="board-side-block app-surface" v-if="ov.board.last_update">
                     <div class="board-side-title">
                       <span class="app-inline-info app-inline-info--nowrap">
                         <span>最近采集</span>
@@ -1357,7 +1357,7 @@ const menuPageTitle = useMenuPageTitle()
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
 }
-.layer-card { padding: 8px 10px; border: 1px solid var(--el-border-color-lighter); border-radius: var(--layout-card-radius); }
+.layer-card { padding: 8px 10px; }
 .layer-name { display: flex; align-items: center; gap: var(--app-space-1); font-size: var(--app-font-size-table); line-height: var(--app-line-height-table); font-weight: var(--app-font-weight-section); margin-bottom: 6px; }
 .layer-foot { font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); margin-top: 4px; }
 .layer-progress { display: flex; align-items: center; gap: var(--app-space-2); }
@@ -1383,15 +1383,6 @@ const menuPageTitle = useMenuPageTitle()
   align-items: stretch;
   gap: var(--app-space-3);
   margin-bottom: var(--app-space-3);
-}
-.board-hero-main,
-.board-hero-status,
-.board-side-block,
-.cov-card,
-.fresh-cell {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
 }
 .board-hero-main {
   position: relative;
@@ -1443,11 +1434,6 @@ const menuPageTitle = useMenuPageTitle()
   flex-direction: column;
   justify-content: center;
   gap: var(--app-space-1);
-  border-color: var(--el-border-color-lighter);
-}
-.board-hero-status.is-warning {
-  border-color: var(--el-color-warning-light-5);
-  background: var(--el-color-warning-light-9);
 }
 .board-status-label,
 .fresh-label,
@@ -1576,9 +1562,6 @@ const menuPageTitle = useMenuPageTitle()
   font-size: var(--app-font-size-caption);
   color: var(--el-color-success);
 }
-.fresh-cell.stale {
-  border-color: var(--el-color-warning-light-5);
-}
 .fresh-cell.stale span:last-child,
 .fresh-cell.stale strong {
   color: var(--app-warning-text);
@@ -1611,9 +1594,6 @@ const menuPageTitle = useMenuPageTitle()
   justify-content: space-between;
   gap: var(--app-space-3);
   padding: var(--app-space-2) var(--app-space-3);
-  border: 1px solid var(--app-border-notice-warning);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-color-warning-light-9);
   color: inherit;
   text-align: left;
 }
@@ -1634,8 +1614,6 @@ const menuPageTitle = useMenuPageTitle()
   align-items: center;
   gap: var(--app-space-2);
   padding: var(--app-space-3);
-  border: 1px solid var(--app-border-notice-success);
-  border-radius: var(--layout-card-radius);
   color: var(--el-color-success);
   font-size: var(--app-font-size-table);
 }

@@ -49,7 +49,7 @@ const emit = defineEmits<{
       :disabled="!(item.error || undefined)"
     >
       <div
-        class="compare-queue-chip app-interaction-choice"
+        class="compare-queue-chip app-interaction-choice app-interaction-choice--outlined"
         :class="{ active: item.active, error: Boolean(item.error) }"
         role="button"
         tabindex="0"
@@ -95,11 +95,6 @@ const emit = defineEmits<{
   gap: var(--app-space-1);
   height: var(--app-control-height-sm);
   padding: 0 var(--app-space-2);
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-control-radius);
-  background: var(--el-bg-color);
-  color: var(--el-text-color-regular);
-  cursor: pointer;
   font: inherit;
   font-size: var(--app-font-size-caption);
 }

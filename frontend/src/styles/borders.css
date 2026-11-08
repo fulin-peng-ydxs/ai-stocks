@@ -21,7 +21,70 @@
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }
+/* 分组标题共用一张不透明浅面；外沿归宿主，轻量层级显式选择透明形态。 */
+.app-section-header {
+  border-radius: 0;
+  background: color-mix(in srgb, var(--app-section-bg) 58%, var(--el-bg-color));
+}
+.app-section-header--plain {
+  border-radius: var(--layout-control-radius);
+  background: transparent;
+}
+/* 是否生成装饰线由宿主结构决定，线色仍由共享角色维护。 */
+.app-section-header--plain::after { background: var(--app-border-divider); }
+/* 有复选框等独立操作时，由原生折叠按钮委托整行状态，避免嵌套可点击容器。 */
+.app-section-header__trigger {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+/* 表面状态只选择共享语义，普通页面不重新组合颜色或选中标记。 */
+.app-surface--selected {
+  border-color: var(--app-border-selected);
+  box-shadow: var(--app-interaction-selected-marker);
+}
+.app-surface--warning-border { border-color: var(--app-border-warning); }
+.app-surface--success-border { border-color: var(--app-border-success); }
+.app-surface--danger-border { border-color: var(--app-border-danger); }
+.app-surface--notice-success-border { border-color: var(--app-border-notice-success); }
+.app-surface--notice-warning {
+  border-color: var(--app-border-notice-warning);
+  background: var(--el-color-warning-light-9);
+}
+.app-surface--notice-success {
+  border-color: var(--app-border-notice-success);
+  background: var(--el-color-success-light-9);
+}
+.app-surface--warning {
+  border-color: var(--app-border-warning);
+  background: var(--el-color-warning-light-9);
+}
+.app-surface--inset { border-radius: var(--layout-control-radius); }
+.app-surface--floating { border-radius: var(--app-radius-floating-section); }
+.app-surface--section { background: var(--app-section-bg); }
+.app-surface--transparent { background: transparent; }
+.app-surface--dashed { border-style: dashed; }
+.app-surface--dotted { border-style: dotted; }
 
+/* 嵌入已有表面的画布由宿主拥有外沿；必须在普通表面之后清除自身外框。 */
+.app-stock-chart-frame--embedded {
+  border: 0;
+  border-radius: var(--app-radius-canvas);
+}
+
+/* 轻量选择与多行候选共享实体边界，选中、焦点由各自交互入口承接。 */
+html[data-layout-preset] .app-interaction-choice--outlined,
+html[data-layout-preset] .app-choice-card {
+  border: 1px solid var(--app-border-subtle);
+  border-radius: var(--layout-control-radius);
+  background: var(--el-bg-color);
+}
+html[data-layout-preset] .app-interaction-choice--card { border-radius: var(--layout-card-radius); }
+html[data-layout-preset] .app-interaction-choice--pill { border-radius: var(--app-radius-pill); }
+html[data-layout-preset] .app-interaction-choice--success { background: color-mix(in srgb, var(--el-color-success) 7%, var(--el-bg-color)); }
 /* 大弹层绘一次实体外沿；全屏态贴合所属画布。抽屉内容面消费同一角色。 */
 html[data-layout-preset] :is(.el-dialog, .el-message-box) {
   border: 1px solid var(--app-border-default);
@@ -52,7 +115,8 @@ html[data-layout-preset] :is(.el-radio-button__inner, .el-checkbox-button__inner
   border: 1px solid var(--app-border-default);
   box-shadow: none;
 }
-html[data-layout-preset] :is(.el-radio-button, .el-checkbox-button):not(:first-child) > :is(.el-radio-button__inner, .el-checkbox-button__inner) {
+html[data-layout-preset] .el-radio-group:not(.app-choice-button-card) > .el-radio-button:not(:first-child) > .el-radio-button__inner,
+html[data-layout-preset] .el-checkbox-button:not(:first-child) > .el-checkbox-button__inner {
   border-left-width: 0;
 }
 html[data-layout-preset] .el-radio-button.is-active .el-radio-button__original-radio:not(:disabled) + .el-radio-button__inner,
@@ -66,12 +130,12 @@ html[data-layout-preset] .el-checkbox-button.is-disabled .el-checkbox-button__in
   border-color: var(--el-disabled-border-color);
   box-shadow: none;
 }
-/* 接缝归前项，避免负 margin 在非整数界面比例下与真实边宽发生舍入偏差。 */
-html[data-layout-preset] .el-radio-button:has(+ .el-radio-button.is-active) > .el-radio-button__inner,
+/* 连续组接缝归前项；独立卡片四边由自身状态绘制，不被相邻项的选中/禁用染色。 */
+html[data-layout-preset] .el-radio-group:not(.app-choice-button-card) > .el-radio-button:has(+ .el-radio-button.is-active) > .el-radio-button__inner,
 html[data-layout-preset] .el-checkbox-button:has(+ .el-checkbox-button.is-checked) > .el-checkbox-button__inner {
   border-right-color: var(--app-border-selected);
 }
-html[data-layout-preset] .el-radio-button:has(+ .el-radio-button.is-active.is-disabled) > .el-radio-button__inner,
+html[data-layout-preset] .el-radio-group:not(.app-choice-button-card) > .el-radio-button:has(+ .el-radio-button.is-active.is-disabled) > .el-radio-button__inner,
 html[data-layout-preset] .el-checkbox-button:has(+ .el-checkbox-button.is-checked.is-disabled) > .el-checkbox-button__inner {
   border-right-color: var(--el-disabled-border-color);
 }
@@ -137,3 +201,13 @@ html[data-layout-preset] .el-button.is-circle { border-radius: 50%; }
 
 html[data-layout-preset] .el-color-picker__color { border-radius: max(0px, calc(var(--layout-control-radius) - 2px)); }
 html[data-layout-preset] .el-color-picker__panel { border-radius: var(--layout-card-radius); }
+
+html[data-layout-preset] .app-choice-button-card .el-radio-button__inner {
+  border-radius: var(--layout-card-radius);
+  border-color: var(--app-border-subtle);
+}
+html[data-layout-preset] .app-choice-button-card .el-radio-button.is-active:not(.is-disabled) .el-radio-button__inner {
+  border-color: var(--app-border-selected);
+  background: var(--el-bg-color);
+  color: var(--el-color-primary);
+}

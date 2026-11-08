@@ -21,7 +21,7 @@ withDefaults(defineProps<{
       </div>
       <AppControlRow v-if="$slots.actions"><slot name="actions" /></AppControlRow>
     </header>
-    <div v-if="showBody !== false" class="trade-discipline-section-panel__body" data-testid="trade-discipline-section-body">
+    <div v-if="showBody !== false" class="trade-discipline-section-panel__body" :class="{ 'app-surface': borderPlacement === 'body' }" data-testid="trade-discipline-section-body">
       <slot />
     </div>
   </section>
@@ -33,7 +33,7 @@ withDefaults(defineProps<{
 }
 .trade-discipline-section-panel.is-panel-bordered { padding: var(--layout-card-padding, var(--app-space-4)); }
 .is-panel-bordered .trade-discipline-section-panel__body,
-.is-borderless .trade-discipline-section-panel__body { padding: 0; border: 0; background: transparent; }
+.is-borderless .trade-discipline-section-panel__body { padding: 0; }
 .trade-discipline-section-panel__head {
   display: flex;
   align-items: flex-start;
@@ -51,9 +51,6 @@ withDefaults(defineProps<{
 .trade-discipline-section-panel__body {
   min-width: 0;
   padding: var(--app-space-4);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
 }
 .is-grouped { padding-block: var(--app-space-2); }
 .is-grouped .app-section-title { display: flex; align-items: center; gap: var(--app-space-2); }

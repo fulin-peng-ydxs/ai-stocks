@@ -44,6 +44,11 @@ html.dark {
 }
 
 /* 紧凑列表和语义链接不浮起；选中不因悬停丢失，子操作独立承接焦点。 */
+/* 基础形态保持低权重，描边与选中变体拥有真实可见外沿。 */
+:where(.app-interaction-list-item) {
+  border: 1px solid transparent;
+  border-radius: var(--app-radius-item);
+}
 .app-interaction-list-item {
   cursor: pointer;
   transition: var(--app-interaction-color-transition);
@@ -117,7 +122,7 @@ html[data-layout-preset] .app-interaction-help:focus-visible {
 }
 
 /* 折叠标题与紧凑选择共享状态；不套用命令按下类，也不产生卡片浮起。 */
-html[data-layout-preset] :is(.app-interaction-disclosure, .app-interaction-choice) {
+html[data-layout-preset] :is(.app-interaction-disclosure, .app-interaction-choice, .app-section-header) {
   transition: var(--app-interaction-color-transition);
 }
 html[data-layout-preset] .app-interaction-choice[aria-pressed='true'] {
@@ -128,22 +133,25 @@ html[data-layout-preset] .app-interaction-choice[aria-pressed='true'] {
 }
 @media (hover: hover) and (pointer: fine) {
   html[data-layout-preset] .app-interaction-disclosure:hover,
+  html[data-layout-preset] .app-section-header:has(> .app-section-header__trigger:not(:disabled, [aria-disabled='true']):hover),
   html[data-layout-preset] .app-interaction-choice:not([aria-pressed='true'], :disabled, [aria-disabled='true']):hover {
     background: var(--app-button-neutral-hover-bg);
   }
 }
-html[data-layout-preset] .app-interaction-disclosure:active {
+html[data-layout-preset] .app-interaction-disclosure:active,
+html[data-layout-preset] .app-section-header:has(> .app-section-header__trigger:not(:disabled, [aria-disabled='true']):active) {
   background: var(--app-button-neutral-pressed-bg);
 }
 html[data-layout-preset] .app-interaction-choice:not(:disabled, [aria-disabled='true']):active {
   border-color: var(--el-color-primary);
 }
-html[data-layout-preset] :is(.app-interaction-disclosure, .app-interaction-choice):focus-visible {
+html[data-layout-preset] :is(.app-interaction-disclosure, .app-interaction-choice):focus-visible,
+html[data-layout-preset] .app-section-header:has(> .app-section-header__trigger:not(:disabled, [aria-disabled='true']):focus-visible) {
   outline: var(--app-focus-ring);
   outline-offset: -2px;
 }
 @media (prefers-reduced-motion: reduce) {
-  html[data-layout-preset] :is(.app-interaction-disclosure, .app-interaction-choice) { transition: none; }
+  html[data-layout-preset] :is(.app-interaction-disclosure, .app-interaction-choice, .app-section-header) { transition: none; }
 }
 
 /* 点击宿主保持原位；导航投影和卡片单层表面不参与鼠标命中。 */
@@ -208,10 +216,14 @@ html[data-layout-preset] .app-interaction-target.app-interaction-nav:not(:disabl
 html[data-layout-preset] .app-interaction-target.app-interaction-card {
   --app-interaction-current-elevation: var(--app-interaction-rest-elevation, 0 0 transparent);
   overflow: visible;
-  border-color: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--layout-card-radius);
   background: transparent;
   box-shadow: none;
 }
+/* 与普通宿主同权重，形态才能覆盖 card 半径并由伪元素继承。 */
+html[data-layout-preset] .app-interaction-target.app-interaction-card--inset { border-radius: var(--layout-control-radius); }
+html[data-layout-preset] .app-interaction-target.app-interaction-card--floating { border-radius: var(--app-radius-floating-section); }
 .app-interaction-target.app-interaction-card.is-selected {
   --app-interaction-card-background: var(--app-interaction-selected-background);
   --app-interaction-card-border: var(--el-color-primary);
@@ -220,7 +232,7 @@ html[data-layout-preset] .app-interaction-target.app-interaction-card {
 }
 .app-interaction-target.app-interaction-card::before {
   inset: -1px;
-  border: 1px solid var(--app-interaction-card-current-border, var(--app-interaction-card-border, var(--el-border-color-lighter)));
+  border: 1px solid var(--app-interaction-card-current-border, var(--app-interaction-card-border, var(--app-border-subtle)));
   background: var(--app-interaction-card-background, var(--el-bg-color));
   box-shadow: var(--app-interaction-marker, inset 0 0 transparent), var(--app-interaction-current-elevation);
   transform: translateY(var(--app-interaction-shift));
@@ -269,7 +281,7 @@ html[data-layout-preset] .app-interaction-target.app-interaction-card {
   --app-interaction-shift: 0px !important;
   --app-interaction-visible: 0 !important;
   --app-interaction-current-elevation: var(--app-interaction-rest-elevation, 0 0 transparent) !important;
-  --app-interaction-card-current-border: var(--app-interaction-card-border, var(--el-border-color-lighter)) !important;
+  --app-interaction-card-current-border: var(--app-interaction-card-border, var(--app-border-subtle)) !important;
 }
 @media (prefers-reduced-motion: reduce) {
   :is(.app-interaction-target, .side-menu-node > .el-sub-menu__title)::before,
@@ -1104,15 +1116,6 @@ html.dark {
 .app-stock-chart-frame {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
-}
-
-/* 嵌入已有表面的画布由宿主拥有外沿；异步状态容器不改变这项职责。 */
-.app-stock-chart-frame--embedded {
-  border: 0;
-  border-radius: var(--app-radius-canvas);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1229,6 +1232,10 @@ html[data-layout-preset] .app-choice-button-card .el-radio-button__inner {
   --app-choice-justify: start;
   min-height: calc(var(--app-line-height-body) * 2 + var(--app-space-3) * 2);
   padding-inline: var(--app-space-4);
+  text-align: left;
+}
+html[data-layout-preset] .app-choice-button-card .el-radio-button__inner b {
+  font-weight: inherit;
 }
 .app-option-popper .el-select-dropdown__item,
 .app-option-popper .el-dropdown-menu__item {

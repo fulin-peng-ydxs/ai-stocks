@@ -133,7 +133,7 @@ watch(
         </div>
       </section>
 
-      <section class="detail-card revision-switcher">
+      <section class="detail-card revision-switcher app-surface">
         <div>
           <h4>修订版本</h4>
           <p>旧修订为不可变快照，切换查看不会改变当前记录。</p>
@@ -150,7 +150,7 @@ watch(
         />
       </section>
 
-      <section class="detail-card">
+      <section class="detail-card app-surface">
         <h4>履约结论</h4>
         <dl class="fact-grid">
           <div><dt>用户自评</dt><dd><el-tag :type="checkinAssessmentTagType(detail.assessment)" effect="plain">{{ checkinAssessmentLabel(detail.assessment) }}</el-tag></dd></div>
@@ -164,7 +164,7 @@ watch(
         <div class="text-snapshot"><strong>复盘说明</strong><p>{{ detail.review_note || '—' }}</p></div>
       </section>
 
-      <section class="detail-card operation-section" data-testid="revision-operation-snapshot">
+      <section class="detail-card operation-section app-surface" data-testid="revision-operation-snapshot">
         <h4>操作快照</h4>
         <p v-if="detail.no_operation" class="empty-copy">该修订记录为“今日无操作”。</p>
         <AppDataTable
@@ -222,7 +222,7 @@ watch(
         </template>
       </section>
 
-      <section v-if="ruleVersion" class="detail-card" data-testid="revision-rule-snapshot">
+      <section v-if="ruleVersion" class="detail-card app-surface" data-testid="revision-rule-snapshot">
         <h4>规则版本快照</h4>
         <p>当日最大同时持仓 {{ formatNumber(detail.peak_positions, 'count', { empty: '未记录' }) }} 只 · 规则上限 {{ formatNumber(ruleVersion.max_positions, 'count', { empty: '不限' }) }}</p>
         <p v-if="holdingCountWarning(ruleVersion.max_positions, detail.peak_positions)" class="app-caption-text">{{ holdingCountWarning(ruleVersion.max_positions, detail.peak_positions) }}</p>
@@ -233,7 +233,7 @@ watch(
         <div class="rule-grid">
           <div>
             <strong>选股规则</strong>
-            <article v-for="rule in ruleVersion.stock_rules" :key="rule.detail_id || rule.display_order" class="rule-snapshot">
+            <article v-for="rule in ruleVersion.stock_rules" :key="rule.detail_id || rule.display_order" class="rule-snapshot app-surface app-surface--inset app-surface--transparent">
               <span>{{ rule.name || '未命名规则' }} · {{ rule.enabled ? '启用' : '停用' }}</span>
               <small>资金上限 ¥ {{ formatMoney(rule.max_capital) }}</small>
               <StockRuleConditionChecklist :panel-defaults="conditionPanelDefaults" :key="`${detail.checkin_id}:${detail.revision_no}:${rule.detail_id}`" :rule="rule" />
@@ -241,7 +241,7 @@ watch(
           </div>
           <div>
             <strong>买卖规则</strong>
-            <article v-for="rule in ruleVersion.action_rules" :key="rule.detail_id || rule.display_order" class="rule-snapshot">
+            <article v-for="rule in ruleVersion.action_rules" :key="rule.detail_id || rule.display_order" class="rule-snapshot app-surface app-surface--inset app-surface--transparent">
               <span>{{ rule.name || '未命名规则' }} · {{ rule.action_type === 'buy' ? '买入' : '卖出' }} · {{ actionSubtypeLabel(rule) }} · {{ rule.enabled ? '启用' : '停用' }}</span>
               <p>{{ rule.content || '—' }}</p>
             </article>
@@ -273,7 +273,7 @@ watch(
 .detail-hero h3 { margin: var(--app-space-1) 0; }
 .detail-hero p, .revision-switcher p { margin: 0; color: var(--el-text-color-secondary); }
 .hero-facts { justify-content: flex-end; flex-wrap: wrap; }
-.detail-card { padding: var(--app-space-4); border: 1px solid var(--el-border-color-lighter); border-radius: var(--layout-card-radius); background: var(--el-bg-color); }
+.detail-card { padding: var(--app-space-4); }
 .detail-card h4 { margin: 0 0 var(--app-space-3); }
 .revision-switcher h4 { margin-bottom: var(--app-space-1); }
 .revision-switcher :deep(.app-filter-select) { width: 180px; flex: none; }
@@ -284,7 +284,7 @@ watch(
 .text-snapshot { margin-top: var(--app-space-3); }
 .text-snapshot p, .rule-snapshot p { margin: var(--app-space-1) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .rule-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--app-space-4); }
-.rule-snapshot { margin-top: var(--app-space-2); padding: var(--app-space-3); border: 1px solid var(--el-border-color-lighter); border-radius: var(--layout-control-radius); background: transparent; }
+.rule-snapshot { margin-top: var(--app-space-2); padding: var(--app-space-3); }
 .rule-snapshot span, .rule-snapshot small { display: block; }
 .rule-snapshot small, .empty-copy { color: var(--el-text-color-secondary); }
 .operation-section { min-width: 0; }

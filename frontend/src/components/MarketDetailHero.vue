@@ -20,7 +20,7 @@ defineSlots<{
 </script>
 
 <template>
-  <section class="market-detail-hero" :class="`market-detail-hero--aside-${asideAlign}`">
+  <section class="market-detail-hero app-surface" :class="`market-detail-hero--aside-${asideAlign}`">
     <div class="market-detail-hero__main">
       <div class="market-detail-hero__copy">
         <div class="market-detail-hero__title-row">
@@ -48,9 +48,6 @@ defineSlots<{
 .market-detail-hero {
   flex: 0 0 auto;
   min-width: 0;
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
 }
 
 .market-detail-hero__main {

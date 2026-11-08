@@ -294,7 +294,7 @@ function resetFilters(): void {
         </AppStateBlock>
         <AppStateBlock v-else-if="!result.layers.length" data-testid="limit-ladder-state" state="empty"><div class="limit-ladder__empty-copy"><strong>当日无涨停股票</strong><span>这是合法的空快照，不代表加载失败。</span></div></AppStateBlock>
         <div v-else class="limit-ladder__layers" aria-label="连板天梯分层">
-          <section v-for="layer in sortedLayers" :key="layer.consecutive_days" class="limit-ladder__layer" :data-testid="`limit-ladder-layer-${layer.consecutive_days}`">
+          <section v-for="layer in sortedLayers" :key="layer.consecutive_days" class="limit-ladder__layer app-surface" :data-testid="`limit-ladder-layer-${layer.consecutive_days}`">
             <header class="limit-ladder__layer-head"><span>{{ formatNumber(layer.consecutive_days, 'count') }}B</span><strong>{{ layer.consecutive_days===1?'首板':`${layer.consecutive_days} 连板` }}</strong><small>{{ formatNumber(layer.stock_count, 'count') }} 只</small></header>
             <div class="limit-ladder__cards"><LimitLadderCard v-for="stock in layer.stocks" :key="stock.code" :stock="stock" :window="filters.window" :can-view-sectors="canViewSectors" :selected="stock.code === selectedCode" :return-path="returnPath" @select="$emit('select',$event)" /></div>
           </section>
@@ -399,9 +399,6 @@ function resetFilters(): void {
 .limit-ladder__layer {
   width: 100%;
   min-width: min(100%, 220px);
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
-  background: color-mix(in srgb, var(--app-section-bg) 34%, var(--el-bg-color));
 }
 .limit-ladder__layer-head {
   display: flex;

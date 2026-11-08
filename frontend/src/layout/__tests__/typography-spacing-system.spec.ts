@@ -149,7 +149,7 @@ describe('字体与间距设计契约', () => {
     expect(shadowLayer).not.toContain('--app-interaction-marker')
     // 卡片边框由唯一浮起表面负责，固定宿主不能再绘制第二套轮廓。
     const cardHost = css.match(/html\[data-layout-preset\] \.app-interaction-target\.app-interaction-card\s*\{([^}]+)\}/)?.[1] ?? ''
-    expect(cardHost).toContain('border-color: transparent')
+    expect(cardHost).toContain('border: 1px solid transparent')
     expect(cardHost).toContain('background: transparent')
     expect(cardHost).toContain('box-shadow: none')
     expect(css).toMatch(/\.app-interaction-target\.app-interaction-card::before\s*\{[^}]*--app-interaction-card-background[^}]*--app-interaction-marker[^}]*transform: translateY/)

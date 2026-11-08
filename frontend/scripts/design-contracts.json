@@ -322,7 +322,9 @@
           "selectors": [
             ".ladder-hotspots__chip.el-button,\n.ladder-hotspots__more.el-button"
           ],
-          "properties": ["height"],
+          "properties": [
+            "height"
+          ],
           "reason": "热点标签及收展入口只覆盖高度，按所属页面密度的常规控件高度减8px，标准密度24px；保留原按钮外观"
         },
         {
@@ -2031,9 +2033,343 @@
           "reason": "共享语义列统一提供表格数字等宽排版"
         }
       ]
+    },
+    {
+      "className": "app-surface",
+      "properties": [
+        "border",
+        "border-color",
+        "border-width",
+        "border-radius",
+        "background",
+        "background-color",
+        "box-shadow",
+        "border-style"
+      ],
+      "owners": [
+        {
+          "file": "styles/borders.css",
+          "selectors": [
+            ".app-surface"
+          ],
+          "properties": [
+            "border",
+            "border-radius",
+            "background"
+          ],
+          "reason": "普通表面唯一材质入口"
+        },
+        {
+          "file": "styles/borders.css",
+          "selectors": [
+            ".app-surface--inset",
+            ".app-surface--floating"
+          ],
+          "properties": [
+            "border-radius"
+          ],
+          "reason": "具名内嵌与浮层分组形态"
+        },
+        {
+          "file": "styles/borders.css",
+          "selectors": [
+            ".app-surface--section",
+            ".app-surface--transparent"
+          ],
+          "properties": [
+            "background"
+          ],
+          "reason": "具名分区与连续内容面"
+        },
+        {
+          "file": "styles/borders.css",
+          "selectors": [
+            ".app-stock-chart-frame--embedded"
+          ],
+          "properties": [
+            "border",
+            "border-radius"
+          ],
+          "reason": "嵌入股票画布由现有宿主唯一绘制外沿"
+        },
+        {
+          "file": "styles/borders.css",
+          "selectors": [
+            ".app-surface--selected"
+          ],
+          "properties": [
+            "border-color",
+            "box-shadow"
+          ],
+          "reason": "共享选中表面与定位标记"
+        },
+        {
+          "file": "styles/borders.css",
+          "selectors": [
+            ".app-surface--warning-border"
+          ],
+          "properties": [
+            "border-color"
+          ],
+          "reason": "共享风险边界，不改变内容面"
+        },
+        {
+          "file": "styles/borders.css",
+          "selectors": [
+            ".app-surface--warning"
+          ],
+          "properties": [
+            "border-color",
+            "background"
+          ],
+          "reason": "共享风险表面"
+        },
+        {
+          "file": "components/AppSummaryDisclosureCard.vue",
+          "selectors": [
+            ".app-summary-disclosure-card.is-compact"
+          ],
+          "properties": [
+            "border",
+            "border-bottom",
+            "border-radius",
+            "background",
+            "box-shadow"
+          ],
+          "reason": "紧凑报告摘要是无外框的行角色，保持单条行分隔，区别于普通卡片"
+        },
+        {
+          "file": "components/SettingsGroup.vue",
+          "selectors": [
+            ".sg-nested + .sg-nested"
+          ],
+          "properties": [
+            "border-top"
+          ],
+          "reason": "树形嵌套分组的邻接线，不作用于浮层一级表面"
+        },
+        {
+          "file": "styles/borders.css",
+          "selectors": [
+            ".app-surface--dashed",
+            ".app-surface--dotted"
+          ],
+          "properties": [
+            "border-style"
+          ],
+          "reason": "结构示意与只读引用的共享虚线形态"
+        },
+        {
+          "file": "styles/borders.css",
+          "selectors": [
+            ".app-surface--success-border",
+            ".app-surface--danger-border",
+            ".app-surface--notice-success-border"
+          ],
+          "properties": [
+            "border-color"
+          ],
+          "reason": "真实业务状态的共享强调与软提示边界"
+        },
+        {
+          "file": "styles/borders.css",
+          "selectors": [
+            ".app-surface--notice-warning",
+            ".app-surface--notice-success"
+          ],
+          "properties": [
+            "border-color",
+            "background"
+          ],
+          "reason": "复合业务结果复用的软提示表面"
+        }
+      ],
+      "bindings": []
+    },
+    {
+      "className": "app-section-header",
+      "classNames": [
+        "app-section-header__trigger"
+      ],
+      "properties": [
+        "background",
+        "background-color",
+        "border",
+        "border-color",
+        "border-radius",
+        "outline",
+        "outline-offset",
+        "box-shadow",
+        "color"
+      ],
+      "owners": [
+        {
+          "file": "styles/borders.css",
+          "selectors": [
+            ".app-section-header",
+            ".app-section-header--plain"
+          ],
+          "properties": [
+            "background",
+            "border-radius"
+          ],
+          "reason": "分组标题普通浅底与显式透明形态的唯一材质入口"
+        },
+        {
+          "file": "styles/borders.css",
+          "selectors": [
+            ".app-section-header--plain::after"
+          ],
+          "properties": [
+            "background"
+          ],
+          "reason": "轻量分组标题的结构装饰线色"
+        },
+        {
+          "file": "styles/borders.css",
+          "selectors": [
+            ".app-section-header__trigger"
+          ],
+          "properties": [
+            "border",
+            "outline",
+            "background",
+            "color"
+          ],
+          "reason": "复合标题中原生折叠触发器的透明外形与唯一焦点归属"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-interaction-disclosure:hover,\n  html[data-layout-preset] .app-section-header:has(> .app-section-header__trigger:not(:disabled, [aria-disabled='true']):hover),\n  html[data-layout-preset] .app-interaction-choice:not([aria-pressed='true'], :disabled, [aria-disabled='true']):hover"
+          ],
+          "properties": [
+            "background"
+          ],
+          "reason": "直接及委托折叠标题共享悬停配方"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-interaction-disclosure:active,\nhtml[data-layout-preset] .app-section-header:has(> .app-section-header__trigger:not(:disabled, [aria-disabled='true']):active)"
+          ],
+          "properties": [
+            "background"
+          ],
+          "reason": "直接及委托折叠标题共享按下配方"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] :is(.app-interaction-disclosure, .app-interaction-choice):focus-visible,\nhtml[data-layout-preset] .app-section-header:has(> .app-section-header__trigger:not(:disabled, [aria-disabled='true']):focus-visible)"
+          ],
+          "properties": [
+            "outline",
+            "outline-offset"
+          ],
+          "reason": "直接及委托折叠标题共享内焦点环"
+        }
+      ],
+      "bindings": [],
+      "pseudoElements": [
+        "after"
+      ]
+    },
+    {
+      "className": "app-interaction-list-item",
+      "properties": [
+        "border",
+        "border-radius",
+        "border-color",
+        "background",
+        "background-color",
+        "box-shadow"
+      ],
+      "owners": [
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ":where(.app-interaction-list-item)"
+          ],
+          "properties": [
+            "border",
+            "border-radius"
+          ],
+          "reason": "基础与描边列表共享材质及状态，与机器契约同源"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-interaction-list-item:is(.active, .on, [aria-pressed='true'])"
+          ],
+          "properties": [
+            "background"
+          ],
+          "reason": "基础与描边列表共享材质及状态，与机器契约同源"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-interaction-list-item.app-interaction-list-item--outlined"
+          ],
+          "properties": [
+            "border"
+          ],
+          "reason": "基础与描边列表共享材质及状态，与机器契约同源"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-interaction-list-item--outlined:is(.active, .on, [aria-pressed='true'])"
+          ],
+          "properties": [
+            "border-color",
+            "box-shadow"
+          ],
+          "reason": "基础与描边列表共享材质及状态，与机器契约同源"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-interaction-list-item:not(:disabled, [aria-disabled='true'], [aria-busy='true']):active"
+          ],
+          "properties": [
+            "border-color"
+          ],
+          "reason": "基础与描边列表共享材质及状态，与机器契约同源"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-interaction-list-item:not(.active, .on, [aria-pressed='true'], :disabled, [aria-disabled='true'], [aria-busy='true']):hover"
+          ],
+          "properties": [
+            "background"
+          ],
+          "reason": "基础与描边列表共享材质及状态，与机器契约同源"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            ".app-interaction-list-item--outlined:not(.active, .on, [aria-pressed='true'], :disabled, [aria-disabled='true'], [aria-busy='true']):hover"
+          ],
+          "properties": [
+            "border-color"
+          ],
+          "reason": "基础与描边列表共享材质及状态，与机器契约同源"
+        }
+      ]
     }
   ],
   "listStates": [
+    {
+      "name": "基础列表普通",
+      "selector": ":where(.app-interaction-list-item)",
+      "declarations": {
+        "border": "1px solid transparent",
+        "border-radius": "var(--app-radius-item)"
+      }
+    },
     {
       "name": "基础列表选中",
       "selector": ".app-interaction-list-item:is(.active, .on, [aria-pressed='true'])",
@@ -2934,6 +3270,71 @@
       "target": "h",
       "expression": "...attrs",
       "reason": "共享提示入口仅透传调用属性；新增显式样式属性仍独立拦截，不放行整个渲染函数"
+    }
+  ],
+  "segmentedRoles": [
+    {
+      "file": "components/StockAnalysisPanel.vue",
+      "label": "图表模式",
+      "tone": "primary",
+      "variant": "contained",
+      "reason": "主分析工作区的图表内容模式"
+    },
+    {
+      "file": "components/stock-chart/StockChartWorkspace.vue",
+      "label": "K线周期",
+      "tone": "primary",
+      "variant": "tabs",
+      "reason": "图表主周期，使用无底板页签与主色指示"
+    },
+    {
+      "file": "views/BacktestView.vue",
+      "label": "回测验证模式",
+      "tone": "primary",
+      "variant": "contained",
+      "reason": "决定整个回测表单与结果工作区"
+    },
+    {
+      "file": "views/SectorsView.vue",
+      "label": "板块范围",
+      "tone": "primary",
+      "variant": "contained",
+      "reason": "主列表全市场/自选范围"
+    },
+    {
+      "file": "views/SectorsView.vue",
+      "label": "图表模式",
+      "tone": "primary",
+      "variant": "contained",
+      "reason": "主分析工作区的图表内容模式"
+    },
+    {
+      "file": "views/StocksView.vue",
+      "label": "个股范围",
+      "tone": "primary",
+      "variant": "contained",
+      "reason": "主列表全市场/分组范围"
+    },
+    {
+      "file": "views/TradeDisciplineView.vue",
+      "label": "交易纪律功能区",
+      "tone": "primary",
+      "variant": "contained",
+      "reason": "切换整个交易纪律业务面板"
+    },
+    {
+      "file": "views/data/OverviewView.vue",
+      "label": "数据资产数据库场景",
+      "tone": "primary",
+      "variant": "contained",
+      "reason": "切换主资产列表的数据场景"
+    },
+    {
+      "file": "views/limit-ladder/LimitLadderFilters.vue",
+      "label": "统计窗口",
+      "tone": "primary",
+      "variant": "contained",
+      "reason": "决定整个天梯结果的主查询口径"
     }
   ]
 }

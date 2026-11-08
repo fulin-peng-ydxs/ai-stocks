@@ -737,7 +737,7 @@ const menuPageTitle = useMenuPageTitle()
                           @update:model-value="(v: number | undefined) => setPageKnob(knob.path, v ?? '')"
                         />
                       </el-form-item>
-                      <div v-if="!selectedPage.layout.editable.length" class="inspector-empty">
+                      <div v-if="!selectedPage.layout.editable.length" class="inspector-empty app-surface app-surface--inset app-surface--dashed app-surface--transparent">
                         该页面没有可调整的页面级设置
                       </div>
                     </AppForm>
@@ -751,7 +751,7 @@ const menuPageTitle = useMenuPageTitle()
                       </div>
                     </div>
                     <div v-if="focusedSlotSpec" class="cc-cfg-host">
-                      <div class="focused-slot-card">
+                      <div class="focused-slot-card app-surface app-surface--inset app-surface--section">
                         <div class="focused-slot-name">
                           <span class="app-inline-info">
                             <span>{{ focusedSlotSpec.label || focusedSlotSpec.id }}</span>
@@ -776,12 +776,12 @@ const menuPageTitle = useMenuPageTitle()
                         clearable
                       />
                     </div>
-                    <div v-else class="inspector-empty">
+                    <div v-else class="inspector-empty app-surface app-surface--inset app-surface--dashed app-surface--transparent">
                       选择左侧任一结构块后，在这里配置该组件
                     </div>
                   </section>
 
-                  <section v-else class="inspector-section inspector-section--muted">
+                  <section v-else class="inspector-section inspector-section--muted app-surface app-surface--inset app-surface--dashed app-surface--transparent">
                     <div class="inspector-title">组件设置</div>
                     <div class="section-subtitle">该页面暂未开放组件级默认设置。</div>
                   </section>
@@ -818,7 +818,7 @@ const menuPageTitle = useMenuPageTitle()
                         </AppTableColumn>
                         <AppTableColumn prop="detail" label="说明" />
                       </AppDataTable>
-                      <div v-else class="inspector-empty">
+                      <div v-else class="inspector-empty app-surface app-surface--inset app-surface--dashed app-surface--transparent">
                         {{ focusedSlotSpec ? '当前组件没有配置诊断项' : '选择组件后查看配置依据' }}
                       </div>
                     </el-collapse-item>
@@ -1093,15 +1093,12 @@ const menuPageTitle = useMenuPageTitle()
   --app-scroll-direction: column;
   --app-scroll-gap: var(--app-space-4);
 }
-.inspector-section {
+.inspector-section:not(.app-surface) {
   padding-bottom: var(--app-space-4);
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .inspector-section--muted {
-  border: 1px dashed var(--el-border-color);
-  border-radius: var(--layout-control-radius);
   padding: var(--app-space-3);
-  background: var(--app-section-bg);
 }
 .inspector-title {
   font-size: var(--app-font-size-body);
@@ -1125,8 +1122,6 @@ const menuPageTitle = useMenuPageTitle()
   background: var(--el-bg-color);
 }
 .inspector-empty {
-  border: 1px dashed var(--el-border-color);
-  border-radius: var(--layout-control-radius);
   padding: var(--app-space-3);
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
@@ -1152,10 +1147,7 @@ const menuPageTitle = useMenuPageTitle()
 .focused-slot-card {
   margin-top: var(--app-space-3);
   margin-bottom: var(--app-space-3);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-control-radius);
   padding: var(--app-space-3);
-  background: var(--app-section-bg);
 }
 .focused-slot-name,
 .diag-main {

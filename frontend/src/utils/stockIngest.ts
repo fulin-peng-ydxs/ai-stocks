@@ -122,20 +122,6 @@ export function buildStockIngestParams(
   return { params }
 }
 
-export function stockIngestSummary(form: StockIngestFormValue): string {
-  const label = STOCK_INGEST_RECIPE_LABEL[form.recipe]
-  const scope = stockIngestSupportsCodes(form.recipe) && form.scope === 'selected'
-    ? `${form.codes.length || 0} 只指定股票`
-    : '全市场'
-  const parts = [label, scope]
-  if ((form.recipe === 'range_refetch' || form.recipe === 'st_status_refresh') && form.date_start) {
-    parts.push(`${form.date_start} ~ ${form.date_end || form.date_start}`)
-  }
-  if (stockIngestSupportsYears(form.recipe) && form.years) parts.push(`近 ${form.years} 年`)
-  if (form.recipe === 'daily_update' && form.force_current_day) parts.push('强制当日')
-  return parts.join(' · ')
-}
-
 /** 旧任务编辑时映射到统一模型；历史记录本身不改写。 */
 export function stockIngestFormFromTask(
   taskType: string,

@@ -9,7 +9,6 @@ import CurrentDayFallbackField from '@/components/data/CurrentDayFallbackField.v
 import {
   STOCK_INGEST_RECIPE_OPTIONS,
   isHeavyStockIngestRecipe,
-  stockIngestSummary,
   stockIngestSupportsCodes,
   stockIngestSupportsConcurrency,
   stockIngestSupportsYears,
@@ -29,7 +28,6 @@ const supportsCodes = computed(() => stockIngestSupportsCodes(props.modelValue.r
 const supportsYears = computed(() => stockIngestSupportsYears(props.modelValue.recipe))
 const supportsConcurrency = computed(() => stockIngestSupportsConcurrency(props.modelValue.recipe))
 const isHeavy = computed(() => isHeavyStockIngestRecipe(props.modelValue.recipe))
-const summary = computed(() => stockIngestSummary(props.modelValue))
 
 function patch(value: Partial<StockIngestFormValue>) {
   emit('update:modelValue', { ...props.modelValue, ...value })
@@ -145,13 +143,6 @@ function changeRecipe(recipe: StockIngestRecipe) {
     :closable="false"
     title="该方案可能运行较久；可离开页面，之后从任务中心查看进度或继续任务。"
   />
-  <el-alert
-    class="stock-ingest-summary"
-    type="info"
-    :closable="false"
-    :title="`将执行：${summary}`"
-    :data-testid="`${testIdPrefix}-summary`"
-  />
 </template>
 
 <style scoped>
@@ -168,7 +159,4 @@ function changeRecipe(recipe: StockIngestRecipe) {
   font-weight: var(--app-font-weight-regular);
 }
 
-.stock-ingest-summary {
-  margin: var(--app-space-2) 0 var(--app-space-4);
-}
 </style>

@@ -48,7 +48,7 @@ const rows = computed(() =>
   line-height: var(--app-line-height-solid);
   padding: 2px 6px;
   border-radius: 999px;
-  border: 1px solid var(--page-settings-border);
+  border: 1px solid var(--app-border-subtle);
   color: var(--page-settings-text-muted);
 }
 /* 被某层覆盖：用主色描边提示"非代码默认"。 */

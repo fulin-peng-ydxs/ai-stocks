@@ -82,7 +82,7 @@ function clear() {
         <div
           v-for="name in filtered"
           :key="name"
-          class="ip-cell app-interaction-list-item"
+          class="ip-cell app-interaction-choice app-interaction-choice--outlined"
           role="button" :tabindex="disabled ? -1 : 0" :aria-disabled="disabled"
           :aria-label="name" :aria-pressed="name === modelValue"
           v-keyboard-activate
@@ -119,10 +119,8 @@ function clear() {
 .ip-actions { display: flex; align-items: center; justify-content: space-between; }
 .ip-count { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .ip-grid { --app-scroll-display: grid; --app-scroll-columns: repeat(4, minmax(0, 1fr)); --app-scroll-gap: var(--app-space-2); max-height: 320px; }
-.ip-cell { height: 58px; min-width: 0; border: 1px solid var(--el-border-color-lighter); border-radius: var(--app-radius-item);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--app-space-1);
-  cursor: pointer; color: var(--el-text-color-regular); overflow: hidden; }
-.ip-cell.on { border-color: var(--el-color-primary); color: var(--el-color-primary); }
+.ip-cell { height: 58px; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--app-space-1);
+  overflow: hidden; }
 .ip-cap { display: block; width: 100%; padding: 0 4px; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption);
   color: var(--el-text-color-secondary); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ip-empty { grid-column: 1 / -1; min-height: 72px; }

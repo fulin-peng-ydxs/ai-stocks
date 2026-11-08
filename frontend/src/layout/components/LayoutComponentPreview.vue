@@ -24,7 +24,7 @@ const effState = computed<ComponentState>(() => {
 </script>
 
 <template>
-  <div class="cp-frame" data-testid="component-state-preview" :data-state="effState">
+  <div class="cp-frame app-surface" data-testid="component-state-preview" :data-state="effState">
     <!-- 非 ready 态复用真实运行时组件，避免预览与业务页面各维护一套状态视觉。 -->
     <AppStateBlock
       v-if="effState === 'loading'"
@@ -78,7 +78,7 @@ const effState = computed<ComponentState>(() => {
       </div>
 
       <div v-else-if="archetype === 'kpi'" class="cp-kpi">
-        <div v-for="k in 3" :key="k" class="cp-card"><div class="cp-num" /><div class="cp-cap" /></div>
+        <div v-for="k in 3" :key="k" class="cp-card app-surface"><div class="cp-num" /><div class="cp-cap" /></div>
       </div>
 
       <div v-else-if="archetype === 'form'" class="cp-form">
@@ -105,7 +105,7 @@ const effState = computed<ComponentState>(() => {
         <div class="cp-mdetail"><span /><span /><span class="short" /></div>
       </div>
 
-      <div v-else class="cp-structure">结构容器</div>
+      <div v-else class="cp-structure app-surface app-surface--dashed">结构容器</div>
     </template>
   </div>
 </template>
@@ -115,9 +115,6 @@ const effState = computed<ComponentState>(() => {
   /* 四态共用 256px 稳定画布；该高度覆盖 compact 空态的完整图文，避免 overflow:hidden 裁切。 */
   box-sizing: border-box;
   height: 256px;
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
   padding: 12px;
   overflow: hidden;
   display: flex;
@@ -231,8 +228,6 @@ span {
   gap: var(--app-space-2);
 }
 .cp-card {
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--layout-card-radius);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -391,8 +386,6 @@ span {
 }
 .cp-structure {
   flex: 1;
-  border: 1px dashed var(--el-border-color);
-  border-radius: var(--layout-card-radius);
   display: flex;
   align-items: center;
   justify-content: center;

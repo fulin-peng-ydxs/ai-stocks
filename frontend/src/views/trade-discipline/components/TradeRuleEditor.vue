@@ -586,7 +586,7 @@ defineExpose({
 </script>
 
 <template>
-  <AppScrollArea as="section" class="rule-editor" aria-label="规则编辑工作区" data-testid="rule-editor">
+  <AppScrollArea as="section" class="rule-editor app-surface" aria-label="规则编辑工作区" data-testid="rule-editor">
     <AppStateBlock v-if="loading" state="loading" title="正在加载规则…" />
     <AppStateBlock v-else-if="loadError" state="error" title="规则详情加载失败" retry @retry="load" />
     <template v-else-if="detail">
@@ -629,7 +629,7 @@ defineExpose({
         </template>
       </AppStatusNotice>
 
-      <div class="rule-state-track" aria-label="规则双状态">
+      <div class="rule-state-track app-surface app-surface--inset" aria-label="规则双状态">
         <div><span>当前有效</span><strong>{{ effectiveText() }}</strong></div>
         <div><span>管理动作</span><strong>{{ managementText() }}</strong></div>
         <div><span>编辑现场</span><strong>{{ hasSavedDraft ? `草稿 r${draftRevision}` : '无工作草稿' }}</strong></div>
@@ -648,7 +648,7 @@ defineExpose({
             <AppFormHelp>本套规则同时持有的不同股票数量上限，留空不限。</AppFormHelp>
           </el-form-item>
           <el-form-item label="资金分配">
-            <div class="capital-meter" :class="{ danger: capitalExceeded }">
+            <div class="capital-meter app-surface app-surface--inset app-surface--transparent" :class="{ danger: capitalExceeded, 'app-surface--danger-border': capitalExceeded, 'app-surface--success-border': !capitalExceeded }">
               <span>启用规则已分配 {{ allocatedCapitalText }}</span>
               <strong>剩余 {{ remainingCapitalText }}</strong>
             </div>
@@ -810,12 +810,12 @@ defineExpose({
 </template>
 
 <style scoped>
-.rule-editor { min-width: 0; min-height: 0; --app-scroll-padding-top: var(--app-space-5); --app-scroll-padding-right: var(--app-space-5); --app-scroll-padding-bottom: var(--app-space-5); --app-scroll-padding-left: var(--app-space-5); border: 1px solid var(--app-border-subtle); border-radius: var(--layout-card-radius); background: var(--el-bg-color); }
+.rule-editor { min-width: 0; min-height: 0; --app-scroll-padding-top: var(--app-space-5); --app-scroll-padding-right: var(--app-space-5); --app-scroll-padding-bottom: var(--app-space-5); --app-scroll-padding-left: var(--app-space-5); }
 .rule-editor__head, .rule-editor__commands, .detail-group > header, .rule-editor__footer { display: flex; align-items: center; }
 .rule-editor__head { justify-content: space-between; gap: var(--app-space-3); }
 .rule-editor__head .app-section-title { margin: var(--app-space-1) 0 0; }
 .rule-editor__commands { gap: var(--app-space-1); }
-.rule-state-track { margin: var(--app-space-4) 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--el-border-color-lighter); border-radius: var(--layout-control-radius); overflow: hidden; }
+.rule-state-track { margin: var(--app-space-4) 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: hidden; }
 .rule-state-track > div { padding: var(--app-space-3); background: transparent; }
 .rule-state-track > div + div { border-left: 1px solid var(--el-border-color-lighter); }
 .rule-state-track span { display: block; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
@@ -823,8 +823,8 @@ defineExpose({
 .readonly-notice { margin: var(--app-space-4) 0; }
 .rule-editor__base { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--app-space-3); align-items: start; }
 .rule-editor__base :deep(.el-input), .rule-editor__base :deep(.el-input-number) { width: 100%; }
-.capital-meter { box-sizing: border-box; width: 100%; min-height: var(--app-density-control-height, var(--app-control-height-md)); padding: 0 var(--app-space-3); border: 1px solid var(--app-border-success); border-radius: var(--layout-control-radius); background: transparent; color: var(--el-color-success); display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); }
-.capital-meter.danger { border-color: var(--app-border-danger); background: transparent; color: var(--el-color-danger); }
+.capital-meter { box-sizing: border-box; width: 100%; min-height: var(--app-density-control-height, var(--app-control-height-md)); padding: 0 var(--app-space-3); color: var(--el-color-success); display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); }
+.capital-meter.danger { color: var(--el-color-danger); }
 .detail-group { margin-top: var(--app-space-5); }
 .detail-group > header { justify-content: space-between; gap: var(--app-space-3); margin-bottom: var(--app-space-2); }
 
@@ -837,7 +837,6 @@ defineExpose({
 .rule-editor__footer { position: sticky; bottom: 0; z-index: 2; justify-content: flex-end; flex-wrap: wrap; gap: var(--app-space-2); margin: var(--app-space-5) calc(var(--app-space-5) * -1) calc(var(--app-space-5) * -1); padding: var(--app-space-3) var(--app-space-5); border-top: 1px solid var(--app-border-divider); background: var(--el-bg-color); }
 .dirty-copy { margin-right: auto; color: var(--el-color-warning); font-size: var(--app-font-size-caption); }
 @container app-viewport (max-width: 1100px) {
-  .rule-editor { }
   .rule-state-track, .rule-editor__base { grid-template-columns: 1fr; }
   .rule-state-track > div + div { border-left: 0; border-top: 1px solid var(--el-border-color-lighter); }
 }

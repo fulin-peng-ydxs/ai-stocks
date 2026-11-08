@@ -487,19 +487,19 @@ async function onLogout() {
             </header>
 
             <div class="topbar-metrics">
-              <div class="topbar-metric">
+              <div class="topbar-metric app-surface app-surface--inset app-surface--transparent">
                 <span>交易日</span>
                 <strong>{{ latestTradeDateText }}</strong>
               </div>
-              <div class="topbar-metric">
+              <div class="topbar-metric app-surface app-surface--inset app-surface--transparent">
                 <span>股票数</span>
                 <strong>{{ formatNumber(dataStatus?.distinct_codes) }}</strong>
               </div>
-              <div class="topbar-metric">
+              <div class="topbar-metric app-surface app-surface--inset app-surface--transparent">
                 <span>行情行数</span>
                 <strong>{{ formatNumber(dataStatus?.bar_rows) }}</strong>
               </div>
-              <div class="topbar-metric">
+              <div class="topbar-metric app-surface app-surface--inset app-surface--transparent">
                 <span>活跃问题</span>
                 <strong>{{ formatNumber(dataStatus?.quality_issues) }}</strong>
               </div>
@@ -513,7 +513,7 @@ async function onLogout() {
                   <span class="topbar-update-meta">{{ log.source }} · {{ formatDateTimeMinutes(log.updated_at) }}</span>
                 </div>
               </div>
-              <div v-else class="topbar-empty">暂无最近更新</div>
+              <div v-else class="topbar-empty app-surface app-surface--inset app-surface--dashed app-surface--transparent">暂无最近更新</div>
             </div>
 
             <AppControlRow class="topbar-panel-actions" justify="end">
@@ -592,7 +592,7 @@ async function onLogout() {
                 <span class="topbar-task-status">{{ taskStatusLabel(task.status) }}</span>
               </div>
             </div>
-            <div v-else class="topbar-empty">暂无任务记录</div>
+            <div v-else class="topbar-empty app-surface app-surface--inset app-surface--dashed app-surface--transparent">暂无任务记录</div>
 
             <AppControlRow class="topbar-panel-actions" justify="end">
               <el-button data-button-kind="navigation" link @click="goTo('/data/ingest')">查看任务</el-button>
@@ -656,7 +656,7 @@ async function onLogout() {
       close-label="关闭用户中心"
     >
       <div class="app-stack-md">
-        <div class="drawer-user-card">
+        <div class="drawer-user-card app-surface app-surface--floating">
           <span class="drawer-avatar">{{ avatarText }}</span>
           <div>
             <div class="drawer-user-name">{{ displayName }}</div>
@@ -773,7 +773,7 @@ async function onLogout() {
             <button
               v-for="option in themeOptionsWithSwatches"
               :key="option.value"
-              class="theme-option app-interaction-target app-interaction-card"
+              class="theme-option app-interaction-target app-interaction-card app-interaction-card--floating"
               :class="{ 'is-active': option.value === activePresetKey, 'is-selected': option.value === activePresetKey }"
               type="button"
               :aria-pressed="option.value === activePresetKey"
@@ -806,7 +806,7 @@ async function onLogout() {
             <button
               v-for="option in navigationOptions"
               :key="option.value"
-              class="navigation-option app-interaction-target app-interaction-card"
+              class="navigation-option app-interaction-target app-interaction-card app-interaction-card--floating"
               :class="{ 'is-active': navigationMode === option.value, 'is-selected': navigationMode === option.value }"
               type="button"
               :aria-pressed="navigationMode === option.value"
@@ -1197,9 +1197,6 @@ button.topbar-status:focus-visible {
 }
 .topbar-metric {
   min-width: 0;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--layout-control-radius, 6px);
-  background: var(--el-fill-color-extra-light);
   padding: 9px 10px;
   display: flex;
   flex-direction: column;
@@ -1296,8 +1293,6 @@ button.topbar-status:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px dashed var(--el-border-color);
-  border-radius: var(--layout-control-radius, 6px);
   color: var(--el-text-color-placeholder);
   font-size: var(--app-font-size-caption);
 }
@@ -1307,9 +1302,6 @@ button.topbar-status:focus-visible {
   align-items: center;
   gap: var(--app-space-3);
   padding: 14px;
-  border: 1px solid var(--page-settings-section-border);
-  border-radius: var(--app-radius-floating-section);
-  background: var(--page-settings-section-bg);
 }
 .drawer-avatar {
   width: 42px;
@@ -1384,14 +1376,9 @@ button.topbar-status:focus-visible {
   gap: var(--app-space-2);
 }
 .theme-option {
-  --app-interaction-card-border: var(--page-settings-section-border);
-  --app-interaction-card-background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
   width: 100%;
   min-height: 76px;
   padding: 10px 11px;
-  border: 1px solid var(--page-settings-section-border);
-  border-radius: var(--app-radius-floating-section);
-  background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
   color: var(--page-settings-text-muted);
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr) 20px;
@@ -1442,15 +1429,10 @@ button.topbar-status:focus-visible {
   gap: var(--app-space-2);
 }
 .navigation-option {
-  --app-interaction-card-border: var(--page-settings-section-border);
-  --app-interaction-card-background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
   position: relative;
   min-width: 0;
   min-height: 142px;
   padding: 9px;
-  border: 1px solid var(--page-settings-section-border);
-  border-radius: var(--app-radius-floating-section);
-  background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
   color: var(--page-settings-text-muted);
   display: grid;
   grid-template-columns: minmax(0, 1fr) 20px;

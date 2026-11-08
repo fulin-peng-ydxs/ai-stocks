@@ -513,8 +513,6 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
   align-items: center;
   gap: var(--app-space-1);
   padding: 0;
-  border-radius: var(--layout-control-radius, 6px);
-  cursor: pointer;
 }
 .asset-profile-select__option {
   display: flex;

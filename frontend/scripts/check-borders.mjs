@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from '@vue/compiler-sfc'
-import { inspectBorderStyles, inspectStockChartBoundaries } from './border-contract.mjs'
+import { inspectBorderStyles, inspectStockChartBoundaries, inspectSegmentedRoles, segmentedRoles } from './border-contract.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../src')
 function files(dir) {
@@ -13,13 +13,16 @@ function files(dir) {
   })
 }
 const findings = []
+const scanned = new Set()
 for (const file of files(root)) {
   if (!file.endsWith('.vue') && !file.endsWith('.css')) continue
   const name = relative(root, file)
+  scanned.add(name)
   const source = readFileSync(file, 'utf8')
   const descriptor = file.endsWith('.vue') ? parse(source).descriptor : undefined
   if (descriptor?.template) {
-    for (const finding of inspectStockChartBoundaries(descriptor.template.content)) {
+    for (const finding of [...inspectStockChartBoundaries(descriptor.template.content),
+      ...inspectSegmentedRoles(descriptor.template.content, name)]) {
       findings.push(`${name}:${descriptor.template.loc.start.line + finding.line - 1} ${finding.message}`)
     }
   }
@@ -31,6 +34,14 @@ for (const file of files(root)) {
       findings.push(`${name}:${style.loc.start.line + finding.line - 1} ${finding.message}`)
     }
   }
+}
+const roleKeys = new Set()
+for (const role of segmentedRoles) {
+  const key = `${role.file}:${role.label}`
+  if (!scanned.has(role.file) || !role.reason || roleKeys.has(key)) {
+    findings.push(`${key} 分段登记文件缺失、依据为空或键重复。`)
+  }
+  roleKeys.add(key)
 }
 if (findings.length) {
   console.error(`边界角色检查失败：\n${findings.join('\n')}`)

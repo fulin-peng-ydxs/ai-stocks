@@ -731,7 +731,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 
           <template v-if="!isLast">
             <div class="ops order-input">
-              <PageSegmented v-model="sessionConfig.orderMode" tone="primary" aria-label="本轮下单方式" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
+              <PageSegmented v-model="sessionConfig.orderMode" aria-label="本轮下单方式" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
               <el-input-number
                 v-model="order.qty"
                 :min="inputMin"

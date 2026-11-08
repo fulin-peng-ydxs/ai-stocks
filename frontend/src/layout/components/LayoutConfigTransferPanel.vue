@@ -32,7 +32,7 @@ function onFileChange(event: Event) {
 </script>
 
 <template>
-  <section class="layout-config-transfer-panel" :aria-label="title">
+  <section class="layout-config-transfer-panel app-surface" :aria-label="title">
     <header class="layout-config-transfer-panel__header">
       <h3 class="app-section-title">{{ title }}</h3>
       <HelpHint :text="description" />
@@ -76,9 +76,6 @@ function onFileChange(event: Event) {
   /* 同时为工具行、六行编辑内容和固定操作行保留可用空间；低窗口交给外层滚动。 */
   min-height: 400px;
   padding: var(--app-density-card-padding);
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
 }
 .layout-config-transfer-panel__header {
   display: flex;
