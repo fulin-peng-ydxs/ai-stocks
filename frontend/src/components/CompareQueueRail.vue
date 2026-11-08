@@ -95,7 +95,7 @@ const emit = defineEmits<{
   gap: var(--app-space-1);
   height: var(--app-control-height-sm);
   padding: 0 var(--app-space-2);
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-control-radius);
   background: var(--el-bg-color);
   color: var(--el-text-color-regular);

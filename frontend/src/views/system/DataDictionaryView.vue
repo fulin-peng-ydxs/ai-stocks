@@ -883,7 +883,7 @@ html[data-layout-mode='dark'] .dict-type-status {
   width: 14px;
   height: 14px;
   flex: none;
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--app-radius-mark);
 }
 @container app-viewport (max-width: 980px) {

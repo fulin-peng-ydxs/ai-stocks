@@ -62,7 +62,8 @@ typography:
 | 主文字 | 白天 `#17181c` / 夜间 `#f4f4f4` | 标题、表头、关键字段 |
 | 正文文字 | 白天 `#44464d` / 夜间 `#d2d2d2` | 表格正文、表单值、说明正文 |
 | 次要文字 | 白天 `#6e7078` / 夜间 `#9a9a9a` | 提示、辅助说明、弱化信息 |
-| 边框 | 白天 `#d4d4d4` / 夜间 `#454545` | 卡片、表格、分割线、输入框 |
+| 控件边框 | 白天 `#d4d4d4` / 夜间 `#454545` | 输入、选择及其它可编辑控件；保留清晰操作边界 |
+| 表面轻边框 / 分隔线 | 由 `themeBorderVariables(tokens, mode)` 从控件边框与内容面派生 | 面板外沿使用 `--app-border-subtle`，表格内部线和分组横线使用 `--app-border-divider`；不与输入边框同值 |
 | 强边框 | 白天 `#c9c9c9` / 夜间 `#545454` | 选中、强调分区、高对比控件 |
 | 成功 | 白天 `#0ea968` / 夜间 `#3ecf8e` | 健康状态、成功提示、评分高档 |
 | 警告 | 白天 `#f58a07` / 夜间 `#f5a623` | 异常但未失败、样本不足、风险提示、评分中档 |
@@ -150,7 +151,7 @@ typography:
 - 10px 以下只允许使用 `--app-font-size-ornament` 或 `--app-icon-size-xs`，用于图标内部标记、红点角标或不可读正文之外的装饰性标尺；不得用于业务说明、表格、表单、按钮、筛选项。
 - 11px 只用于弱标签或极窄 chrome 信息；业务内容、表格单元格、表单 label、按钮文案不得小于 12px。
 - 页面设置抽屉的字体按语义角色固定：抽屉标题 16px，一级分类 15px，二级及更深可折叠节点统一 14px，事项名 13px，辅助说明 12px。禁止按 DOM 深度继续缩小节点字号，也不得通过全大写、字距或虚下划线代替真实层级；页面密度只调整间距，不改写这套字体角色。
-- 抽屉标题统一消费 `PageDrawer` 的标题档位或 `.app-drawer-title`：标准抽屉使用 16px / 600 / 24px，嵌入局部工作区且空间受限的工具抽屉可声明 `compact`，使用 15px / 600 / 22px；标准抽屉内的一级 `SettingsGroup` 为 15px / 600 / 22px，紧凑抽屉内自动降为 14px / 600 / 22px，分段选项使用 13px / 600，形成清晰的标题—分组—选项层级。该差异由 `PageDrawerSurface` 与 `SettingsGroup` 的共享上下文承载，业务抽屉不得私自覆盖。副标题统一消费 `.app-drawer-subtitle` 的 12px / 400 / 18px。禁止依赖 Element Plus、原生标题标签默认字号字重或页面私有字号。
+- 抽屉标题统一消费 `PageDrawer` 的标题档位或 `.app-drawer-title`：标准抽屉使用 16px / 600 / 24px，嵌入局部工作区且空间受限的工具抽屉可声明 `compact`，使用 15px / 600 / 22px；标准抽屉内的一级 `SettingsGroup` 为 15px / 600 / 22px，紧凑抽屉内自动降为 14px / 600 / 22px，分段选项使用 13px，普通项 400、选中项 500，形成清晰的标题—分组—选项层级。该差异由 `PageDrawerSurface` 与 `SettingsGroup` 的共享上下文承载，业务抽屉不得私自覆盖。副标题统一消费 `.app-drawer-subtitle` 的 12px / 400 / 18px。禁止依赖 Element Plus、原生标题标签默认字号字重或页面私有字号。
 - 微字号（`--app-font-size-micro`/`tiny`/`ornament`）不得通过无 `>` 限定的宽泛后代选择器（如 `.xx span`、`.xx strong`）声明——此类规则会把它误传给嵌套的数值、标题等本不该用小字号的元素。微字号只允许作用于语义类、`:global` 或 `>` 限定的直接子级；容器用常规字号，内部小字通过独立子级规则声明。该约束由 `typography-spacing-system.spec.ts` 强制，禁止用 `>` 缺失的选择器绕过。
 - 表格内长文本默认省略、tooltip 或详情承接，不默认自动换行撑高行高。
 - 表格和列表中可点击的字段值（代码、名称、日期、对象和状态明细入口）统一使用 `.app-table-field-link`：字重固定消费 `--app-font-weight-regular`，字体、字号和行高继承字段所在的正文或标签容器。原生 `a` / `RouterLink`、`el-link` 和触发分析区/抽屉的 `el-button link` 必须使用同一角色，不能因底层控件不同而自动套用命令按钮的分区字重；静态文本变为可点击、无权限退为普通文字及悬停/焦点/按下时均不改变字号和字重。可点击性通过既有主色、下划线和焦点反馈表达，状态入口保留业务语义色；禁止在消费页、名称组件或其文字子节点覆盖字段链接的字体属性。表头、KPI/金融数值强调、选择标签与“编辑/删除/添加”等命令继续遵守各自角色，不对表格全部按钮统一降字重。样式唯一入口为 `styles/global.css`，接入与局部覆盖由 `layout/__tests__/interaction-color-consumers.spec.ts` 校验。
@@ -267,7 +268,7 @@ typography:
 
 本节与本章角色表是字体规范唯一入口；页面模板和组件清单只引用，不平行维护数值。适用范围包括全部业务页、系统页、登录表单、导航、抽屉、弹窗、表格、可操作卡片和图表文字；统一指同一角色共用规则，不要求标题、正文、说明和数据使用同一字号。
 
-字重使用范围：`--app-font-weight-regular` 用于正文和辅助内容；`--app-font-weight-medium` 用于命令按钮、设置事项名、三级弱分组名、配置选项名及帮助/审计对象的轻强调；`--app-font-weight-section` 用于分区、主导航、选中项、选择控件和普通数字强调；`--app-font-weight-strong` 用于页面/对象标题、较大统计主值和行内语义强调。原生 `b/strong/h1…h6` 由全局样式固定为 strong，再由具体角色覆盖，禁止依赖浏览器 `bolder` 累积到 900。普通数据及对象强调必须完整消费 data 字号、section 字重和 data 行高，不能只换字号。
+字重使用范围：`--app-font-weight-regular` 用于正文和辅助内容；`--app-font-weight-medium` 用于命令按钮、设置事项名、三级弱分组名、配置选项名及帮助/审计对象的轻强调；`--app-font-weight-section` 用于分区、主导航及其当前项和普通数字强调；参数分段、按钮式单/复选、紧凑筛选项的普通文字使用 regular、选中使用 medium，不能借用标题字重；`--app-font-weight-strong` 用于页面/对象标题、较大统计主值和行内语义强调。原生 `b/strong/h1…h6` 由全局样式固定为 strong，再由具体角色覆盖，禁止依赖浏览器 `bolder` 累积到 900。普通数据及对象强调必须完整消费 data 字号、section 字重和 data 行高，不能只换字号。
 
 角色补充与底层 token 登记：
 
@@ -603,7 +604,9 @@ typography:
 
 全局「视觉环境」中的界面比例模式、明暗模式是独立整行的主要设置选择，显式使用共享 `size="large"` 档位；视觉环境抽屉按 §3 使用宽松密度基线，不能将密度基线等同于所有控件的显式尺寸。页面设置中的普通枚举继续跟随页面密度，不因本条统一放大；禁止通过页面 CSS 覆盖分段高度或内部间距。
 
-带底板分段的中性悬浮面由 `--page-settings-seg-hover-bg` 唯一提供，运行时在 `useLayoutPreset.ts` 生成，首帧兜底在 `global.css` 保持一致；不能直接复用与底板同色的普通按钮悬浮面。默认、悬浮和按下须形成可辨层级，不能只以存在 hover 选择器作为验收依据。下划线式 `tabs` 的悬浮／按下保持透明，是独立外观规则；两种外观均保留键盘焦点，禁用不产生悬浮／按下反馈，减少动态效果时关闭过渡。
+分段选择采用平面材质：普通枚举文字使用 400、选中使用 500，选中项不叠加投影；分组标题继续使用其自身的 600 字重。`neutral + contained` 用于表单参数，浅轨道与选中面由 `themeSelectionVariables()` 派生并消费独立边框；`primary` 仅用于页面主模式，`tabs` 用于图表周期等轻视图切换，不能为了统一颜色把所有选择改为主色。库 `el-segmented` 消费同一中性材质；按钮式单/复选保留自身的实色选中形态，共享普通400/选中500字重。紧凑筛选项（`app-interaction-choice`）使用普通400/选中500，数量等辅助信息保持400；主色选中和独立键盘焦点始终可辨。
+
+带底板分段的中性悬浮面由 `--page-settings-seg-hover-bg` 唯一提供，运行时在 `useLayoutPreset.ts` 生成，首帧兜底在 `global.css` 保持一致；亮色轨道由悬停面向内容面收敛，暗色保留足够的轨道与选中面差异，不能直接复用与底板同色的普通按钮悬浮面。默认、悬浮和按下须形成可辨层级，不能只以存在 hover 选择器作为验收依据。下划线式 `tabs` 的悬浮／按下保持透明，是独立外观规则；两种外观均保留键盘焦点，禁用不产生悬浮／按下反馈，减少动态效果时关闭过渡。
 
 #### 行操作组
 
@@ -1020,6 +1023,7 @@ typography:
 - 全站创建、编辑、任务参数及自定义字段区中的常显辅助说明统一使用 `AppFormHelp`，不局限于弹窗或数据管理页面。说明用于解释输入含义、允许范围、默认值、只读原因或操作后果；表单值、来源时间、选项描述、校验错误和运行状态不属于这一角色，沿用各自的值展示、选择器、表单校验及状态组件。设置抽屉继续使用 `PageSettingItem` 的共享帮助入口，浮层说明继续使用 `HelpHint` / `HelpTip`。
 - 单行与多行使用同一规则，不根据字数或实际行数切换标记。组件自动生成一个中性色 `*`，调用方只传正文，不得手写星号、空格缩进或用换行决定是否显示标记。该星号不是字段必填标记，不参与可访问文本。
 - 标记独立占列，正文占剩余宽度；自动换行后的每一行都与正文首字对齐，不回到星号位置，也不继承父容器的居中排版。字号/行高使用 caption 的 12px/18px，颜色使用辅助文字 token；确需提醒操作后果时声明 `tone="warning"`，仍保持同一排版。校验失败不得改成带星号的普通说明。
+- 普通规则说明不使用 `el-alert type="info"` 的整块底色代替辅助说明；动态执行摘要、运行状态、风险告警和校验报告继续保留各自的语义呈现，禁止全局调浅 info 色阶来处理普通帮助。
 - 字段说明放在相应 `el-form-item` 控件下方，与控件列左边界对齐；多个字段共用的前置说明放在该组之前、由无标签的 `el-form-item` 保持控件列对齐。自定义字段区将说明放在对应控件容器下方；表单整体补充说明放在表单尾部。组件自身使用共享间距 token，调用方不得按 `label-width` 写死缩进或添加私有字号、标记、续行样式。
 - 本规范由 `AppFormHelp`、组件测试和 `formHelpContract.spec.ts` 共同承接；共享入口改动需复核横向标签表单、顶部标签表单及窄视口长说明，并同步真实组件登记与响应式维护矩阵，不新增布局 kind 或用户配置字段。
 
@@ -1152,7 +1156,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 业务页面不通过多层阴影表达层级，优先用边框、间距、标题和背景差异。
 - 弹窗遮罩保持轻压暗，不能让背景表格干扰当前任务。
 - 高对比预设必须提高边框和文字对比，而不是仅加深背景。
-- 共享边框角色由 `themeSurfaces.ts::themeBorderVariables()` 提供，包含常规、分隔、强边框、选中及语义状态边框；`useLayoutPreset.ts` 统一同步组件库边框。背景仍按本节原有层级和 §2 维护。
+- 共享边框角色由 `themeSurfaces.ts::themeBorderVariables()` 提供，包含控件常规、表面轻边框、分隔、强边框、选中及语义状态边框；`useLayoutPreset.ts` 统一同步组件库边框。表面轻边框与分隔线从预设 `border` 向 `surfaceBg` 派生，浅色与暗色分别使用比例，不新增用户配置字段；库 `light/lighter/extra-light` 保持层级。输入保留完整常规边界，面板与应用外壳用轻边框，内部线用分隔角色；不得通过统一调浅控件边框来削弱结构。背景仍按本节原有层级和 §2 维护。
 
 ### 全组件边界所有权与状态适配
 
@@ -1160,14 +1164,14 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 | 角色 | 实现入口与形态 | 边界所有者与适用范围 |
 |---|---|---|
-| 普通表面 | `AppTableCard`、`AppWorkspacePane`；结构不同的面板用 `.app-surface`；card token | 外沿1 CSS px常规边框；配置一级组、权限组、结果面板和页面私有面板同源；排版容器不强制画框 |
+| 普通表面 | `AppTableCard`、`AppWorkspacePane`；结构不同的面板用 `.app-surface`；card token | 外沿1 CSS px表面轻边框；配置一级组、权限组、结果面板和页面私有面板同源；排版容器不强制画框 |
 | 输入/矩形触发 | control token；库子部件经基础半径及 `borders.css` 适配 | input、textarea、select、range、number、color；显隐先按[编辑态与阅读态](#编辑态与阅读态)判断；确需保留的控件禁用保形，只读可聚焦复制，不把事实值整体灰化 |
 | 分段/列表子项 | `--app-radius-item`、`--app-radius-segment` | 默认和small消费同一角色；tabs无外框；选中标记由自身语义承接，hover不覆盖选中，disabled不响应操作 |
 | 大弹层 | `--app-radius-overlay`，16px | Dialog、MessageBox、PageDrawerSurface统一1px主题外沿；全屏Dialog贴画布；蒙层与阴影不代替外沿 |
 | 锚点浮层/说明 | popover、菜单用card；tooltip用control | 浮层和触发器各自拥有边界；AppHoverInfo显式携带tooltip/popover角色，明底tooltip同样适配 |
 | 浮层内分组 | `--app-radius-floating-section`，12px | SettingsGroup、用户中心卡、交易纪律快捷卡；不外推到主内容区普通面板 |
 | 软提示/状态强调 | `--app-border-notice-{info,primary,success,warning,danger}` / `--app-border-{success,warning,danger}` | 软提示沿用主题light-7；状态强调框与常规边框混色，保留强调程度差异；字段错误直接消费danger，不借用软提示框 |
-| 详情结构网格 | AppDetailFields拥有card外沿，gap1px；AppDetailField向间隙投影1px接缝 | 父裁切外侧投影，覆盖单列、跨列和不完整行；不在末行/末列叠加inset外沿，空缺位置保留内容面 |
+| 详情结构网格 | AppDetailFields拥有card外沿，gap1px；AppDetailField向间隙投影1px接缝 | 外沿使用表面轻边框、接缝使用分隔角色；父裁切外侧投影，覆盖单列、跨列和不完整行；不在末行/末列叠加inset外沿，空缺位置保留内容面 |
 | 图表画布 | 嵌入图表用 `--app-radius-canvas`（0），独立股票画布用 `.app-stock-chart-frame` | EquityChart/SectorCompareChart/StockCompareChart所有当前消费者已有宿主外框，不再额外套卡；贴边嵌入 `AppWorkspacePane` / `.app-surface` 的 `StockChartWorkspace` 显式传 `embedded`，由共享 `.app-stock-chart-frame--embedded` 去重外框与圆角，不依赖中间异步层的 DOM 深度，不在页面补覆盖；有内距的独立图区继续保留自身外框 |
 | 图形/身份 | 圆、胶囊、`--app-radius-mark`及具名图形 | 登录品牌、预览缩略图、评分热力格、图例、拖拽提示保留图形语义；金融涨跌、来源和字典身份沿用领域helper，不映射成系统告警 |
 

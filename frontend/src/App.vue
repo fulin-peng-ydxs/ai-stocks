@@ -1481,7 +1481,7 @@ button.topbar-status:focus-visible {
 .nav-preview-head {
   inset: 0 0 auto;
   height: 15px;
-  border-bottom: 1px solid var(--page-settings-section-border);
+  border-bottom: 1px solid var(--page-settings-divider);
   background: color-mix(in srgb, var(--page-settings-section-bg) 80%, transparent);
 }
 .nav-preview-head::before {
@@ -1500,7 +1500,7 @@ button.topbar-status:focus-visible {
   top: 15px;
   bottom: 0;
   width: 29px;
-  border-right: 1px solid var(--page-settings-section-border);
+  border-right: 1px solid var(--page-settings-divider);
   background: color-mix(in srgb, var(--page-settings-section-bg) 74%, transparent);
 }
 .nav-preview-rail::before,
@@ -1523,7 +1523,7 @@ button.topbar-status:focus-visible {
   top: 15px;
   height: 13px;
   padding-left: 7px;
-  border-bottom: 1px solid var(--page-settings-section-border);
+  border-bottom: 1px solid var(--page-settings-divider);
 }
 .nav-preview-tabs b {
   display: inline-block;
@@ -1591,7 +1591,7 @@ button.topbar-status:focus-visible {
   right: 0;
   top: 15px;
   height: 14px;
-  border-bottom: 1px solid var(--page-settings-section-border);
+  border-bottom: 1px solid var(--page-settings-divider);
   background: color-mix(in srgb, var(--page-settings-section-bg) 54%, transparent);
 }
 .navigation-preview.is-dual-topbar .nav-preview-sub::before {

@@ -163,7 +163,7 @@ const childToggleLabel = computed(() => (
 .sg-nested + .sg-nested {
   margin-top: var(--app-density-overlay-group-gap);
   padding-top: var(--app-density-overlay-group-gap);
-  border-top: 1px solid var(--page-settings-section-border);
+  border-top: 1px solid var(--page-settings-divider);
 }
 .sg-nested > .sg-head {
   min-height: var(--app-control-height-sm);
@@ -183,7 +183,7 @@ const childToggleLabel = computed(() => (
 .sg-nested > .sg-body {
   margin-left: 9px;
   padding-left: var(--app-space-3);
-  border-left: 1px solid var(--page-settings-section-border);
+  border-left: 1px solid var(--page-settings-divider);
 }
 
 /* ── 通用 ───────────────────────────────────────── */

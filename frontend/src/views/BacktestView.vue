@@ -2657,7 +2657,7 @@ const menuPageTitle = useMenuPageTitle()
   justify-content: space-between;
   gap: var(--app-space-3);
   padding-top: var(--app-space-3);
-  border-top: 1px solid var(--el-border-color);
+  border-top: 1px solid var(--app-border-divider);
 }
 .parameter-status {
   display: flex;

@@ -151,6 +151,8 @@ K 线范围偏好走另一条链路：[useKlinePrefs](../../frontend/src/composa
 
 `useLayoutPreset` 的处理顺序为：过滤禁用/重复预设并保留内置回退 → 根据可用目录解析当前 key → 在内置明暗 token 上叠加允许覆盖的颜色、阴影和圆角 → 写根节点及 Element Plus CSS 变量 → 递增 `themeRevision`。失效选择回到内置默认；非法覆盖不会直接写成无效颜色。基础表面与密度不由视觉预设任意覆盖。
 
+边框与中性分段的派生分别集中在 `themeSurfaces.ts::themeBorderVariables(tokens, mode)` 与 `themeSelectionVariables(tokens, mode)`，`useLayoutPreset` 在同一次主题提交内应用。控件边框直接取预设原值，表面轻边框、分隔线向当前内容面混合；暗色使用独立比例。分组、分段、表格和普通面板按语义消费，首屏 CSS 兜底与默认预设一致；派生角色不进入后端预设字段或配置持久化。
+
 普通 DOM 消费 CSS 变量；Canvas 需显式重新取色，[chartTheme.ts::useResponsiveEChartsTheme](../../frontend/src/components/chartTheme.ts) 监听整套 token 提交后的 `themeRevision`，股票图表再通过 `useStockChartTheme` 复用。明暗模式变化也会重新应用当前预设。
 
 以下状态不能混称为一份已云端同步的“主题”：

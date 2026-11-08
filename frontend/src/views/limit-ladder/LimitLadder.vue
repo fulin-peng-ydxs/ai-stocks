@@ -399,7 +399,7 @@ function resetFilters(): void {
 .limit-ladder__layer {
   width: 100%;
   min-width: min(100%, 220px);
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-card-radius);
   background: color-mix(in srgb, var(--app-section-bg) 34%, var(--el-bg-color));
 }

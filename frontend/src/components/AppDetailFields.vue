@@ -17,7 +17,7 @@ withDefaults(defineProps<{ columns?: 1 | 2 | 3 }>(), { columns: 2 })
   /* 间隙只容纳一条接缝；外沿由此容器绘制并裁去子项向外投影。 */
   overflow: hidden;
   background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-card-radius);
 }
 @container app-viewport (max-width: 760px) {

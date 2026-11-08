@@ -67,7 +67,7 @@ const slots = useSlots()
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }

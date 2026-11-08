@@ -89,7 +89,7 @@ defineProps<{
 .pt-system-only {
   flex: none;
   padding: 0 4px;
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--app-radius-mark);
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);

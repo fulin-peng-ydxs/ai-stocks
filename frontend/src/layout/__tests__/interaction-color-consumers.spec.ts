@@ -127,4 +127,47 @@ describe('共享交互样式的消费者边界', () => {
       }
     }
   })
+  it('真实按钮同时接入紧凑选择角色时，普通文字不被通用命令字重覆盖', () => {
+    const css = postcss.parse(readFileSync(join(SRC_DIR, 'styles/global.css'), 'utf8'))
+    const weights: Record<string, string> = {}
+    css.walkRules(rule => {
+      if (rule.selector === ':root') rule.walkDecls(/^--(?:app-font-weight-|app-button-font-weight$)/, decl => {
+        weights[decl.prop] = decl.value
+      })
+    })
+    const resolveWeight = (value: string): string => value.replace(
+      /var\((--[\w-]+)\)/g, (_, key: string) => {
+        if (!weights[key]) throw new Error(`未定义字重变量 ${key}`)
+        return resolveWeight(weights[key])
+      },
+    )
+    const selectors = new Set([
+      'html[data-layout-preset] .el-button', 'html[data-layout-preset] .app-interaction-choice',
+    ])
+    const style = document.createElement('style')
+    // 保留生产样式的真实顺序；jsdom 不解析自定义属性，因此只展开已有字重 token。
+    css.walkRules(rule => {
+      if (!selectors.has(rule.selector)) return
+      rule.walkDecls('font-weight', decl => {
+        style.textContent += `${rule.selector} { font-weight: ${resolveWeight(decl.value)}; }`
+      })
+    })
+    const fixture = document.createElement('div')
+    fixture.innerHTML = '<button class="el-button">执行命令</button><button class="el-button app-interaction-choice" aria-pressed="false">筛选项</button>'
+    const root = document.documentElement
+    const previous = root.getAttribute('data-layout-preset')
+    root.dataset.layoutPreset = 'balanced'
+    document.head.append(style)
+    document.body.append(fixture)
+    try {
+      expect(getComputedStyle(fixture.children[0]).fontWeight).toBe('500')
+      expect(getComputedStyle(fixture.children[1]).fontWeight).toBe('400')
+    } finally {
+      style.remove()
+      fixture.remove()
+      if (previous === null) delete root.dataset.layoutPreset
+      else root.dataset.layoutPreset = previous
+    }
+  })
+
 })

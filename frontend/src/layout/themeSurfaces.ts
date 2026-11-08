@@ -135,22 +135,40 @@ export function getLoginSurfaceSpec(mode: ThemeMode): LoginSurfaceSpec {
   return THEME_SURFACE_SPECS[mode]
 }
 
-/** 统一边框角色；背景继续由原有预设运行时及组件样式管理。 */
-export function themeBorderVariables(tokens: StyleTokenConfig): Record<string, string> {
+/** 控件保留完整边界，表面和分隔线向内容面收敛；暗色保留更高轮廓强度。 */
+export function themeBorderVariables(tokens: StyleTokenConfig, mode: ThemeMode): Record<string, string> {
+  const subtle = blendHex(tokens.border, tokens.surfaceBg, mode === 'dark' ? 0.85 : 0.6)
+  const divider = blendHex(tokens.border, tokens.surfaceBg, mode === 'dark' ? 0.7 : 0.42)
   return {
-    '--app-border-divider': tokens.border,
+    '--app-border-divider': divider,
+    '--app-border-subtle': subtle,
     '--app-border-default': tokens.border,
     '--app-border-strong': tokens.borderStrong,
     '--app-border-selected': tokens.primary,
     '--el-border-color': tokens.border,
-    '--el-border-color-light': tokens.border,
-    '--el-border-color-lighter': tokens.border,
-    '--el-border-color-extra-light': tokens.border,
+    '--el-border-color-light': subtle,
+    '--el-border-color-lighter': divider,
+    '--el-border-color-extra-light': blendHex(tokens.border, tokens.surfaceBg, mode === 'dark' ? 0.6 : 0.34),
     '--el-border-color-dark': tokens.borderStrong,
     '--el-border-color-darker': tokens.borderStrong,
     '--el-disabled-border-color': tokens.border,
     ...Object.fromEntries((['success', 'warning', 'danger'] as const).map((name) => [
       `--app-border-${name}`, blendHex(tokens[name], tokens.border, 0.4),
     ])),
+  }
+}
+
+/** 中性分段是参数选择；轨道、选中和悬浮共享配方，不借用分组边框或命令投影。 */
+export function themeSelectionVariables(tokens: StyleTokenConfig, mode: ThemeMode): Record<string, string> {
+  const borders = themeBorderVariables(tokens, mode)
+  const track = mode === 'dark'
+    ? tokens.surfaceHover : blendHex(tokens.surfaceHover, tokens.surfaceBg, 0.75)
+  return {
+    '--page-settings-seg-bg': track,
+    '--page-settings-seg-border': borders['--app-border-divider'],
+    '--page-settings-seg-hover-bg': blendHex(tokens.textStrong, track, 0.04),
+    '--page-settings-seg-active-bg': mode === 'dark'
+      ? blendHex(tokens.activeBg, tokens.textStrong, 0.88) : tokens.surfaceBg,
+    '--page-settings-seg-active-border': borders['--app-border-subtle'],
   }
 }

@@ -45,7 +45,7 @@ defineProps<{
 .trade-direction-group {
   min-width: 0;
   padding-top: var(--app-space-2);
-  border-top: 1px solid var(--el-border-color);
+  border-top: 1px solid var(--app-border-divider);
   background: transparent;
 }
 .trade-direction-group__head {

@@ -60,7 +60,7 @@ const columns = computed(() => {
 .stock-quote-summary { --app-scroll-display: flex; --app-scroll-align: stretch; --app-scroll-gap: var(--app-space-2); margin: 0; font-variant-numeric: tabular-nums; }
 .stock-quote-summary--gap-relaxed { --app-scroll-gap: var(--stock-quote-section-gap); }
 .stock-quote-summary--stable { max-width: 100%; }
-.stock-quote-summary__hero { display: flex; flex-shrink: 0; align-items: center; justify-content: center; align-self: stretch; padding-right: var(--app-space-2); border-right: 1px solid var(--el-border-color); text-align: center; }
+.stock-quote-summary__hero { display: flex; flex-shrink: 0; align-items: center; justify-content: center; align-self: stretch; padding-right: var(--app-space-2); border-right: 1px solid var(--app-border-divider); text-align: center; }
 .stock-quote-summary__hero-values { display: flex; flex-direction: column; align-items: center; }
 .stock-quote-summary__hero-details { display: flex; gap: var(--app-space-2); margin-top: 2px; font-size: var(--app-font-size-caption); white-space: nowrap; }
 .stock-quote-summary__hero dt, .stock-quote-summary__metric dt { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); font-weight: var(--app-font-weight-section); }
@@ -71,7 +71,7 @@ const columns = computed(() => {
 .stock-quote-summary__metric dt, .stock-quote-summary__metric dd { flex-shrink: 0; }
 .stock-quote-summary__metric dt { display: flex; align-items: center; min-width: max-content; gap: var(--app-space-control-gap); white-space: nowrap; }
 .stock-quote-summary__metric dd { text-align: right; }
-.stock-quote-summary__supplement { display: flex; flex-shrink: 0; min-width: 0; flex-direction: column; justify-content: center; padding-left: var(--stock-quote-section-gap); border-left: 1px solid var(--el-border-color); }
+.stock-quote-summary__supplement { display: flex; flex-shrink: 0; min-width: 0; flex-direction: column; justify-content: center; padding-left: var(--stock-quote-section-gap); border-left: 1px solid var(--app-border-divider); }
 .stock-quote-summary__supplement dt { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); font-weight: var(--app-font-weight-section); white-space: nowrap; }
 .stock-quote-summary__supplement dd { margin: 0; color: var(--el-text-color-primary); font-size: var(--app-font-size-section-title); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-strong); white-space: nowrap; }
 .stock-quote-summary__supplement-details { display: flex; flex-direction: column; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); white-space: nowrap; }
@@ -90,7 +90,7 @@ const columns = computed(() => {
     align-items: center;
     gap: var(--app-space-2);
     padding: var(--app-space-2) 0 0;
-    border-top: 1px solid var(--el-border-color);
+    border-top: 1px solid var(--app-border-divider);
     border-left: 0;
   }
 

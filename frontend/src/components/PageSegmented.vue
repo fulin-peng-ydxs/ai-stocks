@@ -85,7 +85,7 @@ function optionTestId(value: OptionValue): string | undefined {
   gap: var(--app-space-1);
   height: var(--app-control-row-height, var(--app-density-control-height, var(--app-control-height-md)));
   padding: 2px;
-  border: 1px solid var(--page-settings-section-border);
+  border: 1px solid var(--page-settings-seg-border);
   border-radius: var(--layout-control-radius);
   background: var(--page-settings-seg-bg);
 }
@@ -102,7 +102,7 @@ function optionTestId(value: OptionValue): string | undefined {
   background: transparent;
   color: var(--page-settings-text-subtle);
   font-size: var(--app-font-size-table);
-  font-weight: var(--app-font-weight-section);
+  font-weight: var(--app-font-weight-regular);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -140,14 +140,15 @@ function optionTestId(value: OptionValue): string | undefined {
   background: var(--page-settings-seg-active-bg);
   color: var(--page-settings-text);
   border-color: var(--page-settings-seg-active-border);
-  box-shadow: 0 1px 2px rgba(31, 45, 70, 0.1);
+  font-weight: var(--app-font-weight-medium);
+  box-shadow: none;
 }
 .seg-btn.active:active:not(:disabled) { background: var(--app-button-neutral-pressed-bg); }
 .page-segmented--primary .seg-btn.active {
   border-color: var(--el-color-primary);
   background: var(--el-color-primary);
   color: var(--el-color-white);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--el-color-primary) 28%, transparent);
+  box-shadow: none;
 }
 @media (hover: hover) and (pointer: fine) {
   .page-segmented--primary .seg-btn:hover:not(.active, :disabled) {
@@ -231,7 +232,7 @@ function optionTestId(value: OptionValue): string | undefined {
   background: transparent;
   box-shadow: none;
   color: var(--el-text-color-primary);
-  font-weight: var(--app-font-weight-section);
+  font-weight: var(--app-font-weight-medium);
 }
 /* tabs 的按下态也保持无底板，覆盖 contained/primary 的按下配方。 */
 .page-segmented--tabs .seg-btn:active:not(:disabled),

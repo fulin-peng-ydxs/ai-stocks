@@ -76,8 +76,5 @@ function patch(value: Partial<IntradayIngestForm>) {
       />
     </el-form-item>
   </template>
-  <el-alert
-    type="info" :closable="false"
-    title="个股与指数共用采集和质检；首次从全局监控起点采集。成功补采更早数据会自动前移全部标的质检起点，数据丢失不会使起点后移；当天须已收盘且对应日线就绪。"
-  />
+  <AppFormHelp>个股与指数共用采集和质检；首次从全局监控起点采集。成功补采更早数据会自动前移全部标的质检起点，数据丢失不会使起点后移；当天须已收盘且对应日线就绪。</AppFormHelp>
 </template>

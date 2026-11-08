@@ -17,7 +17,7 @@
 
 /* 结构不同的页面面板共用表面配方；有统一栏头/正文结构时优先用 AppWorkspacePane。 */
 .app-surface {
-  border: 1px solid var(--app-border-default);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }

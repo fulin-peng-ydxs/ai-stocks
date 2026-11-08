@@ -52,7 +52,7 @@ export function hasRenderableChartSize(element: HTMLElement): boolean {
 export function echartsTheme(isDark: boolean): EChartsTheme {
   const mode = isDark ? 'dark' : 'light'
   const tokens = LAYOUT_PRESETS.balanced.tokens[mode]
-  const roles = themeBorderVariables(tokens)
+  const roles = themeBorderVariables(tokens, mode)
   return {
     typography: chartTypography(),
     background: chartCssVariable('--el-bg-color', isDark ? '#171717' : '#ffffff'),

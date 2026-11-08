@@ -12,6 +12,8 @@ import {
   THEME_SURFACE_SPECS,
 } from '../themeSurfaces'
 import type { ThemeMode } from '../schema'
+import postcss from 'postcss'
+import { themeBorderVariables, themeSelectionVariables } from '../themeSurfaces'
 
 const MODES: ThemeMode[] = ['light', 'dark']
 const TEST_DIR = dirname(fileURLToPath(import.meta.url))
@@ -31,6 +33,33 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     expect(contrastRatioFromHex('#000000', '#ffffff')).toBeCloseTo(21)
     expect(contrastRatioFromHex('#ffffff', '#ffffff')).toBe(1)
     expect(contrastRatioFromHex('invalid', '#ffffff')).toBeNaN()
+  })
+
+  it('明暗首屏边框和分段兜底与运行时一致，主题就绪前不闪回重边框', () => {
+    const css = postcss.parse(readFileSync(join(SRC_DIR, 'styles/global.css'), 'utf8'))
+    const light: Record<string, string> = {}
+    const dark: Record<string, string> = {}
+    css.walkRules(rule => {
+      for (const [selector, target] of [[':root', light], ['html.dark', dark]] as const) {
+        if (rule.selectors.includes(selector)) rule.walkDecls(decl => {
+          if (decl.prop.startsWith('--')) target[decl.prop] = decl.value
+        })
+      }
+    })
+    for (const mode of MODES) {
+      const variables = mode === 'dark' ? { ...light, ...dark } : light
+      const resolveVariable = (name: string): string => variables[name]?.replace(
+        /var\((--[\w-]+)\)/g, (_, nested: string) => resolveVariable(nested),
+      )
+      const tokens = LAYOUT_PRESETS.balanced.tokens[mode]
+      const expected = { ...themeBorderVariables(tokens, mode), ...themeSelectionVariables(tokens, mode) }
+      for (const [name, value] of Object.entries(expected)) {
+        // 语义信号与禁用角色继续由已有色阶/控件入口维护。
+        if (name === '--app-border-selected' || name === '--el-disabled-border-color'
+          || /^--app-border-(success|warning|danger)$/.test(name)) continue
+        expect(resolveVariable(name), `${mode} ${name}`).toBe(value)
+      }
+    }
   })
 
   it('只暴露一套澄空蓝预设，light/dark 两套 token 均合法', () => {

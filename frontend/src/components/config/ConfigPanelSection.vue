@@ -93,7 +93,7 @@ function toggle() {
 }
 
 .is-level-1 {
-  border: 1px solid var(--app-border-default);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
   overflow: hidden;
@@ -134,10 +134,6 @@ function toggle() {
   min-width: 72px;
   height: 1px;
   background: var(--app-border-divider);
-}
-
-.is-level-2.is-closed > .config-panel-section__head::after {
-  background: var(--app-border-default);
 }
 
 .is-level-2 > .config-panel-section__body {
@@ -230,7 +226,7 @@ function toggle() {
   margin-left: auto;
   flex: none;
   padding: 2px 8px;
-  border: 1px solid var(--app-border-default);
+  border: 1px solid var(--app-border-subtle);
   border-radius: 999px;
   background: var(--el-fill-color-blank);
   color: var(--el-text-color-secondary);

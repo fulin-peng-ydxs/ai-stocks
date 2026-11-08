@@ -48,7 +48,7 @@ defineSlots<{
 .market-detail-hero {
   flex: 0 0 auto;
   min-width: 0;
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }

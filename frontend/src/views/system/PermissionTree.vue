@@ -135,7 +135,7 @@ const resourceStats = computed(() => {
 .pt-group {
   overflow: hidden;
   margin-bottom: var(--app-space-3);
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }

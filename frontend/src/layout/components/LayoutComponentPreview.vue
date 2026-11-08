@@ -115,7 +115,7 @@ const effState = computed<ComponentState>(() => {
   /* 四态共用 256px 稳定画布；该高度覆盖 compact 空态的完整图文，避免 overflow:hidden 裁切。 */
   box-sizing: border-box;
   height: 256px;
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
   padding: 12px;
@@ -231,7 +231,7 @@ span {
   gap: var(--app-space-2);
 }
 .cp-card {
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-card-radius);
   padding: 12px;
   display: flex;
@@ -285,7 +285,7 @@ span {
   align-items: center;
   justify-content: space-between;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--el-border-color);
+  border-bottom: 1px solid var(--app-border-divider);
 }
 .cp-ohead span:first-child {
   width: 80px;
@@ -319,13 +319,13 @@ span {
   display: flex;
   justify-content: flex-end;
   gap: var(--app-space-2);
-  border-top: 1px solid var(--el-border-color);
+  border-top: 1px solid var(--app-border-divider);
   padding-top: 8px;
 }
 .cp-tabbar {
   display: flex;
   gap: var(--app-space-4);
-  border-bottom: 1px solid var(--el-border-color);
+  border-bottom: 1px solid var(--app-border-divider);
   font-size: var(--app-font-size-table);
   color: var(--el-text-color-secondary);
 }
@@ -360,7 +360,7 @@ span {
   flex: 1;
   height: 12px;
   background: var(--app-section-bg);
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--app-border-subtle);
   border-radius: 3px;
 }
 .cp-master {
@@ -383,7 +383,7 @@ span {
 }
 .cp-mdetail {
   flex: 1;
-  border-left: 1px solid var(--el-border-color);
+  border-left: 1px solid var(--app-border-divider);
   padding-left: 10px;
   display: flex;
   flex-direction: column;

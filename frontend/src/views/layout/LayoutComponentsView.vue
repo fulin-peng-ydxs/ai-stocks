@@ -565,11 +565,7 @@ const menuPageTitle = useMenuPageTitle()
             <div v-else class="muted">该组件没有个人层字段，或尚无页面消费。</div>
           </div>
 
-          <el-alert
-            type="info"
-            :closable="false"
-            title="边界：系统组件库只管理组件目录元信息与受控默认策略，不新增运行时优先级层（运行时为 default < page < user）。"
-          />
+          <p class="app-caption-text">边界：系统组件库只管理组件目录元信息与受控默认策略，不新增运行时优先级层（运行时为 default < page < user）。</p>
         </div>
       </AppDetailDrawer>
     </template>

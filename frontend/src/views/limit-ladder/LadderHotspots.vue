@@ -131,14 +131,14 @@ onBeforeUnmount(() => observer?.disconnect())
 .ladder-hotspots__body { display:flex; align-items:start; gap:var(--app-space-1); min-width:0; position:relative; }
 .ladder-hotspots__viewport { flex:1; min-width:0; height:var(--ladder-hotspot-height); overflow:hidden; transition:height var(--app-motion-collapse) var(--app-motion-ease); }
 .ladder-hotspots__chips { display:flex; flex-wrap:wrap; gap:var(--app-space-1); }
-.ladder-hotspots__chip { display:inline-flex; flex:none; max-width:100%; align-items:center; gap:var(--app-space-control-gap); min-height:var(--ladder-hotspot-height); margin:0; padding:0 var(--app-space-2); border:1px solid var(--el-border-color); border-radius:999px; background:var(--el-bg-color); color:var(--el-text-color-regular); cursor:pointer; }
+.ladder-hotspots__chip { display:inline-flex; flex:none; max-width:100%; align-items:center; gap:var(--app-space-control-gap); min-height:var(--ladder-hotspot-height); margin:0; padding:0 var(--app-space-2); border:1px solid var(--app-border-subtle); border-radius:999px; background:var(--el-bg-color); color:var(--el-text-color-regular); cursor:pointer; }
 /* 只提升高度声明的优先级，外观继续沿用原选择器及共享按钮配方。 */
 .ladder-hotspots__chip.el-button,
 .ladder-hotspots__more.el-button { height:var(--ladder-hotspot-height); }
 .ladder-hotspots__chip :deep(>span) { min-width:0; }
 .ladder-hotspots__name { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .ladder-hotspots__separator { color:var(--el-border-color-darker); }
-.ladder-hotspots__chip b { flex:none; color:var(--el-text-color-secondary); font-size:var(--app-font-size-caption); font-variant-numeric:tabular-nums; }
+.ladder-hotspots__chip b { flex:none; color:var(--el-text-color-secondary); font-size:var(--app-font-size-caption); font-variant-numeric:tabular-nums; font-weight:var(--app-font-weight-regular); }
 .ladder-hotspots__empty { color:var(--app-placeholder-text); font-size:var(--app-font-size-caption); }
 .ladder-hotspots__disclosure { display:grid; flex:none; font-size:var(--app-button-font-size); font-weight:var(--app-button-font-weight); }
 .ladder-hotspots__disclosure>span { grid-area:1/1; visibility:hidden; white-space:nowrap; padding:0 var(--app-space-control-gap); }

@@ -7,6 +7,7 @@ import {
   rgbChannelsFromHex,
   rgbaFromHex,
   themeBorderVariables,
+  themeSelectionVariables,
 } from './themeSurfaces'
 import type { LayoutPreset, StyleTokenConfig } from './schema'
 import { useTheme } from '@/composables/useTheme'
@@ -228,12 +229,7 @@ function applyPreset(key: string) {
   root.style.setProperty('--el-fill-color-lighter', rgbaFromHex(t.border, mode === 'dark' ? 0.46 : 0.34))
   root.style.setProperty('--el-fill-color-extra-light', rgbaFromHex(t.surfaceHover, mode === 'dark' ? 0.72 : 0.58))
   root.style.setProperty('--el-disabled-bg-color', t.surfaceHover)
-  root.style.setProperty('--el-border-color', t.border)
-  root.style.setProperty('--el-border-color-light', t.border)
-  root.style.setProperty('--el-border-color-lighter', t.border)
-  root.style.setProperty('--el-border-color-dark', t.borderStrong)
-  root.style.setProperty('--el-border-color-darker', t.borderStrong)
-  for (const [name, value] of Object.entries(themeBorderVariables(t))) {
+  for (const [name, value] of Object.entries(themeBorderVariables(t, mode))) {
     root.style.setProperty(name, value)
   }
   root.style.setProperty('--el-disabled-text-color', t.textMuted)
@@ -247,7 +243,7 @@ function applyPreset(key: string) {
   root.style.setProperty('--chrome-bg', chromeBg)
   root.style.setProperty('--chrome-bg-soft', t.surfaceBg)
   root.style.setProperty('--chrome-bg-soft-hover', t.surfaceHover)
-  root.style.setProperty('--chrome-border', t.border)
+  root.style.setProperty('--chrome-border', 'var(--app-border-subtle)')
   root.style.setProperty('--chrome-border-strong', t.borderStrong)
   root.style.setProperty('--chrome-border-hover', t.primary)
   root.style.setProperty('--chrome-text', t.text)
@@ -282,8 +278,8 @@ function applyPreset(key: string) {
   root.style.setProperty('--page-settings-border', t.border)
   root.style.setProperty('--page-settings-shadow', t.shadow)
   root.style.setProperty('--page-settings-section-bg', t.surfaceBg)
-  root.style.setProperty('--page-settings-section-border', t.border)
-  root.style.setProperty('--page-settings-divider', t.border)
+  root.style.setProperty('--page-settings-section-border', 'var(--app-border-subtle)')
+  root.style.setProperty('--page-settings-divider', 'var(--app-border-divider)')
   root.style.setProperty('--page-settings-text', t.textStrong)
   root.style.setProperty('--page-settings-text-subtle', t.text)
   root.style.setProperty('--page-settings-text-muted', t.textMuted)
@@ -292,14 +288,9 @@ function applyPreset(key: string) {
   root.style.setProperty('--page-settings-trigger-text', t.textMuted)
   root.style.setProperty('--page-settings-trigger-hover-text', t.textStrong)
   root.style.setProperty('--page-settings-trigger-hover-bg', t.surfaceHover)
-  root.style.setProperty('--page-settings-seg-bg', t.surfaceHover)
-  // 分段底板本身已使用 surfaceHover，悬浮面须与其区分，不能复用普通按钮 hover。
-  root.style.setProperty('--page-settings-seg-hover-bg', blendHex(t.textStrong, t.surfaceHover, 0.04))
-  root.style.setProperty(
-    '--page-settings-seg-active-bg',
-    mode === 'dark' ? blendHex(t.activeBg, t.textStrong, 0.88) : t.surfaceBg,
-  )
-  root.style.setProperty('--page-settings-seg-active-border', t.borderStrong)
+  for (const [name, value] of Object.entries(themeSelectionVariables(t, mode))) {
+    root.style.setProperty(name, value)
+  }
   root.style.setProperty('--page-settings-switch-off', t.borderStrong)
   root.style.setProperty('--page-settings-tip-border', t.borderStrong)
   root.style.setProperty('--page-settings-footer-btn-bg', t.surfaceHover)

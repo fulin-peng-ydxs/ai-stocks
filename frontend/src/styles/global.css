@@ -20,9 +20,25 @@
   --app-interaction-nav-shadow: 0 2px 4px rgb(0 0 0 / 12%);
   --app-scroll-paint-gutter: var(--app-space-2);
   --app-border-raster-inset: 1px;
+  --app-border-default: #d4d4d4;
+  --app-border-subtle: #e5e5e5;
+  --app-border-divider: #ededed;
+  --app-border-strong: #c9c9c9;
+  --app-border-selected: var(--el-color-primary);
+  --el-border-color: var(--app-border-default);
+  --el-border-color-light: var(--app-border-subtle);
+  --el-border-color-lighter: var(--app-border-divider);
+  --el-border-color-extra-light: #f0f0f0;
+  --el-border-color-dark: var(--app-border-strong);
+  --el-border-color-darker: var(--app-border-strong);
 }
 
 html.dark {
+  --app-border-default: #454545;
+  --app-border-subtle: #3e3e3e;
+  --app-border-divider: #373737;
+  --app-border-strong: #545454;
+  --el-border-color-extra-light: #333333;
   --app-interaction-shadow: 0 4px 12px rgb(0 0 0 / 34%);
   --app-interaction-nav-shadow: 0 2px 4px rgb(0 0 0 / 34%);
 }
@@ -105,6 +121,7 @@ html[data-layout-preset] :is(.app-interaction-disclosure, .app-interaction-choic
   transition: var(--app-interaction-color-transition);
 }
 html[data-layout-preset] .app-interaction-choice[aria-pressed='true'] {
+  font-weight: var(--app-font-weight-medium);
   background: var(--app-interaction-selected-background);
   border-color: var(--el-color-primary);
   color: var(--el-color-primary);
@@ -719,7 +736,7 @@ body > .el-notification {
   --chrome-bg: #fdfdfd;
   --chrome-bg-soft: #ffffff;
   --chrome-bg-soft-hover: #f3f3f3;
-  --chrome-border: #d4d4d4;
+  --chrome-border: var(--app-border-subtle);
   --chrome-border-strong: #c9c9c9;
   --chrome-border-hover: #1677ff;
   --chrome-text: #44464d;
@@ -754,8 +771,8 @@ body > .el-notification {
   --page-settings-border: #d4d4d4;
   --page-settings-shadow: rgba(20, 24, 32, 0.10);
   --page-settings-section-bg: #ffffff;
-  --page-settings-section-border: #d4d4d4;
-  --page-settings-divider: #d4d4d4;
+  --page-settings-section-border: var(--app-border-subtle);
+  --page-settings-divider: var(--app-border-divider);
   --page-settings-text: #17181c;
   --page-settings-text-subtle: #44464d;
   --page-settings-text-muted: #6e7078;
@@ -764,10 +781,11 @@ body > .el-notification {
   --page-settings-trigger-text: #6e7078;
   --page-settings-trigger-hover-text: #17181c;
   --page-settings-trigger-hover-bg: #f3f3f3;
-  --page-settings-seg-bg: #f3f3f3;
-  --page-settings-seg-hover-bg: #eaeaea;
+  --page-settings-seg-bg: #f6f6f6;
+  --page-settings-seg-border: var(--app-border-divider);
+  --page-settings-seg-hover-bg: #ededed;
   --page-settings-seg-active-bg: #ffffff;
-  --page-settings-seg-active-border: #c9c9c9;
+  --page-settings-seg-active-border: var(--app-border-subtle);
   --page-settings-switch-off: #c9c9c9;
   --page-settings-tip-border: #c9c9c9;
   --page-settings-footer-btn-bg: #f3f3f3;
@@ -933,15 +951,15 @@ html.dark {
   --app-section-bg: #292929;
   --el-text-color-primary: #f4f4f4;
   --el-text-color-regular: #d2d2d2;
-  --el-border-color: #454545;
-  --el-border-color-light: #454545;
-  --el-border-color-lighter: #454545;
+  --el-border-color: var(--app-border-default);
+  --el-border-color-light: var(--app-border-subtle);
+  --el-border-color-lighter: var(--app-border-divider);
   --el-fill-color: #303030;
   --el-fill-color-light: #292929;
   --chrome-bg: #1f1f1f;
   --chrome-bg-soft: #171717;
   --chrome-bg-soft-hover: #292929;
-  --chrome-border: #454545;
+  --chrome-border: var(--app-border-subtle);
   --chrome-border-strong: #545454;
   --chrome-border-hover: #3b8cff;
   --chrome-text: #d2d2d2;
@@ -972,8 +990,8 @@ html.dark {
   --page-settings-border: #454545;
   --page-settings-shadow: rgba(0, 0, 0, 0.42);
   --page-settings-section-bg: #171717;
-  --page-settings-section-border: #454545;
-  --page-settings-divider: #454545;
+  --page-settings-section-border: var(--app-border-subtle);
+  --page-settings-divider: var(--app-border-divider);
   --page-settings-text: #f4f4f4;
   --page-settings-text-subtle: #d2d2d2;
   --page-settings-text-muted: #9a9a9a;
@@ -983,9 +1001,10 @@ html.dark {
   --page-settings-trigger-hover-text: #f4f4f4;
   --page-settings-trigger-hover-bg: #292929;
   --page-settings-seg-bg: #292929;
+  --page-settings-seg-border: var(--app-border-divider);
   --page-settings-seg-hover-bg: #313131;
   --page-settings-seg-active-bg: #484848;
-  --page-settings-seg-active-border: #545454;
+  --page-settings-seg-active-border: var(--app-border-subtle);
   --page-settings-switch-off: #545454;
   --page-settings-tip-border: #545454;
   --page-settings-footer-btn-bg: #292929;
@@ -1085,7 +1104,7 @@ html.dark {
 .app-stock-chart-frame {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }
@@ -1366,9 +1385,10 @@ html[data-layout-mode='dark'] .el-table {
 }
 
 html[data-layout-preset] .el-card {
+  --el-card-border-color: var(--app-border-divider);
   border-radius: var(--layout-card-radius);
   background-color: var(--el-bg-color);
-  border-color: var(--chrome-border);
+  border-color: var(--app-border-subtle);
   color: var(--chrome-text);
   font-size: var(--app-font-size-body);
 }
@@ -1404,8 +1424,8 @@ html[data-layout-preset] .el-table {
   --el-table-tr-bg-color: var(--el-bg-color);
   --el-table-header-bg-color: color-mix(in srgb, var(--chrome-bg-soft-hover) 52%, var(--el-bg-color));
   --el-table-row-hover-bg-color: var(--chrome-bg-soft-hover);
-  --el-table-border-color: var(--chrome-border);
-  --el-table-border: 1px solid var(--chrome-border);
+  --el-table-border-color: var(--app-border-divider);
+  --el-table-border: 1px solid var(--app-border-divider);
   --el-table-text-color: var(--chrome-text);
   --el-table-header-text-color: var(--chrome-text-strong);
   background-color: var(--el-bg-color);
@@ -1479,11 +1499,40 @@ html[data-layout-preset] .el-checkbox-button__inner {
   align-items: center;
   justify-content: var(--app-choice-justify, center);
   font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-regular);
 }
 html[data-layout-preset] .el-segmented:not(.el-segmented--vertical) {
   height: var(--app-choice-control-height);
   min-height: var(--app-choice-control-height);
   font-size: var(--app-font-size-table);
+}
+/* 枚举选择共享字重层级，保留按钮式单/复选的实色选择语义。 */
+html[data-layout-preset] .el-radio-button.is-active .el-radio-button__inner,
+html[data-layout-preset] .el-checkbox-button.is-checked .el-checkbox-button__inner,
+html[data-layout-preset] .el-segmented__item.is-selected {
+  font-weight: var(--app-font-weight-medium);
+}
+html[data-layout-preset] .el-segmented {
+  --el-segmented-bg-color: var(--page-settings-seg-bg);
+  --el-segmented-item-selected-color: var(--el-text-color-primary);
+  --el-segmented-item-selected-bg-color: var(--page-settings-seg-active-bg);
+  --el-segmented-item-selected-disabled-bg-color: var(--page-settings-seg-active-bg);
+  --el-segmented-item-hover-bg-color: var(--page-settings-seg-hover-bg);
+  --el-segmented-item-active-bg-color: var(--app-button-neutral-pressed-bg);
+  font-weight: var(--app-font-weight-regular);
+  border: 1px solid var(--page-settings-seg-border);
+}
+html[data-layout-preset] .el-segmented__item-selected {
+  border: 1px solid var(--page-settings-seg-active-border);
+  box-sizing: border-box;
+  box-shadow: none;
+}
+/* 中性选中面不能充当焦点色，保留独立的键盘焦点。 */
+html[data-layout-preset] .el-segmented__item-selected.is-focus-visible::before {
+  outline: var(--app-focus-ring);
+}
+html[data-layout-preset] .el-divider {
+  --el-border-color: var(--app-border-divider);
 }
 /* 全站命令按钮契约：业务按钮继续复用 Element Plus，尺寸、字重、图标和状态反馈统一在此收口。 */
 html[data-layout-preset] .el-button {
@@ -1498,6 +1547,10 @@ html[data-layout-preset] .el-button {
     border-color .15s ease,
     color .15s ease,
     box-shadow .15s ease;
+}
+/* 紧凑筛选属于选择角色，不能被前面的通用命令按钮字重覆盖。 */
+html[data-layout-preset] .app-interaction-choice {
+  font-weight: var(--app-font-weight-regular);
 }
 html[data-layout-preset] .el-button.el-button--small {
   height: var(--app-control-row-height, var(--app-control-height-sm));

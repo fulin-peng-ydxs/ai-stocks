@@ -616,7 +616,7 @@ watch(tradeDisciplineChangeVersion, async () => {
   --app-scroll-gap: var(--app-space-3);
 }
 .panel-detail {
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }

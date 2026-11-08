@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { useTheme } from '@/composables/useTheme'
 import { LAYOUT_PRESETS } from '../presets'
-import { blendHex, rgbChannelsFromHex } from '../themeSurfaces'
+import { blendHex, rgbChannelsFromHex, themeBorderVariables, themeSelectionVariables, contrastRatioFromHex } from '../themeSurfaces'
 import {
   setLayoutPreset,
   setPresetCatalog,
@@ -69,14 +69,12 @@ describe('视觉预设运行时 Element Plus 色阶', () => {
         expect(document.documentElement.style.getPropertyValue('--el-color-error-dark-2'))
           .toBe(document.documentElement.style.getPropertyValue('--el-color-danger-dark-2'))
         expect(document.documentElement.style.getPropertyValue('--page-settings-seg-bg'))
-          .toBe(tokens.surfaceHover)
+          .toBe(themeSelectionVariables(tokens, mode)['--page-settings-seg-bg'])
         expect(document.documentElement.style.getPropertyValue('--app-section-bg'))
           .toBe(tokens.surfaceHover)
-        for (const variable of ['--app-border-default', '--app-border-divider',
-          '--el-border-color', '--el-border-color-light', '--el-border-color-lighter',
-          '--el-border-color-extra-light']) {
+        for (const [variable, expected] of Object.entries(themeBorderVariables(tokens, mode))) {
           expect(document.documentElement.style.getPropertyValue(variable), `${mode} ${variable}`)
-            .toBe(tokens.border)
+            .toBe(expected)
         }
         expect(document.documentElement.style.getPropertyValue('--app-border-selected'))
           .toBe(tokens.primary)
@@ -91,7 +89,7 @@ describe('视觉预设运行时 Element Plus 色阶', () => {
         expect(document.documentElement.style.getPropertyValue('--app-muted-text'))
           .toBe(tokens.textMuted)
         expect(document.documentElement.style.getPropertyValue('--page-settings-seg-hover-bg'))
-          .toBe(blendHex(tokens.textStrong, tokens.surfaceHover, 0.04))
+          .toBe(themeSelectionVariables(tokens, mode)['--page-settings-seg-hover-bg'])
         expect(document.documentElement.style.getPropertyValue('--page-settings-seg-hover-bg'))
           .not.toBe(tokens.surfaceHover)
         expect(document.documentElement.style.getPropertyValue('--page-settings-seg-active-bg'))
@@ -99,6 +97,29 @@ describe('视觉预设运行时 Element Plus 色阶', () => {
             ? blendHex(tokens.activeBg, tokens.textStrong, 0.88)
             : tokens.surfaceBg)
       }
+    }
+  })
+
+  it('边框分层随自定义预设更新，强调色变化不污染中性结构线', () => {
+    for (const mode of ['light', 'dark'] as const) {
+      isDark.value = mode === 'dark'
+      setLayoutPreset('balanced')
+      setPresetOverrides({ balanced: { [`tokens.${mode}.border`]: '#789abc' } })
+      const root = document.documentElement.style
+      const background = root.getPropertyValue('--el-bg-color')
+      const control = root.getPropertyValue('--app-border-default')
+      const surface = root.getPropertyValue('--app-border-subtle')
+      const divider = root.getPropertyValue('--app-border-divider')
+      expect(control).toBe('#789abc')
+      expect(contrastRatioFromHex(control, background)).toBeGreaterThan(contrastRatioFromHex(surface, background))
+      expect(contrastRatioFromHex(surface, background)).toBeGreaterThan(contrastRatioFromHex(divider, background))
+      setPresetOverrides({ balanced: {
+        [`tokens.${mode}.border`]: '#789abc', [`tokens.${mode}.primary`]: '#8640b8',
+      } })
+      expect(root.getPropertyValue('--app-border-subtle')).toBe(surface)
+      expect(root.getPropertyValue('--app-border-divider')).toBe(divider)
+      expect(root.getPropertyValue('--app-border-selected')).toBe('#8640b8')
+      setPresetOverrides({})
     }
   })
 

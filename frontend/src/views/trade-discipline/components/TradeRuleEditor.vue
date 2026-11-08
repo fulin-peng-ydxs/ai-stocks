@@ -810,7 +810,7 @@ defineExpose({
 </template>
 
 <style scoped>
-.rule-editor { min-width: 0; min-height: 0; --app-scroll-padding-top: var(--app-space-5); --app-scroll-padding-right: var(--app-space-5); --app-scroll-padding-bottom: var(--app-space-5); --app-scroll-padding-left: var(--app-space-5); border: 1px solid var(--el-border-color); border-radius: var(--layout-card-radius); background: var(--el-bg-color); }
+.rule-editor { min-width: 0; min-height: 0; --app-scroll-padding-top: var(--app-space-5); --app-scroll-padding-right: var(--app-space-5); --app-scroll-padding-bottom: var(--app-space-5); --app-scroll-padding-left: var(--app-space-5); border: 1px solid var(--app-border-subtle); border-radius: var(--layout-card-radius); background: var(--el-bg-color); }
 .rule-editor__head, .rule-editor__commands, .detail-group > header, .rule-editor__footer { display: flex; align-items: center; }
 .rule-editor__head { justify-content: space-between; gap: var(--app-space-3); }
 .rule-editor__head .app-section-title { margin: var(--app-space-1) 0 0; }
@@ -834,7 +834,7 @@ defineExpose({
 .rule-card-form--action { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
 .rule-card-form__content { grid-column: 1 / -1; }
 .rule-card-form :deep(.el-select), .rule-card-form :deep(.el-input) { width: 100%; }
-.rule-editor__footer { position: sticky; bottom: 0; z-index: 2; justify-content: flex-end; flex-wrap: wrap; gap: var(--app-space-2); margin: var(--app-space-5) calc(var(--app-space-5) * -1) calc(var(--app-space-5) * -1); padding: var(--app-space-3) var(--app-space-5); border-top: 1px solid var(--el-border-color); background: var(--el-bg-color); }
+.rule-editor__footer { position: sticky; bottom: 0; z-index: 2; justify-content: flex-end; flex-wrap: wrap; gap: var(--app-space-2); margin: var(--app-space-5) calc(var(--app-space-5) * -1) calc(var(--app-space-5) * -1); padding: var(--app-space-3) var(--app-space-5); border-top: 1px solid var(--app-border-divider); background: var(--el-bg-color); }
 .dirty-copy { margin-right: auto; color: var(--el-color-warning); font-size: var(--app-font-size-caption); }
 @container app-viewport (max-width: 1100px) {
   .rule-editor { }

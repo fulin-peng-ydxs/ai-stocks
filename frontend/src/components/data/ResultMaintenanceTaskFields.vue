@@ -73,9 +73,5 @@ function patch(value: Partial<ResultMaintenanceTaskForm>) {
       />
     </el-form-item>
   </template>
-  <el-alert
-    type="info"
-    :closable="false"
-    :title="RESULT_MAINTENANCE_DESCRIPTION[taskType]"
-  />
+  <AppFormHelp>{{ RESULT_MAINTENANCE_DESCRIPTION[taskType] }}</AppFormHelp>
 </template>

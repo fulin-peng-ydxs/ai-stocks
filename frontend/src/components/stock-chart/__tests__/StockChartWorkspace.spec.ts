@@ -211,7 +211,7 @@ describe('StockChartWorkspace', () => {
       + readFileSync(resolve(process.cwd(), 'src/styles/borders.css'), 'utf8')
     const tokens: Record<string, string> = {
       '--el-border-color-lighter': '#454545', '--el-border-color': '#454545',
-      '--app-border-default': '#454545', '--layout-card-radius': '10px',
+      '--app-border-default': '#454545', '--app-border-subtle': '#3e3e3e', '--layout-card-radius': '10px',
       '--app-radius-canvas': '0px', '--el-bg-color': '#171717',
     }
     const style = document.createElement('style')

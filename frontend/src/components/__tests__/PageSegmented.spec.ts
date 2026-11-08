@@ -7,7 +7,7 @@ import { resolve } from 'node:path'
 import PageSegmented from '../PageSegmented.vue'
 import postcss from 'postcss'
 import { LAYOUT_PRESETS } from '@/layout/presets'
-import { blendHex } from '@/layout/themeSurfaces'
+import { blendHex, themeSelectionVariables } from '@/layout/themeSurfaces'
 
 const source = readFileSync(resolve(process.cwd(), 'src/components/PageSegmented.vue'), 'utf8')
 
@@ -83,6 +83,22 @@ describe('PageSegmented', () => {
     expect(source).toContain('data-overflow-tooltip-target')
   })
 
+  it('参数选择使用普通/选中字重和无投影材质，焦点仍独立可见', () => {
+    const declarations = (selector: string) => {
+      const result: Record<string, string> = {}
+      style.walkRules(rule => {
+        if (rule.selectors.includes(selector)) rule.walkDecls(decl => { result[decl.prop] = decl.value })
+      })
+      return result
+    }
+    expect(declarations('.seg-btn')['font-weight']).toBe('var(--app-font-weight-regular)')
+    expect(declarations('.seg-btn.active')).toMatchObject({
+      'font-weight': 'var(--app-font-weight-medium)', 'box-shadow': 'none',
+    })
+    expect(declarations('.page-segmented--primary .seg-btn.active')['box-shadow']).toBe('none')
+    expect(declarations('.seg-btn:focus-visible').outline).toBe('var(--app-focus-ring)')
+  })
+
   it('中性未选项消费分段专用悬浮面，并且仅精细指针启用、不覆盖选中或禁用', () => {
     const selector = '.seg-btn:hover:not(.active, :disabled)'
     expect(backgroundOf(selector)).toBe('var(--page-settings-seg-hover-bg)')
@@ -105,7 +121,7 @@ describe('PageSegmented', () => {
           rule.walkDecls('--page-settings-seg-hover-bg', (decl) => { fallback = decl.value })
         }
       })
-      expect(fallback, mode).toBe(blendHex(tokens.textStrong, tokens.surfaceHover, 0.04))
+      expect(fallback, mode).toBe(themeSelectionVariables(tokens, mode)['--page-settings-seg-hover-bg'])
       expect(fallback, mode).not.toBe(tokens.surfaceHover)
       expect(fallback, mode).not.toBe(blendHex(tokens.textStrong, tokens.surfaceHover, 0.08))
     }
@@ -160,7 +176,7 @@ describe('PageSegmented', () => {
     expect(wrapper.classes()).toContain('page-segmented--tabs')
     expect(wrapper.get('.seg-btn.active').text()).toBe('日K')
     expect(source).toMatch(/\.page-segmented--tabs \.seg-btn\s*\{[\s\S]*?font-size:\s*var\(--app-font-size-table\)[\s\S]*?font-weight:\s*var\(--app-font-weight-regular\)/)
-    expect(source).toMatch(/\.page-segmented--tabs \.seg-btn\.active,[\s\S]*?font-weight:\s*var\(--app-font-weight-section\)/)
+    expect(source).toMatch(/\.page-segmented--tabs \.seg-btn\.active,[\s\S]*?font-weight:\s*var\(--app-font-weight-medium\)/)
     await wrapper.findAll('.seg-btn')[1].trigger('click')
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['week'])
   })

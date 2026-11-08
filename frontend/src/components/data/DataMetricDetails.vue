@@ -37,7 +37,7 @@ defineProps<{
   flex: none;
   width: 16px;
   height: 16px;
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--app-border-subtle);
   border-radius: 50%;
   font-size: var(--app-font-size-caption);
   font-weight: var(--app-font-weight-section);

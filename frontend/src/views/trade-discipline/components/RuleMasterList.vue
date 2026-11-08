@@ -158,7 +158,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
   min-height: 0;
   overflow: hidden;
   padding: var(--app-space-2);
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
   display: flex;

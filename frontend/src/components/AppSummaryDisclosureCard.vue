@@ -94,7 +94,7 @@ function toggle() {
 <style scoped>
 .app-summary-disclosure-card {
   min-width: 0;
-  border: 1px solid var(--app-border-default);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
   overflow: hidden;

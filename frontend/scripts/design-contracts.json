@@ -348,6 +348,26 @@
             "padding"
           ],
           "reason": "权限树字段内功能点触发器保留行内阅读几何"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-interaction-choice"
+          ],
+          "properties": [
+            "font-weight"
+          ],
+          "reason": "共享选择角色：普通枚举400、选中500，标题与命令字重独立"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .app-interaction-choice[aria-pressed='true']"
+          ],
+          "properties": [
+            "font-weight"
+          ],
+          "reason": "共享选择角色：普通枚举400、选中500，标题与命令字重独立"
         }
       ],
       "elementTag": "button"
@@ -1011,7 +1031,8 @@
           "properties": [
             "height",
             "padding-block",
-            "font-size"
+            "font-size",
+            "font-weight"
           ],
           "reason": "全站基础值、共享语义角色及密度适配"
         },
@@ -1026,6 +1047,36 @@
             "font-size"
           ],
           "reason": "全站基础值、共享语义角色及密度适配"
+        },
+        {
+          "file": "components/PageSegmented.vue",
+          "selectors": [
+            ".seg-btn.active"
+          ],
+          "properties": [
+            "font-weight"
+          ],
+          "reason": "共享选择角色：普通枚举400、选中500，标题与命令字重独立"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-radio-button.is-active .el-radio-button__inner,\nhtml[data-layout-preset] .el-checkbox-button.is-checked .el-checkbox-button__inner,\nhtml[data-layout-preset] .el-segmented__item.is-selected"
+          ],
+          "properties": [
+            "font-weight"
+          ],
+          "reason": "共享选择角色：普通枚举400、选中500，标题与命令字重独立"
+        },
+        {
+          "file": "styles/global.css",
+          "selectors": [
+            "html[data-layout-preset] .el-segmented"
+          ],
+          "properties": [
+            "font-weight"
+          ],
+          "reason": "共享选择角色：普通枚举400、选中500，标题与命令字重独立"
         }
       ],
       "bindings": []
@@ -2203,15 +2254,6 @@
       "reason": "页面抽屉共享遮罩唯一配方"
     },
     {
-      "file": "components/PageSegmented.vue",
-      "selector": ".seg-btn.active",
-      "property": "box-shadow",
-      "values": [
-        "0 1px 2px rgba(31, 45, 70, 0.1)"
-      ],
-      "reason": "分段控件共享活动项中性投影"
-    },
-    {
       "file": "styles/global.css",
       "selector": "html[data-layout-mode='dark'] .el-checkbox__inner,\nhtml[data-layout-mode='dark'] .el-radio__inner",
       "property": "box-shadow",
@@ -2245,7 +2287,9 @@
   },
   "styleDelegates": [
     {
-      "tags": ["TradeLedgerEventTable"],
+      "tags": [
+        "TradeLedgerEventTable"
+      ],
       "owner": "components/trade-discipline/TradeLedgerEventTable.vue",
       "reason": "交易账本只读明细的具名领域适配；表格、语义列、ST标签及字体尺寸均委托已有共享入口，不覆盖基础控件样式"
     },
@@ -2704,11 +2748,6 @@
         "--el-fill-color-lighter",
         "--el-fill-color-extra-light",
         "--el-disabled-bg-color",
-        "--el-border-color",
-        "--el-border-color-light",
-        "--el-border-color-lighter",
-        "--el-border-color-dark",
-        "--el-border-color-darker",
         "--el-disabled-text-color",
         "--el-text-color-primary",
         "--el-text-color-regular",
@@ -2763,10 +2802,6 @@
         "--page-settings-trigger-text",
         "--page-settings-trigger-hover-text",
         "--page-settings-trigger-hover-bg",
-        "--page-settings-seg-bg",
-        "--page-settings-seg-hover-bg",
-        "--page-settings-seg-active-bg",
-        "--page-settings-seg-active-border",
         "--page-settings-switch-off",
         "--page-settings-tip-border",
         "--page-settings-footer-btn-bg",

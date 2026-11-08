@@ -760,7 +760,7 @@ onMounted(async () => {
   overflow: hidden;
 }
 .metric-strip {
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--app-border-subtle);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }

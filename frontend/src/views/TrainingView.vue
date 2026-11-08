@@ -1048,7 +1048,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
   flex-wrap: wrap;
   gap: var(--app-space-2) var(--app-space-5);
   padding-top: var(--app-space-3);
-  border-top: 1px solid var(--el-border-color);
+  border-top: 1px solid var(--app-border-divider);
 }
 .cfg-range-help { width: auto; margin-top: 0; }
 .cfg-summary {
