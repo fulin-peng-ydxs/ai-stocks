@@ -716,7 +716,7 @@ body > .el-notification {
   --el-disabled-border-color: var(--el-border-color);
   --el-disabled-text-color: var(--el-text-color-secondary);
   --app-section-bg: #f3f3f3;
-  --chrome-bg: #fcfcfc;
+  --chrome-bg: #fdfdfd;
   --chrome-bg-soft: #ffffff;
   --chrome-bg-soft-hover: #f3f3f3;
   --chrome-border: #d4d4d4;
@@ -725,7 +725,7 @@ body > .el-notification {
   --chrome-text: #44464d;
   --chrome-text-strong: #17181c;
   --chrome-text-muted: #6e7078;
-  --chrome-submenu-bg: #fcfcfc;
+  --chrome-submenu-bg: #fdfdfd;
   --chrome-active-bg: #efeff0;
   --chrome-menu-icon-active-bg: rgba(64, 158, 255, 0.14);
   --chrome-menu-icon-active-border: rgba(64, 158, 255, 0.26);

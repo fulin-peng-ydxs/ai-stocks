@@ -142,7 +142,7 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     const balanced = LAYOUT_PRESETS.balanced.tokens.dark
     expect(light.pageBg).toBe('#ffffff')
     expect(light.surfaceBg).toBe('#ffffff')
-    expect(light.submenuBg).toBe('#fcfcfc')
+    expect(light.submenuBg).toBe('#fdfdfd')
     expect(light.primary).toBe('#1677ff')
     expect(balanced.pageBg, '主页画布对齐登录统一画布').toBe('#171717')
     expect(balanced.surfaceBg, '夜间主体表面必须与主页画布连续').toBe('#171717')

@@ -165,13 +165,15 @@ describe('视觉预设运行时 Element Plus 色阶', () => {
       balanced: {
         'tokens.light.primary': '#7c3aed',
         'tokens.light.surfaceBg': '#f2f5f8',
+        'tokens.light.submenuBg': '#fcfbfc',
       },
     })
 
     expect(themeRevision.value).toBe(beforeOverride + 1)
     expect(document.documentElement.style.getPropertyValue('--el-color-primary')).toBe('#7c3aed')
     expect(document.documentElement.style.getPropertyValue('--el-bg-color')).toBe('#ffffff')
-    expect(document.documentElement.style.getPropertyValue('--chrome-bg')).toBe('#fcfcfc')
+    expect(document.documentElement.style.getPropertyValue('--chrome-bg')).toBe('#fdfdfd')
+    expect(document.documentElement.style.getPropertyValue('--chrome-submenu-bg')).toBe('#fdfdfd')
   })
 
   it('启用的后端自定义预设可被选择并真实驱动强调色', () => {

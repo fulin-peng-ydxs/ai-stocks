@@ -126,7 +126,8 @@ function surface(
  * 预设只能覆盖强调色和形态，不能改变主画布、边栏、卡片与文字的中性底色；边界消费预设的统一边框角色。
  */
 export const THEME_SURFACE_SPECS: Record<ThemeMode, LoginSurfaceSpec> = {
-  light: surface('#ffffff', '#fcfcfc', '#ffffff', 1),
+  // 导航使用等通道近白色，只比纯白内容区稍暗，保留轻微层次。
+  light: surface('#ffffff', '#fdfdfd', '#ffffff', 1),
   dark: surface('#171717', '#1f1f1f', '#171717', 1),
 }
 

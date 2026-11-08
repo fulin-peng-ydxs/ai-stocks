@@ -19,9 +19,9 @@ test('工作台边栏与主区使用原型固定底色且不受视觉预设影�
   const brandMark = page.getByRole('img', { name: '复盘啦' })
   await expect(brandMark).toHaveCSS('width', '184px')
   await expect(brandMark).toHaveCSS('height', '52px')
-  await expect(aside).toHaveCSS('background-color', 'rgb(252, 252, 252)')
+  await expect(aside).toHaveCSS('background-color', 'rgb(253, 253, 253)')
   await expect(workspace).toHaveCSS('background-color', 'rgb(255, 255, 255)')
-  await expect(topbar).toHaveCSS('background-color', 'rgb(252, 252, 252)')
+  await expect(topbar).toHaveCSS('background-color', 'rgb(253, 253, 253)')
 
   await page.getByRole('button', { name: '视觉环境' }).click()
   await page.getByRole('button', { name: '夜间' }).click()
