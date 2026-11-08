@@ -1,14 +1,14 @@
 # 页面开发模板与选型清单
 
-本文用于新建或改造页面的选型、设计说明与接线。共享入口变化时同步示例；具体页面决策写入已有计划或会话。
+本文用于新建或改造页面的选型、设计说明与接线。布局原型（archetype）是 `list` 等生产布局类型，评审原型是 HTML／结构图产物；选择前者不要求先制作后者。共享入口变化时同步示例。
 
 参考：[设计规则](../../DESIGN.md) · [配置运行机制](../architecture/frontend-layout.md) · [验证与总维护清单](../testing/guide.md) · [菜单与权限接入](../architecture/system-rbac-tenant.md#新页面接入菜单和权限)。
 
 ## 1. 实施流程
 
-新页面执行适用步骤；既有页面仅处理受影响部分，不重新选择未变化的原型或重复登记。原型和组件能力分别以 `frontend/src/layout/archetypes.ts`、`frontend/src/layout/components.ts` 为准。关键方案存在实质取舍或交互不确定时，给出推荐与理由并确认；已有明确需求、既定原型或有效授权时直接实施，只暂停依赖未决事项的部分。
+新页面执行适用步骤；既有页面仅处理受影响部分，不重新选择未变化的布局原型或重复登记。布局原型和组件能力分别以 `frontend/src/layout/archetypes.ts`、`frontend/src/layout/components.ts` 为准。关键方案存在实质取舍或交互不确定时，给出推荐与理由并确认；已有明确需求、适用方案或有效授权时直接实施，只暂停依赖未决事项的部分。
 
-1. 按 DESIGN §5.2 选择原型，查真实复用组件清单与同类页面，按本文 §2 说明设计和必要例外。
+1. 按 DESIGN §5.2 选择布局原型，查真实复用组件清单与同类页面，按本文 §2 说明设计和必要例外。
 2. 优先用 §6 脚手架生成。`data-scaffold-placeholder` 在接入真实组件与四态后删除；`responsive-review-pending` 在完成响应式设计和实测后替换为具体结论。手写页面同样添加响应式待验收标记，并以 `createLayout(archetype, pageKey)` 起默认布局，按需声明 slots、editable、responsive。
 3. 按 §3–§4 接入 registry、`useRemoteLayoutConfig`、`LayoutHost` 同名 slot 与真实组件；浮层放 `#overlays`，表格复用 `AppDataTable + AppTableColumn`，按 DESIGN 声明列语义及成长/嵌入模式。
 4. 按下方登记决策及总维护清单同步组件、配置、消费者、文档和测试。新增导航/API/受控按钮同步菜单、功能点、守卫、`v-permission` 和默认授权。
@@ -32,9 +32,11 @@
 
 ## 2. 页面设计说明
 
-- **新页面和布局改造**：实施前使用下方模板，覆盖页面定位、布局与组件、响应式、四态、配置、复用和验证；仅填写实际存在的区域，关键例外说明理由。原型选择说明理由及是否需要新增；缺少正确性所需输入时注明缺项，只暂停依赖部分。
+- **新页面和布局改造**：实施前使用下方模板，覆盖页面定位、布局与组件、响应式、四态、配置、复用和验证；仅填写实际存在的区域，关键例外说明理由。布局原型选择说明理由及是否需要新增；缺少正确性所需输入时注明缺项，只暂停依赖部分。
 - **局部组件、样式或交互改动**：只说明受影响区域与契约、复用入口、需同步的维护项和验证范围；影响响应式时补充相应触发、恢复及状态保留设计。无需复制完整模板或逐项填写“不适用”。
-- **不涉及页面呈现的改动**：不填写本节。已有计划或会话可直接承载说明，只有用户或有效项目要求时才保存计划文件。
+- **不涉及页面呈现的改动**：不填写本节。
+
+同一页面设计说明只保留一处，嵌入已有计划的所属任务或会话；已有独立方案时引用并补本次差异，不重复填写。只有用户或有效项目要求时才保存文件。
 
 填写时按属性所有者区分布局、组件字段和业务偏好，补齐文案容量、常显字段说明、图标和帮助正文设计；响应式说明须给出核心内容的降级或可达路径，不能只写“自适应”。按总维护清单选取实际维护项及验证范围，已有入口未变时不重复登记。
 
@@ -50,7 +52,7 @@
 
 ### 布局选型
 
-- 选用原型：list / master-detail / dashboard / form / detail / workbench / wizard
+- 选用布局原型：list / master-detail / dashboard / form / detail / workbench / wizard
 - 选择理由：
 - 是否需要新增布局原型：否 / 是，原因：
 
@@ -276,68 +278,22 @@ const drawerConfig = {
 | `<page-key>` | `<PageView>`（中文名） | `<archetype>` | `density` | action:`toolbar` / main:`section` |
 ```
 
-## 6. 7 个原型可复制骨架
+## 6. 布局原型与脚手架
 
-以下为脚手架命令示例，在 `frontend/` 下执行；替换 pageKey、中文名、路由和 View 名，再按相应原型补业务内容。原型参数必须使用下列七种之一。
-
-> 推荐先用脚手架生成：
->
-> ```bash
-> npm run scaffold-page -- --pageKey demo-list --label "示例列表" --archetype list --route /demo/list --view DemoListView
-> ```
-
-### 6.1 list
+在 `frontend/` 下执行，替换 pageKey、中文名、布局原型、路由和 View 名，再接入真实业务内容：
 
 ```bash
-npm run scaffold-page -- --pageKey my-list --label "列表页" --archetype list --route /my-list --view MyListView
+npm run scaffold-page -- --pageKey research --label "研究页" --archetype list --route /research --view ResearchView
 ```
 
-结构：`action:filter-bar` + `main:data-table(growMain)`。适合筛选、批量操作和一张主表；主表内部滚动，不做多列重排。
+`--archetype` 取值及初始 slot 如下；选型遵守 DESIGN §5.2，脚手架只提供骨架。
 
-### 6.2 master-detail
-
-```bash
-npm run scaffold-page -- --pageKey my-master-detail --label "主从页" --archetype master-detail --route /my-master-detail --view MyMasterDetailView
-```
-
-结构：`action:filter-bar` + `main:data-table` + `main:detail`。适合列表与详情各自内滚的双栏页面。
-
-### 6.3 dashboard
-
-```bash
-npm run scaffold-page -- --pageKey my-dashboard --label "仪表盘" --archetype dashboard --route /my-dashboard --view MyDashboardView
-```
-
-结构：`main:kpi-grid` + `main:chart`。适合 KPI、图表和概览面板；只对平级块做安全重排，单个大表仍走内滚。
-
-### 6.4 form
-
-```bash
-npm run scaffold-page -- --pageKey my-form --label "表单页" --archetype form --route /my-form --view MyFormView
-```
-
-结构：`main:form`。适合创建/编辑页；字段区内滚，提交按钮应固定在表单语义尾部或 footer，不写视口高度。
-
-### 6.5 detail
-
-```bash
-npm run scaffold-page -- --pageKey my-detail --label "详情页" --archetype detail --route /my-detail --view MyDetailView
-```
-
-结构：`main:detail`。适合摘要、分区详情和审阅页；长内容由详情区内滚，关键操作放 action 或详情吸顶区。
-
-### 6.6 workbench
-
-```bash
-npm run scaffold-page -- --pageKey my-workbench --label "工作台" --archetype workbench --route /my-workbench --view MyWorkbenchView
-```
-
-结构：`action:toolbar` + `main:section`。适合参数区固定、结果区混合成长的分析工作台；固定分析块和成长表放在主 section 内组织。
-
-### 6.7 wizard
-
-```bash
-npm run scaffold-page -- --pageKey my-wizard --label "向导页" --archetype wizard --route /my-wizard --view MyWizardView
-```
-
-结构：`main:steps`。适合多步骤流程；步骤条稳定展示，当前步骤内容内滚，导航按钮保持在流程底部。
+| 布局原型 | 初始结构 | 业务接入要点 |
+|---|---|---|
+| `list` | action:filter-bar + main:data-table(growMain) | 筛选、批量操作与单张主表；表内滚动，不做多列重排 |
+| `master-detail` | action:filter-bar + main:data-table + main:detail | 列表与详情双栏，各自内滚 |
+| `dashboard` | main:kpi-grid + main:chart | KPI、图表与概览；仅平级块重排，大表内滚 |
+| `form` | main:form | 创建/编辑；字段区内滚，提交固定在语义尾部或 footer，不写视口高度 |
+| `detail` | main:detail | 摘要、分区与审阅；详情区内滚，关键操作放 action 或吸顶区 |
+| `workbench` | action:toolbar + main:section | 固定参数区与混合成长结果；在主 section 内组织分析块和成长表 |
+| `wizard` | main:steps | 多步骤；步骤条稳定，当前步骤内滚，导航位于流程底部 |
