@@ -43,7 +43,13 @@ describe('开发规范中的可执行示例', () => {
       + 'npm run test:e2e:sectors -- --grep=probe\n'
       + 'npm run test:design'
     expect(unsafeBrowserCommands(`\`\`\`bash\n${commands}\n\`\`\``)).toEqual([])
-    for (const path of ['AGENTS.md', 'README.md', 'agent-works/configurable-layout-system/page-template.md', 'agent-works/e2e-automation/guide.md']) {
+    for (const path of [
+      'AGENTS.md',
+      'README.md',
+      'agent-works/configurable-layout-system/page-template.md',
+      'agent-works/testing/guide.md',
+      'agent-works/e2e-automation/guide.md',
+    ]) {
       expect(unsafeBrowserCommands(read(path)), path).toEqual([])
     }
   })

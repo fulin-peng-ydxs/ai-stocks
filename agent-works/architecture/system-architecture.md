@@ -1,10 +1,8 @@
 # 系统架构
 
-## 文档边界
-
 本文面向开发者，维护「复盘啦」的系统分层、运行单元、模块依赖、数据流、存储所有权及故障边界。依据为当前仓库源码、配置和启动脚本；部署定义不代表某台服务器已经按该方式运行。
 
-任务执行与调度细节归 [任务运行态](task-runtime.md)，配置来源与存储归 [环境与配置加载](environment-configuration.md)，前端布局与外观的加载、合并和应用归 [前端布局实现](frontend-layout.md)，认证和租户归 [权限架构](system-rbac-tenant.md)，领域算法归各模块正文，前端设计契约归 [DESIGN](../../DESIGN.md)。运行与首次使用见 [README](../../README.md)，命令和执行约束以 [AGENTS](../../AGENTS.md) 为准。开发阶段文档不作为本文的事实依据或维护依赖。
+参考：[任务运行态](task-runtime.md) · [环境配置](environment-configuration.md) · [布局实现](frontend-layout.md) · [权限架构](system-rbac-tenant.md) · [设计规则](../../DESIGN.md) · [首次使用](../../README.md) · [项目命令](../../AGENTS.md) · [开发验证](../testing/guide.md)。
 
 ## 运行单元与系统分层
 
@@ -49,7 +47,7 @@ flowchart TB
 | 市场复盘与板块关联 | `api/limit_ladder.py`、`services/stock_board_correlation.py`、`api/sectors.py` | 行情/ST → 涨停梯队；个股及板块共同收益 → 走势冠军；板块字典/指数/成分支撑板块工作台与钻取 | [天梯](limit-ladder.md)、[走势关联](stock-board-correlation.md)、[板块](board-collection.md) |
 | 个股查询与分组 | `api/stocks.py`、`api/stock_groups.py`、`groups/stock_group.py` | 行情/指标/买卖方案 → 图表与信号；PG 分组保存用户跟踪对象，查询工作台复用行情分析组件 | [个股与分组](stocks-and-groups.md) |
 | 训练与交易纪律 | `services/training_service.py`、`trade_discipline_service.py` | 训练消费历史行情及撮合能力；纪律消费交易日历、股票参考与私人规则/成交账本；两者分别保存 PG 用户资产 | [盘感训练](market-sense-training.md)、[交易纪律](trade-discipline.md) |
-| 平台控制与布局 | `auth/`、`api/layout.py`、`storage/layout_config.py`，前端 `stores/auth.ts`、`layout/` | 后端权限与归属控制上述业务入口；布局预设/页面/用户覆盖控制呈现，不改变指标、撮合或资产可见性 | [权限](system-rbac-tenant.md)、[环境配置](environment-configuration.md)、[DESIGN](../../DESIGN.md) |
+| 平台控制与布局 | `auth/`、`api/layout.py`、`storage/layout_config.py`，前端 `stores/auth.ts`、`layout/` | 后端权限与归属控制上述业务入口；布局预设/页面/用户覆盖控制呈现，不改变指标、撮合或资产可见性 | [权限](system-rbac-tenant.md)、[环境配置](environment-configuration.md) |
 
 依赖方向为“行情和参考事实 → 原子指标 → 方案驱动的筛选/评分/信号 → 回测验证”。个股分析、板块、天梯与训练按各自场景消费事实和共享引擎，交易纪律记录真实操作，不从训练账户或回测账户反推真实持仓。认证授权横切这些入口，不构成单独的行情计算层；配置管理定义输入，不为每个消费模块复制指标公式。
 
@@ -100,7 +98,7 @@ flowchart TB
 
 `AuthMiddleware` 对受控 API 默认拒绝，在请求上下文中注入身份与归属；JWT 不携带权限集合，服务按 PG 状态和 `perm_ver` 校验。`/api/auth/me` 返回菜单与功能码，前端 store、路由守卫和 `v-permission` 消费同一结果，按钮显隐不代替后端授权。
 
-`backend/config/settings.py` 将非敏感 YAML 基线与 PG 白名单覆盖层提供给业务消费者；环境变量负责敏感值、连接和启动开关。视觉预设、页面布局配置与用户偏好使用各自 PG 表，不能当成普通 `app_config`。前端通过 `LayoutHost`、页面注册和组件目录组织布局，布局覆盖与视觉预设分通道应用；加载、合并、保存及失败机制见 [前端布局实现](frontend-layout.md)，配置来源与归属见 [环境配置](environment-configuration.md)，设计约束见 [DESIGN](../../DESIGN.md)。
+`backend/config/settings.py` 将非敏感 YAML 基线与 PG 白名单覆盖层提供给业务消费者；环境变量负责敏感值、连接和启动开关。视觉预设、页面布局配置与用户偏好使用各自 PG 表，不能当成普通 `app_config`。前端通过 `LayoutHost`、页面注册和组件目录组织布局，布局覆盖与视觉预设分通道应用；加载、合并、保存及失败机制见 [前端布局实现](frontend-layout.md)，配置来源与归属见 [环境配置](environment-configuration.md)。
 
 ## 运行装配与生命周期
 
@@ -117,7 +115,7 @@ flowchart TB
 
 ## 构建与 CI 门禁
 
-前端制品为 `frontend/dist`，由 Vite 构建、FastAPI 在生产启动方式下托管。`frontend/package.json` 中普通 `npm test` 的前置步骤和生产构建均先执行 `check:design`；`npm run check` 串联静态规范、布局契约测试及 TypeScript 检查，不包含浏览器或数据库验收。完整构建只在 AGENTS 的准入条件触发时运行，不能用构建产物代替开发期 HMR 或业务测试。
+前端制品为 `frontend/dist`，由 Vite 构建、FastAPI 在生产启动方式下托管。构建执行链由 `frontend/package.json` 定义。
 
 仓库的 [Frontend contracts 工作流](../../.github/workflows/frontend-contracts.yml) 在 push 和 pull request 触发，在 `frontend/` 下以 Node.js 22 执行 `npm ci`、`npm run check`，没有路径过滤，也不负责生产构建或部署。作为必过合并检查时，远端仓库还须将该检查纳入分支规则；工作流文件本身不配置分支保护，CI 通过也不代表已部署或完成业务验收。
 
@@ -125,7 +123,7 @@ flowchart TB
 
 装配变化回查 `backend/main.py`、`backend/cli.py`、启动脚本和前端代理；持久层变化回查双库 DDL、仓储和目录；共享机制变化同步对应专题与消费方摘要。开发阶段材料保留其形成时的范围和状态，不纳入当前事实的双向同步。
 
-相关验证入口为 `backend/tests/test_duckdb_read_pool.py`、`test_task_runtime_storage.py`、`test_data_catalog_dual.py`，以及各模块测试；前端注册和布局契约在 `frontend/src/layout/__tests__/`。运行条件和最小验证选择遵守 AGENTS；这些入口说明不代表本次已执行服务或业务测试。
+相关验证入口为 `backend/tests/test_duckdb_read_pool.py`、`test_task_runtime_storage.py`、`test_data_catalog_dual.py`，以及各模块测试；前端注册和布局契约在 `frontend/src/layout/__tests__/`。这些入口用于定位存储和装配覆盖，不代表已经执行服务或业务验收。
 
 故障定位先分清请求鉴权、存储访问、任务执行还是外部源：鉴权 Redis 故障失败关闭；分时缓存故障可降级；读池耗尽与写任务冲突分别返回 503/409；采集来源失败进入任务日志和质量台账。HTTP 200 本身不能替代健康响应中的存储与任务状态判断。
 

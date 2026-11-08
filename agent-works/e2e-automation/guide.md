@@ -1,28 +1,10 @@
 # E2E 自动化验证规范
 
-## 文档边界
+Playwright 用于少量、稳定、浏览器独有的关键用户路径回归。
 
-本文维护 Playwright 的准入、执行入口、夹具与服务生命周期、选择器及 helper 使用规则，约束其只承担少量、稳定、浏览器独有的关键链路回归。E2E 验证的是前端装配后的用户路径，不负责证明计算规则、数据口径、任务状态机或后端异常恢复正确；AI 内置浏览器用于临时复核和探索性排查。设计契约、环境配置与账号事实由下列对应入口维护，本文只保留执行所需约束，不保存当次运行通过率或替代模块验收报告。
+参考：[通用验证与总维护清单](../testing/guide.md) · [项目与服务命令](../../AGENTS.md) · [UI 测试锚点](../../DESIGN.md#75-自动化测试锚点) · [环境身份与运行模式](../architecture/environment-configuration.md#环境身份与运行模式) · [测试账号](../multi-tenant-rbac/test-users.md)。
 
-## 文档入口与关联
-
-- `AGENTS.md`：项目级执行红线，说明何时必须考虑 Playwright E2E，以及端口、后端启动和交付说明要求。
-- `DESIGN.md`：UI 组件和 `data-testid` 锚点规范，说明哪些真实组件可以承载测试锚点，以及锚点不表达样式/业务状态。
-- 本文件：E2E 执行流程、工具边界、沉淀触发条件和 helper 使用规则。
-- `frontend/playwright.config.ts`：Playwright 运行配置，固定 `frontend/e2e/`、`5181`、trace/screenshot/video 策略。
-- `frontend/e2e/helpers/`：登录、数据预置、偏好读写和控制台问题收集等长期复用 helper；新增 E2E 不重复手写登录态、接口 seed 或 `page.on('console')`。
-- `agent-works/multi-tenant-rbac/test-users.md`：`debug_*` 调试账号事实源。
-
-后续修改上述任一文件影响自动化流程时，必须同步检查其余入口是否仍一致。
-
-## 工具边界
-
-| 场景 | 使用工具 | 要求 |
-| --- | --- | --- |
-| 计算规则、数据完整性、任务重试/并发、异常恢复、发布原子性 | 领域/服务/API 测试 + 代表性真实入口 | 直接验证状态、落表和终态；禁止用 Mock E2E 代替 |
-| 纯函数、composable、排序/合并、字段守门、组件状态和错误分支 | Vitest | 在最低层稳定覆盖，不升级成浏览器测试 |
-| 浏览器独有且稳定的关键跨层路径 | Playwright E2E | 仅在满足下方准入条件时使用；只保留最短主路径和必要断言 |
-| 新问题复现、视觉细节确认、普通点击、一次性探索、查看控制台 | AI 内置浏览器 | 临时点击和截图，不沉淀长期用例；不可用时先说明，不自动连接用户个人浏览器 |
+`frontend/playwright.config.ts` 固定测试目录 `frontend/e2e/`、端口 `5181` 和 trace/screenshot/video 策略。登录、数据预置、偏好读写和控制台收集复用 `frontend/e2e/helpers/`；修改流程时核对配置、helper 与相关入口的一致性。
 
 ## Playwright 准入条件
 
@@ -36,7 +18,7 @@
 
 用户明确要求 Playwright 或自动化回归时可以直接使用，但仍须先完成对应的低层业务验证，不得把 E2E 结果写成业务正确性结论。
 
-已有 E2E 路径的契约受改动影响时应同步更新断言，但是否立即执行仍按本节准入和风险判断；需要执行时只运行单项目、单 spec 或 `--grep` 命中的最小路径。“已有覆盖”不构成新增场景、运行模块整组或多视口回归的理由。
+已有 E2E 路径的契约受改动影响时应同步更新断言，但是否立即执行仍按本节准入和风险判断；需要执行时只运行单项目、单 spec 或 `--grep` 命中的最小路径，只保留最短主路径和必要断言。“已有覆盖”不构成新增场景、运行模块整组或多视口回归的理由。
 
 ## 禁止滥用
 
@@ -46,22 +28,12 @@
 - 禁止一个用例堆叠多个无关功能、重复验证低层已经覆盖的分支，或仅为提高覆盖数量增加断言。
 - 禁止每次页面交付默认跑模块整组、全量、多视口或完整设计 E2E。只有发布门禁、共享基础设施变更、全局设计改造或用户明确要求时才执行；一般改动即使需要 E2E，也只跑受影响的单文件、单项目和必要视口。
 
-按风险从低层向上验证：业务规则/服务测试 → API 或代表性真实入口 → Vitest → 必要的构建 → 必要的最小 E2E。到某一层已经充分覆盖风险时停止，不为凑齐流程继续执行更重验证。
-
-只做一次性视觉观察、临时定位问题、读取控制台或确认实验路径时，使用交互式浏览器工具；交付说明标注临时复核，不能写成长期回归。
-
-交互式复核默认使用 AI 内置浏览器。只有用户明确指定，或任务必须使用其已登录会话且用户同意时，才能连接个人 Chrome、Edge 或其他外部浏览器。Playwright 仅用于满足准入条件的长期自动回归，不作为内置浏览器的默认替代。
-
 ## 运行入口与生命周期
-
-本节维护 E2E 的命令、物理夹具边界和服务恢复规则；环境身份、变量文件、密码来源和运行档案字段以 [环境配置架构](../architecture/environment-configuration.md#环境身份与运行模式) 为准，固定账号与权限场景以 [测试用户](../multi-tenant-rbac/test-users.md) 为准。
 
 ### 按范围选入口
 
 | 目的 | 在 `frontend/` 下执行 | 执行范围 |
 |---|---|---|
-| 日常前端快检 | `npm run check` | 静态规范、布局契约和类型；不连接后端或浏览器 |
-| 定向组件/逻辑回归 | `npm test -- <测试文件>` | 先复用静态检查，再运行指定 Vitest；不替代类型检查 |
 | 首次安装浏览器 | `npm run test:e2e:install` | 仅浏览器缺失时执行 |
 | 普通关键浏览器路径 | `npm run test:e2e -- <spec> --project=chromium-standard --grep='<用例名>'` | 仅满足准入的最小路径；需已准备好被测后端和对应测试账号 |
 | 板块路径 | `npm run test:e2e:sectors -- --project=chromium-standard --grep='<用例名>'` | 专用 runner 管理板块夹具；无需过滤参数的三 spec / 三视口整组只用于发布或明确要求 |
@@ -100,9 +72,7 @@ AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:design
 
 ## 选择器规则
 
-- 长期 E2E 优先使用 `data-testid`。
-- 具有稳定可访问语义的唯一元素优先使用 role + 可访问名称；例如登录页与应用外壳的共享品牌字标统一用 `getByRole('img', { name: '复盘啦' })` 验证，不为同一组件再造场景 test id。
-- 关键复用组件提供可选 `testId`，例如 `PageSegmented` 会输出容器和选项锚点。
+- 具有稳定可访问语义的唯一元素优先使用 role + 可访问名称；例如登录页与应用外壳的共享品牌字标统一用 `getByRole('img', { name: '复盘啦' })` 验证，不为同一组件再造场景 test id。其余关键实例使用 `data-testid`，通过 `getByTestId` 和项目 helper 定位，复用组件已有锚点。
 - 禁止在长期用例里使用坐标、深层 CSS 结构、DOM 顺序或容易变动的说明文案。
 - 新增或修改页面关键交互时，同步检查是否需要补充或调整测试锚点。
 
@@ -110,13 +80,9 @@ AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:design
 
 - 页面权限验收使用 `debug_*` 账号，账号事实源为 `agent-works/multi-tenant-rbac/test-users.md`；交易纪律使用 `debug_normal`、`debug_trade_discipline_view`、`debug_trade_discipline_submit`、`debug_board_only`、`debug_tenant_admin` 和 `debug_system` 覆盖全功能、只读、独立提交、无权与默认管理员边界。
 - E2E 登录 helper 默认使用 `debug_normal`，密码读取顺序：Playwright 进程继承的 `AI_STOCKS_TEST_USER_PASSWORD`、本地 dev-users 默认值；`.env.local` 由统一启动脚本在 Playwright 进程创建前加载。
-- 账号不存在或权限漂移时，先执行 `AI_STOCKS_ENV=dev ./start.sh dev-users` 校准。
+- 账号不存在或权限漂移时，由对应专用 runner 校准。普通聚焦 E2E 需单独准备账号时，按上方 PG 指纹前提执行 `AI_STOCKS_ENV=dev ./start.sh dev-users --expected-pg-fingerprint <被测后端实时指纹>`；需要保留已有密码时追加 `--keep-password`。
 
-## 后续 AI 执行要求
-
-- 改页面、抽屉、弹窗、配置面板、路由或权限入口时，先完成低层验证；普通交互用内置浏览器临时复核。再检查 `frontend/e2e/` 是否已有相关契约需要更新，但只有满足准入条件时才执行最小 Playwright，用例不存在时默认不新增。
-- 交付说明必须区分：已跑 Vitest、已跑 build、已跑 Playwright、仅做交互式浏览器临时复核、未执行及原因。
-- Playwright 失败时先看 trace/screenshot/console，不直接改产品代码迁就测试；若是选择器不稳定，优先补稳定锚点或 helper。
+Playwright 失败时先看 trace/screenshot/console，不直接改产品代码迁就测试；若是选择器不稳定，优先补稳定锚点或 helper。
 
 ## 现有用例索引
 

@@ -2,7 +2,7 @@
 
 「复盘啦」面向收盘后的 A 股复盘、筛选、历史验证和持续跟踪，将行情质量、技术指标、评分与买卖方案串成可解释的研究流程。行情覆盖主板、创业板和科创板，不含北交所；公开免费数据源的默认历史回填目标为近 15 年，实际可用范围以源端覆盖和质量报告为准。
 
-本文维护产品概览、环境准备、最小使用路径、常用任务及文档导航。命令和执行条件以 [AGENTS](AGENTS.md) 为权威入口，系统与模块机制由 [架构正文](agent-works/architecture/system-architecture.md) 维护，界面契约由 [DESIGN](DESIGN.md) 维护。需求闭环、需求、计划和阶段记录不作为当前事实来源，也不纳入本文持续引用。
+开发参考：[协作与项目命令](AGENTS.md) · [验证与总维护清单](agent-works/testing/guide.md) · [页面实施模板](agent-works/configurable-layout-system/page-template.md) · [设计规则](DESIGN.md)。
 
 仅供个人研究，不构成投资建议。
 
@@ -21,7 +21,7 @@
 | 检查与修复数据 | 数据管理：概览、采集、质量台账、修复复检及定时调度 | [数据管理](agent-works/architecture/data-management.md) |
 | 记录交易纪律 | 私人规则、真实持仓和成交、自动履约判断、最新日修正及历史修订 | [交易纪律](agent-works/architecture/trade-discipline.md) |
 | 练习盘感 | 随机股票盲测、逐日揭示与 T+1 撮合，查看结算和成长记录 | [盘感训练](agent-works/architecture/market-sense-training.md) |
-| 管理平台 | 用户、角色、菜单/功能点、租户、系统参数和布局配置 | [权限与租户](agent-works/architecture/system-rbac-tenant.md)、[环境配置](agent-works/architecture/environment-configuration.md)、[DESIGN](DESIGN.md) |
+| 管理平台 | 用户、角色、菜单/功能点、租户、系统参数和布局配置 | [权限与租户](agent-works/architecture/system-rbac-tenant.md)、[环境配置](agent-works/architecture/environment-configuration.md)、DESIGN |
 
 一条日常使用路径是：**更新收盘数据 → 处理质量问题 → 查看榜单或筛选候选 → 回测验证 → 放入分组跟踪**。技术指标是统一原子定义，下游方案组合引用；需要授权的入口以当前账号菜单和功能码为准。
 
@@ -166,18 +166,18 @@ ai-stocks/
 
 前端单元与契约测试就近放在 `src/` 各目录的 `__tests__/` 中，浏览器场景位于 `frontend/e2e/`。盘感训练、交易纪律、板块关联等功能的编排可从 `backend/services/` 和对应 `backend/api/` 入口定位，并非每项业务都对应独立的后端顶层目录。
 
-代码分层、模块依赖与数据所有权见 [系统架构](agent-works/architecture/system-architecture.md)，具体机制从该文档进入所属模块正文；开发命令和执行条件以 [AGENTS](AGENTS.md) 为准。
+代码分层、模块依赖与数据所有权见 [系统架构](agent-works/architecture/system-architecture.md)，具体机制从该文档进入所属模块正文；开发命令和执行条件以 AGENTS 为准。
 
 ## 开发、验证与生产访问
 
-常用检查从仓库根目录执行，范围和准入以 AGENTS 为准：
+以下为常用检查示例，从仓库根目录执行：
 
 ```bash
 cd frontend && npm run check && cd ..
-python -m pytest backend/tests/ -q
+python -m pytest backend/tests/test_xxx.py::test_name -q  # 替换为受影响的真实用例
 ```
 
-前端快检包含静态规范、布局契约和类型检查，不连接后端；构建与 GitHub 检查的职责见 [构建与 CI 门禁](agent-works/architecture/system-architecture.md#构建与-ci-门禁)。后端全量命令仅作入口说明；日常按变更风险选择定向测试，可能访问 DuckDB 时须先确认状态、安全停服并在结束后恢复。页面设计流程见 [页面模板](agent-works/configurable-layout-system/page-template.md)，浏览器验证与夹具流程见 [E2E 指南](agent-works/e2e-automation/guide.md)，普通改动不默认执行全量 E2E。
+前端快检无需后端，不代表全部前端或后端测试。后端示例须替换为实际用例，运行前先按验证规范处理数据库隔离与 DuckDB 服务锁。
 
 需要生产产物或发布门禁时执行：
 
@@ -206,14 +206,13 @@ cd frontend && npm run build && cd ..
 
 | 入口 | 权威内容 |
 | --- | --- |
-| [AGENTS](AGENTS.md)／[CLAUDE](CLAUDE.md) | 项目协作与命令／Claude 薄入口 |
+| AGENTS／[CLAUDE](CLAUDE.md) | 项目协作与命令／Claude 薄入口 |
 | [系统架构](agent-works/architecture/system-architecture.md) | 分层、运行单元、数据流、持久层和故障边界 |
 | [任务运行态](agent-works/architecture/task-runtime.md) | 后台任务、调度、可靠事件、取消续跑和恢复 |
 | [环境配置](agent-works/architecture/environment-configuration.md) | 变量、YAML、PG 覆盖层、运行档案、日志与生效规则 |
 | [前端布局实现](agent-works/architecture/frontend-layout.md) | 布局与外观的加载、合并、字段策略、保存、恢复及失败边界 |
 | [权限与租户](agent-works/architecture/system-rbac-tenant.md) | 认证、授权、资产归属及新功能接入 |
 | [数据管理](agent-works/architecture/data-management.md) | 数据目录、质量策略、问题台账和修复复检；源协议归对应采集专题 |
-| [DESIGN](DESIGN.md)／[页面模板](agent-works/configurable-layout-system/page-template.md) | 设计契约／页面实施模板与维护清单 |
 | [E2E 指南](agent-works/e2e-automation/guide.md)／[测试用户](agent-works/multi-tenant-rbac/test-users.md) | 验证准入、执行生命周期／固定调试身份 |
 
 领域主题从上方功能表进入，各事实正文只维护所属内容。开发阶段文档保留原有历史与未决状态，归档识别及停止同步统一遵守全局协作约束。

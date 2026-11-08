@@ -1,10 +1,8 @@
 # 前端布局与外观配置实现
 
-## 文档边界
+本文面向开发者，维护前端布局与外观配置从加载、过滤、合并、组件消费到持久化、恢复和失败处理的实现机制，覆盖 `frontend/src/layout/`、配置 composable、设置抽屉及对应后端 API。依据为当前源码。
 
-本文面向开发者，维护前端布局与外观配置从加载、过滤、合并、组件消费到持久化、恢复和失败处理的实现机制，覆盖 `frontend/src/layout/`、配置 composable、设置抽屉及对应后端 API。依据为当前源码；文中的测试入口用于定位覆盖范围，不代表已经执行运行验证。
-
-[DESIGN](../../DESIGN.md) 维护设计契约、字段归属及允许的表现；[环境配置](environment-configuration.md#3-生效配置与数据库覆盖层) 维护配置来源、权威表和作用域；[系统架构](system-architecture.md) 维护装配总览；[页面模板](../configurable-layout-system/page-template.md) 维护接入步骤与维护矩阵；[显示比例策略](../configurable-layout-system/display-scale-policy.md) 维护比例公式、尺寸匹配和该偏好的同步细则。本文不复制这些规则、算法或操作清单。
+参考：[设计契约](../../DESIGN.md) · [环境配置](environment-configuration.md#3-生效配置与数据库覆盖层) · [系统架构](system-architecture.md) · [页面接入](../configurable-layout-system/page-template.md) · [验证与总维护清单](../testing/guide.md) · [显示比例策略](../configurable-layout-system/display-scale-policy.md)。
 
 ## 配置通道与调用关系
 
@@ -46,7 +44,7 @@
 
 [componentConfig.ts::resolveComponentConfig](../../frontend/src/layout/componentConfig.ts) 先填组件字段默认，再叠加 slot 的代码配置，随后按 page/user 顺序覆盖。每项检查 slot、组件种类、字段定义、实例适用性、代码开放层级、管理员策略及值域；不合法项记录到 `componentDropped`。覆盖粒度是整个字段值，不能假定对象型字段会自动做任意深合并。
 
-字段策略只能在代码允许的最大层级内调整。前端解析与设置控件共同消费 `componentAllowedLayers`；后端保存时仍执行值域、组件归属及策略校验。专用全局偏好字段还受 `_enforce_component_persistence_target()` 限制，禁止通过布局写接口混入 `layout_user_config`。设计与接入要求见 [DESIGN §7.3](../../DESIGN.md#73-组件特性配置治理)。
+字段策略只能在代码允许的最大层级内调整。前端解析与设置控件共同消费 `componentAllowedLayers`；后端保存时仍执行值域、组件归属及策略校验。专用全局偏好字段还受 `_enforce_component_persistence_target()` 限制，禁止通过布局写接口混入 `layout_user_config`。
 
 例如页面代码密度为 `standard`、page 层为 `comfortable`、user 层为 `compact` 时，最终布局为 `compact`，来源为 `user`。删除该用户覆盖后回到 `comfortable`；“恢复默认”不意味着无条件写入代码值。
 
@@ -93,6 +91,16 @@
 | 业务分区 | `PageSettingSection.sectionKey`，生成 `business:` 节点键 |
 
 `useDrawerPreferences` 将全局一级关闭清单与页面内节点关闭清单分别保存，恢复时由同一上下文还原。保存队列、身份守卫和待同步意图见[偏好同步](#页面业务偏好与专用全局偏好)，字段的存储结构由环境配置维护。
+
+### 高级搜索字段与设置接线
+
+高级搜索的候选字段、中文名和两个默认常显项在 [searchGroups.ts](../../frontend/src/layout/searchGroups.ts) 登记。`pageRegistry.ts` 按 `pageKey + slotId` 将搜索组映射到 `filter-bar` slot：已有 slot 复用，缺失的嵌套列表 slot 按声明的 `parentId` 补登；默认组合写入 slot `config.commonFields`，候选写入 `componentMeta.searchFields`，不建立页面私有偏好通道。
+
+消费页向 `LayoutHost` 传递 `:component-value-of="componentValueOf"`。[AppAdvancedSearch](../../frontend/src/components/AppAdvancedSearch.vue) 通过宿主提供的 `SEARCH_COMPONENT_VALUE` 读取已合并的组件配置；结构布局 `effective` 不包含组件覆盖值。页面传入搜索组 `group`、各字段的 `states`，按字段 key 的同名插槽承载原有控件；`context` 插槽放固定工作上下文，`commands` 插槽承载重置和末位排序。
+
+`states` 提供当前值、选项中文映射、实际限制判定、清除回调、业务适用性与错误。全选、false 表示排除某类内容等特殊语义须显式声明 `active` 和 `summary`，不能仅凭值是否为空判断。组件以同一组 keyed 节点调整展示位置，保持控件实例；条件变化继续由页面原有领域事件处理，收展或替换常显项不额外查询。临时展开状态由组件实例持有，不保存为长期偏好。
+
+组件通过 `SEARCH_RUNTIME_META` 将运行时权限和业务模式下的可用候选共享给设置消费，卸载时清理对应 slot。页面设置抽屉复用 `ComponentAutoSettings`，配置对象以 `save: saveRemoteUserConfig` 接入远端保存；选满两个常显项后通过同一保存入口写入，保存返回 `false` 或抛出异常时保留失败草稿与重试入口，页面不复制配置编辑器。
 
 ### 专用字段的持久化路由
 
@@ -159,7 +167,7 @@ K 线范围偏好走另一条链路：[useKlinePrefs](../../frontend/src/composa
 
 - 明暗选择由 `useTheme` 以全局 `theme` 偏好同步；`system` 模式再根据系统媒体查询得到实际明暗。
 - 预设目录与 token 覆盖由管理员维护。当前选中的预设 key 由 `setLayoutPreset()` 写本地 `ai-stocks:layout-preset`，当前实现没有把该选择写到 `user_preference`，不能保证跨设备恢复同一预设。
-- 比例由 `useDisplayScale` 独立消费系统指数与用户比例偏好；切换视觉预设不切换比例算法。公式、屏幕与档案匹配的唯一正文见[显示比例策略](../configurable-layout-system/display-scale-policy.md)。
+- 比例由 `useDisplayScale` 独立消费系统指数与用户比例偏好；切换视觉预设不切换比例算法。
 
 ## 来源展示与恢复
 
@@ -177,17 +185,4 @@ K 线范围偏好走另一条链路：[useKlinePrefs](../../frontend/src/composa
 
 本地状态的实现范围应分别判断：抽屉偏好已按身份隔离；布局 fallback 的 `ai-stocks:layout:<pageKey>` / `ai-stocks:layout-cc:<pageKey>` 和业务偏好的 `ai-stocks:page-settings:<pageKey>` 仍是按页面的旧键。它们不是按租户/用户隔离的权威存储，远端失败时的本地回退不能据此证明身份隔离验收通过。登录用户配置的权威归属仍在 PG，本地策略约束见环境配置正文。
 
-新增页面或字段按页面模板执行，不在本文另列操作清单。机制变更需追踪共享核心、前后端字段定义、自动设置渲染器、消费页与脚手架；设计规则变化更新 DESIGN，存储/作用域变化更新环境配置，比例算法变化更新比例策略，当前实现链路变化更新本文。
-
-## 验证入口与限制
-
-| 证据入口 | 覆盖目标 |
-| --- | --- |
-| `frontend/src/layout/__tests__/merge.spec.ts`、`useLayoutConfig.spec.ts`、`componentConfig.spec.ts` | 分层合并、来源、非法值与字段策略 |
-| `frontend/src/composables/__tests__/useRemoteLayoutConfig.spec.ts`、`useUserPreference.spec.ts`、`useDrawerPreferences.spec.ts` | 水合前编辑、保存状态、偏好同步与抽屉恢复 |
-| `frontend/src/composables/__tests__/useDefaultedSessionValue.spec.ts`、`useComponentPageSizeSession.spec.ts` | 单向默认投影与分页重载 |
-| `frontend/src/layout/__tests__/useLayoutPreset.spec.ts`、`presets.spec.ts` | 预设目录、token、明暗及运行时外观入口 |
-| `frontend/src/components/__tests__/PageSettingsDrawer.spec.ts`、`frontend/src/layout/__tests__/pageRegistry.spec.ts` | 设置接线、恢复与真实字段消费 |
-| `backend/tests/test_layout_config.py`、`test_layout_density_sync.py`、`test_stage4_layout.py`、`test_user_preference.py` | 后端配置校验、归属、密度及权限边界 |
-
-定向验证命令与服务保护以 [AGENTS](../../AGENTS.md) 为准。纯文档变动核对源码、职责、相对链接和结构；不要求启动服务或执行业务测试。静态走读不能证明 PG 实际内容、跨设备同步、浏览器视觉状态或全部并发时序，运行验收需另按真实变更范围执行。
+静态走读不能证明 PG 实际内容、跨设备同步、浏览器视觉状态或全部并发时序；尤其不能把本地 fallback 当作远端保存成功或归属隔离证据。

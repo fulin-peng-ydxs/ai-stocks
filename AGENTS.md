@@ -2,10 +2,10 @@
 
 ## 文档职责
 
-- `AGENTS.md` 是本仓库 AI 协作与项目命令的权威入口，只保留当前有效、会影响执行的稳定规则；README 按使用路径选取必要命令，不独立定义第二套命令。
+- `AGENTS.md` 是本仓库 AI 协作与项目命令的权威入口；测试命令、验证选择和总维护清单统一维护在 [开发验证规范](agent-works/testing/guide.md)，README 只摘录使用路径所需命令。
 - `CLAUDE.md` 只作为 Claude Code 薄入口，避免复制本文件内容；仓库事实以代码、`README.md`、`DESIGN.md` 和 `agent-works/architecture/` 为准。
-- 前端页面规范以 `DESIGN.md` 和 `agent-works/configurable-layout-system/page-template.md` 为入口，布局与外观配置运行机制见 `agent-works/architecture/frontend-layout.md`，不在本文件重复细则。
-- 本文件不承载完整业务架构、视觉配方或阶段验收记录；稳定执行约束变更更新本文件，领域实现变更更新对应事实文档，测试结果留在当次交付中。
+- 页面开发使用 [DESIGN](DESIGN.md) 和 [页面模板](agent-works/configurable-layout-system/page-template.md)，布局与外观配置运行机制见 [前端布局实现](agent-works/architecture/frontend-layout.md)。
+- 稳定执行约束变更更新本文件，领域实现变更更新对应事实文档，测试结果留在当次交付中。
 
 ## 项目概览
 
@@ -50,12 +50,6 @@
 ./start.sh stop|restart|status|logs  # stop/restart 默认检查任务；确需中断时追加 --force
 ./start-web.sh             # 前端 5173，Vite HMR，首次自动 npm install
 
-python -m pytest backend/tests/ -q
-python -m pytest backend/tests/test_xxx.py::test_name -q
-
-cd frontend && npm run check && cd ..  # 静态规范、布局契约测试及类型检查，无后端/数据库依赖
-cd frontend && npm run build && cd ..  # 仅在下述构建准入条件触发时运行
-
 python -m backend.cli backfill
 python -m backend.cli delisted --enrich
 python -m backend.cli valuation
@@ -69,18 +63,12 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 
 旧库升级和存储回滚属于有前置条件的一次性维护，命令、数据影响及结果核对分别见 [用户资产迁移](agent-works/architecture/system-rbac-tenant.md#旧版用户资产的一次性迁移) 和 [任务运行态切换](agent-works/architecture/task-runtime.md#一次性升级与受控回滚)。这些操作不属于默认日常流程，单纯文档维护或 CLI 帮助校验不构成实际迁移授权，也不代表目标库已验证。
 
-跑后端测试前先判断是否会访问项目`data/ai_stocks.duckdb`：
-只要测试会启动 FastAPI、触发 DuckDB 初始化、访问行情/数据管理/布局接口、异步任务、数据采集、质检、回测或任何可能拿 DuckDB 文件锁的链路，就必须先执行 `./start.sh status` 确认后台状态，再用`./start.sh stop` 停掉后端；
-
-测试通过或结束后，按测试前状态用 `./start.sh` 重启，并用
-`./start.sh status` 确认 `/api/health=200`。禁止在后台服务仍持有 DuckDB 锁时硬跑相关测试；不得直接裸杀进程，除非脚本停服失败且用户明确同意。
-
 ## 环境识别
 
 - 调试前先执行 `./start.sh status`，再核对 `logs/backend-runtime.json` 的 `pid`、`mode` 与 `safeEnv.AI_STOCKS_ENV`（缺失时看 `safeEnv.ENV`）。只有 PID 与当前服务一致时，档案才代表该服务；缺失或不匹配时不能拿旧档案推断。`mode=dev|prod` 是启动方式，环境标记是调试工具守卫，两者不得混同。
 - 本机环境身份持久化在 Git 忽略的 `.env.local`：用户已确认本地调试环境时设置 `AI_STOCKS_ENV=dev`，由 `start.sh` 统一加载；不依赖每次会话的 shell export，也不把“所有部署都是 dev”写成仓库默认。变量文件代表后续启动配置，已运行服务以有效运行档案为准；变更后通过脚本安全重启并确认健康状态。
 - `dev-users --list` 提示环境 `<unset>` 时，先检查命令是否加载本机变量文件及其环境标记；用户已确认本地环境且无生产/共享目标冲突时，应补齐标记后重试，不能直接把参数缺失当作页面验收阻塞，也无需重复索要本地调试授权。真实环境不明或证据冲突时仍须停止调试写入并澄清。
-- 普通内置浏览器验收不需要启用 `AI_STOCKS_E2E_WRITE` 或登录限流豁免。完整配置语义与核查步骤见 `agent-works/architecture/environment-configuration.md`「环境身份与运行模式」。
+- 完整配置语义与核查步骤见 `agent-works/architecture/environment-configuration.md`「环境身份与运行模式」。
 
 ## 测试用户
 
@@ -88,17 +76,10 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 - `README.md` 里的 `admin` 是 `default` 租户平台系统管理员，密码来源和覆盖边界见 `agent-works/architecture/environment-configuration.md`；它只用于初始化、系统级运维和最高权限验收，不作为普通权限边界测试账号。
 - 本地/测试库须明确设置 `AI_STOCKS_ENV=dev|test|local`，并通过 `./start.sh dev-users` 幂等创建或校准调试账号、`./start.sh dev-users --list` 查看当前账号；该入口与后端服务统一加载 `.env.local`，`--keep-password` 用于保留已有密码。E2E 自动写入口还必须传 `--expected-pg-fingerprint`，并在任何 DDL/账号写入前与被测后端常量时间比对。空值、未知环境、生产或共享公网环境一律禁止执行。
 - `debug_*` 调试账号密码来源和生产禁用规则见 `agent-works/architecture/environment-configuration.md` 与 `agent-works/multi-tenant-rbac/test-users.md`；本地默认密码只允许用于开发测试，生产、共享公网或不确定环境禁止创建或使用这批账号。
-- 页面和接口测试按场景选择最小权限账号验证，不要默认用系统管理员账号覆盖权限态、空权限态或 fail-closed 场景。
-- pytest 继续使用用例内临时用户，不依赖固定调试账号。
-- 涉及平台级菜单、功能点、角色授权或 `app_config` 的 pytest 必须使用随机临时身份并精确清理，禁止删除、重建或改写真实内置菜单/功能点；无法命名空间隔离时必须使用独立测试库，不得用写死默认值“恢复”共享开发库。
 
-## 端口与构建
+## 开发访问
 
-- 日常开发入口：前端 `5173`，后端 `8000` 仅本机，由 Vite 代理 `/api`。
-- 自动化截图/交互验证用专用端口 `5181`，禁止抢占用户日常的 `5173`。
-- 前端开发预览使用 HMR，不用 `npm run build` 代替开发服务器。只有构建配置、依赖、路由或懒加载、全局资源、生产产物受影响，执行发布门禁，或用户明确要求时才运行 `npm run build`；普通文案、局部模板、组件逻辑和样式改动按风险运行定向测试或临时页面复核。源码未再次变化时不得重复构建。
-- Playwright E2E 不是页面改动的默认验收手段，也不能证明计算规则、数据口径、任务重试或后端异常闭环正确；这些必须先由领域/服务/API 测试和代表性真实入口验证。只有满足 `agent-works/e2e-automation/guide.md` 全部准入条件的浏览器独有关键链路才新增或执行 E2E；普通改动禁止默认跑模块整组、全量或多视口。Playwright 固定使用 `5181`，后端由 `./start.sh` 管理；首次缺少浏览器时执行 `cd frontend && npm run test:e2e:install`。
-- 临时复核、探索排查、截图、视觉确认和普通点击验证默认使用 AI 内置浏览器。用户未明确指定时，禁止连接其个人 Chrome、Edge 或其他外部浏览器；内置浏览器不可用时先说明，不自动切换。具体准入、选择器和命令见 `agent-works/e2e-automation/guide.md`。
+日常开发入口为前端 `5173`、后端 `8000`（仅本机），由 Vite 代理 `/api`，预览使用 HMR。
 
 ## 环境与版本
 
@@ -112,14 +93,6 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 
 - 路由层保持薄封装，复杂业务放 `services/` 或领域模块；测试文件使用 `test_*.py`。
 - 前端使用 Vue 3 Composition API + TypeScript，组件 PascalCase；API 封装在 `frontend/src/api/*.ts`，布局逻辑在 `frontend/src/layout/`。
-- 新增后端领域逻辑优先补服务/领域单测；涉及数据口径、防未来函数、DDL、回测撮合、权限和资产隔离时必须覆盖边界。
-- 涉及全量批处理、超长参数列表、窗口/聚合 SQL 或明确规模门槛时，小夹具之外必须补代表性规模回归；阶段验收还需通过真实入口或等价数据规模覆盖输入加载、计算与落表，纯算法基准和 Mock 响应不能替代该链路。
-- 新增布局、校验、配置合并或权限消费逻辑时，同步补充 Vitest。
-- 页面改动按 `page-template.md` 选择完整设计或局部变更说明，只记录受影响的设计决策、维护项和验证范围；已有会话计划可直接承载，不因模板另建计划文件。新页面和布局改造必须完成 `page-template.md`「响应式设计」与关键视口复核，遵守 `DESIGN.md` §8 信息降级与交付门禁；不得以响应式画像登记代替实现和验收。
-- 页面改动按风险选择定向 Vitest、必要的构建或内置浏览器临时复核；Playwright 的新增、更新和执行统一遵守 `agent-works/e2e-automation/guide.md`，不因已有 E2E 覆盖就自动运行整组回归。
-- 物理 E2E 夹具只允许在明确的本地/测试环境运行；PG 写入须核对被测后端实时指纹，DuckDB seed/cleanup 须独占文件锁。禁止混用不同固定日期夹具、猜测清理目标或默认覆盖真实数据。
-- 板块、关联板块、交易纪律及公开回测的命令、数据前缀、读写模式、账号和清理/恢复流程统一见 [E2E 执行指南](agent-works/e2e-automation/guide.md#运行入口与生命周期)；按场景使用专用 runner，不手动拼接全量回归。测试后恢复原后端运行/停止状态与可信运行参数，不遗留夹具或 E2E 安全开关。
-- 完整设计验收使用 `cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:design`；安全前检不要求后端预先启动，后续由 runner 管理后端、分组夹具和恢复。完整验收准入及五组编排以 E2E 指南为准。
 
 ## 协作与提交
 

@@ -9,9 +9,9 @@ typography:
 
 # 复盘啦 设计系统
 
-## 文档边界
+本文维护前端页面、视觉样式、布局系统和组件配置的设计契约。自动约束由 `frontend/scripts/`、`frontend/src/layout/`、后端 layout 校验和相应测试实现；检查器只覆盖已编码规则，不能代替语义审查或浏览器验收。
 
-本文维护前端页面、视觉样式、布局系统和组件配置的设计契约。自动约束由 `frontend/scripts/`、`frontend/src/layout/`、后端 layout 配置校验和相应测试实现；检查器只覆盖已编码的规则，不能代替语义审查或浏览器验收。配置加载、分层合并、应用、保存与失败机制由 [前端布局实现](agent-works/architecture/frontend-layout.md) 维护；新页面执行流程和可复制计划块由 [页面模板](agent-works/configurable-layout-system/page-template.md) 维护，服务保护与验证准入遵守 [AGENTS.md](AGENTS.md)。
+参考：[页面实施模板](agent-works/configurable-layout-system/page-template.md) · [验证与总维护清单](agent-works/testing/guide.md) · [配置运行机制](agent-works/architecture/frontend-layout.md) · [环境与配置归属](agent-works/architecture/environment-configuration.md#3-生效配置与数据库覆盖层)。
 
 关键事实源：
 
@@ -27,7 +27,6 @@ typography:
 - 响应式摘要：`frontend/src/layout/responsive.ts`
 - 配置中心：`frontend/src/views/layout/{LayoutPresetsView,LayoutPagesView,LayoutComponentsView}.vue`
 - 后端持久化与校验：`backend/storage/layout_config.py`、`backend/api/layout.py`
-- 新页面模板：`agent-works/configurable-layout-system/page-template.md`
 
 各页面的指标清单、业务含义与操作目的地由对应架构文档维护，实际业务文案保留在领域代码中。响应式清单登记实现与验证证据，不另行定义设计规则。
 
@@ -46,7 +45,7 @@ typography:
 - 明暗模式缩略图、外观预览和装饰性状态图形也必须使用冷白、亮蓝、深蓝与中性灰；不得用金黄、棕灰或泛黄色模拟“白天”，避免预览层与真实页面色彩语言脱节。
 - 页面首屏直接呈现业务工具，不做大 hero、不做营销式空白、不做卡片堆叠式装饰。
 - 所有业务页面通过布局系统组织，页面结构由 schema 和测试约束，不依赖临时 CSS 猜高度。
-- 视觉预设只改变白天/夜间语义色、边框、阴影和共享圆角，不改变页面密度、组件行为或业务结构。
+- 视觉预设只改变白天/夜间语义色、边框、阴影和共享圆角，不改变页面密度、组件行为、slot、原型或业务结构，也不接受任意 CSS。
 
 ## 2. 色彩体系与语义角色
 
@@ -78,7 +77,7 @@ typography:
 - 权限树颜色使用 `--perm-group-color`、`--perm-feature-color`；权限树内的菜单类型点使用 Element Plus 成功色，应用导航当前位置圆点按外壳规则使用 `--shell-accent`，不在页面内写死色值。
 - 金融涨跌使用 `--market-up-color` / `--market-down-color`，不要在页面里直接写红绿 hex。
 - 带零基准的金融数值轴通过 `components/chartAxisLabel.ts::marketAxisLabelColor()` 统一判色：正值使用金融上涨色，负值使用金融下跌色，两位小数显示为零时保持中性色；价格轴按对应零涨幅基准换算后与百分比轴同色，缺少有效基准时保持中性。十字光标数值标签通过同文件 `marketAxisPointerLabel()` 复用该判色，价格、百分比和指标各自保留格式，中性背景及边框消费图表主题；日期、成交量、评分等无方向语义的标签不套用此规则，序列身份色与风险回撤曲线颜色保持各自语义。
-- ECharts 固定为 `5.6.0`，通过 `frontend/patches/echarts+5.6.0.patch` 按实际富文本布局测量光标标签，避免把颜色标记计入文字宽度造成两侧偏移或裁切；升级时必须同步补丁及 `chartAxisPointerLabel.spec.ts` 几何回归，并复核真实光标位置。
+- ECharts 固定为 `5.6.0`，通过 `frontend/patches/echarts+5.6.0.patch` 按实际富文本布局测量光标标签，避免把颜色标记计入文字宽度造成两侧偏移或裁切。
 - `StockChartWorkspace` 及个股详情股票画布通过 `stock-chart/chartUtils.ts::stockChartTheme()` 读取 CSS 语义色；该工作区的 MACD 正柱与金叉使用 `--market-up-color`，负柱与死叉使用 `--market-down-color`。交叉事件使用贴近当日 DIFF 点的“金叉/死叉”标签表达，标签只保留连接事件点的短三角指针，不显示贯穿面板的长引导线或独立圆形锚点；不得只依赖红绿颜色，也不为金叉新增独立金色 token。信号标签使用主题中性表面和高对比中性文字，方向色只用于轮廓和短指针；信号 item 悬停必须显示类型与完整交易日期。
 - 股票 MA/VMA/MACD 折线的序列身份色统一以 `stock-chart/chartUtils.ts::trainingChartSeriesPalette()` 为事实源：MA5/VMA5/DIFF 使用橙色 `#e28a35`，MA10/VMA10/DEA 使用蓝色 `#418af5`，MA20 浅色使用洋红 `#9f3793`、暗色使用 `#c53c92`，MA30 使用青色 `#56c3df`，MA60 使用橙红 `#e56023`。K线和量能均线的周期、标题、ECharts 名称与色板键分别由 `KLINE_MA_DEFINITIONS`、`VOLUME_MA_DEFINITIONS` 唯一声明，序列、有数据标题和空数据标题必须共同消费，不得复制周期数组、标签映射或颜色。盘感训练、回测和个股详情必须共同消费该色板；序列色只表达指标身份，不表达涨跌方向。K 线 tooltip 的收盘与涨幅才按相对昨收使用涨跌色，平盘保持中性。
 - K 线 tooltip 的顶部和左右停靠位置必须与 K 线绘图区共同消费 `STOCK_CHART_GRID_TOP`、`STOCK_CHART_GRID_SIDE`，不得在浮层侧追加近似内缩量。应用启用非 100% 显示比例时，HTML tooltip 必须挂到未缩放的 `body` 避免父级缩放与自身 `translate3d` 叠加导致文字模糊，并把浮层视口尺寸按实际显示比例换回图表布局坐标后再计算避让与右侧停靠。左右切换必须同时满足光标进入当前浮层水平占用区、浮层与当前蜡烛高低价像素矩形发生二维重叠；蜡烛矩形由当前 ECharts 实例实时换算。任一条件不成立或无法取得像素矩形时保持左侧，禁止仅凭光标位置或 candlestick 参数猜测遮挡。行情摘要必须使用稳定表格网格：时间与日期共用浮层左右边界，主价格纵向跨越全部指标行，字段名左对齐、字段值右对齐，相同行保持统一基线；禁止以多个独立 flex 列和内容宽度近似对齐。点击日 K 下钻分时后，分时弹窗存续期间只锁定所点蜡烛的竖向日期线、横向数值线、右轴百分比标签和底部日期标签；不强制显示左上行情内容浮层。关闭弹窗后再清理锁定状态并恢复消费页原行为。
@@ -112,7 +111,6 @@ typography:
 - 启用预设的名称与视觉 token、独立的自动缩放指数通过登录公开配置下发，并分别写入首屏安全缓存。登录页与工作台必须共同消费同一公开配置，不得各自解析或维护另一套。公开配置禁止携带页面、组件或响应式布局字段。
 - 行情身份摘要（`MarketDetailHero`）、行情主次栏头（`AppWorkspacePane`）、板块静态指标和交易纪律快捷卡保持中性底色，不恢复主色浅背景或渐变强调；真实选中、悬停及状态反馈继续沿用既有语义。
 - 侧栏、顶栏与工作标签栏共用中性导航底色；白天使用等 RGB 通道的近白色，仅比纯白内容区稍暗，登录品牌区沿用同一基础色。底色数值统一维护在 `themeSurfaces.ts`，首屏 CSS 兜底必须同步。
-- 调整基础表面必须同步维护 `light`、`dark`、`themeSurfaces.ts` 与 `presets.spec.ts`；调整预设能力必须验证后端目录、运行时选择和固定表面不受覆盖。
 - 页面设置抽屉保留 `32%` 黑色遮光层，用于明确浮层焦点和点击外部关闭边界；遮光层属于临时交互状态，不参与主题底色定义，抽屉内容面与页面常驻容器仍必须使用中性明暗表面。
 - `surfaceHover` 用于 hover、选中或明确可操作控件状态；禁用控件复用该基础色值的约定见 §4「按钮与输入」。常驻信息分区与抽屉设置组按 §6 的职责分别使用分区面和内容面；`--app-section-bg` 当前与 `surfaceHover` 同源，但职责独立，页面不得直接借用悬停 token 代替分区变量或自行调深。
 
@@ -286,12 +284,7 @@ typography:
 
 品牌例外只允许以下范围，例外值由源码守卫按选择器、属性和值精确登记：`BrandMark .brand-mark__word-main` 的字标字号和字重；登录 `.mr-value` 的流式主数值字号；`.login-brand-copy h1` 的流式字号、宋体栈和品牌行高；`.login-card-title h2` 的宋体栈和桌面字号。登录表单、切换标签和主按钮不在例外内，字重不得另设 650。斜体仅用于品牌字标、辅助副标或文本语义，普通标题和菜单不引入私有斜体。
 
-实现与校验入口：
-
-- CSS token 和语义类统一在 `frontend/src/styles/global.css`；抽屉层级仅允许 `PageDrawerSurface` 映射已有标题字号，不新造尺度。新增或变更根字体 token 必须同步本章角色登记。
-- 执行 `cd frontend && npm run check:typography`：解析全部生产 Vue/CSS/TS，检查字体变量定义、角色类型、别名循环、CSS 简写、模板内联样式、脚本字体对象及 HTML tooltip 样式；品牌例外不豁免整个文件。`npm run build` 自动先执行该守卫。
-- `typography-audit.spec.ts` 以违规夹具证明拦截有效；`typography-spacing-system.spec.ts` 保留语义组件、导航、微字号选择器和间距契约；`chartTypography.spec.ts` 验证图表真实读取 CSS token。
-- 静态守卫不能代替浏览器的层叠、裁切和继承检查。全局字体变更还需生产构建，并用内置浏览器抽查导航、数据指标、长说明、表格、抽屉及图表；记录实际状态，不把未打开的页面或设备写成实测通过。
+CSS token 和语义类统一在 `frontend/src/styles/global.css`；抽屉层级仅允许 `PageDrawerSurface` 映射已有标题字号，不新造尺度。新增或变更根字体 token 必须同步本章角色登记。
 
 ## 4. 组件样式规范
 
@@ -336,19 +329,18 @@ typography:
 - 页面外壳、slot、滚动归属、可配置字段必须走系统组件种类和 `pageRegistry`。
 - 系统不会根据页面模板里的 Vue 标签自动推断系统组件 kind；`pageRegistry` 是组件实例登记事实源。页面把一个已有系统组件种类作为独立布局区、成长区、滚动区或可配置实例使用时，必须登记对应 slot；只作为另一个真实组件内部实现细节、且没有独立布局或配置语义的子组件不得登记假 slot。
 - 真实 UI 行为优先复用真实复用组件；当同类控件在两个及以上页面出现，或承载全局交互规则时，必须登记到下方“真实复用组件清单”。
-- 真实组件只有需要进入布局配置、系统组件页、页面设置抽屉或页面布局编辑器时，才新增或关联系统组件种类。
+- 真实组件只有需要进入布局配置、系统组件页、页面设置抽屉或页面布局编辑器时，才新增或关联系统组件种类。单纯调整按钮状态、资产方案会话候选、键盘或共享动效不构成新增 kind、slot、配置字段或持久化偏好的理由。
 - 新开发 Vue 组件时先判断它是页面私有业务片段、业务域复用组件还是全局真实复用组件；复用组件必须维护组件清单、消费页面和测试。只有需要被布局或组件配置体系识别时，才继续新增系统组件 kind；只有存在真实可消费的 Web 可配置属性时，才继续登记 `COMPONENT_FIELD_DEFS` 并完成代码默认、页面、用户三层配置闭环。
 - `COMPONENT_CATALOG` 是系统允许的组件种类与能力词汇表，允许先登记当前尚无页面消费者的 kind，供 schema、预览和后续布局选型复用；“假配置”指 `COMPONENT_FIELD_DEFS` 暴露了组件实例并未真实读取应用的 Web 字段。已有真实复用组件时仍禁止页面复制同类控件行为。
 
 系统组件页信息维护规则：
 
 - `LayoutComponentsView` 展示的组件名称、说明、最低尺寸、滚动归属、成长/重排能力和专属特性来自 `COMPONENT_CATALOG`；这些信息变化时必须优先更新 `frontend/src/layout/components.ts`，不要在页面内硬编码第二套说明。
-- `configCapabilities` 是英文能力 key 摘要，用于系统组件页展示组件具备的能力，不等同于“已开放 Web 配置字段”；不要为了展示把它本地化成另一套中文映射。
+- `configCapabilities` 是英文能力 key 摘要，用于系统组件页展示组件具备的能力，不等同于“已开放 Web 配置字段”；只有 kind 语义能力变化时才修改，不为登记新字段机械添加能力 key，也不要为了展示把它本地化成另一套中文映射。
 - 组件 kind 的语义变化时，必须同步检查 `components.ts` 的 `label`、`description`、`configCapabilities`，`componentSchemas.ts` 的 config shape，`componentPreview.ts` 的预览归类，以及 `schema.ts` 中该 kind 的说明。
 - 系统组件页的可视化预览是给开发和验收人员对照组件形态、状态语义、文案与稳定占位的规范样板，不是业务页面截图，也不证明消费页面已经完成接入。`ready` 可使用代表性原型；`loading / empty / error` 必须直接复用 `AppStateBlock`，不得在预览层维护第二套状态视觉。
-- 只有真实可被页面设置、页面布局或预设消费的字段，才进入 `COMPONENT_FIELD_DEFS` 和后端 `layout_config.py` 字段规则。页面登记某个组件 slot 后自动继承该 kind 的字段；候选型能力由 `componentMeta`、结构型能力由 slot `config`、明确例外由 `fieldApplicability` 判定是否适用。
+- 只有真实可被页面设置或页面布局消费的组件字段，才进入 `COMPONENT_FIELD_DEFS` 和后端 `layout_config.py` 字段规则。字段的实例适用性遵守 §7.3；视觉预设只消费外观 token。
 - 系统组件页必须按“组件字段 × 消费页面 slot”展示自动继承、管理员策略关闭或实例不适用状态；不适用项必须显示可追溯原因，不能只展示组件级字段总表而掩盖页面漏接。
-- 改动系统组件信息后至少运行相关布局测试；改动预览四态时必须验证预览复用 `AppStateBlock`；构建按 AGENTS.md 的风险门槛执行，不能因普通局部源码变更默认全量构建。
 
 核心真实复用组件清单：
 
@@ -370,7 +362,7 @@ typography:
 | `SettingsGroup` | `frontend/src/components/SettingsGroup.vue` | 设置型抽屉的递归分组与统一卡片边界 | 无直接系统组件种类 | 页面设置、视觉环境和局部工具抽屉的同层功能分组统一复用；一级使用卡片边界，二级及更深使用统一 14px 节点标题、箭头、缩进和结构线，不再逐级缩小字号；存在直接子节点时标题区自动显示“收起/展开下级分组”图标操作；页面设置之外的固定工具分组可显式传 `collapsible=false`，缩进仍按真实层级处理，不得复制私有分组边框；不直接用于主内容区配置面板 |
 | `PageSettingSection` | `frontend/src/components/PageSettingSection.vue` | 页面设置业务选项分区 | 无直接系统组件种类 | 仅作为 `SettingsGroup level=2` 的业务语义薄封装，以必填 `sectionKey` 声明稳定分区标识；不得维护第二套标题、折叠或间距样式 |
 | `AppForm` | `frontend/src/components/AppForm.vue` | 一级编辑表单的统一尺寸与 Element Plus 表单能力入口 | 无直接系统组件种类或配置字段 | 默认 `default` 跟随页面密度；动态字段继承尺寸、禁用及校验上下文；通过暴露的 `form` 访问原生校验实例；局部设置例外显式声明尺寸并说明原因。 |
-| `AppFormHelp` | `frontend/src/components/AppFormHelp.vue` | 全站表单字段与补充说明的标记、caption 字阶和续行排版 | 无直接系统组件种类或配置字段 | 表单字段及补充说明统一消费；语义、标记与排版见[表单辅助说明](#表单辅助说明)。 |
+| `AppFormHelp` | `frontend/src/components/AppFormHelp.vue` | 全站表单字段与补充说明的标记、caption 字阶和续行排版 | 不新增布局 kind 或用户配置字段 | 表单字段及补充说明统一消费；语义、标记与排版见[表单辅助说明](#表单辅助说明)。 |
 | `PageSettingItem` | `frontend/src/components/PageSettingItem.vue` | 设置抽屉的事项名、控件与辅助说明布局 | 无直接系统组件种类 | 设置抽屉字段块统一消费；简单开关可用行内布局，帮助选型与字阶见[设置抽屉](#设置抽屉)及[字体与排版规范](#3-字体与排版规范)。 |
 | `ConfigPanelSection` | `frontend/src/components/config/ConfigPanelSection.vue` | 主内容区配置面板的可折叠分组容器 | 对应 `config-panel` 种类；读取 `collapsibleSections`、`defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | 系统设置等主面板配置分组共用；字段帮助使用 HelpHint / HelpTip，组说明随所属层级展示或收展；可选 summary 在收起时保留简短摘要，紧凑子分区标题/摘要自然换行；摘要不伸展占满横向空间，分隔线紧接文案延伸，二级分区间距由共享组件统一维护；不传时保持原有布局。 |
 | `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 枚举选择与轻量视图切换复用；选型见[分段选择](#分段选择)，状态、键盘和动效分别引用对应规范 |
@@ -418,18 +410,18 @@ typography:
 | `AppTableColumn` | `frontend/src/components/AppTableColumn.vue`、`frontend/src/components/table/adaptiveColumnWidth.ts` | 表格列运行时组件，根据结构类型、字段名和标签推导语义角色，以稳定字符权重结合排序/筛选控件计算弹性最小宽，并统一推导表头/单元格对齐、数字排版、单行表头及同行元信息 | `data-table`、`wide-table` 的稳定列宽、语义对齐和表头能力；不是用户可配置字段 | 数据表格列统一消费；语义角色、宽度、对齐和控件容量见[表格与列表](#表格与列表)，禁止页面覆盖列呈现。 |
 | `AppOverflowTooltipHost` | `frontend/src/components/AppOverflowTooltipHost.vue`、`frontend/src/components/overflow/overflowTooltip.ts` | 全站真实截断原文提示宿主 | 无直接系统组件种类 | 唯一全局挂载于 App；只识别真实截断，不接管原生 title；触发、原文来源与边界见本节提示契约 |
 | `AppStateBlock` | `frontend/src/components/AppStateBlock.vue` | 页面和组件的加载、空、异常、无权反馈块，统一 `ready / loading / empty / error` 四态中的非 ready 呈现、重试入口和尺寸档位 | 对应布局系统中的 `loading-state`、`empty-state`、`error-state`、`skeleton` 语义，但作为真实运行时复用组件消费 | 加载、空、异常与无权反馈统一消费；标准异步区由 AppAsyncRegion 编排，状态及尺寸规则见[四态反馈总则](#四态反馈总则)。 |
-| `AppWorkspacePane` | `frontend/src/components/AppWorkspacePane.vue` | 主从工作区及页签主内容的统一外壳，承载标题、工具区、正文和底部操作区 | `master-detail` 左右栏的内部面板 | 行情列表、分析、详情两栏及交易纪律工作区共用；默认保留贴边正文与内部滚动；标准内距、填满高度及正文滚动按显式属性接入。栏头与内容承接见[共享工作区与尺寸档案](#55-共享工作区与尺寸档案)。 |
+| `AppWorkspacePane` | `frontend/src/components/AppWorkspacePane.vue` | 主从工作区及页签主内容的统一外壳，承载标题、工具区、正文和底部操作区 | `master-detail` 左右栏的内部面板 | 行情列表、分析、详情两栏及交易纪律工作区共用；默认保留贴边正文与内部滚动；标准内距、填满高度及正文滚动按显式属性接入。栏头与内容承接见[共享工作区与尺寸档案](#54-共享工作区与尺寸档案)。 |
 | `AppStatusNotice` | `frontend/src/components/AppStatusNotice.vue` | ready 内容仍可继续使用时的轻量持久提示，统一信息、成功、警告、失败语义、紧凑尺寸和可选动作 | 不属于第五种顶层状态；作为 ready 的辅助消息层 | 可安全保留内容时的局部降级提示；使用边界见[四态反馈总则](#四态反馈总则)与[消息反馈层级](#消息反馈层级)。 |
 | `StockChartPanelHeader` / `StockChartLegend` / `StockChartPanelDivider` | `frontend/src/components/stock-chart/StockChartPanelHeader.vue`、`frontend/src/components/stock-chart/StockChartLegend.vue`、`frontend/src/components/stock-chart/StockChartPanelDivider.vue` | 股票图表面板的共享标题栏、图例项与独立分隔区，统一 32px 高度、标题层级、水平对齐、序列形态标识、图例文字层级以及双边框分隔 | 股票画布内部结构，不直接映射布局系统组件种类 | 日 K 与分时面板共用；标题、图例与独立分隔区规则见[色彩体系与语义角色](#2-色彩体系与语义角色)，页面不另画同类结构。 |
 | `StockChartOperationsDrawer` / `ChartOperationGroup` | `frontend/src/components/stock-chart/StockChartOperationsDrawer.vue`、`frontend/src/components/ChartOperationGroup.vue` | 图表工作区内部的局部操作抽屉与带名称边界的紧凑操作组，统一局部遮罩、关闭与焦点归还、分组边界、间距和组内控件高度 | 图表内部结构，不直接映射布局系统组件种类 | 使用与短选项内容匹配的受控紧凑宽度，边界只覆盖所属 `StockChartWorkspace`，不得进入页面级覆盖层或遮挡相邻区域；局部枚举保持中性色，主色只用于主视图切换；容器不持有图表领域状态或计算，每类操作独立成组，消费页不得复制同类抽屉、边框、标题和紧凑尺寸 |
-| `StockChartWorkspace` | `frontend/src/components/stock-chart/StockChartWorkspace.vue` | 行情 K线、量能和可选 MACD 的纵向联动工作区，统一日期轴、光标、显式缩放同步、局部状态、买卖标记和可访问高度分隔线 | `chart.minHeight`（仅由固定高度详情实例消费） | 股票、板块、训练和回测画布共用；交互边界见[股票图表工作区](#股票图表工作区)，主题见 §2，尺寸见[共享工作区与尺寸档案](#55-共享工作区与尺寸档案)。 |
+| `StockChartWorkspace` | `frontend/src/components/stock-chart/StockChartWorkspace.vue` | 行情 K线、量能和可选 MACD 的纵向联动工作区，统一日期轴、光标、显式缩放同步、局部状态、买卖标记和可访问高度分隔线 | `chart.minHeight`（仅由固定高度详情实例消费） | 股票、板块、训练和回测画布共用；交互边界见[股票图表工作区](#股票图表工作区)，主题见 §2，尺寸见[共享工作区与尺寸档案](#54-共享工作区与尺寸档案)。 |
 | `StockIntradayDialog` / `StockIntradayChart` | `frontend/src/components/stock-chart/StockIntradayDialog.vue`、`frontend/src/components/stock-chart/StockIntradayChart.vue` | 日 K 蜡烛下钻的共享分时弹窗与双绘图区，统一按需请求、取消/迟到响应、范围/空/错误/部分状态、行情摘要、价格/均价/昨收和分钟量能联动 | 无直接系统组件种类；作为股票画布的按需覆盖层 | 个股详情及 StockAnalysisPanel 的日 K 下钻共用；业务范围、状态与请求生命周期见[分时架构](agent-works/architecture/stock-intraday.md)，画布规范见 §2。 |
 | `StockChartRegion` | `frontend/src/components/stock-chart/StockChartRegion.vue` | 固定高度股票图表的外层区域，统一接收组件实例总高度、测量可选标题区并把剩余可用高度传给工作区 | `chart.minHeight` + `chart.stockChart` 的当前组合 | 盘感训练等声明固定图表高度的页面统一消费；页面只传外层总高度及当前图表组合，禁止再手工减标题高度或把总高度直接当工作区高度；容器根据真实标题高度和边框自动计算内容高度，可见面板硬下限不足时扩展外层而不得裁切；个股与板块详情等主从工作台随剩余空间成长，不使用本容器 |
 | `MarketDetailHero` | `frontend/src/components/MarketDetailHero.vue` | 行情详情页的对象身份、摘要、元信息与上下文操作头部 | 无直接系统组件种类；承载详情页头部内容 | 板块详情与个股详情共同消费；不渲染英文装饰 eyebrow，状态标签、操作、行情摘要、元信息和上下文条分别进入具名插槽；页面不得复制 hero 外壳、背景、间距或响应式规则；默认保持两端布局，摘要需要紧随身份区时显式使用 `asideAlign="start"` |
 | `MarketBoardTag` | `frontend/src/components/MarketBoardTag.vue` | 行业与概念名称、同日涨跌和走势相关性的统一领域卡片 | 无直接系统组件种类；使用可选 RouterLink 或静态 span | 个股详情所属板块面板统一消费按内容宽度排列的小色块（最小高度 48px，名称和涨跌幅均用 caption 字阶）：名称在上、涨跌幅在下，名称保持中性文字；白天背景由金融方向色以 10% 混入主题表面，夜间由同色以 8% 混入中性填充面 `--el-fill-color-light`，减轻近黑染色的浑浊感；涨红跌绿，平盘或缺失行情保持中性；最相关卡片使用同方向描边和顶部“走势最相关”标识。股票/分组/榜单/筛选的走势单元格消费 `variant="tag"`，保持 24px 单行“名称 + 涨跌幅”，中性名称与金融色数值同基线，不显示顶部角标。卡片长名称换行；标签空间不足时仅省略名称，涨跌幅不收缩；保留键盘焦点和权限感知的板块详情地址 |
 | `StockBoardMembershipPanel` | `frontend/src/components/StockBoardMembershipPanel.vue` | 个股所属板块行情卡片，统一同日涨跌、走势冠军标记和权限感知导航 | `section` | 个股详情统一消费；最相关行业、最相关概念置前，其他所属行业及概念保持接口顺序并去重；小色块按内容宽度自然换行，不拉满整列，最小宽度 64px、最大宽度不超过容器；同日涨跌与权限见[个股详情架构](agent-works/architecture/stocks-and-groups.md#2-个股详情页)。 |
-| `AppSplitWorkspace` | `frontend/src/components/AppSplitWorkspace.vue` | 通用左右分栏工作区，统一比例计算、尺寸档案、可访问分隔条、单栏回退和窄屏全屏抽屉 | 作为 `master-detail` 的内部真实组件，消费 `masterRatio`、`masterRatioProfiles` | MarketMasterDetailWorkspace、个股及板块详情共用；比例、滚动和窄屏规则见[共享工作区与尺寸档案](#55-共享工作区与尺寸档案)。 |
-| `MarketMasterDetailWorkspace` | `frontend/src/components/MarketMasterDetailWorkspace.vue` | 行情列表与走势分析区的双栏业务外壳；基于 `AppSplitWorkspace` 补充分栏与分析区收展，列表栏外壳委托 `AppWorkspacePane`，保留既有公开属性、事件与紧凑抽屉控制接口 | `master-detail.masterRatio`、`master-detail.masterRatioProfiles` | 个股、榜单、天梯和板块行情共用；高度模式、比例档案与窄屏承接见[共享工作区与尺寸档案](#55-共享工作区与尺寸档案)，业务选择状态由领域组件持有。 |
+| `AppSplitWorkspace` | `frontend/src/components/AppSplitWorkspace.vue` | 通用左右分栏工作区，统一比例计算、尺寸档案、可访问分隔条、单栏回退和窄屏全屏抽屉 | 作为 `master-detail` 的内部真实组件，消费 `masterRatio`、`masterRatioProfiles` | MarketMasterDetailWorkspace、个股及板块详情共用；比例、滚动和窄屏规则见[共享工作区与尺寸档案](#54-共享工作区与尺寸档案)。 |
+| `MarketMasterDetailWorkspace` | `frontend/src/components/MarketMasterDetailWorkspace.vue` | 行情列表与走势分析区的双栏业务外壳；基于 `AppSplitWorkspace` 补充分栏与分析区收展，列表栏外壳委托 `AppWorkspacePane`，保留既有公开属性、事件与紧凑抽屉控制接口 | `master-detail.masterRatio`、`master-detail.masterRatioProfiles` | 个股、榜单、天梯和板块行情共用；高度模式、比例档案与窄屏承接见[共享工作区与尺寸档案](#54-共享工作区与尺寸档案)，业务选择状态由领域组件持有。 |
 | `RankedStockResultTable` | `frontend/src/components/ranked-stock/RankedStockResultTable.vue` | 评分结果领域表格，统一全市场排名、股票名称、板块、综合分、评级、分项分、相关板块与不可评分状态 | 消费既有 `wide-table`，不新增系统组件 kind | 每日榜单、策略筛选、评分试算和回测当日榜单共同消费；页面差异只通过列 schema 与具名插槽表达。`rank` 永远是全市场排名，未参与评分时为空；ST 不单独占列，统一在名称后显示显式 `ST` 标签，名称不可见时跟随代码；评级和分项分不得再由页面维护平行实现 |
 | `RankedStockWorkbench` | `frontend/src/components/ranked-stock/RankedStockWorkbench.vue` | 评分结果表格与股票走势分析的统一主从工作台，内建当前观察、对比队列、窄屏分析抽屉和详情次级入口 | 组合既有 `master-detail`、`wide-table` 与 `chart` | 策略筛选和评分试算直接消费；每日榜单因批量自选与可配置图表继续用同一底层表格、`MarketMasterDetailWorkspace` 和选择状态组合；回测弹窗只消费表格，不嵌入完整工作台 |
 | `MarketAnalysisHeader` | `frontend/src/components/MarketAnalysisHeader.vue` | 行情分析右栏的当前对象、代码、详情入口、摘要和控制区统一头部 | `master-detail` 分析子区的内部真实组件 | `StockAnalysisPanel` 与板块行情共同消费；响应式必须按分析栏自身容器宽度判断，窄栏时身份与控制区上下排列、控制区自然换行并隐藏辅助摘要和控件标签，不得按整页宽度猜测右栏空间或在页面复制标题、代码、详情链接和断点样式；外层行情明细由图表悬浮摘要承载 |
@@ -456,7 +448,7 @@ typography:
 | `AppSearchInput` | `frontend/src/components/AppSearchInput.vue` | 列表页关键字搜索输入，统一"输入即防抖查 + 回车/清空立即查" | 无直接系统组件种类 | 关键字输入统一消费；防抖编排复用 useDebouncedQuery，查询、归页及刷新见[查询、重置与刷新](#查询重置与刷新)。 |
 | `AppDatePicker` / `TradeDatePicker` | `frontend/src/components/AppDatePicker.vue`、`frontend/src/components/TradeDatePicker.vue` | 通用日期浮层入口与交易日选择器 | 无直接系统组件种类 | 通用日期输入使用 AppDatePicker，交易日输入使用 TradeDatePicker；浮层与默认最新日期规则见[按钮与输入](#按钮与输入)。 |
 | `KlineRangeSelect` / `KlineSettingSection` | `frontend/src/components/KlineRangeSelect.vue`、`frontend/src/components/KlineSettingSection.vue` | K线范围快捷选择与共享设置字段 | `chart.klineRangePreferences` 的专用全局偏好编辑器 | 个股详情、盘感训练等 K线页面统一复用；设置字段只由 `ComponentAutoSettings` 在组件设置中渲染，页面不得复制范围选项、偏好写入逻辑或业务入口 |
-| `StockChartSettingSection` | `frontend/src/components/StockChartSettingSection.vue` | `ComponentAutoSettings` 内股票多图实例的专用字段编辑器，负责图表二/图表三选择、高度比例编辑和页面当前比例采用入口 | `chart.stockChart` | 股票多图实例统一由 ComponentAutoSettings 间接消费；尺寸及会话/默认值关系见[共享工作区与尺寸档案](#55-共享工作区与尺寸档案)。 |
+| `StockChartSettingSection` | `frontend/src/components/StockChartSettingSection.vue` | `ComponentAutoSettings` 内股票多图实例的专用字段编辑器，负责图表二/图表三选择、高度比例编辑和页面当前比例采用入口 | `chart.stockChart` | 股票多图实例统一由 ComponentAutoSettings 间接消费；尺寸及会话/默认值关系见[共享工作区与尺寸档案](#54-共享工作区与尺寸档案)。 |
 | `EquityChart` / `GrowthChart` | `frontend/src/components/EquityChart.vue`、`frontend/src/components/GrowthChart.vue` | 回测/训练净值与成长曲线 | 无直接系统组件种类 | 回测与训练各自消费；主题见 §2，基准显隐、读数和颜色见[净值与成长图](#净值与成长图)。 |
 | `BrandMark` | `frontend/src/components/BrandMark.vue` | 应用品牌图形与「复盘啦」字标 | 无直接系统组件种类 | 应用外壳、登录页等品牌露出直接复用同一外观；禁止场景变体、消费侧 `--brand-*` 覆盖、私有 logo 或第二套字标；窄容器只允许等比缩放 |
 | `SideMenu` / `TopNavigation` / `WorkspaceTabs` / `WorkspaceRouteView` / `MenuIcon` | `frontend/src/components/SideMenu.vue`、`frontend/src/components/TopNavigation.vue`、`frontend/src/components/WorkspaceTabs.vue`、`frontend/src/components/WorkspaceRouteView.vue`、`frontend/src/components/MenuIcon.vue` | 应用级菜单树、双层顶栏、保留现场的工作标签页、路由缓存与统一菜单图标渲染 | 无直接系统组件种类 | 应用外壳共用菜单、页签与路由缓存；权限树、焦点和导航布局见[应用外壳](#应用外壳)，业务页不得另建缓存。 |
@@ -472,7 +464,7 @@ typography:
 
 - `CompareQueueRail`：板块行情、个股查询、每日榜单共同消费，禁止页面内再写第二套队列 chip；chip 为 `role=button` 容器承载激活（点击 + Enter/Space，`.self` 避免焦点在移除钮时连击激活），名称为纯 `span` 继承 chip 颜色（激活/悬浮随主色变化），移除用 `AppCloseButton size="inline"`；遵守按钮契约——不引入原生 `<button>`，也不用 `el-button` 包裹名称（其特异性会覆盖继承色）；消费页只提供归一化 `{ key, label, active, error }` 列表与 `activate`/`remove` 事件，上限提示文案按对象（板块/股票）传入；队列顺序稳定（进入先后），激活/切换主观察只移动高亮不重排，该状态机由共享纯函数 `frontend/src/utils/compareQueue.ts` 维护，`useStockAnalysisSelection`（个股/榜单）与板块行情视图都委托给它，禁止再各自实现“激活项置顶”的派生队列。
 
-- 股票、板块、训练与回测的多图工作区统一消费 `StockChartWorkspace`；主题、序列身份色、浮层和分时几何遵循 §2，面板尺寸与档案遵循 §5.5。行情口径通过 `adjustLabel` 标注，MACD 口径不同时独立传 `macdAdjustLabel`，未传时才沿用行情口径。
+- 股票、板块、训练与回测的多图工作区统一消费 `StockChartWorkspace`；主题、序列身份色、浮层和分时几何遵循 §2，面板尺寸与档案遵循 §5.4。行情口径通过 `adjustLabel` 标注，MACD 口径不同时独立传 `macdAdjustLabel`，未传时才沿用行情口径。
 - 行情与指标按交易日、截止日对齐；MACD 局部失败不阻断 K 线和量能。三图共用 64px 左右轴边界，轴值统一格式化：K 线左轴价格、右轴相对当前查询区间首根前收的涨跌幅，量能与 MACD 数值轴在左侧；单根 K 线的日涨幅仍使用自身前收，区间接口必须带首日前一交易点收盘。
 - 行情 tooltip 的启用范围遵守 §3 的 `StockQuoteSummary` 契约：个股与板块详情使用常驻摘要，图内关闭行情 tooltip；启用悬浮摘要的场景只由 K 线显示该浮层。光标日期气泡和标题日期只在 K 线显示；量能与 MACD 普通柱线只联动光标及标题数值，MACD 信号悬浮例外展示类型和完整日期。浮层左右切换不做位移动画；标题指标不得无限扩宽，K 线、量能、MACD 柱宽依次递减，底部日期不被缩放条遮挡。
 - 日期轴与缩放按底部面板真实高度统一计算；空间足够时显示滑动条，不足时隐藏可视条但保留内部缩放，不允许页面传私有轴间距。任一面板缩放必须同步其余可见图，并在主题重绘后保留。图外行情摘要通过 `activeBarChange` 联动，离开画布的 `null` 恢复最新行情，不另监听 ECharts；光标跟随数值不设置 `aria-live`。
@@ -536,13 +528,11 @@ typography:
 - 关闭入口的颜色、焦点、禁用和加载呈现见[按钮角色与完整状态矩阵](#按钮角色与完整状态矩阵)；不使用危险红、缩放、浮起或阴影。语义深色标签和告警保持必要的文字对比；页面只控制排列、间距和显隐。
 - `AppCloseButton` 必须传具体 `label` 作为可访问名称；明确的关闭图形默认不显示重复文字气泡，名称不自动转成可见提示。阻止点击与 Enter/Space 传播到父菜单、标签或卡片，Escape 继续交给浮层。库内置控件保留原生事件、焦点及键盘模型（字段清空仍依附输入控件，不额外改造成独立 Tab 入口）。工作标签在无悬停/粗指针设备始终显示关闭，最后一个标签也可关闭并进入空工作区；等待离开确认时阻止重复关闭，成功移除焦点所在标签后，有剩余页签时将焦点交还当前标签，最后一页关闭时交给空工作区。取消关闭不改变选择或焦点。
 - 关闭呈现不承担业务允许判断：未保存拦截、权限、异步状态由所属容器处理；`PageDrawer` 自定义关闭、遮罩与 Escape 共走组件库关闭链路，尊重 `before-close`，`show-close=false` 同时隐藏自定义头部入口。弹窗继续由 `AppDialog` / Element Plus 管理关闭与焦点归还。
-- 校验入口为 `npm run check:close-controls`（构建门禁同时执行），检测直接手写关闭图形、缺少名称和私有视觉配方；允许危险删除与非交互预览图形。交互、离开拦截和焦点恢复由定向组件测试覆盖，明暗主题的实际命中区、裁切与状态须在内置浏览器复核，源码扫描不能替代页面验收。
 - 标准命令按钮随页面密度取高及水平内距（标准密度为 `32px` 高、左右 padding `12px`）、文字 `13px / --app-font-weight-medium`、图文间距 `6px`；small 为 `28px`、large 为 `36px`。命令字重统一通过 `--app-button-font-weight` 消费 500，覆盖主次、危险、text/link 命令、行操作、命令菜单和登录提交；悬浮、按下、聚焦、禁用及加载均不改变字重，主次由颜色和外形区分。表格字段链接继续使用 400，导航与页签按各自选中角色执行。输入框、选择器、按钮与分段选择的常规高度共用 `--app-density-control-height`，显式 small / large 共用 `--app-control-height-sm/lg`；Element Plus 尺寸变量由全局样式映射，禁止组件另立同名档位。输入框、选择器、按钮统一使用 `--layout-control-radius=6px`，主题只改变颜色和材质，不改变基础控件形态。
 - **操作行共同高度**：`AppControlRow`、`AppTabToolbar` 和 `AppAdvancedSearch` 共用 `controlRowSizing.ts`，通过局部 `--app-control-row-height` 动态控制常规输入、数字、搜索、选择、日期、分段、水平按钮选择、命令按钮与同级图标命令的外框高度。省略行 `size` 时先继承最近操作行，再继承表单项/表单/全局尺寸，无上下文时跟随页面密度；显式 `default` 回到页面密度，`small / large` 复用现有档位。行内常规控件不得独立设置 `size`、内联高度或私有 wrapper 高度；行外保留原有尺寸继承。独立主要设置通过所属表单或操作组整组声明较大档位；常规行外入口也不得逐控件指定尺寸。
 - 行内间距由共享 `gap` 单独控制，直接相邻命令按钮的库默认外距在行作用域内归零；复合按钮组内部仍由所属组件维护。
 - 行只设置共同控件高度和最小高度，换行、错误与说明使容器自然增高；关联阈值与操作需要作为整体换行时，内层 `AppControlRow` 声明 `wrap=false`，不逐页复制 nowrap 样式；禁止固定整行高度、拉伸所有后代或在生产测量最高控件反向设高。帮助、关闭、清空、状态标签、普通复选/开关及文字链接保留各自角色尺寸；多行字段、卡片和表格行操作不参与。全局交易纪律快捷卡片的规则动作是紧凑附属操作组，整组显式 `small`，不得把此例外推广为常规工具栏默认值。
 - 新一级 `AppForm`、独立 `AppDialog` / `PageDrawer` / `PageDrawerSurface`、`AppDataTable` 和 `AppRowActions` 同时隔离 Vue 行上下文和 CSS 高度继承；独立浮层不继承调用方旧表单的尺寸，内部新建表单仍正常继承自身档位。普通包装层、插槽不截断行作用域。日期浮层候选与数字加减图形不作为独立行控件拉伸；数字输入的右侧上下按钮按实际外框分半。
-- 门禁 `npm run check:control-rows` 使用模板 AST 与 PostCSS 检查独立尺寸、绑定高度和局部覆盖，并覆盖行外常规入口、普通表单/设置字段尺寸继承、共享买卖方向操作插槽与分段控件宽度（含业务类、内联样式、动态绑定及媒体/容器查询），构建同时执行；动态样式无法确认时要求收口。静态检查不证明最终几何一致，必须在代表性真实控件组合与页面按主题、密度和换行边界验证实际外框，同一缩放下归一化高度差不超过 1px，并检查焦点、禁用、加载和输入保留。
 - 按钮式单选、按钮式复选与水平库分段（`el-radio-button / el-checkbox-button / el-segmented`）通过 `global.css` 的选择控件适配共同消费上述尺寸档位，覆盖库内固定纵向内距和最小高度；普通枚举文字与 `PageSegmented` 同用表格正文字阶。不得仅凭 `size` 名称或尺寸变量已配置就判定实际高度一致。多行选项卡片保留自然高度：当前指标创建方式卡片消费 `.app-choice-button-card`，由共享适配器维护 `--app-choice-control-height / --app-choice-padding-block / --app-choice-display / --app-choice-justify`；消费页面不得用这些变量私改尺寸。按钮式单选/复选的边框由 `borders.css` 统一承接：使用实体边线与单一接缝，选中、禁用同步改变真实边线颜色，`outline` 仅用于键盘焦点。相邻项由前项绘制单条分隔线，不用负向补线或负间距抵消边宽；分散排列的选项卡片保留各自完整外框。
 - 控件宽度不按组件类型强制等宽，而按内容容量使用全局语义档位：`compact=96px`（短数值/短状态）、`short=140px`（短枚举）、`medium=180px`（普通日期/选择）、`long=220px`（搜索/较长选择）、`wide=300px`（复杂多选/长输入），需要承接容器剩余空间时使用 `fill=100%`。事实源为 `global.css` 的 `--app-control-width-*` 与 `.app-control-width-*`；普通控件由页面选择能完整承载常态内容的最小档位。`AppFilterSelect` 全选摘要优先复用当前模式的容量档位；标签模式由 `visibleTagCount=1..3` 依次映射到 `medium / long / wide`，未全选时预留对应数量的值和 `+N`；`displayMode=count` 映射到 `short`，未全选时显示“已选 N”。页面不得再叠加宽度档位。窄容器统一由 `max-width: 100%` 收缩。新增或修改控件禁止匿名内联固定宽度；确有独立几何或响应式算法的复合组件使用具名组件 class，并说明不能消费通用档位的理由。
 - **下拉选型与宽度契约**：普通单选/表单下拉使用 `AppSelect`，列表筛选与紧凑多选编辑使用 `AppFilterSelect`，需要远程搜索或批量校验的业务多选基于 `AppMultiSelect`，已有领域选择器（如 `MarketBenchmarkSelect`、`IndicatorSelect`、`AssetProfileSelect`）继续复用其业务组件；这些组件内部统一使用 `AppSelect`。页面与业务组件禁止直接使用 `el-select` / `ElSelect` 或 HTML `<select>`；`el-option` / `el-option-group` 继续用于声明候选项。不要为视觉统一合并不同领域的选项、空值或搜索逻辑。
@@ -658,7 +648,7 @@ typography:
 - 状态优先级为禁用（未加载）／加载 > 按下 > 悬浮 > 默认；焦点环独立叠加，选中／展开独立表达。禁止把 focus、hover 当作业务 selected，禁止把 loading 画成灰色 disabled。库按钮 loading 不使用通用白蒙层，避免暗色主题突然泛白。
 - 主色、成功、警告、危险使用同一算法；info 常态映射正文色，不能使用禁用弱文字，有框时保留中性反馈，text 时通过主色文字变化反馈，link 时通过主色文字及下划线反馈。运行时 info 的基础色、RGB 与派生色从当前 `text` 生成。普通次要操作常态保持中性色，主色仅作悬浮／按下反馈，不改成常驻实色主按钮；关闭／清除继续使用中性反馈，危险等显式语义不被主色覆盖。
 - 主题原色统一消费：主色链接式按钮、语义文字按钮及主色分段选项直接使用 `--el-color-primary` 等对应主题原色；实色按钮默认背景使用同一原色，白字保持现有设计。导航链接使用 `.app-interaction-link.app-interaction-link--primary` 共享颜色、悬停下划线和键盘焦点，保留 RouterLink 导航语义。禁止按对比度阈值自动生成另一套常态文字色或实色背景；可读性通过具体主题评审处理。
-- 登录页例外只覆盖 `login-primary` 品牌提交和 `login-tab` 模式页签；创建账户、返回登录等认证视图导航使用 `el-button link`，发送验证码等执行命令使用 `el-button text`，切换预设用标准按钮，主题图标用 `AppIconButton`。不得按 `login-*` 前缀放行任意原生按钮或私有颜色配方。
+- 专用原生按钮按文件和角色精确登记，禁止按页面前缀放行。登录页例外只覆盖 `login-primary` 品牌提交和 `login-tab` 模式页签；创建账户、返回登录等认证视图导航使用 `el-button link`，发送验证码等执行命令使用 `el-button text`，切换预设用标准按钮，主题图标用 `AppIconButton`。不得按 `login-*` 前缀放行任意原生按钮或私有颜色配方。
 - 样式复用必须消除覆盖：共享角色的消费者只维护几何，禁止在宿主、局部 scoped 选择器或动作名称子文字上覆盖共享交互色，复合卡片中独立的金融值与业务状态继续消费对应 token；静态值与导航值共用名称类时，静态颜色只匹配非链接分支。不得用整行或整个按钮组的 opacity 表示已办／只读，避免连同可用操作一起变淡；使用状态标签和中性表面表达。
 - 标准命令按钮由共享 CSS 直接接管库内部 text/link/has-bg 的背景分支，不再回退通用 `--el-fill-color` 作为按下色。图标按钮与行操作只维护几何和行为，不重复定义状态颜色。菜单项、显式 text+bg、选中与展开是独立角色，普通文字命令透明化不清除这些状态底色。按钮角色门禁纳入 `check:contracts`：静态 link 显式声明导航意图，动态 text/link 切换仅由 AppRowActions 根据 kind 承接；调用语义仍须结合点击结果审查，不以文案或 router.push 字样机械判断。关闭、导航、分段、品牌是明确的专用角色，不用于普通业务命令绕过矩阵。
 - 鼠标悬浮反馈只面向支持 hover 的精细指针；触摸保留按下反馈。颜色过渡复用共享180ms配方；减少动态效果时关闭颜色过渡，保留必要加载标识。禁用和加载必须由组件属性阻止行为，CSS 只负责呈现。
@@ -674,12 +664,9 @@ typography:
 - 输入框、下拉已有占位提示以及自带标签的复选框/开关不重复添加标题；无可见提示的控件通过 `selfLabelled: false` 显示左侧标签。筛选控件统一垂直居中、同一行尺寸一致；百分比宽度依赖包裹层时须改为明确宽度与 `max-width` 上限，避免下拉收缩成箭头。
 - 长条件区受控滚动，保证列表仍可操作；窄屏单列。条件错误显示在字段旁并阻止无效查询和收起；摘要定位展开后聚焦原控件，收起时焦点回到入口。
 
-- 连板天梯同日筛选刷新保留热点入口和焦点，热点数量明确标为上次结果，旧摘要和内容由加载态接管；跨日、错误或无权限不展示旧热点。
-- 连板天梯的日期、统计窗口及筛选操作栏独立置于页面 action 区，位于主从工作台上方；不嵌入天梯分层或随走势分析栏收窄。领域操作栏由 `LimitLadderFilters` 承载，继续复用公共高级搜索与排序控件。
-
 #### 查询、重置与刷新
 
-- 筛选/查询类控件（关键字、下拉、日期、分段、勾选、分页、排序）改选或输入后必须自动查询；除分页换页只查询当前页外，条件变化同时回到第 1 页。关键字统一防抖，列表筛选条不设置“查询”按钮。一次性执行、运行、评估、保存等动作型提交不属于筛选查询，继续使用显式命令。
+- 普通列表的筛选/查询类控件（关键字、下拉、日期、分段、勾选、分页、排序）改选或输入后必须自动查询；除分页换页只查询当前页外，条件变化同时回到第 1 页。关键字统一防抖，普通列表筛选条不设置“查询”按钮；确需完整条件显式提交或高成本查询时，使用“查询”并标记为显式查询主命令。一次性执行、运行、评估、保存等动作型提交不属于筛选查询，继续使用显式命令。
 - 列表筛选条按“范围/日期/下拉/勾选等条件 → 文本搜索框 → 重置筛选等命令 → 排序”排列；存在多个文本搜索框时连续放在全部条件选择之后。排序统一复用 `AppSortControl` 并固定为所属操作栏的最后一个控件；空间不足时保持该 DOM 阅读顺序自然换行，不把搜索框插入条件选择之间，也不把排序拆散到其它位置。
 - “重置筛选”只用于恢复用户主动改变的查询条件。存在两个及以上独立筛选项、复合条件、持久化或不易识别的非默认条件，或者筛选无结果后需要一键恢复时，应提供“重置筛选”；只有一个可清空输入或一个带“全部”的简单选择时，优先使用控件自身清空能力，不机械增加按钮。控件数量只是辅助判据，若页面的工作对象、运行参数或必选业务上下文没有合理默认值，不得为了凑重置按钮而清空。
 - 回测、试算等多参数执行表单使用“重置参数”，恢复当前模式的初始日期、数值和开关，并清除资产选择、临时加载项、历史记录投影、执行结果及错误；不得连带清空历史记录列表或修改页面设置中的长期默认值。默认参数且没有载入记录/结果时按钮禁用；重置后的必选资产允许为空，由现有必填校验阻止无效执行。
@@ -705,8 +692,7 @@ typography:
 - “重置筛选”是同步恢复查询状态后触发查询，不把列表查询耗时伪装成持久化重置，因此通常不显示独立 loading；按钮必须通过 `:disabled="!hasFilters"` 或等价计算在 clean 状态立即锁定。仅在有生效筛选的空态中出现时，可以通过条件渲染代替 disabled。若动作会写服务端、清除覆盖或恢复持久化配置，它不属于筛选重置，必须使用对应明确命名、独立 loading，并按影响决定确认。
 - 同一数据区域同一时刻只允许一个会提交结果的前台请求；不同独立区域可以并行。自动轮询属于后台保鲜，不占用手动按钮 loading，但必须与前台请求共享过期响应保护，不能覆盖更新的数据。
 - loading 期间保留按钮稳定语义名称，由组件旋转图标表达进行中，不把“刷新”临时改成“刷新中”导致宽度跳动。纯图标刷新同样必须把同一同步状态传给 `AppIconButton.loading`。
-- 后续页面固定使用：筛选恢复为“重置筛选”，同上下文同步为“刷新”，失败请求重放为“重试”，只读取任务状态为“刷新状态”，重新运行业务任务为“重新执行”或“重新计算”，草稿回退为“还原修改”，持久化基线恢复为“恢复默认”，覆盖删除为“清除用户覆盖”，领域重置必须带对象名。普通列表不设“查询”按钮；确需显式提交的完整条件或高成本查询使用“查询”并标记为显式查询主命令。
-
+- 后续页面固定使用：筛选恢复为“重置筛选”，同上下文同步为“刷新”，失败请求重放为“重试”，只读取任务状态为“刷新状态”，重新运行业务任务为“重新执行”或“重新计算”，草稿回退为“还原修改”，持久化基线恢复为“恢复默认”，覆盖删除为“清除用户覆盖”，领域重置必须带对象名。
 
 #### 键盘能力与适用边界
 
@@ -732,9 +718,10 @@ typography:
 - 页面快捷键还必须让位于 input、textarea、select、contenteditable、链接、按钮和所有 tabindex 控件；有可见 dialog、alertdialog、menu、listbox 或日期面板、页面隐藏或 KeepAlive 失活时暂停。监听在恢复时幂等注册，失活和卸载时清理；异步动作结束前不重复执行，失败需向用户反馈。
 - 权限判断必须在快捷键的共享业务入口执行，不能仅依赖模板 `v-permission`。加载、无权限或数据状态不允许时，不消费按键、不发请求；快捷键不替代服务端鉴权。
 - 未声明的全局保存、删除、返回、撤销、图表十字线键盘移动等不属于当前能力；需要时先明确作用域、冲突、替代入口和反馈，再接入共享机制。不得以“统一键盘”为由接管系统快捷键。
-- 新增/修改入口须验证：鼠标与键盘等价、焦点可见、输入法与组合键不误触、禁用/忙态/权限一致、子控件不冒泡激活、弹层优先、缓存页面不残留监听。语义和事件用定向 Vitest 验证；真实焦点移动与滚动由内置浏览器复核。
 
 ### 提示、截断与可访问名称
+
+Tooltip、popover 和说明提示不得溢出到左侧菜单；说明性文字使用 §3 的统一说明入口，不在页面堆放长文或复制私有提示结构。
 
 以下是全站提示准入的唯一规则；表格、按钮和响应式清单引用本节，不另建默认行为。
 
@@ -766,7 +753,6 @@ typography:
 - `AppHoverInfo` 的 `reference` 只用于稳定的虚拟锚点；图标按钮保留真实 button 根节点及原有权限、点击和加载语义。Tooltip 只管理 `aria-describedby`，不得覆盖按钮自身的 `aria-controls` / `aria-expanded` / `aria-haspopup`；Element Plus 锁版本补丁在更新与清理锚点时共同守卫，由 `AppHoverInfo.spec.ts` 的真实库回归覆盖。监听随锚点更换与销毁清理，缓存页面停用时清理瞬态显示。提示文案为空或不适用时不生成空触发层。
 - 禁用原因通过 `AppActionHint` 的外壳悬停或键盘阅读；禁用按钮仍不执行，外壳不代理点击。`AppIconButton` 在禁用或加载时暂停自身提示；需要说明原因时由外壳承接，并显式关闭按钮提示。无权命令连同说明入口一起隐藏，权限过滤先于提示；加载状态不改成可执行状态。相同信息只出现一个提示，有用途说明的图标目标不再叠加截断气泡。
 - 提示复用 `app-wrapping-popper` 的主题、排版和空间边界；共享 AppHoverInfo 允许在原方向空间不足时四向回退，并以双轴边界约束保持正文在视口内；简短说明与结构化帮助保留各自组件角色，不在消费页面私设颜色、字号或动效。
-- `npm run check:tooltips` 按 Vue/TS AST 检查原生/透传 title、旧自动接口、图标名称及直接包裹的重复提示，已接入生产构建；组件标题、插槽和 iframe 名称不误报。定向测试覆盖图标默认提示、文案覆盖与动态更新、显式豁免、关闭例外、真实截断、禁用原因、焦点/鼠标区分、点击关闭及监听清理；内置浏览器复核实际主题、位置和消失行为。
 
 ### 滚动条显隐
 
@@ -777,7 +763,6 @@ typography:
 - 显隐仅控制滑块和轨道的透明度、可见性与命中，禁止改变内容宽高、列宽或滚动位置。应用内与受控浮层的轨道在公共策略接管前默认隐藏，避免初始化或缓存切换闪现。隐藏轨道不拦截点击；可见滑块和轨道继续复用组件库的拖动、点击与界面比例坐标换算。没有可聚焦子控件且发生溢出的 viewport 由公共层补齐键盘滚动入口，表单和导航不增加额外 Tab 停靠点。
 - 视觉 token 唯一维护在 `styles/scrollbar.css`，颜色沿用现有主题中性色；减少动画偏好取消过渡，强制颜色模式在有溢出时保持显示。文本域等原生编辑控件保留浏览器滚动；图表画布内平移/缩放、浏览器自身界面不属于内容滚动条。
 - `AppScrollArea` 的外壳只承担尺寸、表面和布局项职责；内容层通过 `--app-scroll-*` 布局变量或 `contentStyle` 承接 flex/grid、间距和内边距，禁止使用后代宽泛选择器影响嵌套实例。`as` 保留原生语义或既有四态/表单组件；不增加业务状态分支。位置恢复与测量通过组件暴露的 `viewport`、`scrollTo`、`setScrollTop`、`setScrollLeft` 和 `update` 操作真实滚动元素，不再读写外壳的 `scrollTop`。
-- `npm run check:scrollbars` 是构建门禁，检查未接入的原生滚动区、私有显隐样式及消费方覆盖参数；行为、真实库组件和资源清理由定向 Vitest 覆盖。临时内置浏览器复核正文、表格、抽屉和导航的实际进出、滚动与拖动，不能只用样式文本断言替代交互验收。
 
 ### 数值展示与输入
 
@@ -817,6 +802,8 @@ typography:
 
 ### 表格与列表
 
+多选跨分页/搜索累积。
+
 - 主数据表应作为 `growMain` 占据剩余空间，使用 `height="100%"` 让表体内部滚动；当一个标签页工作区承载多个互斥主表时，由 `tabs` 作为唯一 `growMain`，当前面板内的表体承接滚动。
 - `list` 原型必须且只能有一个顶层 `growMain`；主列表不得使用 `embedded`。
 - 长文档中后方仍有同级内容的局部表格不得独占富余高度；统一使用 `embedded`，由 `AppDataTable` 默认消费 `components/table/tableSizing.ts` 的 `LONG_DOCUMENT_TABLE_MAX_HEIGHT`，页面不重复传默认上限。显式 `height` 不叠加默认上限；显式 `max-height` 优先，确需完整展开时传 `:max-height="null"` 并说明原因。纵向混合工作台中，前置主业务表使用 `LEADING_WORKBENCH_TABLE_MAX_HEIGHT`，并通过 slot 的 `minH + idealH` 声明受控收缩范围；末尾表格可由 `section` 作为成长容器，在 `pageRegistry` 声明为唯一 `growMain`，内部表格继续作为嵌套 slot 登记。`VMixedGrow` 只让声明 `idealH` 的前置块收缩，未声明的固定块继续保持自然高度；页面不得复制 `clamp`、视口减法、私有行数换算或用 CSS 模拟成长关系。
@@ -832,7 +819,7 @@ typography:
 - 自适应列宽的角色、字符权重、控件预留、上限、对齐和数字排版唯一维护在 `components/table/adaptiveColumnWidth.ts`；页面只在动态标签无法推导时声明语义 `role`，不得复制数值或对齐 CSS。所有表头名称、辅助元信息及自定义表头均禁止中英文圆括号；所有标准表头保持单行且不换行；日期、单位或短口径摘要使用 `header-meta` 在标签后同行弱化展示；主内容前存在紧凑控件时使用 `leading-controls` 让组件统一缩进表头并预留列宽。说明性长文本继续放 `HelpTip` / `HelpHint`，不得通过私有 header slot 拼接第二套样式。静态模板由 `check:table-headers` 构建门禁守卫，动态列名经 `table/tableHeader.ts` 将括注转为无括号辅助元信息，保留业务内容。
 - 表头保持稳定，分页、批量操作和关键筛选不被表体滚动带走。
 - 不使用隔行变色作为默认识别手段；当前全局样式会取消 stripe 背景。
-- 列宽按信息类型分配：编号、状态、日期、操作列稳定窄列；名称、标题、描述、备注更宽；数字列保持易比较。
+- 禁止所有列平均等宽；列宽按信息类型分配：编号、状态、日期、操作列稳定窄列；名称、标题、描述、备注更宽；数字列保持易比较。
 - `data-table` / `wide-table` 的稳定字段只要支持排序，就必须同时支持列头直接排序和设置抽屉默认排序；分页表默认服务端分页与排序。只有具备明确规模上限、一次性返回完整结果的小集合才允许客户端分页与排序，且必须先对完整集合排序、再截取当前页，禁止只重排当前页。
 - 多级排序统一按“全量一级、页内二级”解释：默认或用户选择的一级字段必须由接口对完整结果集排序；只在当前已加载页提供的其它候选字段属于二级排序，只能在一级值相同的分组内稳定排序，并在二级值相同时保留接口顺序。纯本地完整结果可在本地完成全部层级；禁止把打乱接口一级顺序的当前页排序展示成全量排序。存在业务分层的视图以分层键作为不可破坏的一级边界，例如连板天梯固定按连板高度分层，卡片自定义排序只作用于各层内部。
 - `pageRegistry.componentMeta[slot].sortFields` 是可交互排序字段和默认排序候选的单一事实源；登记后该 slot 自动继承 `defaultSort`，页面表格必须把对应列接入 `sortable` / `@sort-change`。**反向契约**：页面列头可排序的字段必须登记进 `sortFields`，二者双向一致，由 `pageRegistry.spec.ts` 契约测试强制拦截漂移。
@@ -876,7 +863,7 @@ typography:
 | `ready` | 价值态 / 有数据态 | 接口或本地计算已返回可行动内容 | 不额外加状态图标；价值由表格、KPI、图表、详情、状态 tag 自身承载 | 标题或摘要写清范围、日期、数量、来源，例如“2026-07-10 · 预设榜单 · 320 条” |
 | `loading` | 加载态 | 首次加载、刷新、保存、运行、远程下拉 | 表格使用 `AppDataTable`；标准非表格异步区使用 `AppAsyncRegion`；只需单个阻断反馈时使用 `AppStateBlock loading`；按钮用 `:loading`；小型导航可用 Element Plus `Loading` 图标 | 页面级“正在加载{对象}…”，按钮级“{动作}中…”，下拉级“加载中…” |
 | `empty` | 空态 | 请求成功但当前条件下没有可展示数据，或用户尚未完成前置选择 | 表格由 `AppDataTable` 承接；标准非表格区域由 `AppAsyncRegion` 承接；单个业务子状态用 `AppStateBlock empty`；底层 `el-empty.app-empty*` 不由页面重复拼装 | “暂无{对象}”“请选择{对象}”“运行后在这里展示{结果}”“当前条件无命中” |
-| `error` | 异常态 / 无权态 | 主请求失败、局部依赖失败、403/权限失败、详情读取失败 | 标准非表格区域由 `AppAsyncRegion` 承接，单个阻断反馈用 `AppStateBlock error`；底层统一呈现警告结果。两变体二选一：**异常态**必须提供重试入口；**无权态**不提供重试（重试无意义），以「请联系系统管理员调整权限」说明不可重试原因（见 §312、§219；`AppStateBlock variant="permission"` 默认 `retry:false`） | 异常态“{对象}加载失败”+“请检查网络或稍后重试”；无权态“无权限{操作/查看对象}”+“请联系系统管理员调整权限” |
+| `error` | 异常态 / 无权态 | 主请求失败、局部依赖失败、403/权限失败、详情读取失败 | 标准非表格区域由 `AppAsyncRegion` 承接，单个阻断反馈用 `AppStateBlock error`；底层统一呈现警告结果。两变体二选一：**异常态**必须提供重试入口；**无权态**不提供重试（重试无意义），以「请联系系统管理员调整权限」说明不可重试原因（`AppStateBlock variant="permission"` 默认 `retry:false`，见[加载态与异常态](#加载态与异常态)） | 异常态“{对象}加载失败”+“请检查网络或稍后重试”；无权态“无权限{操作/查看对象}”+“请联系系统管理员调整权限” |
 
 四态运行时入口按区域职责选择，不按页面偏好选择：
 
@@ -975,7 +962,7 @@ typography:
 - **背景消费方式**：导航共用`--app-interaction-nav-hover-background` / `--app-interaction-nav-hover-color`，当前态只通过角色变量提供差异，统一规则覆盖组件库hover/focus默认色。卡片通过`--app-interaction-card-background` / `--app-interaction-card-border` / `--app-interaction-card-hover-border`保留各自语义；选中浅底与连续指标共用`--app-interaction-selected-background`，不复制局部透明度配方。
 - **点击职责**：天梯卡片通过`.app-interaction-delegated`仅响应`.app-interaction-trigger`主选择区；底部板块链接与帮助入口独立，不触发卡片选择或浮起。其他卡片的内部链接、帮助按钮继续保留原点击边界，不因视觉层扩大父级点击行为。
 - **排除范围**：侧栏分区标题、纯展示卡片、普通数据表格/列表行、图表/画布、命令按钮和紧凑筛选标签均不接入浮起机制。页面切换、异步内容、折叠、`PageSegmented`、弹窗/抽屉继续遵循各自既有动效规则，不套用卡片浮起；此处不表示全站所有历史动画均已迁移。
-- **新增接入与验收**：仅同角色可操作入口复用以上class和变量，登记组件维护清单；不得给所有`.el-card`、按钮或菜单标题添加笼统悬停规则。定向测试覆盖选择与嵌套点击边界、禁用和共享角色消费；内置浏览器复核明暗主题、普通/悬停/按下/选中/焦点状态及滚动边界，未能模拟的输入媒体偏好需注明静态契约验证范围。
+- **接入范围**：仅同角色可操作入口复用以上class和变量，登记组件维护清单；不得给所有`.el-card`、按钮或菜单标题添加笼统悬停规则。
 - “减少动态效果”来自操作系统辅助功能，由浏览器映射为 `prefers-reduced-motion`，不是应用新增设置；只降低运动呈现，不关闭加载状态、禁用状态或交互反馈。
 - 动效只增强反馈，缺少 Web Animations API 时直接显示内容。系统 `prefers-reduced-motion: reduce` 下不播放上述淡入、位移、折叠和选中指示过渡，停止共享骨架动画；偏好在淡入中变化时立即取消动画，恢复正常可见内容。
 - 不给行情数值、大表格行、K线或画布尺寸添加逐项进场、缩放或位移动画。不设置全局 `transition: all`；不使用常驻 `will-change`，动画结束、快速切换和卸载时释放资源。
@@ -985,13 +972,15 @@ typography:
 
 - `AppSummaryDisclosureCard`：规则、操作事实等“列表摘要 + 展开编辑”场景使用默认 `card`；只读检查清单使用 `variant="compact"` 的紧凑行，标题与附加摘要分列单行省略，保留完整原文并接入全局真实截断提示；状态通过 `leading` 插槽注入，无明细时传 `collapsible=false` 渲染静态摘要且不提供无效按钮；业务状态和命令通过插槽注入，组件不持有启停、删除或校验等领域逻辑；展开编辑区保持基础表面并用边框与主色边线表达层级，不使用常驻填充色形成嵌套色块；整块摘要使用带完整 `aria-expanded`、`aria-controls` 和可访问名称的专用原生 disclosure button，不得在消费页复制卡片结构。
 
-- 卡片只用于承载独立数据块、表格容器、设置组、弹层内容，不把页面 section 都做成浮动卡片。
+- 卡片只用于承载独立数据块、表格容器、设置组、工具面板或弹层内容，不把页面 section 都做成浮动卡片，也不以永久渐变、内阴影或大胶囊装饰制造无业务语义的常驻层级。
 - 同角色普通与可浮起卡片的静止边框统一消费主题边框色，不叠加白色内阴影提亮顶部；悬停时才按交互规范增强边框与投影。
 - 卡片阴影遵守 `shadow="never|hover|always"`：全局主题仅适配允许显示阴影的状态，不覆盖显式 `never`；表格结果卡片保持无阴影。
 - 普通卡片圆角统一消费 `--layout-card-radius`，默认预设为 10px；设置抽屉和用户中心等浮层卡片可使用 12-16px。
 - 普通内容卡片内距消费页面密度（紧凑 12px / 标准 16px / 宽松 24px）。独立主列表统一使用 `AppTableCard` 承接结果区外框：内容体无内距，表头与容器边缘、标题分隔线相接；标题与工具栏放在 header 插槽并保留内距，加载、空态、错误重试和分页必须位于同一外壳内，状态反馈和分页由组件保留空间。已有工作区卡片、`AppWorkspacePane` 或主从面板承接外围边界时，不重复套表格卡片；抽屉、展开行和局部明细表默认沿用所属容器。禁止使用页面私有表格外框或 `AppDataTable.framed`。混合说明、表单或图表的内容卡片不整体清零，禁止为贴边改写表格单元格内距。
 
 ### 弹窗与抽屉
+
+复杂表格、批量操作和长流程录入不得塞进普通小弹窗。
 
 - `AssetSearchDrawer`：公开资产页面统一消费，禁止私建同类选择器或搜索弹窗。资产浏览统一使用 `PageDrawer` 的 `xl` 语义宽度；从下拉选择器打开抽屉前必须先收起下拉浮层，禁止两个操作层重叠。无浏览权限时隐藏入口并显示明确无权态，不伪装成空态；加载查看默认不改变当前选择，需要外部展示时使用只读快照，只有“加载即展示结果”的场景才启用 `selectLoaded`。已加载方案作为会话候选按资产 ref 去重，切换、清空选择及复制为我的后仍保留，点击行内“×”只移除对应候选；刷新页面不持久化。列表和下拉统一提供移除入口。移除临时预览不等于删除资产；方案删除由编辑区独立删除按钮承接。移除事件按临时项身份判定，不依赖 `readonly`（本人名下系统内置资产也可能可编辑），并携带是否为当前选择；只有移除当前项时，消费页才同步清理对应请求和外部状态，移除未选中项须保留当前编辑器和结果。mine-only 候选不显示“我的”，外部只读项保留来源；列表失败发 `loadFailed`，消费页结束等待并提供错误反馈和重试。回测的运行快照与清理差异见[回测架构](agent-works/architecture/backtest.md)。下拉形态搜索入口通过 `searchButton="text|icon"` 选择，默认文字按钮；图标形态复用 `AppIconButton` 并以“搜索＋资产名”提供名称和提示，权限及打开抽屉行为保持同源。具体 props、emits 和状态机以组件类型、实现及 `AssetProfileSelect.spec.ts` 为准。
 
@@ -1026,7 +1015,6 @@ typography:
 - 标记独立占列，正文占剩余宽度；自动换行后的每一行都与正文首字对齐，不回到星号位置，也不继承父容器的居中排版。字号/行高使用 caption 的 12px/18px，颜色使用辅助文字 token；确需提醒操作后果时声明 `tone="warning"`，仍保持同一排版。校验失败不得改成带星号的普通说明。
 - 普通规则说明不使用 `el-alert type="info"` 的整块底色代替辅助说明；动态执行摘要、运行状态、风险告警和校验报告继续保留各自的语义呈现，禁止全局调浅 info 色阶来处理普通帮助。
 - 字段说明放在相应 `el-form-item` 控件下方，与控件列左边界对齐；多个字段共用的前置说明放在该组之前、由无标签的 `el-form-item` 保持控件列对齐。自定义字段区将说明放在对应控件容器下方；表单整体补充说明放在表单尾部。组件自身使用共享间距 token，调用方不得按 `label-width` 写死缩进或添加私有字号、标记、续行样式。
-- 本规范由 `AppFormHelp`、组件测试和 `formHelpContract.spec.ts` 共同承接；共享入口改动需复核横向标签表单、顶部标签表单及窄视口长说明，并同步真实组件登记与响应式维护矩阵，不新增布局 kind 或用户配置字段。
 
 ### 设置抽屉
 
@@ -1035,11 +1023,11 @@ typography:
 - 页面设置抽屉三段**固定顺序**：`布局` → `组件设置` → `业务选项`；每段**仅在该页有对应内容时渲染**。`布局` 恒在，`组件设置` 仅当 registry 声明了可配置组件字段，`业务选项` 仅当页面提供 `#business` 插槽；不得为了形式完整强插空段。
 - 抽屉三条配置通道按**属性所有者**划分，而不是按控件文案、出现页面或存储位置猜测：**布局段**收页面结构属性，凡是控制完整 slot / 模块是否存在、顺序、尺寸或密度的能力均登记为布局旋钮（例如 `slots.<slotId>.visible`），不得复制为组件内部 `config.visible`；**组件设置段**收当前页面已登记组件实例内部、可随该类组件复用的展示与交互默认能力——列显隐、默认排序、每页条数、组件内部区域高度、默认 tab、主从区宽度、分区内部字段集合、KPI 组内部指标项、日志详情自动滚动、快捷范围、多图组合与内部比例、默认数据粒度、组件内操作模式、联动工作台的默认模式与显示内容；字段能力由组件种类共享，页面专属取值按 `pageKey + slotId` 隔离，跨页面共用值则由字段声明的专用全局偏好承接，存储位置不改变组件归属。**业务选项段**只收由页面业务流程拥有的默认或偏好；页面主区对默认值的会话级覆盖不得登记为第二套持久化字段。判断顺序固定为：先判断是否改变完整 slot 的页面结构，是则归布局；否则再做替换检验——更换承载该能力的 Vue 组件后语义仍属于当前页面业务的，归业务选项，能力随组件实例一起成立或消失的归组件设置。不得仅因同一页面消费、字段名含“模式”或当前使用 `user_preference`，就把组件字段复制进 `usePageSettings`。
 - `PageSettingsDrawer` 的阶段或权限 `componentSlotIds` 只过滤业务组件，必须按组件种类自动保留抽屉自身的 `settings-drawer` 配置；是否允许用户调整字段仍遵守组件层策略。新增或修改白名单须通过覆盖全部开放设置页面、空白名单、阶段切换及权限分支的回归，不允许由各页面手工补公共 slot 防遗漏。
-- `布局` 和 `组件设置` 由元数据自动渲染；`业务选项` 由页面声明。布局旋钮必须按 `EditableKnob.group` 进入二级章节，基础密度归“基础布局”，完整模块显隐归“模块显示”，不得随字段增长继续在一级平铺。组件配置不得通过业务插槽再次渲染或移动到业务段，避免同一字段出现双入口、双持久化和职责漂移。
+- `布局` 和 `组件设置` 由元数据自动渲染；`业务选项` 由页面声明，不追加存储实现类徽标。布局旋钮必须按 `EditableKnob.group` 进入二级章节，基础密度归“基础布局”，完整模块显隐归“模块显示”，不得随字段增长继续在一级平铺。组件配置不得通过业务插槽再次渲染或移动到业务段，避免同一字段出现双入口、双持久化和职责漂移。
 - 设置项必须有默认值、来源展示、合法值域和重置路径；页面设置抽屉 footer 的「恢复默认」必须同时重置页面业务偏好、页面布局/组件用户层，以及抽屉自身尺寸和当前折叠态偏好。
-- 「组件设置」段与系统管理→布局配置→**页面布局**编辑器的「组件特性」**共用唯一渲染器** `components/ComponentAutoSettings.vue`，不得另写第二套组件特性表单。两类宿主的层级与适配参数见[设置渲染实现](agent-works/architecture/frontend-layout.md#设置渲染与折叠偏好)。
+- 「组件设置」段与系统管理→布局配置→**页面布局**编辑器的「组件特性」**共用唯一渲染器** `components/ComponentAutoSettings.vue`，不得另写第二套组件特性表单。
 - 配置面板的“默认折叠分区”按 `componentMeta.collapseSections.parentKey` 展示组/子分区层级；父组独立一行，只有同一父组下的同级候选可以并排并自然换行。整份候选清单及有子项的父组复用 `SettingsGroup` 折叠，无子项的候选不显示箭头；父组通过标题插槽保留复选框，复选框点击和键盘操作不得触发收展。清单展开态沿用抽屉折叠偏好，和业务默认折叠 key 列表分开管理。父子默认值独立选择，不做级联勾选；继续保存稳定 key 列表，切换当前页签的候选范围时保留隐藏项选值。
-- 折叠记忆统一复用 `useDrawerPreferences`：三个一级分组跨页面共用，内部节点按页面与稳定标识隔离；刷新、关闭后重开及缓存淘汰后均恢复。业务分区必须声明同页唯一的 `PageSettingSection.sectionKey`；禁止用展示标题、数组位置或业务对象 ID 作为记忆键，也不逐页维护监听器或写进布局、业务默认值。批量操作与单节点操作同源；恢复默认同时清除全局一级状态及当前页面全部内部节点（含隐藏节点），保留其他页面内部记忆。本地回退与待同步意图必须按租户/用户隔离，旧响应和快速刷新不得覆盖用户操作。节点键组成、上下文接线及保存队列由[实现专题](agent-works/architecture/frontend-layout.md#设置渲染与折叠偏好)维护；其他容器遵循各自调用方生命周期。
+- 折叠记忆统一复用 `useDrawerPreferences`：三个一级分组跨页面共用，内部节点按页面与稳定标识隔离；刷新、关闭后重开及缓存淘汰后均恢复。业务分区必须声明同页唯一的 `PageSettingSection.sectionKey`；禁止用展示标题、数组位置或业务对象 ID 作为记忆键，也不逐页维护监听器或写进布局、业务默认值。批量操作与单节点操作同源；恢复默认同时清除全局一级状态及当前页面全部内部节点（含隐藏节点），保留其他页面内部记忆。本地回退与待同步意图必须按租户/用户隔离，旧响应和快速刷新不得覆盖用户操作。其他容器遵循各自调用方生命周期。
 - 设置树以单个可编辑或只读事项为叶子；普通控件内的平面下拉选项、分段按钮和复选选项不另成层级，有明确父子关系的折叠候选清单按前条处理。每个 slot，以及包含子设置或子组的具名复合标题，必须使用可折叠 `SettingsGroup`；包括 K 线范围、个股/板块分析默认项、图表组合、多图高度比例、排序字段与方向、列显隐及默认折叠候选。单图固定比例仍为叶子。禁止使用空 `PageSettingItem` 充当复合标题，或在叶子内嵌套子设置。层级由共享折叠树按最近真实视觉父组递增，`level` 仅作为无父组宿主的起始层级；内部不得手工推算深度。布局编辑器隐藏的重复 slot 标题为透明包装器，不增加缩进或折叠入口，其真实子组仍可逐层操作。抽屉根按钮只控制一级组；任一 `SettingsGroup` 存在直接子分组时，必须由共享折叠树自动提供本层“一键收起/展开下级”，不得由页面手工维护子节点清单。父级操作不改写更深层状态；在已收起组操作下级控制按钮时先展开该组，让结果可见。所有可折叠节点统一使用箭头，二级及更深标题固定为 14px，每深入一个真实分组增加一档缩进和结构线；缩进不依赖当前收展状态。叶子事项统一由 `PageSettingItem` 或 `PageToggleRow` 承载。结构约束由 `check-settings-structure.mjs` 接入 `check:design`，层级计算、逐层收展及偏好恢复由定向 Vitest 覆盖。
 - 设置抽屉中将页面当前会话值保存为默认或尺寸档案的操作，统一复用 `PageSettingsApplyButton`，视觉角色按按钮矩阵的语义轻量角色接入（`primary + plain`），整行宽度；不得在字段组件内复制颜色、宽度、边距或保存状态样式。当前页面值与已保存载荷无实质差异时禁用，提交函数二次拒绝无变化请求；按钮 `loading` 必须覆盖真实持久化周期并阻止重复提交，在请求的成功或失败分支统一释放；保存失败统一通过 `ElMessage.error` 明确提示并保留当前值供重试。普通编辑与恢复默认保持中性，危险操作才使用 `danger`。采用入口紧跟对应字段，不额外展示工作区像素、匹配阈值或档案清单等实现细节。
 - **页面可改动属性单向默认机制**：抽屉/组件配置层只提供**默认值**，页面主区可直接交互改动的属性必须用独立会话 ref 承载；默认值投影与组件分页分别复用 `composables/useDefaultedSessionValue.ts`、`composables/useComponentPageSizeSession.ts`，**页面改动只进会话态、绝不写回默认值**——刷新/重进页面后重新应用抽屉默认。禁止可写 computed 或主区 `v-model` 直写持久层；设置抽屉内的默认值编辑，以及带有明确“设为默认”语义的显式操作，才是默认值持久化入口。初始化优先级固定为：先完成页面业务偏好与远端布局默认值水合，再应用 URL query、返回列表态等显式会话恢复，最后才接受用户交互；迟到的默认值不得清除已经恢复的显式会话覆盖。URL query/分享链接恢复只写会话 ref，不触碰默认。**会话态清单**（本就该会话级、也不进抽屉）：纯查询条件（关键字/日期口径/方案选择）、业务资产选择、运行参数（如回测日期、所选方案和当次执行参数）。
@@ -1059,28 +1047,21 @@ typography:
 
 视觉预设独立控制外观 token，不参与上述页面布局覆盖链路；业务偏好与专用全局偏好按各自通道保存和消费。
 
-批量密度同步只允许修改当前登录用户的页面 `density`，不得改变页面模板、其他组件偏好或默认授权；同步期间较新的逐页选择应保留。共享入口、权限与保存屏障见 [前端布局实现](agent-works/architecture/frontend-layout.md#用户页面布局与组件字段)。
+批量密度同步只允许修改当前登录用户的页面 `density`，不得改变页面模板、其他组件偏好或默认授权；同步期间较新的逐页选择应保留。
 
-用户持久偏好必须按登录身份隔离，并以 PostgreSQL 为权威；具体配置分类与权威表由[环境配置](agent-works/architecture/environment-configuration.md#3-生效配置与数据库覆盖层)维护，运行时路由由[前端布局实现](agent-works/architecture/frontend-layout.md#配置通道与调用关系)维护。会话态不得混入持久偏好，范围遵守[设置抽屉](#设置抽屉)的单向默认契约。localStorage 只允许作为未登录/离线 fallback、旧偏好迁移源和登录前主题读取，不得作为登录用户配置权威，也不得保存页面查询现场。
+用户持久偏好必须按登录身份隔离，并以 PostgreSQL 为权威。会话态不得混入持久偏好，范围遵守[设置抽屉](#设置抽屉)的单向默认契约。localStorage 只允许作为未登录/离线 fallback、旧偏好迁移源和登录前主题读取，不得作为登录用户配置权威，也不得保存页面查询现场。
 
-页面状态按语义选择生命周期：默认值投影复用 `useDefaultedSessionValue`，刷新或实例重建后重新应用默认；需要分享、前进后退或刷新复现的查询状态写入 URL；不适合暴露在 URL 的跨路由返回现场使用 `utils/pageSessionStorage.ts`，不得由页面直接调用 localStorage/sessionStorage。返回现场须按租户/用户隔离，刷新可恢复、返回页消费一次，关闭 Tab、退出登录或切换身份后清理。共享入口与业务 Store 的恢复分工见[会话生命周期实现](agent-works/architecture/frontend-layout.md#会话生命周期与返回现场)。
+页面状态按语义选择生命周期：默认值投影复用 `useDefaultedSessionValue`，刷新或实例重建后重新应用默认；需要分享、前进后退或刷新复现的查询状态写入 URL；不适合暴露在 URL 的跨路由返回现场使用 `utils/pageSessionStorage.ts`，不得由页面直接调用 localStorage/sessionStorage。返回现场须按租户/用户隔离，刷新可恢复、返回页消费一次，关闭 Tab、退出登录或切换身份后清理。
 
 ### 5.1 新建或改造页面
 
-新页面和布局改造必须先选择原型，再声明 slot、组件种类、滚动归属、`growMain` 和配置字段。优先使用脚手架生成骨架；需要手写时也必须从 `pageRegistry.ts` 的 `PageLayout` 单一事实源开始，不从旧页面复制临时 CSS。
+新页面和布局改造先选择原型，再声明 slot、组件种类、滚动归属、`growMain` 和配置字段。以 `pageRegistry.ts` 的 `PageLayout` 为单一事实源，不从旧页面复制临时 CSS。
 
-```bash
-cd frontend
-npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型> --route /path --view XxxView
-```
-
-可复制流程、计划块和页面登记格式见 `agent-works/configurable-layout-system/page-template.md`。本文件只保留稳定原则、原型边界和机器登记区块。
-
-### 5.1.1 搜索/筛选行边框
+#### 5.1.1 搜索/筛选行边框
 
 列表页的搜索/筛选交互行统一用卡片边框承载：`<el-card shadow="never" class="filter-card">` 包裹 `AppControlRow` 或 `AppAdvancedSearch`，`filter-card` 使用全局样式（`margin-bottom: 0`，卡片体内边距 `var(--app-density-card-padding)`）。禁止搜索行裸 div 无边框散落在页面。工具栏/操作按钮行不强制套卡。
 
-### 5.1.2 页面间距承载
+#### 5.1.2 页面间距承载
 
 页面标题行到主内容区的间距由布局系统统一承载，页面禁止叠加私有间距：
 
@@ -1089,13 +1070,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - `.page-head` / `.page-title-row` / `.title-row` 等标题行选择器**禁止再声明 `margin-bottom` / `padding-bottom`**，否则与 `.lh-action` gap 叠加成双倍间距（曾出现 26px/28px）。标题行必须包在 `<div class="lh-action">` 内，间距交给 gap。
 - 页头容器（`.page-head` / `.page-toolbar`，以及页头同义换名宿主 `.audit-head` / `.dict-page-head`）统一 `align-items: flex-start`：动作按钮（按钮组、设置抽屉触发钮）与标题顶部平齐，锚定标题顶这条固定水平线，避免随副标题有无或长短浮动。禁止用 `flex-end` / `center` 让动作区随「标题+副标题」整块下沉或居中（曾造成跨页按钮高度不一致）。页头右侧子容器 `.page-head-actions`（承载 32px 控件组）保持 `align-items: center` 不变。内嵌 `HelpTip` 的标题行选择器 `.page-title-row` / `.title-row` 按 §3 保持 `align-items: center`，不在本条范围内。无页面标题的导航工具栏（如板块详情的 `.detail-nav`）不适用本条。该约束由 `typography-spacing-system.spec.ts` 强制。
 
-### 5.2 页面设计闭环触发条件
-
-新页面和布局改造执行完整页面设计闭环；局部组件、样式或交互改动只说明受影响区域、复用入口、维护项与验证范围。只改后端、接口、文案或不影响呈现的业务逻辑时，不填写页面设计模板。说明可放在已有计划或会话中，不因模板新增计划文件。
-
-页面设计闭环至少覆盖：页面定位、原型选择和理由、slot 与组件设计、四态反馈设计、配置层级、复用/新增判断、维护清单、测试与关键视口验收。声明新增布局原型、组件种类或组件配置字段时，必须同步给出维护清单。
-
-### 5.3 原型清单与决策流程
+### 5.2 原型清单与决策流程
 
 | 原型 | 适用 |
 |---|---|
@@ -1115,7 +1090,9 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 4. 多组件只有满足宽度、阅读顺序和组件可重排条件时才重排；否则保持业务顺序。
 5. 单个大表不做多列重排，直接表体内滚。
 
-### 5.4 主内容区策略
+### 5.3 主内容区策略
+
+所有滚动祖先保持 `min-height: 0`。禁止使用 `height: calc(100vh - Npx)` 或等价视口硬编码驱动页面主体，也不得绕过 `LayoutHost` 手写 `.v-page` / `.v-grow` / `.v-scroll` 外壳。
 
 `LayoutHost` 根据 schema 自动选择主区策略：
 
@@ -1126,7 +1103,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `mixed` | 多组件且恰一个 `growMain` | `VMixedGrow` 保持固定块自然高，并对主成长组件执行同一 `minH` 条件滚动规则 |
 | `columns` | 多组件且允许重排 | 容器宽度足够时多列，窄屏回退单列 |
 
-### 5.5 共享工作区与尺寸档案
+### 5.4 共享工作区与尺寸档案
 
 - `AppWorkspacePane`：个股查询、每日榜单、连板天梯、板块行情通过 `MarketMasterDetailWorkspace` 共同消费，个股详情与板块详情直接用于各自两栏；栏级标题统一高度、边框和间距，次要文字色的小号辅助行承载稳定的业务类型，当前日期或结果批次作为主标题展示；主次栏头统一消费 `--el-bg-color` 内容面，不提供主色背景变体，禁止由页面复制背景样式；不与图表内部 `StockChartPanelHeader` 合并；图表范围、分栏收展等栏级操作通过 `actions` 插槽承载；紧凑抽屉已有标题时可隐藏重复栏头。 主工作区使用`padding="standard"`和`fill`承接标准内距及剩余高度；已有表格/图表消费者默认`padding="none"`、`scroll="delegated"`。普通长内容可用`scroll="body"`，仅由容器内部的AppScrollArea滚动；内部表格或分栏已拥有滚动时必须使用delegated，不能重复加滚动层。`toolbar`与`footer`插槽位于正文滚动区外，统一复用AppControlRow维护尺寸、间距和自然换行；页面不再复制外框、工具区/底部内距及占位补偿。
 
@@ -1178,43 +1155,17 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 输入优先级为 **disabled > error+focus > error > focus > hover > default**：焦点匹配真实 `.is-focus`、`.is-focused`、range的`.is-active`及textarea`:focus`；错误焦点保留danger内沿与同色光晕。命令按钮继续复用 `buttonStates.css` 和共享焦点轮廓，loading保留角色原色。选中与焦点独立承接；区域loading/empty/error替换内容时保留宿主外框。各组件仅声明和消费真实支持的状态，不因库支持就虚构包装组件的loading/readonly能力。
 
-`npm run check:borders` 检查全量Vue/CSS中的普通游离圆角、边框直写颜色和页面私改输入边界，并纳入构建；同时追踪 `AppWorkspacePane` / `.app-surface` 模板宿主中的股票画布，穿透异步与插槽层检查显式 `embedded`，独立弹层重置宿主作用域。`borderContract.spec.ts` 扫描真实消费者并用删除声明的变异验证漏接必失败，`StockChartWorkspace.spec.ts` 使用真实宿主、异步层、画布和生产边框样式验证嵌入/独立外沿及模式切换。登录品牌与具名缩略图例外由 `scripts/border-contract.mjs` 登记。该静态门禁不证明全部视觉状态通过。系统组件详情中的 `BorderStatePreview` 直接渲染真实控件，供本地核对组合态、详情1/2/3列及结果三态，不请求或保存业务数据；原型预览仍只证明其规范样板。
-
+登录品牌与具名缩略图的边框例外由 `scripts/border-contract.mjs` 精确登记。
 
 ## 7. 使用规范与禁用事项
 
 ### 7.1 必须遵守
 
-前端统一快检为 `npm run check`：先执行共享静态检查，再执行布局契约测试和类型检查，不依赖后端、PG、Redis 或浏览器。构建与普通测试复用 `check:design`；CI 运行同一快检入口，不默认启动完整 E2E。`check:contracts` 解析真实组件来源、选择器与后代、模板绑定、CSS / TS 色值以及列表状态契约；受控库组件仅允许由契约指定的共享包装器持有，改名、深路径导入和动态组件不能形成第二入口。颜色例外必须精确到文件、选择器或符号、属性和值集合并注明业务依据，未命中的过期例外直接失败，禁止整文件豁免普通消费方。
-
-静态门禁只覆盖可解析的源码和已登记角色，不能证明任意业务实现是否语义重复、任意自然语言规则是否矛盾，或实际视觉和交互是否通过；这些仍按复用审查及浏览器验收执行。新增稳定角色须同步其共享入口、契约和违规反例，不能只补组件清单。
-
-- 所有 registry 业务页面必须走 `<LayoutHost>`。
-- 新页面必须使用脚手架或 `pageRegistry.ts` 中的 `PageLayout` 单一事实源。
-- 主数据区优先占据可用空间，表格表体内滚，分页和关键操作稳定展示。
-- 所有滚动祖先保持 `min-height: 0`。
-- 页面和主要组件必须声明 `ready / loading / empty / error` 四态处理；空态、错误态和加载态不得用彼此替代。
-- 列表页分页/排序默认走服务端；具备明确规模上限且一次性完整加载的小集合可采用客户端分页，但必须先全量排序再切页；筛选变更自动触发；多选跨分页/搜索累积。
-- 标准命令、纯图标操作、列表筛选、关键字搜索和日期选择必须复用 §4 登记的统一控件入口；具体 props、状态、事件和降级行为以“真实复用组件清单”、组件类型与测试为准，页面不得私建平行实现。
-- 页面主体字体、字号、行高、字重和间距必须优先消费 `global.css` 的 `--app-font-*`、`--app-line-height-*`、`--app-space-*` token 或 `.app-*` 语义类；新增 px 值必须属于文档允许的局部特例。
-- 说明性文字必须使用 §3 定义的统一说明入口，不在页面堆放长文或复制私有提示结构；具体承载方式以真实复用组件清单为准。
-- 新增系统组件 kind 必须维护组件能力事实源；新增 Web 配置字段必须同时维护字段配置事实源和页面消费事实源。只有 kind 语义能力发生变化时才同步修改 `COMPONENT_CATALOG`，不得为凑登记机械添加能力 key。
+`check:contracts` 解析真实组件来源、选择器与后代、模板绑定、CSS / TS 色值及列表状态。受控库组件仅允许由指定共享包装器持有，改名、深路径导入和动态组件不能形成第二入口。新增稳定角色须同步共享入口、契约及违规反例，不能只补组件清单。
 
 ### 7.2 禁止事项
 
-- 禁止使用 `height: calc(100vh - Npx)` 或等价视口硬编码高度。该规则由 `layout-contract.spec.ts` 扫描 `src/views` 强制。
-- 禁止绕过 `LayoutHost` 手写 `.v-page` / `.v-grow` / `.v-scroll` 页面外壳。
-- 禁止新增页面不读取的“假配置”。
-- 禁止预设改变页面业务结构、slot、原型或任意 CSS。
-- 禁止复杂表格、批量操作、长流程录入塞进普通小弹窗。
-- 禁止所有列平均等宽；列宽必须跟信息类型匹配。
-- 禁止页面 section 全部做成浮动卡片，只有独立重复项、工具面板或弹层内容适合卡片。
-- 禁止让 tooltip、popover、说明提示溢出到左侧菜单。
-- 禁止接口失败只弹 toast 后留下空白区域；失败区域必须有可见错误态。
-- 禁止把 403、接口错误或未加载完成写成“暂无数据”。
-- 禁止绕过 §3、§4 与真实复用组件清单登记的统一控件、图标和说明入口，创建页面私有的平行实现；具体组件选择、可访问性、状态与结构约束以对应章节、组件类型和测试为准。
-- 禁止使用 Unicode / emoji 冒充交互图标，禁止通过永久渐变、内阴影或大胶囊等装饰制造无业务语义的常驻层级。
-- 禁止新增未登记的普通文字字号、游离字体族和随机间距；禁止把登录页、品牌字标、图表 tooltip 的特殊排版复制到业务页面。
+禁止绕过对应章节的统一入口、token、布局或字段契约建立页面私有平行实现。颜色例外须精确到文件、选择器或符号、属性和值集合，并说明业务依据；未命中的过期例外直接失败，禁止整文件豁免普通消费方。局部排版例外的适用范围见 §10，不能扩散为普通页面规则。
 
 ### 7.3 组件特性配置治理
 
@@ -1226,7 +1177,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 - 字段在 `COMPONENT_FIELD_DEFS` 中声明 label、control、layers、默认值和值域。
 - `componentSchemas.ts` 接受该字段。
-- 后端 `layout_config.py` 同步字段规则和归属校验；同名字段在不同组件种类中值域不同时，静态值域必须按 `(component kind, field)` 维护，不得只按字段名合并。
+- 结构型适用条件须同步后端实例归属校验，不能只在前端隐藏而保存接口仍放行。后端 `layout_config.py` 同步字段规则和归属校验；同名字段在不同组件种类中值域不同时，静态值域必须按 `(component kind, field)` 维护，不得只按字段名合并。
 - 字段必须能由 `ComponentAutoSettings` 的通用控件安全渲染，或登记到专用动态候选渲染器；自动继承但没有安全控件的字段由组件配置契约测试直接拒绝。
 - 适用性为 `always` 的字段自动进入每个同 kind slot；候选型字段由 `componentMeta.columns/sortFields/tabs/collapseSections` 有值时自动启用；结构型字段由 slot `config` 声明，例如 `pagination: true` 启用 `pageSize`。
 - 实例明确不适用时必须在 `componentMeta.fieldApplicability[field]` 设置 `enabled: false` 并填写原因；不得以“没登记”隐式漏掉字段。
@@ -1235,35 +1186,30 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 页面实际读取并应用字段值。
 - 复合业务组件若封装了多个可配置系统组件实例或承接页面业务口径，必须暴露并由消费页显式填写 `registryPageKey`（或等价的机器可读页面标识），并登记到 `layout/compositeComponentContracts.ts`；该契约声明必需子 slot、字段和运行时绑定。影响结果或展示口径的页面偏好统一登记到 `layout/pageBusinessPreferenceContracts.ts`，通用测试从每个直接或间接消费点反查默认值、抽屉控件与动态 prop 传递；中间组件的业务口径 prop 必须为必填且原样透传，禁止内部写死。只校验“已登记字段是否被消费”不够，因为它无法发现整个 slot 或业务偏好从未声明。
 - 配置中心和设置抽屉共用 `ComponentAutoSettings`，且同时受字段代码最大层级与管理员当前开放策略限制。
-- 历史上已存但现策略禁止或实例不适用的值必须丢弃；普通页面、设置控件与配置中心必须消费一致的字段策略。加载顺序与分层过滤由[实现专题](agent-works/architecture/frontend-layout.md#页面加载过滤与合并)维护。
+- 历史上已存但现策略禁止或实例不适用的值必须丢弃；普通页面、设置控件与配置中心必须消费一致的字段策略。
 - `useRemoteLayoutConfig` 返回的 `componentAllowedLayers` 必须传入 `PageSettingsDrawer`；页面脚手架和 `pageRegistry.spec.ts` 同时守卫该接线，禁止只在配置中心消费管理员策略。
-- 测试覆盖自动继承、实例适用性、代码默认/页面/用户合并、策略收紧、越权、类型和值域。
 
-允许配置的能力、最大层级及实例候选统一以 `COMPONENT_FIELD_DEFS`、slot `config` 和 `componentMeta` 为准；不在 DESIGN 手写维护当前字段目录。当前字段与层级映射见[实现专题](agent-works/architecture/frontend-layout.md#当前受控字段目录)。
+允许配置的能力、最大层级及实例候选统一以 `COMPONENT_FIELD_DEFS`、slot `config` 和 `componentMeta` 为准；不在 DESIGN 手写维护当前字段目录。
 
-`usePageSettings` 只保留页面业务偏好，不承载通用组件展示能力。声明专用全局偏好的组件字段必须走其专用持久化入口，禁止写入页面布局用户层。`settings-drawer.bodyScroll` 只允许 page 层控制；设置抽屉的折叠能力固定开启，不开放“允许折叠”或“默认折叠分区”配置，实际交互状态按用户记忆。字段的保存目的地、旧偏好兼容与恢复实现见[前端布局实现](agent-works/architecture/frontend-layout.md#专用字段的持久化路由)。
+`usePageSettings` 只保留页面业务偏好，不承载通用组件展示能力。组件字段允许 user 层不代表一定写 `layout_user_config`：专用全局偏好须声明 `userPersistence` 并走对应持久化入口，未声明时才写页面布局用户层。后端按 `(component kind, field)` 拒绝误写，禁止用 pageKey 或固定 slotId 猜测目标。`settings-drawer.bodyScroll` 只允许 page 层控制；设置抽屉的折叠能力固定开启，不开放“允许折叠”或“默认折叠分区”配置，实际交互状态按用户记忆。
 
 页面可改动的组件字段只提供默认值，页面读默认初始化会话态、改动不回写，遵守[设置抽屉](#设置抽屉)的单向默认契约。
 
 ### 7.4 页面 / 组件 / 布局变更维护闭环
 
-具体维护矩阵、计划块和验收命令统一维护在 `agent-works/configurable-layout-system/page-template.md`。本节只保留长期规则：
+页面登记必须满足：
 
-- 页面、布局原型、系统组件种类、组件字段、真实复用组件、按钮图标体系或业务偏好发生变化时，必须同步对应代码事实源、页面消费事实源、文档入口和测试。
 - 非公开 View 路由、`pageRegistry` 和页面登记 marker 必须以 `pageKey` 双向一致；registry 页面必须真实渲染 `LayoutHost`、通过 `getPageLayout` 消费布局，并按四态入口矩阵实际渲染 `AppDataTable`、`AppAsyncRegion` 或 `AppStateBlock` 中至少一种标准运行时状态入口，禁止把直接使用 `AppStateBlock` 固化为所有页面的唯一接入方式。
 - 已有稳定真实实现的系统组件种类必须由消费页面实际导入并渲染对应复用入口；当前强映射包括 `data-table` / `wide-table` → `AppDataTable + AppTableColumn`、`settings-drawer` → `PageSettingsDrawer`、`config-panel` → `ConfigPanelSection`（系统字段表单由 `ConfigGroupForm` 承载；交易纪律由 `StockRuleChecklistEditor` / `StockRuleConditionChecklist` 承载）。`toolbar`、`section`、`tabs` 等组合型种类不要求虚构一对一空壳组件。
-- DESIGN 只维护稳定设计规则、组件关系、字段治理原则和机器读取的页面登记 marker；不展开可复制流程和命令清单。
-- `page-template.md` 是执行清单；如它与本文件或布局测试冲突，优先修正模板或代码事实源，不在 DESIGN 复制第二套矩阵。
+- 页面模板与本文件或布局测试冲突时，依据有效契约核对并修正下游模板或代码事实源，不能以重复正文掩盖冲突。
 
 ### 7.5 自动化测试锚点
 
 关键点击链路允许使用 `data-testid` 作为测试锚点，但只服务自动化测试，不表达样式或业务状态。
 
-- 自动化测试流程、Playwright 与交互式浏览器工具的适用边界，以 `agent-works/e2e-automation/guide.md` 为入口；本节只约束 UI 组件如何提供稳定锚点。
 - 必须加锚点的对象：页面级入口按钮、抽屉/弹窗容器、提交/重置/删除等关键命令、分段控件中会被 E2E 断言的选项。
 - 不给普通文本、布局装饰、一次性容器批量加锚点；能通过稳定复用组件承载时，不在页面私有 DOM 上重复加。
 - 复用组件提供可选 `testId` 时，页面或配置渲染器只在需要 E2E 覆盖的关键实例上传入。
-- Playwright E2E 优先用 `getByTestId` 和项目 helper；临时浏览器复核可以用可见文本定位，但不能把脆弱定位沉淀成长期用例。
 
 ## 8. 响应式行为
 
@@ -1313,23 +1259,9 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 - 页面开发必须复用 `LayoutHost`、登记 `responsiveProfile` 和有 `minWidth=0` 基础断点的 `layout.responsive`；登记完整性与布局合法性由现有 registry/validator 测试约束。
 - `scaffold-page` 自动生成独立的 `responsive-review-pending` 标记；接入业务组件后仍须按模板完成响应式设计与关键视口实测，留下具体结论后替换标记。`layout-contract.spec.ts` 拒绝带标记的页面交付。手写页面同样执行模板，不得跳过复核。
-- `typography-spacing-system.spec.ts` 扫描所有 Vue/CSS 的尺寸媒体查询（包含范围语法），`layout-contract.spec.ts` 检查主体高度、布局入口和统一分页。机器测试不能证明内容优先级合理或真实渲染不溢出。
-- 新增/删除 Vue 文件或改变 CSS 查询时，用 `npm run docs:responsive` 同步清单自动字段；降级语义、恢复入口与消费方变化由维护者更新人工列。`check:responsive` 检查源码一致性与待补充项，`responsive-inventory.spec.ts` 保留页面记录覆盖和同步器边界回归。JS 阈值、业务优先级、恢复与状态保留由人工和定向验证承担。
-- 视口复核按模板进行，交付分别列出定向测试、浏览器实测及未验证项。普通临时复核使用内置浏览器，Playwright 仅按 E2E 准入规则执行，不要求每个新页面新增 E2E。
+- 登记完整或测试通过不能证明内容优先级合理、实际渲染不溢出。
 
-## 9. AI 开发入口
-
-本节只做入口，不维护可复制 prompt、计划块或验证命令。新增或改造前端页面时，实施流程、页面设计闭环、维护清单、页面登记模板和验收命令统一维护在 `agent-works/configurable-layout-system/page-template.md`。
-
-执行边界：
-
-- 凡涉及新增或改造前端页面、布局、组件配置、抽屉、表格、样式或交互表现，必须先读取并执行 `agent-works/configurable-layout-system/page-template.md`；按变更范围应用对应章节，无需重复声明已读取。
-- 设计规则以本文件 §1~§8 为准；代码事实以 `frontend/src/layout/`、`frontend/src/components/`、`frontend/src/styles/global.css` 和后端 layout 校验为准。
-- 页面原型、slot、滚动归属、`growMain`、组件字段和页面登记按 `page-template.md` 执行。
-- 新增组件字段必须回到 §7.3 的字段治理闭环，不在 prompt 或计划里临时声明第二套配置口径。
-- 如 `page-template.md` 与本文件或布局测试冲突，优先修正下游模板，不在 DESIGN 复制流程细节。
-
-### 页面登记索引
+## 9. 页面登记索引
 
 该区块只作为机器读取和轻量人工索引，不承载组件字段、slot 配置、列、排序或业务状态事实源。新增 registry 页面必须写入 `pageRegistry.ts` 并以相同 `pageKey` 出现在下方 marker 内；`pageRegistry.spec.ts` 会校验受控路由、registry 与 marker 的 `pageKey` 双向一致，`scaffold-page` 负责同步生成三处登记。
 
