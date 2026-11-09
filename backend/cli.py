@@ -308,27 +308,69 @@ def cmd_refetch_daily(args: argparse.Namespace) -> int:
 
 
 def cmd_seed_presets(args: argparse.Namespace) -> int:
-    from backend.scoring.score_profile import ScoreProfileRepo
-    from backend.screening.profile import ProfileRepo
-    from backend.signals.trade_profile import TradeProfileRepo
     from backend.storage import get_client
+    from backend.storage.database_lifecycle import seed_platform_profiles
     from backend.storage.pg_client import get_pg_client
-    from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 
-    tenant_id, owner_user_id = PUBLIC_BOARD_OWNER
     pg = get_pg_client()
     market = get_client()
-    counts = {
-        "筛选": ProfileRepo(
-            pg=pg, tenant_id=tenant_id, owner_user_id=owner_user_id).seed_presets(),
-        "评分": ScoreProfileRepo(
-            market=market, pg=pg, tenant_id=tenant_id, owner_user_id=owner_user_id).seed_defaults(),
-        "买卖": TradeProfileRepo(
-            market=market, pg=pg, tenant_id=tenant_id, owner_user_id=owner_user_id).seed_defaults(),
-    }
+    counts = seed_platform_profiles(market, pg)
     summary = "，".join(f"{kind} {count} 个" for kind, count in counts.items())
     print(f"系统内置方案入库: {summary}")
     return 0
+
+
+def cmd_database(args: argparse.Namespace) -> int:
+    """数据库统一入口：默认只读计划，只有显式 apply 且指纹匹配才写目标库。"""
+    import hmac
+    import json
+
+    from backend.storage.database_lifecycle import (
+        initialize_database,
+        lifecycle_plan,
+        verify_database,
+    )
+    from backend.storage.duckdb_client import DuckDBClient
+    from backend.storage.pg_client import get_pg_client
+    from backend.storage.pg_identity import pg_fingerprint
+    from backend.storage.schema_contract import target_fingerprint
+
+    try:
+        if args.refresh_contract and args.action != "gate":
+            raise ValueError("--refresh-contract 只能用于隔离 database gate")
+        if args.apply and args.action not in {"init", "upgrade"}:
+            raise ValueError("--apply 只能用于 database init/upgrade")
+        if args.action == "gate":
+            from backend.devtools.database_gate import run_gate
+
+            return run_gate(refresh_contract=args.refresh_contract)
+        pg = get_pg_client()
+        fingerprint = pg_fingerprint(pg)
+        path = get_settings().duckdb_path()
+        target = target_fingerprint(pg, path)
+        writing = args.action in {"init", "upgrade"} and args.apply
+        if writing and not hmac.compare_digest(args.expected_target_fingerprint or "", target):
+            raise ValueError("双库目标指纹不匹配；先执行 database plan 核对 PG 与 DuckDB 目标")
+        # 计划在文件尚不存在时使用内存库，不因检查而创建正式 DuckDB 文件。
+        if args.action == "check" and not path.exists():
+            raise ValueError("DuckDB 文件不存在，请先完成实例准备与 database init")
+        duck_path = path if writing or path.exists() else ":memory:"
+        with DuckDBClient(db_path=duck_path, read_only=not writing and path.exists()) as duck:
+            if args.action == "check":
+                report = verify_database(duck, pg)
+            elif writing:
+                report = initialize_database(duck, pg, mode=args.action)
+            else:
+                mode = args.action if args.action in {"init", "upgrade"} else "auto"
+                report = lifecycle_plan(duck, pg, mode=mode)
+            report["pg_fingerprint"] = fingerprint
+            report["target_fingerprint"] = target
+            report["duckdb_path"] = str(path.resolve())
+            print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+            return 0 if report["ok"] else 1
+    except Exception as exc:  # noqa: BLE001 -- CLI 边界返回非零，不能把底层失败当作检查成功。
+        print(f"数据库操作失败：{exc}", file=sys.stderr)
+        return 1
 
 
 def cmd_migrate_rbac(args: argparse.Namespace) -> int:
@@ -709,6 +751,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--host", help="覆盖监听地址（默认取 config.server.host；dev 建议 127.0.0.1，prod 用 0.0.0.0）")
     p_serve.set_defaults(func=cmd_serve)
     sub.add_parser("health", help="本地自检").set_defaults(func=cmd_health)
+
+    p_database = sub.add_parser("database", help="数据库计划、初始化、升级、只读验收与隔离门禁")
+    p_database.add_argument("action", choices=("plan", "init", "upgrade", "check", "gate"))
+    p_database.add_argument("--apply", action="store_true", help="init/upgrade 显式写入目标库")
+    p_database.add_argument("--expected-target-fingerprint", help="database plan 返回的双库目标指纹")
+    p_database.add_argument("--refresh-contract", action="store_true",
+                            help="仅 gate：从独立声明式空库重新生成结构契约并执行门禁")
+    p_database.set_defaults(func=cmd_database)
 
     p_bf = sub.add_parser("backfill", help="全量回填数据（M1）")
     p_bf.add_argument("--codes", help="逗号分隔的代码子集（如 600000.SH,000001.SZ）")

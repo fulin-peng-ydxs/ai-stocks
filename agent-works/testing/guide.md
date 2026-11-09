@@ -39,6 +39,8 @@ npm test -- src/layout/__tests__/pageRegistry.spec.ts
 | `npm test -- <测试文件>` | `pretest` 自动执行静态门禁，再运行指定 Vitest；纯逻辑用 node，真实组件装配可用 jsdom | 类型检查、真实浏览器几何及后端闭环；`npm test` 无过滤时才运行全量 Vitest |
 | `python -m pytest backend/tests/test_xxx.py::test_name -q` | 指定领域、服务、API 或存储测试；依据用例判断真实存储、内存库及 Mock 边界 | 未覆盖的真实入口、外部来源及代表性规模；全量入口为 `python -m pytest backend/tests/ -q`，不默认执行 |
 | `python -m backend.cli verify-catalog` | 双库物理发现、表/字段业务元数据、归属/来源/关系及质量/鲜活度策略契约；表新增或修改时合并前必跑 | 数据值正确性和业务结果 |
+| `./start.sh database gate` | 独立真实 PG 与 DuckDB 的新装、冻结旧库升级、重跑保护、完整结构/seed 负例、失败恢复及真实 CLI/目录验收；缺依赖或跳过均失败 | 业务实例实际状态、大表性能及领域数据转换；完整策略见 [数据库专题](../architecture/database-lifecycle.md) |
+| `./start.sh database check` | 指定环境当前双库的实例、结构、完成摘要、必需 seed 和目录只读验收 | 初始化/修复写入和领域数据质量；文件锁与服务保护沿用本指南 |
 | `python -m backend.cli verify-data`、领域规模测试 | 实际数据质量/完整性及按需跨源核验；专项规模测试验证真实服务链路的加载、计算、落表和重跑 | 外部接口 Mock 的真实性；数据质检不是任意功能的验收替代 |
 | AI 内置浏览器 | 临时复现、点击、控制台、视觉、焦点、滚动和响应式实测 | 长期自动回归、未观察状态和后端业务正确性 |
 | Playwright | 满足专项准入的浏览器独有稳定关键链路 | 已由低层测试负责的计算口径、任务重试、并发和落库；命令与夹具仅按专项指南执行 |
@@ -47,7 +49,7 @@ npm test -- src/layout/__tests__/pageRegistry.spec.ts
 
 **构建准入**：只有构建配置、依赖、路由或懒加载、全局资源、生产产物受影响，执行发布门禁，或用户明确要求时才运行 `npm run build`。开发预览使用 HMR；普通局部模板、组件逻辑或样式不因改动文件就默认构建。下方清单所有行共用此条件。
 
-[前端 CI](../../.github/workflows/frontend-contracts.yml)在 push/PR 执行 `npm run check`，不包含全量 Vitest、后端 pytest 或 E2E；检查状态仅能证明该范围。PG/Redis 不可用时部分 pytest 会 skip，真实库 API 冒烟也可能整组跳过；例如分时规模测试仅设置 `INTRADAY_SCALE_STOCKS` 时运行。命令退出成功不能把跳过项计为通过，依赖与规模须按待验收场景落实。
+[前端 CI](../../.github/workflows/frontend-contracts.yml)在 push/PR 执行 `npm run check`，不包含全量 Vitest、后端 pytest 或 E2E；[数据库 CI](../../.github/workflows/database-contracts.yml)独立执行隔离数据库门禁。其他后端测试在 PG/Redis 不可用时仍可能 skip，真实库 API 冒烟也可能整组跳过；例如分时规模测试仅设置 `INTRADAY_SCALE_STOCKS` 时运行。命令退出成功不能把跳过项计为通过，依赖与规模须按待验收场景落实。
 
 ## 总维护清单
 

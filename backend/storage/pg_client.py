@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -41,6 +42,8 @@ class PostgresClient:
         self._min = min_size if min_size is not None else s.postgres.pool_min
         self._max = max_size if max_size is not None else s.postgres.pool_max
         self._pool: ConnectionPool | None = None
+        # 初始化和业务复合操作共用同一连接；嵌套事务使用 psycopg savepoint。
+        self._transaction_state = threading.local()
 
     @property
     def pool(self) -> ConnectionPool:
@@ -60,9 +63,9 @@ class PostgresClient:
         return self._pool
 
     def execute(self, sql: str, params: list[Any] | None = None) -> int:
-        """执行单条 DDL/DML，自动提交，返回受影响行数（-1 表示不可知）。"""
+        """执行单条 DDL/DML；加入当前事务，无外层事务时自动提交。"""
         try:
-            with self.pool.connection() as conn, conn.cursor() as cur:
+            with self.cursor_in() as cur:
                 cur.execute(sql, params or [])
                 return cur.rowcount
         except Exception as e:
@@ -71,7 +74,7 @@ class PostgresClient:
     def query_df(self, sql: str, params: list[Any] | None = None) -> pd.DataFrame:
         """查询并返回 pandas DataFrame（无结果集返回空 DataFrame）。"""
         try:
-            with self.pool.connection() as conn, conn.cursor() as cur:
+            with self.cursor_in() as cur:
                 cur.execute(sql, params or [])
                 if cur.description is None:
                     return pd.DataFrame()
@@ -91,8 +94,17 @@ class PostgresClient:
                     cur.execute(...); cur.execute(...)
         """
         try:
+            bound = getattr(self._transaction_state, "connection", None)
+            if bound is not None:
+                with bound.transaction():
+                    yield bound
+                return
             with self.pool.connection() as conn, conn.transaction():
-                yield conn
+                self._transaction_state.connection = conn
+                try:
+                    yield conn
+                finally:
+                    self._transaction_state.connection = None
         except AIStocksError:
             raise
         except Exception as e:
@@ -100,12 +112,13 @@ class PostgresClient:
 
     @contextmanager
     def cursor_in(self, conn: psycopg.Connection | None = None) -> Iterator[psycopg.Cursor]:
-        """产出游标：conn 非空则并入调用方事务（不另开），否则自建事务自动提交。
+        """产出游标：优先使用显式 conn，其次当前线程外层连接，否则自建事务。
 
         供仓库写方法可选并入外部事务——让"业务写入 + perm_ver 自增"能在**同一 PG 事务**里原子提交
         （多租户 RBAC：权威失效与业务同生共死，不被 Redis 或跨事务窗口拖成 fail-open）。
         用法：`with self.pg.cursor_in(conn) as cur: cur.execute(...); cur.execute(...)`
         """
+        conn = conn or getattr(self._transaction_state, "connection", None)
         if conn is not None:
             with conn.cursor() as cur:
                 yield cur
@@ -130,6 +143,11 @@ _client: PostgresClient | None = None
 
 def get_pg_client() -> PostgresClient:
     """模块级单例客户端。"""
+    from backend.storage.client_scope import postgres_override
+
+    scoped = postgres_override.get()
+    if scoped is not None:
+        return scoped
     global _client
     if _client is None:
         _client = PostgresClient()

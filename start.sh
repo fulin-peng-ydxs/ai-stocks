@@ -339,6 +339,7 @@ main() {
     restore-runtime) restore_runtime_state "${1:-}" ;;
     logs)     tail -F "$LOG_FILE" ;;
     dev-users) "$PY" -m backend.cli dev-users "$@" ;;
+    database) "$PY" -m backend.cli database "$@" ;;
     e2e-user) "$PY" -m backend.devtools.e2e_test_users "$@" ;;
     e2e-backtest-run) "$PY" -m backend.devtools.e2e_backtest_runs "$@" ;;
     e2e-board-data) "$PY" -m backend.devtools.e2e_board_data "$@" ;;
@@ -347,7 +348,7 @@ main() {
       ;;
     e2e-trade-discipline) "$PY" -m backend.devtools.e2e_trade_discipline "$@" ;;
     *)
-      echo "用法: ./start.sh [dev|prod|stop [--force]|restart [--force]|status|assert-idle|stop-if-idle|logs|dev-users|e2e-user|e2e-backtest-run|e2e-board-data|e2e-stock-board-correlation|e2e-trade-discipline]"
+      echo "用法: ./start.sh [dev|prod|stop [--force]|restart [--force]|status|assert-idle|stop-if-idle|logs|database|dev-users|e2e-user|e2e-backtest-run|e2e-board-data|e2e-stock-board-correlation|e2e-trade-discipline]"
       return 2
       ;;
   esac

@@ -1405,9 +1405,6 @@ _MIGRATIONS: list[str] = [
     # 股本维度关联表补齐；只迁移旧版系统表清单，不覆盖管理员自定义值。
     "UPDATE data_dimension_registry SET tables='[\"stock_share_capital_daily\",\"stock_share_capital_event\",\"stock_share_capital_history\"]' "
     "WHERE dimension='share_capital' AND tables='[\"stock_share_capital_daily\"]'",
-    # 维度说明文案润色（去任务编号/开发口吻）——种子 ON CONFLICT DO NOTHING 不覆盖存量行，故迁移刷新
-    "UPDATE data_dimension_registry SET descr='股东户数/十大股东等，规划中，暂未采集' WHERE dimension='shareholders'",
-    "UPDATE data_dimension_registry SET descr='筹码峰/成本分布，规划中，暂未采集' WHERE dimension='chip_peak'",
     # 调度系统重构：async_task 加来源标记（任务中心区分 手动/定时·任务名），存量行回填为手动
     "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS trigger_source VARCHAR",
     "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS job_id VARCHAR",
@@ -1465,6 +1462,13 @@ _MIGRATIONS: list[str] = [
     "ALTER TABLE board_dict ADD COLUMN IF NOT EXISTS member_snapshot_at TIMESTAMP",
     # 存量成员保持 NULL，兼容既有历史计算；只有升级后新发现关系记录首次完整采集业务日。
     "ALTER TABLE board_member ADD COLUMN IF NOT EXISTS first_seen_date DATE",
+    # 早期 ADD COLUMN 不支持约束，补齐后必须显式收敛为新装的 NOT NULL。
+    "UPDATE scheduled_trigger_event SET dispatch_order=0 WHERE dispatch_order IS NULL",
+    "ALTER TABLE scheduled_trigger_event ALTER COLUMN dispatch_order SET NOT NULL",
+    "UPDATE score_profile SET include_st=TRUE WHERE include_st IS NULL",
+    "ALTER TABLE score_profile ALTER COLUMN include_st SET NOT NULL",
+    "UPDATE score_profile_version SET include_st=TRUE WHERE include_st IS NULL",
+    "ALTER TABLE score_profile_version ALTER COLUMN include_st SET NOT NULL",
 ]
 
 
@@ -1492,6 +1496,47 @@ def _primary_key_columns(client: DuckDBClient, table: str) -> set[str]:
     return {str(row["name"]) for row in rows.to_dict("records") if bool(row.get("pk"))}
 
 
+def _validate_rebuild_source(client: DuckDBClient, table: str, ddl: str, *,
+                             legacy_keys: tuple[set[str], ...] = (),
+                             legacy_ddl: str | None = None) -> None:
+    """重建只接纳已识别旧形态；额外列/索引/约束与类型变化必须先人工定位。
+
+    目标表最后通过不代表源数据没被丢弃，因此在 DROP 前检查源结构；不能只靠重建后门禁。
+    """
+    from backend.storage.schema_contract import duck_schema
+
+    with DuckDBClient(":memory:") as reference:
+        reference.execute(ddl)
+        expected = duck_schema(reference)["tables"][table]
+        expected_key = _primary_key_columns(reference, table)
+    actual = duck_schema(client)["tables"][table]
+    allowed_checks = set(expected["constraints"])
+    if legacy_ddl:
+        with DuckDBClient(":memory:") as reference:
+            reference.execute(legacy_ddl)
+            allowed_checks.update(duck_schema(reference)["tables"][table]["constraints"])
+    unknown_columns = actual["columns"].keys() - expected["columns"].keys()
+    changed_types = any(actual["columns"][name][0] != expected["columns"][name][0]
+                        for name in actual["columns"].keys() & expected["columns"].keys())
+    unknown_checks = {value for value in actual["constraints"]
+                      if not value.startswith("PRIMARY KEY") and value not in allowed_checks}
+    if (unknown_columns or changed_types or unknown_checks or actual["indexes"]
+            or _primary_key_columns(client, table) not in (expected_key, *legacy_keys)):
+        raise StorageError(f"{table} 含未识别的源结构，拒绝重建覆盖")
+
+
+def _copy_rebuild_rows(client: DuckDBClient, source: str, target: str) -> None:
+    """按列名复制所有旧值，不能依赖历史库与新 DDL 的物理列顺序相同。"""
+    columns = client.conn.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema='main' AND table_name=? ORDER BY ordinal_position", [source],
+    ).fetchall()
+    quoted = ",".join('"' + row[0].replace('"', '""') + '"' for row in columns)
+    source_name = '"' + source.replace('"', '""') + '"'
+    target_name = '"' + target.replace('"', '""') + '"'
+    client.conn.execute(f"INSERT INTO {target_name} ({quoted}) SELECT {quoted} FROM {source_name}")
+
+
 def _migrate_stock_board_correlation_snapshot_keys(client: DuckDBClient) -> None:
     """把旧的当前态主键幂等升级为按 as_of_date 保存的每日快照主键。"""
     expected = {
@@ -1502,10 +1547,14 @@ def _migrate_stock_board_correlation_snapshot_keys(client: DuckDBClient) -> None
     pending = [table for table, columns in expected.items() if actual[table] != columns]
     if not pending:
         return
+    definitions = {"stock_board_correlation": DDL_STOCK_BOARD_CORRELATION,
+                   "stock_board_correlation_state": DDL_STOCK_BOARD_CORRELATION_STATE}
+    for table in pending:
+        legacy = {"code", "board_type"} if table == "stock_board_correlation" else {"code"}
+        _validate_rebuild_source(client, table, definitions[table], legacy_keys=(legacy,))
 
     with client.transaction():
         if "stock_board_correlation" in pending:
-            client.conn.execute("DROP TABLE IF EXISTS stock_board_correlation_pk_new")
             client.conn.execute(
                 DDL_STOCK_BOARD_CORRELATION.replace(
                     "CREATE TABLE IF NOT EXISTS stock_board_correlation",
@@ -1513,18 +1562,12 @@ def _migrate_stock_board_correlation_snapshot_keys(client: DuckDBClient) -> None
                     1,
                 )
             )
-            client.conn.execute(
-                "INSERT INTO stock_board_correlation_pk_new "
-                "SELECT code,board_type,board_code,score,corr_20,corr_60,sample_20,sample_60,"
-                "confidence,benchmark_code,benchmark_fallback,as_of_date,computed_at,"
-                "algorithm_version FROM stock_board_correlation"
-            )
+            _copy_rebuild_rows(client, "stock_board_correlation", "stock_board_correlation_pk_new")
             client.conn.execute("DROP TABLE stock_board_correlation")
             client.conn.execute(
                 "ALTER TABLE stock_board_correlation_pk_new RENAME TO stock_board_correlation"
             )
         if "stock_board_correlation_state" in pending:
-            client.conn.execute("DROP TABLE IF EXISTS stock_board_correlation_state_pk_new")
             client.conn.execute(
                 DDL_STOCK_BOARD_CORRELATION_STATE.replace(
                     "CREATE TABLE IF NOT EXISTS stock_board_correlation_state",
@@ -1532,14 +1575,8 @@ def _migrate_stock_board_correlation_snapshot_keys(client: DuckDBClient) -> None
                     1,
                 )
             )
-            client.conn.execute(
-                "INSERT INTO stock_board_correlation_state_pk_new "
-                "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
-                "benchmark_fallback,has_industry_champion,has_concept_champion) "
-                "SELECT code,as_of_date,computed_at,algorithm_version,benchmark_code,"
-                "benchmark_fallback,has_industry_champion,has_concept_champion "
-                "FROM stock_board_correlation_state"
-            )
+            # 部分旧库先补过诊断列再升级主键，不能只复制早期八列而丢失已有诊断值。
+            _copy_rebuild_rows(client, "stock_board_correlation_state", "stock_board_correlation_state_pk_new")
             client.conn.execute("DROP TABLE stock_board_correlation_state")
             client.conn.execute(
                 "ALTER TABLE stock_board_correlation_state_pk_new "
@@ -1557,11 +1594,53 @@ def _migrate_special_day_event_types(client: DuckDBClient) -> None:
     )
     if any("resumption_no_limit" in str(value) for value in constraints["constraint_text"]):
         return
+    _validate_rebuild_source(
+        client, "stock_special_trading_day", DDL_STOCK_SPECIAL_TRADING_DAY,
+        legacy_ddl=DDL_STOCK_SPECIAL_TRADING_DAY.replace(
+            "event_type IN ('delisting_first_day', 'resumption_no_limit')",
+            "event_type = 'delisting_first_day'",
+        ),
+    )
     with client.transaction():
-        client.execute("ALTER TABLE stock_special_trading_day RENAME TO special_day_migration_old")
-        client.execute(DDL_STOCK_SPECIAL_TRADING_DAY)
-        client.execute("INSERT INTO stock_special_trading_day SELECT * FROM special_day_migration_old")
-        client.execute("DROP TABLE special_day_migration_old")
+        client.conn.execute("ALTER TABLE stock_special_trading_day RENAME TO special_day_migration_old")
+        client.conn.execute(DDL_STOCK_SPECIAL_TRADING_DAY)
+        _copy_rebuild_rows(client, "special_day_migration_old", "stock_special_trading_day")
+        client.conn.execute("DROP TABLE special_day_migration_old")
+
+
+def _migrate_correlation_state_checks(client: DuckDBClient) -> None:
+    """补齐早期只 ADD COLUMN、未带 CHECK 的快照状态表；事务重建保留全部旧列值。
+
+    DuckDB 不支持 ALTER ADD CHECK；插入新表时验证已有数据，失败整段回滚。
+    未知额外列不会静默丢弃，而是在 INSERT 明确失败后交由结构验收定位。
+    """
+    checks = client.query_df(
+        "SELECT constraint_text FROM duckdb_constraints() "
+        "WHERE schema_name='main' AND table_name='stock_board_correlation_state' "
+        "AND constraint_type='CHECK'"
+    )["constraint_text"].tolist()
+    required = [f"{kind}_{suffix}" for kind in ("industry", "concept")
+                for suffix in ("empty_reason", "max_sample_20", "max_sample_60")]
+    if all(any(column in definition for definition in checks) for column in required):
+        return
+    with DuckDBClient(":memory:") as reference:
+        reference.execute(DDL_STOCK_BOARD_CORRELATION_STATE)
+        declared_checks = set(reference.query_df(
+            "SELECT constraint_text FROM duckdb_constraints() "
+            "WHERE table_name='stock_board_correlation_state' AND constraint_type='CHECK'"
+        )["constraint_text"])
+    if set(checks) - declared_checks:
+        raise StorageError("stock_board_correlation_state 含未知 CHECK，拒绝重建覆盖")
+    _validate_rebuild_source(client, "stock_board_correlation_state", DDL_STOCK_BOARD_CORRELATION_STATE)
+    temporary = "stock_board_correlation_state_contract_new"
+    with client.transaction():
+        client.conn.execute(DDL_STOCK_BOARD_CORRELATION_STATE.replace(
+            "CREATE TABLE IF NOT EXISTS stock_board_correlation_state",
+            f"CREATE TABLE {temporary}", 1,
+        ))
+        _copy_rebuild_rows(client, "stock_board_correlation_state", temporary)
+        client.conn.execute("DROP TABLE stock_board_correlation_state")
+        client.conn.execute(f"ALTER TABLE {temporary} RENAME TO stock_board_correlation_state")
 
 
 def init_db(client: DuckDBClient | None = None) -> list[str]:
@@ -1603,10 +1682,9 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
     _migrate_special_day_event_types(client)
     _migrate_stock_board_correlation_snapshot_keys(client)
     for mig in _MIGRATIONS:
-        try:
-            client.execute(mig)
-        except Exception as e:  # noqa: BLE001
-            log.warning("迁移跳过: %s (%s)", mig, e)
+        # 所有兼容语句均须可重跑；失败必须阻断，不能留下“启动成功”的半升级库。
+        client.execute(mig)
+    _migrate_correlation_state_checks(client)
     for idx_sql in _LIMIT_LADDER_INDEXES:
         client.execute(idx_sql)
     snapshot_metadata_column = client.query_df(
@@ -1621,10 +1699,7 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
         raise StorageError(
             "limit_ladder_snapshot.window_metadata_json 升级未完成：要求存在且 NOT NULL"
         )
-    try:
-        seed_dimension_registry(client)
-    except Exception as e:  # noqa: BLE001
-        log.warning("维度注册表 seed 跳过: %s", e)
+    seed_dimension_registry(client)
     return created
 
 

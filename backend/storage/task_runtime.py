@@ -186,17 +186,16 @@ def reset_task_runtime_backend_cache() -> None:
     _backend_cache = None
 
 
-def task_runtime_backend(
-    *, refresh: bool = False, pg_client: PostgresClient | None = None
-) -> str:
+def task_runtime_backend(*, refresh: bool = False, pg_client: PostgresClient | None = None) -> str:
     """Resolve runtime backend; auto switches only after the committed marker exists."""
     global _backend_cache
+    from backend.storage.client_scope import postgres_override
+
+    cacheable = pg_client is None and postgres_override.get() is None
     configured = os.environ.get("AI_STOCKS_TASK_STORAGE_BACKEND", "auto").strip().lower()
     if configured not in _BACKENDS:
-        raise ConfigError(
-            "AI_STOCKS_TASK_STORAGE_BACKEND 仅支持 auto、duckdb、postgres"
-        )
-    if _backend_cache is not None and not refresh:
+        raise ConfigError("AI_STOCKS_TASK_STORAGE_BACKEND 仅支持 auto、duckdb、postgres")
+    if cacheable and _backend_cache is not None and not refresh:
         resolved = _backend_cache
     else:
         pg = pg_client or get_pg_client()
@@ -210,11 +209,10 @@ def task_runtime_backend(
                 "无法读取任务运行态迁移标记，拒绝在 DuckDB/PostgreSQL 之间猜测切换"
             ) from e
         resolved = "postgres" if not row.empty else "duckdb"
-        _backend_cache = resolved
+        if cacheable:
+            _backend_cache = resolved
     if configured == "postgres" and resolved != "postgres":
-        raise ConfigError(
-            f"任务运行态尚未完成迁移，缺少标记 {TASK_RUNTIME_MIGRATION_MARKER}"
-        )
+        raise ConfigError(f"任务运行态尚未完成迁移，缺少标记 {TASK_RUNTIME_MIGRATION_MARKER}")
     if configured == "duckdb" and resolved == "postgres":
         raise ConfigError(
             f"任务运行态迁移标记 {TASK_RUNTIME_MIGRATION_MARKER} 仍为 applied，"
@@ -227,6 +225,11 @@ def get_task_runtime_client():
     global _pg_runtime_client
     if task_runtime_backend() == "duckdb":
         return get_duckdb_client()
+    from backend.storage.client_scope import postgres_override
+
+    scoped = postgres_override.get()
+    if scoped is not None:
+        return PostgresTaskRuntimeClient(scoped)
     if _pg_runtime_client is None:
         with _lock:
             if _pg_runtime_client is None:

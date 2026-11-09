@@ -179,13 +179,15 @@ class DuckDBClient:
           `_conn` 保持 None，锁释放后重试即自动重建（2026-08-09 实测）。
         """
         with self._lock:
-            self.conn.execute("BEGIN")
+            # execute() 抛错会废弃 self._conn；回滚必须仍使用启动事务的原连接。
+            connection = self.conn
+            connection.execute("BEGIN")
             try:
                 yield self
-                self.conn.execute("COMMIT")
+                connection.execute("COMMIT")
             except Exception as e:
                 try:
-                    self.conn.execute("ROLLBACK")
+                    connection.execute("ROLLBACK")
                 except Exception as rollback_error:  # noqa: BLE001
                     log.debug("DuckDB rollback failed after transaction error: %s", rollback_error)
                 self._conn = None  # 事务异常后连接状态不确定，下次访问重建
@@ -441,6 +443,11 @@ def get_client() -> DuckDBClient:
     只读用于 E2E/多进程并存：被测后端以只读启动后不再持有 DuckDB 写锁，受控夹具进程
     才能短暂以写连接种子数据。DuckDB 写锁本就互斥，生产单进程服务保持默认读写。
     """
+    from backend.storage.client_scope import market_override
+
+    scoped = market_override.get()
+    if scoped is not None:
+        return scoped
     global _client
     if _client is None:
         read_only = os.environ.get("AI_STOCKS_DUCKDB_READ_ONLY") == "1"

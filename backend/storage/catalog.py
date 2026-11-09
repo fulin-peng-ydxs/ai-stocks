@@ -945,7 +945,7 @@ _PG_META_GROUPS: tuple[tuple[str, str, dict[str, str]], ...] = (
     }),
     ("任务与调度", "runtime_global", {
         "data_source_health": "数据源健康状态",
-        "storage_migration": "存储迁移状态",
+        "storage_migration": "数据库初始化与存储迁移状态",
         "async_task": "异步任务",
         "task_log": "任务日志",
         "scheduled_job": "定时任务",
@@ -1012,7 +1012,7 @@ _PG_TABLE_PURPOSES: dict[str, str] = {
     "dict_item": "保存数据字典类型下的可维护选项。",
     "layout_user_config": "保存用户在单页面上的个性化布局覆盖。",
     "user_preference": "保存跨页面共享的用户偏好。",
-    "storage_migration": "记录存储迁移 marker、状态和执行摘要。",
+    "storage_migration": "记录数据库完整初始化的结构契约摘要、新装来源及专项存储迁移状态。",
     "async_task": "保存异步任务状态、进度、检查点和取消请求。",
     "task_log": "保存异步任务的结构化运行日志。",
     "scheduled_job": "保存调度定义、启停状态与旧单上游兼容投影；多上游依赖事实见 scheduled_job_dependency。",

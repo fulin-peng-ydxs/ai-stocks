@@ -15,7 +15,7 @@
 | `backend/storage/task_runtime.py` | 运行态存储路由、PG 兼容访问、创建事务和事件认领 |
 | `backend/api/data_tasks.py`、`data_admin.py` | system 管理入口与精确功能码守卫；任务不接受前端决定执行者身份 |
 
-运行态包含 `async_task`、`task_log`、`scheduled_job`、`scheduled_job_dependency` 和 `scheduled_trigger_event`。实际路由由迁移 marker 决定：尚未迁移或已受控回退时，DuckDB 表仍是运行态事实；PG 标记 applied 后才切换到 PG，并冻结 DuckDB 同名旧表供回滚。业务行情始终通过专属行情连接访问，禁止运行中切库或双写。任务、日志和调度不作为用户私有方案资产处理，其管理权限由后端守卫约束。
+运行态包含 `async_task`、`task_log`、`scheduled_job`、`scheduled_job_dependency` 和 `scheduled_trigger_event`。实际路由由迁移 marker 决定：旧库尚未迁移或已受控回退时，DuckDB 表仍是运行态事实；PG 标记 applied 后才切换到 PG，并冻结 DuckDB 同名旧表供回滚。全新安装由 [统一数据库初始化](database-lifecycle.md) 直接登记 PG 路由。业务行情始终通过专属行情连接访问，禁止运行中切库或双写。任务、日志和调度不作为用户私有方案资产处理，其管理权限由后端守卫约束。
 
 手动、时间调度、依赖、重试和业务首次物化均复用同一创建通道。CLI 的一次性采集通过 `CliTaskContext` 复用进度和日志接口，不因此变成可在 Web 续跑的后台任务。
 

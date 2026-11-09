@@ -846,16 +846,11 @@ def test_fk_delete_actions(pg):
     assert dele["sys_role_resource_resource_id_fkey"] == "c"
 
 
-def test_existing_users_have_user_role(pg):
-    """无角色存量用户按 role_code 补 sys_user_role；admin=system。"""
+def test_initialized_admin_has_system_role(pg):
+    """首次初始化的默认管理员具有 system 角色；其他用户允许保持明确的无角色状态。"""
     admin = pg.query_df(
         "SELECT role_id FROM sys_user_role WHERE user_id=%s", ["admin"])
     assert ROLE_SYSTEM in set(admin["role_id"])
-    # role_code 只用于无角色旧用户迁移；已有自定义角色的用户不应被追加内置角色。
-    gap = pg.query_df(
-        "SELECT count(*) n FROM sys_user u JOIN sys_role r ON r.code=u.role_code "
-        "WHERE NOT EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id)")
-    assert int(gap.iloc[0]["n"]) == 0
 
 
 def test_seed_rbac_does_not_append_legacy_role_to_user_with_custom_role(pg):
@@ -996,7 +991,7 @@ def test_asset_publish_open_rollback_restores_c4_baseline(pg):
         assert pv_after == pv_before + 1
 
         # 持久性关键回归：回滚后**按真实启动顺序**跑全部发布权写入者 → 发布权**不得复活**、仍 C4 基线。
-        # 且构造角色管理接口允许的边界：清空 normal 菜单（触发 _seed_role_grants 重授默认权限）、
+        # 且构造角色管理接口允许的边界：清空 normal 菜单（初始化 marker 阻止默认重授）、
         # 删除 stage6 marker（触发 seed_stage6 重跑），确认二者都消费 tombstone、不复活 public/发布码。
         pg.execute("DELETE FROM sys_role_menu WHERE role_id=%s", [ROLE_NORMAL])
         pg.execute("DELETE FROM app_config WHERE key=%s", [stage6_key])
@@ -1011,11 +1006,10 @@ def test_asset_publish_open_rollback_restores_c4_baseline(pg):
         mval2 = json.loads(pg.query_df(
             "SELECT value FROM app_config WHERE key=%s", [marker_key]).iloc[0]["value"])
         assert mval2.get("rolled_back") is True  # tombstone 未被任何写入者覆盖
-        # 关键：发布权状态未变（仍基线）。perm_ver 因 _seed_role_grants 重授**菜单**而 +1（R9 正确行为，
-        # 菜单也是授权），但这不是发布权复活——上面已断言 normal 无发布码、tenant_admin 仅 tenant。
+        # 管理员清空菜单后不重授，发布权及权限版本均不因 seed 改变。
         pv_reinit = int(pg.query_df(
             "SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
-        assert pv_reinit == pv_after + 1  # 仅菜单重授触发一次 bump（非发布权变更）
+        assert pv_reinit == pv_after
 
         # 二次回滚：tombstone 已在 → 整段 no-op，不再 bump（perm_ver 停在 reinit 后的值）
         rollback_asset_publish_open_v1(pg)
@@ -1154,30 +1148,34 @@ def _mk_role_user(pg, uid: str, role_id: str) -> None:
 
 # ── R8-P1-2：_seed_role_grants 授权非原子——故障时菜单+资源+perm_ver 同退（回滚路径）──────
 def test_seed_role_grants_atomic_rollback_on_failure(pg):
-    """清空 tenant_admin 授权后重跑 seed，注入 perm_ver bump 故障 → 该角色菜单/资源整体回滚、perm_ver 不变。"""
+    """模拟尚未初始化的角色；注入 perm_ver 故障后授权及完成 marker 必须整体回滚。"""
     import pytest
 
     from backend.common.exceptions import StorageError
     ta_snap = _snapshot_role_grants(pg, ROLE_TENANT_ADMIN)
     perm_snap = _snapshot_perm_versions(pg)
+    marker = f"migration.builtin_role_defaults_v1.{ROLE_TENANT_ADMIN}"
+    marker_snap = _snapshot_app_config(pg, [marker])
     try:
+        pg.execute("DELETE FROM app_config WHERE key=%s", [marker])
         pg.execute("DELETE FROM sys_role_menu WHERE role_id=%s", [ROLE_TENANT_ADMIN])
         pg.execute("DELETE FROM sys_role_resource WHERE role_id=%s", [ROLE_TENANT_ADMIN])
         fault_pg = _FaultRbacPG(pg, fail_on="UPDATE sys_user SET perm_ver")
         with pytest.raises(StorageError):
-            _seed_role_grants(fault_pg, [])
+            _seed_role_grants(fault_pg, [], newly_created_roles={ROLE_TENANT_ADMIN})
         after = _snapshot_role_grants(pg, ROLE_TENANT_ADMIN)
         assert after["menus"] == [] and after["resources"] == []   # 半成品零残留
+        assert pg.query_df("SELECT key FROM app_config WHERE key=%s", [marker]).empty
         assert _perm_ver_map(pg) == {r["id"]: int(r["perm_ver"]) for r in perm_snap}
     finally:
         _restore_role_grants(pg, ROLE_TENANT_ADMIN, ta_snap)
         _restore_perm_versions(pg, perm_snap)
+        _restore_app_config(pg, [marker], marker_snap)
 
 
-# ── R9-P1：仅清空菜单（资源完整）重授，菜单变化也必须 bump perm_ver ──────────────────
-def test_seed_role_grants_menu_only_reseed_bumps_perm_ver(pg):
-    """角色管理允许「菜单空、资源完整」合法态；seed 恢复菜单 → 资源 INSERT 全冲突、res 计数为 0，
-    但菜单确有恢复 → perm_ver 必须 +1（否则菜单权限扩大与 token 版本脱节）。"""
+# ── 初始化后明确清空菜单（资源完整）：保留人工配置 ──────────────────
+def test_seed_role_grants_preserves_explicit_empty_menus(pg):
+    """管理员清空菜单是有效配置，已有初始化 marker 时不重授、不增加 perm_ver。"""
     uid = "seed_menu_only_user"
     normal_snap = _snapshot_role_grants(pg, ROLE_NORMAL)
     perm_snap = _snapshot_perm_versions(pg)
@@ -1191,20 +1189,19 @@ def test_seed_role_grants_menu_only_reseed_bumps_perm_ver(pg):
 
         _seed_role_grants(pg, [])
 
-        # 菜单恢复非空、资源不变
-        assert _snapshot_role_grants(pg, ROLE_NORMAL)["menus"], "菜单应被恢复"
+        assert _snapshot_role_grants(pg, ROLE_NORMAL)["menus"] == []
         assert set(_snapshot_role_grants(pg, ROLE_NORMAL)["resources"]) == res_before
-        # 关键：仅菜单变化也 bump perm_ver
+        # 无授权变化就不增加权限版本。
         pv1 = int(pg.query_df("SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
-        assert pv1 == pv0 + 1
+        assert pv1 == pv0
     finally:
         pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
         _restore_role_grants(pg, ROLE_NORMAL, normal_snap)
         _restore_perm_versions(pg, perm_snap)
 
 
-# ── R9-P2：成功重授（菜单+资源都清空）→ 授权恢复且 perm_ver +1（成功路径断言）──────────
-def test_seed_role_grants_full_reseed_bumps_perm_ver(pg):
+# ── 初始化后明确清空全部授权：不重授、不推进权限版本 ───────────
+def test_seed_role_grants_preserves_explicit_empty_grants(pg):
     uid = "seed_full_reseed_user"
     normal_snap = _snapshot_role_grants(pg, ROLE_NORMAL)
     perm_snap = _snapshot_perm_versions(pg)
@@ -1217,9 +1214,9 @@ def test_seed_role_grants_full_reseed_bumps_perm_ver(pg):
         _seed_role_grants(pg, [])
 
         after = _snapshot_role_grants(pg, ROLE_NORMAL)
-        assert after["menus"] and after["resources"]   # 菜单+资源都恢复
+        assert after["menus"] == [] and after["resources"] == []
         pv1 = int(pg.query_df("SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
-        assert pv1 == pv0 + 1
+        assert pv1 == pv0
     finally:
         pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
         _restore_role_grants(pg, ROLE_NORMAL, normal_snap)

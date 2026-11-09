@@ -160,9 +160,7 @@ flowchart LR
 
 菜单是导航树，功能点是接口或按钮授权码。菜单控制“能进入哪里”，功能点控制“能执行什么”。系统菜单和功能点属于平台级全局配置，不能按租户各自维护，避免同一路由在不同租户出现不同安全语义。
 
-`sys_menu` 和 `sys_resource` 同时是运行时事实源。代码内 `_SEED_MENU_TREE` / `_SEED_RESOURCES` 只定义“缺失时采用什么默认值”，不持续同步数据库：启动、普通升级 SQL 和测试均使用 `INSERT ... ON CONFLICT DO NOTHING`，已有行的父级、标题、类型、路由、图标、排序、可见性、功能点绑定和 API 元数据全部保留。代码默认值调整不会自动改动存量库。
-
-覆盖能力保留在显式管理链路：系统管理员通过菜单与功能点页面/API 修改，服务层负责唯一性、防成环、权限版本失效和 before/after 审计。确有不可由管理页面完成的结构迁移时，必须使用独立版本 marker、事务级 advisory lock、精确旧身份校验、确认口令和变更审计；不得把 `UPDATE/DELETE sys_menu/sys_resource` 或 `ON CONFLICT ... DO UPDATE` 放进每次启动或可重复执行的普通 seed。特殊 SQL 菜单/功能点覆盖迁移还必须同时具备事务、`app_config` 迁移标记、人工显式开关 `ai_stocks.confirm_menu_overwrite` 和 `AI_STOCKS_MENU_OVERWRITE: EXPLICIT_CONFIRMATION_REQUIRED` 标识，否则 SQL 静态扫描测试必须拒绝。检测到旧菜单但不能无歧义迁移时只记录/告警，保留现状并交由管理员处理。
+`sys_menu` 和 `sys_resource` 同时是运行时事实源，由系统管理员通过菜单与功能点页面/API 维护，服务层负责唯一性、防成环、权限版本失效和 before/after 审计。初始化、普通升级和特殊覆盖迁移统一遵守 [数据库基础数据策略](database-lifecycle.md#机制初始化数据范围与覆盖策略)，代码默认值不持续覆盖运行时配置。
 
 测试不得把真实内置菜单当夹具。状态机测试使用随机菜单、功能点和 marker 命名空间；其他平台级写测试也应使用临时身份并精确清理。若无法隔离，必须改用独立测试数据库，禁止在共享开发库中先删除真实配置、测试后再按代码默认值重建。
 

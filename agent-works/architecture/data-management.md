@@ -29,17 +29,11 @@
 
 #### 新增或修改表的固定接入流程
 
-1. 先按事实用途确定数据库：全市场行情、参考和分析事实进入 DuckDB；租户/用户资产、权限、平台配置、任务、日志、调度和审计进入 PostgreSQL。跨库需求在服务层分开查询后合并，不能为方便查询复制事实源或跨库 JOIN。
-2. 只在对应的 `backend/storage/ddl.py` 或 `backend/storage/pg_ddl.py` 声明表、主键、外键、默认值和索引；不得直接在共享数据库手工建表。需要用户私有归属的 PG 表同时满足 `tenant_id + owner_user_id` 及全链路归属条件。
-3. 在 `backend/storage/catalog.py` 登记表级业务元数据：中文名、具体用途、业务分类、归属范围、数据来源和人类可读关系。禁止用“某领域当前事实表”一类模板说明代替实际用途。
-4. DuckDB 表必须显式登记 `FreshnessPolicy` 和 `QualityPolicy`，即使不适用也写 `not_applicable`。鲜活度只回答数据是否追平业务基准；质量问题只统计已配置规则。`open_issues=null` 表示未纳入/不适用，页面显示“—”；`open_issues=0` 才表示已检查且当前零问题。PG 表默认显式声明两者不适用。
-5. 字段结构由数据库自动发现。字段中文名或说明优先写进表级显式注解或数据库列注释；通用命名可复用 `catalog_metadata.py` 公共词典。不能识别的新 token 不得继续显示英文并冒充完整元数据。
-6. 同步领域服务、仓储、权限/租户边界和对应测试；如果表属于规划维度落地，还要把 `data_dimension_registry` 从 `planned` 调整为真实覆盖状态。仅有规划、尚无物理表时仍只登记维度，不注册虚构表。
-7. 合并前运行 `python -m backend.cli verify-catalog`。该命令会直连 DuckDB，后端正在持有文件锁时先按 `./start.sh status`、`./start.sh stop` 停服，校验后恢复原运行状态。门禁同时检查 DuckDB/PG 可连接、DDL 与物理表集合一致、所有表均有业务元数据和显式策略、全部字段都有中文名与说明；任何一项失败均返回非零退出码，标准后端目录测试也会因新增 DDL 表漏登记而失败。
+新增或修改表、字段及策略统一执行 [数据库接入流程](database-lifecycle.md#接入扩展与变更影响)，其中集中维护 DDL、升级、字段元数据、显式策略及门禁要求。目录 API 继续暴露意外物理表并标记 `unregistered`；这只是可观测兜底，不代表允许带遗漏发布。
 
-修改既有表同样执行第 2、4、5、6、7 步。目录 API 在运行时仍会暴露意外物理表并标记 `unregistered`，但这只是可观测兜底，不代表允许带遗漏发布。
+鲜活度回答是否追平业务基准，质量问题只统计已配置规则。`open_issues=null` 表示未纳入/不适用，页面显示“—”；`open_issues=0` 才表示已检查且当前零问题。
 
-`indicator_def` 是 DuckDB 中的平台级指标定义资产。其层级、父子预设、参数契约、引用保护、试算和计算语义指纹见 [technical-indicators.md](technical-indicators.md)。新增字段或调整指标定义结构时，同样必须同步 DDL、字段中文元数据、显式鲜活度与质量策略，并执行上述目录门禁；筛选、评分、买卖方案和回测引用位于 PostgreSQL，只能在服务层分别读取后内存合并，禁止跨库 JOIN。
+`indicator_def` 是 DuckDB 中的平台级指标定义资产。其层级、父子预设、参数契约、引用保护、试算和计算语义指纹见 [technical-indicators.md](technical-indicators.md)。结构变更沿用统一数据库接入流程；筛选、评分、买卖方案和回测引用位于 PostgreSQL，在服务层分别读取后内存合并。
 
 ### 入库清洗与复权口径
 

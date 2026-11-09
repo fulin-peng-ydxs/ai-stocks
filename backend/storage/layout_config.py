@@ -799,12 +799,13 @@ class LayoutConfigRepo:
     只读回退源。用户层 layout_user_config 仍落 PG，按 user_id 隔离。
     """
 
-    def __init__(self, client: DuckDBClient | None = None, *, tenant_id: str | None = None):
+    def __init__(self, client: DuckDBClient | None = None, *, tenant_id: str | None = None,
+                 pg=None):
         self.c = client or get_client()
         from backend.storage.ddl import init_db
 
         init_db(self.c)
-        self.pg = get_pg_client()
+        self.pg = pg or get_pg_client()
         self._init_pg_layout_tables()
         # 平台预设、页面模板和字段策略是全局配置，公开登录页也需要在未认证请求中读取。
         # 租户只在访问用户层配置时解析，避免仓库构造阶段把平台读取误绑到认证上下文。

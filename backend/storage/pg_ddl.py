@@ -197,6 +197,9 @@ CREATE TABLE IF NOT EXISTS screen_profile (
     created_at  TIMESTAMP,
     updated_at  TIMESTAMP,
     CHECK (visibility IN ('private', 'tenant', 'public')),
+    CONSTRAINT screen_profile_publish_consistency_check
+    CHECK ((visibility='private' AND published_at IS NULL AND published_by IS NULL)
+        OR visibility IN ('tenant', 'public')),
     PRIMARY KEY (tenant_id, owner_user_id, id)
 );
 """
@@ -227,6 +230,9 @@ CREATE TABLE IF NOT EXISTS score_profile (
     created_at       TIMESTAMP,
     updated_at       TIMESTAMP,
     CHECK (visibility IN ('private', 'tenant', 'public')),
+    CONSTRAINT score_profile_publish_consistency_check
+    CHECK ((visibility='private' AND published_at IS NULL AND published_by IS NULL)
+        OR visibility IN ('tenant', 'public')),
     PRIMARY KEY (tenant_id, owner_user_id, id)
 );
 """
@@ -259,6 +265,9 @@ CREATE TABLE IF NOT EXISTS trade_profile (
     created_at  TIMESTAMP,
     updated_at  TIMESTAMP,
     CHECK (visibility IN ('private', 'tenant', 'public')),
+    CONSTRAINT trade_profile_publish_consistency_check
+    CHECK ((visibility='private' AND published_at IS NULL AND published_by IS NULL)
+        OR visibility IN ('tenant', 'public')),
     PRIMARY KEY (tenant_id, owner_user_id, id)
 );
 """
@@ -729,6 +738,9 @@ CREATE TABLE IF NOT EXISTS backtest_run (
     created_at  TIMESTAMP,
     finished_at TIMESTAMP,
     CHECK (visibility IN ('private', 'tenant', 'public')),
+    CONSTRAINT backtest_run_publish_consistency_check
+    CHECK ((visibility='private' AND published_at IS NULL AND published_by IS NULL)
+        OR visibility IN ('tenant', 'public')),
     PRIMARY KEY (tenant_id, owner_user_id, id)
 );
 """
@@ -1914,11 +1926,33 @@ _SEED_DICT_ITEMS: tuple[tuple[str, str, str, int, str], ...] = (
 
 
 def init_pg_db(client: PostgresClient | None = None) -> list[str]:
+    """事务内升级并补齐基础数据；失败回滚 PG，更高层负责双库完成校验。"""
+    client = client or get_pg_client()
+    with client.transaction():
+        client.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ["ai-stocks-database-init-v1"])
+        return _init_pg_db(client)
+
+
+def _init_pg_db(client: PostgresClient) -> list[str]:
     """幂等建全部 PG 资产/骨架表 + (tenant_id, owner_user_id) 索引，并 seed 默认租户/管理员。
 
     返回已建表名列表。可重复执行（CREATE TABLE/INDEX IF NOT EXISTS）。
     """
     client = client or get_pg_client()
+    prior_tables = set(client.query_df(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
+    )["table_name"])
+    legacy_role_tables_missing = not bool(prior_tables & _RBAC_TABLES.keys())
+    if legacy_role_tables_missing and "storage_migration" in prior_tables and not client.query_df(
+        "SELECT 1 FROM storage_migration WHERE marker LIKE %s LIMIT 1", ["database.lifecycle.%"]
+    ).empty:
+        raise RuntimeError("已初始化实例的 RBAC 表丢失，拒绝按旧版本重新授予权限")
+    if not legacy_role_tables_missing and "sys_user_role" not in prior_tables:
+        raise RuntimeError("既有 RBAC 库缺少 sys_user_role，拒绝猜测恢复用户授权")
+    admin_missing = "sys_user" not in prior_tables or client.query_df(
+        "SELECT 1 FROM sys_user WHERE id=%s", [DEFAULT_OWNER_USER_ID]
+    ).empty
+    _guard_legacy_check_replacements(client)
     created: list[str] = []
     for name, sql in {**_OTHER_TABLES, **_ASSET_TABLES}.items():
         client.execute(sql)
@@ -1947,6 +1981,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     client.execute(_TRADE_DISCIPLINE_VIOLATION_ITEMS_UPGRADES)
     for constraint_sql in _TRADE_DISCIPLINE_POINTER_CONSTRAINTS:
         client.execute(constraint_sql)
+    _upgrade_legacy_contract_checks(client)
     for idx_sql in _TRADE_DISCIPLINE_INDEXES:
         client.execute(idx_sql)
     _protect_legacy_config_secrets(client)
@@ -1968,7 +2003,8 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     _upgrade_identity_uniqueness(client)
     _upgrade_role_assignment_policy(client)
     seed_default_tenant(client)   # 先补 admin=system 的 role_code，供 seed_rbac 建 user_role 用
-    seed_rbac(client)             # 内置角色/菜单树/功能点/默认授权 + 无角色存量用户补 user_role
+    seed_rbac(client, initialize_user_roles=legacy_role_tables_missing,
+              initialize_admin_role=admin_missing)
     _remove_legacy_paid_role(client)
     seed_stage5_platform_capabilities(client)
     revoke_tenant_admin_audit_default_grants(client)
@@ -1981,6 +2017,87 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     client.execute(
         "ALTER TABLE score_snapshot_meta ADD COLUMN IF NOT EXISTS st_input_version TEXT")
     return created
+
+
+def _guard_legacy_check_replacements(client: PostgresClient) -> None:
+    """旧兼容 SQL 按字段查找待替换 CHECK；先拒绝未知定义，避免通配删除用户约束。"""
+    from backend.storage.schema_contract import _sql, load_contract
+
+    expected = load_contract()["postgres"]["tables"]
+    legacy = {
+        "trade_discipline_stock_rule": {"CHECK (btrim(content) <> ''::text)"},
+        "trade_discipline_checkin_revision": {
+            "CHECK (assessment = ANY (ARRAY['complied'::text, 'breached'::text]))",
+            ("CHECK (assessment = 'breached'::text AND btrim(COALESCE(violation_detail, ''::text)) "
+             "<> ''::text OR assessment = 'complied'::text AND violation_detail IS NULL)"),
+        },
+    }
+    old_subtypes = "action_subtype = ANY (ARRAY['open_position'::text, 'add_position'::text, 'liquidate'::text, 'reduce_position'::text])"
+    legacy["trade_discipline_action_rule"] = {f"CHECK ({old_subtypes})"}
+    legacy["trade_discipline_draft_action_rule"] = {f"CHECK (action_subtype IS NULL OR ({old_subtypes}))"}
+    rows = client.query_df(
+        "SELECT t.relname AS table_name,pg_get_constraintdef(c.oid,true) AS definition "
+        "FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid "
+        "JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname='public' AND c.contype='c' "
+        "AND ((t.relname IN ('trade_discipline_action_rule','trade_discipline_draft_action_rule') "
+        "AND pg_get_constraintdef(c.oid) LIKE '%%action_subtype%%') "
+        "OR (t.relname='trade_discipline_stock_rule' "
+        "AND pg_get_constraintdef(c.oid) LIKE '%%btrim(content)%%') "
+        "OR (t.relname='trade_discipline_checkin_revision' "
+        "AND pg_get_constraintdef(c.oid) LIKE '%%assessment%%'))"
+    ).to_dict("records")
+    for row in rows:
+        table = row["table_name"]
+        known = set(expected[table]["constraints"]) | legacy.get(table, set())
+        if _sql(row["definition"]) not in known:
+            raise RuntimeError(f"{table} 含未知 CHECK，拒绝兼容升级通配覆盖")
+
+
+def _upgrade_legacy_contract_checks(client: PostgresClient) -> None:
+    """只替换已识别的旧 CHECK，保留更强新约束下已冗余的旧检查之外的全部约束。
+
+    新约束先验证全部现存行，再删除精确匹配的旧约束；不改写业务行。
+    未知定义不会被通配删除，由最终结构门禁拒绝并定位。
+    """
+    actor_definition = (
+        "CHECK (actor_kind = 'system'::text AND tenant_id IS NULL AND actor_user_id IS NULL "
+        "AND actor_account = 'system:limit-ladder'::text OR actor_kind = 'user'::text "
+        "AND tenant_id IS NOT NULL AND actor_user_id IS NOT NULL)"
+    )
+    rows = client.query_df(
+        "SELECT c.relname AS table_name,k.conname,pg_get_constraintdef(k.oid,true) AS definition "
+        "FROM pg_constraint k JOIN pg_class c ON c.oid=k.conrelid "
+        "JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND k.contype='c' "
+        "AND c.relname=ANY(%s)",
+        [["limit_ladder_task_ledger", "trade_discipline_checkin", "trade_discipline_rule"]],
+    ).to_dict("records")
+    if not any(row["definition"] == actor_definition for row in rows
+               if row["table_name"] == "limit_ladder_task_ledger"):
+        client.execute(
+            "ALTER TABLE limit_ladder_task_ledger ADD CONSTRAINT ll_actor_consistency_check "
+            "CHECK ((actor_kind='system' AND tenant_id IS NULL AND actor_user_id IS NULL "
+            "AND actor_account='system:limit-ladder') OR (actor_kind='user' "
+            "AND tenant_id IS NOT NULL AND actor_user_id IS NOT NULL))"
+        )
+    obsolete = {
+        ("limit_ladder_task_ledger",
+         ("CHECK (actor_kind = 'system'::text AND actor_user_id IS NULL OR actor_kind = 'user'::text "
+          "AND tenant_id IS NOT NULL AND actor_user_id IS NOT NULL)")),
+        ("trade_discipline_checkin",
+         "CHECK (status = 'submitted'::text AND amended_at IS NULL OR status = 'amended'::text)"),
+        ("trade_discipline_rule", "CHECK (latest_version_no IS NULL OR latest_version_no > 0)"),
+    }
+    names = {(row["table_name"], row["conname"]) for row in rows}
+    for row in rows:
+        identity = (row["table_name"], row["definition"])
+        if identity not in obsolete:
+            continue
+        replacement = {"trade_discipline_checkin": "td_checkin_status_time_check",
+                       "trade_discipline_rule": "td_rule_lifecycle_consistency_check"}.get(row["table_name"])
+        if replacement and (row["table_name"], replacement) not in names:
+            raise RuntimeError(f"{row['table_name']} 缺少替代约束，拒绝删除旧约束")
+        quoted = '"' + row["conname"].replace('"', '""') + '"'
+        client.execute(f"ALTER TABLE {row['table_name']} DROP CONSTRAINT {quoted}")
 
 
 def _upgrade_score_profile_include_st(client: PostgresClient) -> None:
@@ -2293,6 +2410,9 @@ def _resolve_admin_password() -> tuple[str, bool]:
     pwd = os.environ.get("AI_STOCKS_ADMIN_PASSWORD")
     if pwd:
         return pwd, False
+    environment = os.environ.get("AI_STOCKS_ENV", os.environ.get("ENV", "")).strip().lower()
+    if environment not in {"dev", "test", "local"}:
+        raise RuntimeError("初始化或升级管理员密码必须显式设置 AI_STOCKS_ADMIN_PASSWORD")
     return secrets.token_urlsafe(12), True
 
 
@@ -2651,23 +2771,27 @@ def _rollback_trade_discipline_rbac(client: PostgresClient | None = None) -> dic
     return result
 
 
-def seed_rbac(client: PostgresClient | None = None) -> None:
-    """幂等 seed 内置角色 / 菜单树 / 功能点 / 默认授权，并为无角色存量用户补 sys_user_role。
+def seed_rbac(client: PostgresClient | None = None, *, initialize_user_roles: bool = False,
+              initialize_admin_role: bool = False) -> None:
+    """幂等补齐 RBAC；用户角色只在首次引入 RBAC 表或新建默认管理员时初始化。
 
     幂等策略：主体（角色/菜单/资源）ON CONFLICT (id) DO NOTHING。sys_menu 是运行期数据库事实源，
     seed 只补缺失内置节点，不覆盖已有菜单的父级、类型、路由、标题、图标、排序或可见性，避免重启
-    抹掉「菜单与功能」页维护过的导航结构；默认授权仅在该角色**尚无任何 role_menu** 时首次写入
-    （避免覆盖管理员后续在角色页的手工调整）；user_role 追加式 ON CONFLICT DO NOTHING。
+    抹掉「菜单与功能」页维护过的导航结构；默认授权由逐角色初始化 marker 保护，初始化后即使
+    管理员清空菜单也不重授；user_role 追加式 ON CONFLICT DO NOTHING。
     system 角色 seed 全量授权仅供角色页展示（全选+锁定）；运行时 system 由 perm_resolver 判全量兜底。
     """
     client = client or get_pg_client()
     # 1) 内置角色（id=code）
+    newly_created_roles = set()
     for code, name, kind, is_locked, tenant_assignable, desc in _SEED_ROLES:
-        client.execute(
+        inserted = client.execute(
             "INSERT INTO sys_role "
             "(id, code, name, kind, is_builtin, is_locked, tenant_assignable, description) "
             "VALUES (%s, %s, %s, %s, TRUE, %s, %s, %s) ON CONFLICT (id) DO NOTHING",
             [code, code, name, kind, is_locked, tenant_assignable, desc])
+        if inserted == 1:
+            newly_created_roles.add(code)
     # 2) 菜单树（父在子前）
     menu_rows = _flatten_menu_tree(_SEED_MENU_TREE)
     _seed_menu_rows(client, menu_rows, excluded_codes={_TRADE_DISCIPLINE_MENU_ID})
@@ -2680,18 +2804,30 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
     _migrate_visual_preset_labels(client)
     _migrate_limit_ladder_recompute_anchor(client)
     # 4) 默认授权（首次 seed + 存量库一次性回填）
-    _seed_role_grants(client, [m["code"] for m in menu_rows])
+    _seed_role_grants(client, [m["code"] for m in menu_rows],
+                      newly_created_roles=newly_created_roles)
     _record_config_split_legacy_menu_state(client)
     _backfill_stage4_builtin_business_grants(client)
     _backfill_sector_watchlist_grants(client)
     _backfill_sector_menu_grants(client)
-    # 5) 仅为尚无任何角色的存量用户按遗留 role_code 补角色。sys_user_role 是权限事实源；
-    # 已有自定义角色时不得再追加 role_code=normal，否则每次启动都会扩大最小权限账号的授权。
-    client.execute(
-        "INSERT INTO sys_user_role (user_id, role_id) "
-        "SELECT u.id, r.id FROM sys_user u JOIN sys_role r ON r.code = u.role_code "
-        "WHERE NOT EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id) "
-        "ON CONFLICT (user_id, role_id) DO NOTHING")
+    # 5) 无角色也可能是管理员明确撤权，只有旧版本尚未引入关系表时才迁移 role_code。
+    if initialize_user_roles:
+        # 只迁移尚未引入 RBAC 关系表的旧版本，不能把管理员撤空角色后的用户重新授权。
+        with client.transaction() as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO sys_user_role (user_id, role_id) "
+                "SELECT u.id, r.id FROM sys_user u JOIN sys_role r ON r.code = u.role_code "
+                "WHERE NOT EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id) "
+                "ON CONFLICT (user_id, role_id) DO NOTHING RETURNING user_id")
+            assigned = [row[0] for row in cur.fetchall()]
+            if assigned:
+                cur.execute("UPDATE sys_user SET perm_ver=perm_ver+1 WHERE id=ANY(%s)", [assigned])
+    elif initialize_admin_role:
+        with client.transaction() as conn, conn.cursor() as cur:
+            cur.execute("INSERT INTO sys_user_role(user_id,role_id) VALUES (%s,%s) "
+                        "ON CONFLICT DO NOTHING", [DEFAULT_OWNER_USER_ID, ROLE_SYSTEM])
+            if cur.rowcount:
+                cur.execute("UPDATE sys_user SET perm_ver=perm_ver+1 WHERE id=%s", [DEFAULT_OWNER_USER_ID])
     _seed_trade_discipline_rbac(client)
 
 
@@ -2936,18 +3072,20 @@ def _publish_suppressed(state: str) -> bool:
     return state in (_PUBLISH_STATE_ROLLED_BACK, _PUBLISH_STATE_INVALID)
 
 
-def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None:
-    """为内置角色写默认菜单/功能授权（仅当该角色尚无 role_menu，避免覆盖后续手工调整）。
+def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str], *,
+                      newly_created_roles: set[str] | None = None) -> None:
+    """仅为本次新建的内置角色写首次默认授权，既有角色保留空授权并只补 marker。
 
     非系统内置角色（normal/tenant_admin）的整份默认授权在**共享 advisory lock + 单事务**内完成：
     锁内读发布策略状态门控发布码（回滚/非法态落 C4 基线），菜单+资源+发布码原子写入，授权确有变化
-    则同事务 bump 该角色用户 perm_ver（perm_resolver 硬契约）。这样即便与回滚并发、或被清空菜单后
-    重新触发本函数，也不会绕过 tombstone 复活发布权、不会留半成品、不会与 token 权限版本脱节。
+    则同事务 bump 该角色用户 perm_ver（perm_resolver 硬契约）。初始化标记、授权和版本一起提交，
+    管理员后续清空菜单不会重新授予默认权限；发布策略仍受 tombstone 门控。
     """
     business = list(_BUSINESS_MENU_CODES)
     biz_res = list(BUSINESS_RESOURCE_CODES)
     tenant_pub = list(ASSET_TENANT_PUBLISH_RESOURCE_CODES)
     public_pub = list(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES)
+    newly_created_roles = newly_created_roles or set()
 
     # system 角色：锁定、不可手工编辑，始终**幂等补齐全量**（含发布码，system 恒全授、不受回滚影响）。
     sys_menus = client.query_df("SELECT id FROM sys_menu")["id"].tolist()
@@ -2959,7 +3097,7 @@ def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None
         client.execute("INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
                        "ON CONFLICT DO NOTHING", [ROLE_SYSTEM, rid])
 
-    # 非系统内置角色：仅首次（role_menu 空）写默认授权；发布码在锁内按发布策略状态门控。
+    # 非系统内置角色：仅无 marker 且 role_menu 空时写默认授权。
     # 非发布资源码（发布码单独按状态追加）：
     #   tenant_admin = 用户管理码 + 租户扩展码 + 业务码；normal = 业务码。
     nonpublish = [
@@ -2972,11 +3110,17 @@ def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None
         with client.transaction() as conn, conn.cursor() as cur:
             # 与 seed_stage6 / backfill / rollback 同一把锁串行：杜绝并发写发布权竞态
             cur.execute("SELECT pg_advisory_xact_lock(%s)", [_ASSET_PUBLISH_OPEN_LOCK])
-            cur.execute("SELECT 1 FROM sys_role_menu WHERE role_id=%s LIMIT 1", [role_id])
+            # 不能把“管理员明确清空菜单”误认为从未初始化，重启不能复活已收回授权。
+            seed_marker = f"migration.builtin_role_defaults_v1.{role_id}"
+            cur.execute("SELECT 1 FROM app_config WHERE key=%s", [seed_marker])
             if cur.fetchone() is not None:
-                continue  # 已配置过 → 不覆盖（空事务提交）
-            # grant_changed 统计**菜单 + 资源 + 发布码**任一实际插入——菜单也是授权，只清空菜单
-            # （资源完整）重授时 perm_ver 也必须变，否则菜单权限扩大却与 token 版本脱节（perm_resolver 硬契约）。
+                continue
+            cur.execute("SELECT 1 FROM sys_role_menu WHERE role_id=%s LIMIT 1", [role_id])
+            if cur.fetchone() is not None or role_id not in newly_created_roles:
+                cur.execute("INSERT INTO app_config(key,value,updated_at) VALUES (%s,%s,now()) "
+                            "ON CONFLICT(key) DO NOTHING", [seed_marker, '{"applied":true}'])
+                continue  # 已配置过 → 只登记完成，不覆盖授权。
+            # 首次初始化不论实际补的是菜单、资源还是发布码，均须同事务失效权限版本。
             grant_changed = 0
             for mid in menu_codes:
                 cur.execute("INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s) "
@@ -2999,6 +3143,8 @@ def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None
                 cur.execute("UPDATE sys_user SET perm_ver=perm_ver+1 "
                             "WHERE id IN (SELECT user_id FROM sys_user_role WHERE role_id=%s)", [role_id])
                 bumped_roles.append(role_id)
+            cur.execute("INSERT INTO app_config(key,value,updated_at) VALUES (%s,%s,now()) "
+                        "ON CONFLICT(key) DO NOTHING", [seed_marker, '{"applied":true}'])
     # 提交后 best-effort 清受影响用户 perms 缓存（纯优化，权威在 perm_ver；失败仅告警）
     if bumped_roles:
         try:

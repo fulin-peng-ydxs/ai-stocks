@@ -105,7 +105,7 @@ flowchart TB
 - 开发由 Vite 的 5173 代理 `/api` 到 `127.0.0.1:8000`；后端热重载。5181 为独立验证实例，不占用日常 5173。
 - `backend/main.py` 的开发 CORS 白名单为 `localhost:5173` 与 `127.0.0.1:5173`；验证实例同样经 Vite 的同源 `/api` 代理访问后端，不因前端端口不同而直接开放跨域来源。前端 history 路由、动态首页与权限跳转以 `router/index.ts` 和当前授权菜单为准，不固定假设所有用户首页都是榜单。
 - 生产启动方式关闭热重载并监听 `0.0.0.0:8000`，FastAPI 在 `frontend/dist` 存在时托管静态资源，非 API 深链接回退 `index.html`；未匹配 API 仍返回 404。公网反代与 TLS 的配置责任不由 SPA 托管替代。
-- 启动依次检查存储及 schema、初始化指标目录、恢复任务与模块协调态、启动调度。关键存储不可用会阻止正常启动；任务恢复的具体顺序见 [任务运行态](task-runtime.md#启动恢复与受控停止)。
+- 启动先检查 PG、Redis 和 JWT 密钥，再通过 [统一数据库生命周期](database-lifecycle.md) 初始化或验收双库结构及基础数据，然后恢复任务与模块协调态、启动调度。依赖或数据库验收失败阻止正常启动；任务恢复的具体顺序见 [任务运行态](task-runtime.md#启动恢复与受控停止)。
 - `start.sh` 识别独立进程组，停止/重启前核对可信活跃任务数；读不到状态或有任务时拒绝停止，接受中断时才显式使用强制选项。退出时关闭调度、DuckDB 读池/写连接、PG 和 Redis。
 - `mode=dev|prod` 表示启动方式，环境身份由有效运行档案和环境守卫判定，二者不能混用。变量来源、运行档案、日志归档和密钥规则归 [环境配置](environment-configuration.md)。
 
@@ -119,6 +119,8 @@ flowchart TB
 
 仓库的 [Frontend contracts 工作流](../../.github/workflows/frontend-contracts.yml) 在 push 和 pull request 触发，在 `frontend/` 下以 Node.js 22 执行 `npm ci`、`npm run check`，没有路径过滤，也不负责生产构建或部署。作为必过合并检查时，远端仓库还须将该检查纳入分支规则；工作流文件本身不配置分支保护，CI 通过也不代表已部署或完成业务验收。
 
+[Database contracts 工作流](../../.github/workflows/database-contracts.yml) 在同样事件中运行隔离数据库门禁，初始化与升级的契约及覆盖见 [数据库专题](database-lifecycle.md#验证入口与已知限制)。
+
 ## 变更与验证入口
 
 装配变化回查 `backend/main.py`、`backend/cli.py`、启动脚本和前端代理；持久层变化回查双库 DDL、仓储和目录；共享机制变化同步对应专题与消费方摘要。开发阶段材料保留其形成时的范围和状态，不纳入当前事实的双向同步。
@@ -127,4 +129,4 @@ flowchart TB
 
 故障定位先分清请求鉴权、存储访问、任务执行还是外部源：鉴权 Redis 故障失败关闭；分时缓存故障可降级；读池耗尽与写任务冲突分别返回 503/409；采集来源失败进入任务日志和质量台账。HTTP 200 本身不能替代健康响应中的存储与任务状态判断。
 
-`DuckDBClient` 的执行/查询异常会废弃当前写连接引用并抛出 `StorageError`，后续访问重新建连；这不修复持续存在的文件锁、错误 SQL 或 schema 缺失。`ddl.py::init_db` 对部分兼容迁移逐条捕获并记录“迁移跳过”，但其它 DDL 或关键字段断言仍可直接失败；不能把“进程启动了”解释为所有兼容迁移均已完成。出现此类告警时按对应 DDL、物理结构和数据目录核对，目录接入与验证条件归 [数据管理](data-management.md)。
+`DuckDBClient` 的执行/查询异常会废弃当前写连接引用并抛出 `StorageError`，后续访问重新建连；这不修复持续存在的文件锁、错误 SQL 或 schema 缺失。初始化失败与双库恢复边界统一见 [数据库专题](database-lifecycle.md#机制新装升级验收与失败恢复)。

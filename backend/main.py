@@ -213,14 +213,26 @@ def create_app() -> FastAPI:
     def _check_storages() -> None:
         from backend.storage import get_client, get_pg_client, get_redis_client
 
-        # 行情 DuckDB（只读分析）及其平台指标定义：IndicatorDefRepo 会先幂等确保 schema，
-        # 再持久化完整 REGISTRY；重复启动保留管理员对 builtin 的 enabled/categories 设置。
+        # 在任何初始化写入前核对外部依赖及密钥，缺失时不留下半初始化的 PG。
+        if not get_pg_client().ping():
+            raise RuntimeError("PostgreSQL 连通性自检失败：ping 未返回预期结果")
+        if not get_redis_client().ping():
+            raise RuntimeError("Redis 连通性自检失败：ping 未返回 PONG")
+        get_settings().jwt_secret()
+        # 双库结构、平台基础数据和预设统一验收；只读 DuckDB 启动不执行初始化写入。
         try:
             market = get_client()
             market.query_df("SELECT 1 AS ok")
-            from backend.indicators.definition import IndicatorDefRepo
+            from backend.storage.database_lifecycle import initialize_database, verify_database
 
-            builtin_count = IndicatorDefRepo(market).seed_builtins()
+            pg = get_pg_client()
+            if market.read_only:
+                report = verify_database(market, pg)
+                if not report["ok"]:
+                    raise RuntimeError(f"只读数据库验收未通过：{report}")
+            else:
+                initialize_database(market, pg)
+            builtin_count = len(market.query_df("SELECT key FROM indicator_def WHERE is_builtin"))
             from backend.services.trade_calendar_readiness import (
                 calendar_readiness_detail,
                 inspect_trade_calendar,
@@ -228,17 +240,7 @@ def create_app() -> FastAPI:
 
             calendar_readiness = inspect_trade_calendar(market)
         except Exception as e:
-            raise RuntimeError(f"DuckDB 连通性或内置指标初始化失败：{e}") from e
-        if not get_pg_client().ping():
-            raise RuntimeError("PostgreSQL 连通性自检失败：ping 未返回预期结果")
-        if not get_redis_client().ping():
-            raise RuntimeError("Redis 连通性自检失败：ping 未返回 PONG")
-        # 幂等建 PG 资产/骨架表 + seed 默认租户/管理员（一次性，避免每次构造仓库重建）
-        from backend.storage.pg_ddl import init_pg_db
-
-        init_pg_db()
-        # 认证密钥自检（stage2·T2）：JWT 签名密钥无弱默认，缺失即启动失败（不留到首个请求才 500）
-        get_settings().jwt_secret()
+            raise RuntimeError(f"数据库初始化或验收失败：{e}") from e
         if (
             not calendar_readiness["lifecycle_ready"]
             or not calendar_readiness["cross_year_ready"]

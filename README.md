@@ -41,6 +41,8 @@ cp .env.local.example .env.local
 
 按 [环境与配置加载](agent-works/architecture/environment-configuration.md) 设置 JWT 密钥、PG/Redis 连接及管理员初始密码。本机变量文件不提交；已有 `.env.local` 时直接核对，不能用模板覆盖个人配置。前端安装会校验并应用依赖兼容补丁，不应跳过安装脚本。
 
+首次部署先执行 `./start.sh database plan`，核对目标后按 [数据库初始化与升级](agent-works/architecture/database-lifecycle.md#机制新装升级验收与失败恢复) 完成 `init --apply` 和 `check`。已有数据库使用同一文档中的升级路径；服务启动也复用完整初始化与验收入口。
+
 ### 启动、访问和停止
 
 ```bash
@@ -208,6 +210,7 @@ cd frontend && npm run build && cd ..
 | --- | --- |
 | AGENTS／[CLAUDE](CLAUDE.md) | 项目协作与命令／Claude 薄入口 |
 | [系统架构](agent-works/architecture/system-architecture.md) | 分层、运行单元、数据流、持久层和故障边界 |
+| [数据库设计、初始化与演进](agent-works/architecture/database-lifecycle.md) | 实例、目标结构、基础数据范围、升级恢复及持续门禁 |
 | [任务运行态](agent-works/architecture/task-runtime.md) | 后台任务、调度、可靠事件、取消续跑和恢复 |
 | [环境配置](agent-works/architecture/environment-configuration.md) | 变量、YAML、PG 覆盖层、运行档案、日志与生效规则 |
 | [前端布局实现](agent-works/architecture/frontend-layout.md) | 布局与外观的加载、合并、字段策略、保存、恢复及失败边界 |

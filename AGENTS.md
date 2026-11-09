@@ -5,6 +5,7 @@
 - `AGENTS.md` 是本仓库 AI 协作与项目命令的权威入口；测试命令、验证选择和总维护清单统一维护在 [开发验证规范](agent-works/testing/guide.md)，README 只摘录使用路径所需命令。
 - `CLAUDE.md` 只作为 Claude Code 薄入口，避免复制本文件内容；仓库事实以代码、`README.md`、`DESIGN.md` 和 `agent-works/architecture/` 为准。
 - 页面开发使用 [DESIGN](DESIGN.md) 和 [页面模板](agent-works/configurable-layout-system/page-template.md)，布局与外观配置运行机制见 [前端布局实现](agent-works/architecture/frontend-layout.md)。
+- 数据库实例、结构、初始化数据范围、升级与恢复及持续维护统一遵守 [数据库设计、初始化与演进](agent-works/architecture/database-lifecycle.md)，其他文档只维护导航或所属领域语义。
 - 稳定执行约束变更更新本文件，领域实现变更更新对应事实文档，测试结果留在当次交付中。
 
 ## 项目概览
@@ -28,13 +29,13 @@
 - 股本与市值：展示、指标、筛选和回测统一读取逐日事实，禁止当前快照倒填历史；来源变更日期、计算优先级及跨源核验遵守 [个股采集](agent-works/architecture/stock-collection.md)，业务台账与来源提醒的分类遵守 [数据管理](agent-works/architecture/data-management.md)。
 - 评分与验证：分层命中率必须扣同期全市场 base rate 并附样本量；技术指标是唯一原子定义，下游只组合引用，不硬编码字段。
 - 双库边界：禁止跨库 JOIN。行情读 DuckDB，资产读写 PG；需要联合时在服务层分别取数后内存合并，并控制结果集规模。
-- 数据表接入：新增或修改表必须同步对应 DDL、表级中文业务元数据、归属/来源/关系、显式鲜活度与质量策略以及字段中文名/说明；不适用策略也必须登记。合并前执行 `python -m backend.cli verify-catalog`，禁止手工建表绕过 DDL。完整流程见 `agent-works/architecture/data-management.md`。
+- 数据库变更：新增或修改表、字段、约束、索引或 seed 必须按 [数据库接入流程](agent-works/architecture/database-lifecycle.md#接入扩展与变更影响) 同步新装 DDL、旧库升级、目录及初始化验收，合并前通过 `./start.sh database gate`；禁止手工建表或改写机器契约绕过迁移。
 - 采集机制：个股 EOD 采集、日期收敛和十类安全方案见 `agent-works/architecture/stock-collection.md`；板块字典、成分、指数和资金流采集见 `agent-works/architecture/board-collection.md`。
 - EOD 日期：个股、大盘指数、板块指数共用 `backend/services/eod_dates.py`；北京时间 15:30 前只写上一已收盘交易日及更早记录，收盘后仍须检查源端就绪。强制当日不能绕过收盘或休市边界；源响应不能越过请求区间。日常流程共享目标上界，续跑冻结实际日期与范围；资金流另受实时快照归属门禁约束，不能倒填任意历史日。
 - 资产隔离：用户私有 PG 表必须带 `tenant_id + owner_user_id`；复合主键、`ON CONFLICT`、JOIN/子查询、UPDATE/DELETE/`max(seq)` 都必须带归属条件。归属取请求上下文，禁止信任前端传入。
 - 鉴权边界：`AuthMiddleware` 默认 deny；白名单仅健康检查和认证接口。新增业务端点必须同步 `require_perm`/`require_system_perm`、`sys_resource` seed、SQL 留痕和路由扫描测试。
 - 新页面接入：新增前端页面、系统页或可导航业务功能时，必须同步路由、菜单 seed、功能点 seed、后端守卫、按钮 `v-permission`、默认角色授权决策和租户归属；流程见 `agent-works/architecture/system-rbac-tenant.md`。
-- 菜单初始化：`sys_menu` / `sys_resource` 是运行时事实源；启动 seed、普通升级 SQL 和测试只允许补缺失行，禁止默认覆盖或删除现有父级、标题、类型、路由、图标、排序、可见性及功能点配置。确需覆盖时必须由系统管理员通过管理页面/API 显式操作并留 before/after 审计，或使用带独立 marker、确认口令和事务的专项迁移。
+- 基础数据保护：初始化保留管理员可维护配置与人工授权，菜单覆盖和特殊迁移遵守 [初始化数据策略](agent-works/architecture/database-lifecycle.md#机制初始化数据范围与覆盖策略)，不以缺行、空授权或代码默认值变化推断覆盖授权。
 - RBAC 口径：JWT 不携带角色/权限，权限以 PG 的用户/租户状态与 `perm_ver` 为准；授权变更与 `perm_ver` 自增必须同一 PG 事务提交。`layout:view`、`trade-calendar:view`、`indicator:registry` 是登录基线共享读，有角色的非 system 用户强制注入，无角色 fail-closed。
 - 资产可见性：评分、筛选、买卖方案和回测记录支持 `private|tenant|public`；前端透传 opaque `profile_ref`/`run_ref`，榜单、筛选、回测和评分服务必须解析真实 owner；非 owner 公开资产只读，方案类资产可复制为自己的 private，公开回测只允许复用参数重跑。
 - 长任务：采集、修复、重算等任务复用 [任务运行态](agent-works/architecture/task-runtime.md) 的创建、能力、日志、取消与恢复入口；DuckDB 写任务同一时间只允许一个，PG 资产写不受该互斥限制。
@@ -49,6 +50,9 @@
 ./start.sh prod            # 后端 prod，0.0.0.0:8000，托管 frontend/dist
 ./start.sh stop|restart|status|logs  # stop/restart 默认检查任务；确需中断时追加 --force
 ./start-web.sh             # 前端 5173，Vite HMR，首次自动 npm install
+./start.sh database plan    # 实例预检（不写库）
+./start.sh database check   # 目标库只读验收（须释放 DuckDB 文件锁）
+./start.sh database gate    # 隔离数据库门禁（不访问业务库）
 
 python -m backend.cli backfill
 python -m backend.cli delisted --enrich
