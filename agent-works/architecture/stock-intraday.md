@@ -1,14 +1,12 @@
 # 个股与指数分时归档及日 K 下钻
 
-## 文档边界
+本文说明个股和市场指数的分钟采集、归档、来源覆盖证据、质检修复及个股日 K 下钻。
 
-本文维护分钟归档的数据契约、来源覆盖证据、质检修复与日 K 下钻消费链路；不维护日线采集协议、盘中交易规则或分钟回测。日线与 EOD 采集见 [个股采集架构](stock-collection.md)，图表共享视觉契约见 [DESIGN.md](../../DESIGN.md)。
-
-分钟来源、覆盖状态或接口变化时同步本文和对应测试；任务治理与请求配置分别更新下方数据管理及环境配置入口，页面实测证据写入响应式清单或当次交付，不以归档成功替代页面验收。
+参考：[个股采集](stock-collection.md) · [数据管理](data-management.md) · [请求配置](environment-configuration.md) · [设计规范](../../DESIGN.md)。
 
 ## 功能边界
 
-本文维护个股与市场指数的分钟采集、归档、质检和修复契约，以及已接入的个股分时展示。任务与质量管理入口见 [data-management.md](data-management.md)，请求配置见 [environment-configuration.md](environment-configuration.md)。指数采集不代表新增独立指数详情页。
+指数分钟归档尚未接入独立指数详情页，当前下钻展示只用于个股。
 
 个股详情页和共享 `StockAnalysisPanel` 的 K 线模式允许点击日 K 蜡烛，按需打开对应交易日的分时弹窗。共享分析面板覆盖个股查询、每日榜单和连板天梯；板块行情、盘感训练和回测交易回放不启用下钻。
 
@@ -87,9 +85,9 @@ Redis 行情缓存仅来自已落库事实，按“股票 + 日期 + 修订”�
 
 `StockChartWorkspace` 的 `enableIntradayDrilldown` 默认关闭；开启后只处理 `candlestick` 系列单击并发出 `barClick(tradeDate)`。`StockIntradayDialog` 统一负责请求、取消、迟到响应隔离和业务状态，`StockIntradayChart` 统一生成双 grid ECharts 配置。两个入口通过 `useStockIntradayDrilldown` 共享打开、重复点击和切股关闭状态，不复制请求逻辑。
 
-图表消费 `useStockChartTheme`：价格线与价格图例为主题中性主文字色（浅色近黑、暗色近白）；分钟浮层主价格与涨跌幅按相对昨收使用金融涨跌色，平盘或缺少有效昨收时为中性色；均价复用 MA5 身份色，昨收为中性虚线并只标 `0%`，量柱使用金融涨跌 token。价格纵轴以昨收为正中心按当日最大偏离上下对称展开，保证基准线始终可见；达到常见涨跌停边界时不再添加额外纵向留白。上下绘图区统一预留 64px 左右轴边界，保证价格和量能时间轴垂直对齐；日 K 工作区和分时共同消费 `app-stock-chart-frame` 外框、`StockChartPanelHeader` 标题栏、`StockChartLegend` 图例项，日线与分钟量柱共同消费 `buildStockVolumeBarSeries()`。上图显示“分时”及价格/均价图例，下图显示“量能”并使用共享双边分隔形态，禁止在 ECharts 画布或消费页另画标题、图例标识、边框或分隔线。两图按实际画布高度计算紧凑布局，底部时间轴固定展示 `09:30`、`11:30`、`15:00`，不把午休结束时间并入中间标签。弹窗顶部行情摘要消费 `StockQuoteSummary`：最新价作为无标签、适度强调的独立列，其余字段按每列两项紧凑排列，并与 K 线浮层共享 `StockQuoteSummaryModel`；旧 `.app-metric-*` 等宽指标网格已废弃。分钟明细复用 `stockQuoteSummaryHtml()` 和日 K 的缩放浮层外壳，按分钟窗口的字符容量保持列宽稳定；价格光标标签显示两位价格，右侧光标显示相对昨收的两位涨跌幅，量能光标以手格式化。底部可见缩放条和画布内缩放同步价格/量能两图，尺寸或主题重绘时保留当前缩放范围。`partial` 在图表上方复用 `AppStatusNotice` 显示横向警告；范围、空数据和错误复用 `AppStateBlock`。关闭弹窗、切股、换日或重复点击都会取消/隔离旧请求，旧响应不得覆盖当前状态。
+`StockIntradayChart` 从 `intradayOptions.ts::buildIntradayOption()` 构造价格与量能序列，主题接入统一使用 `useStockChartTheme`。弹窗顶部通过 `StockQuoteSummary` 消费 `StockQuoteSummaryModel`，分钟明细复用 `stockQuoteSummaryHtml()`。
 
-价格和量能绘图区均隐藏左右数值轴边框，水平网格线与日 K 统一为实线，只有昨收基准线保留虚线。
+底部缩放条与画布内缩放同步价格、量能两图；尺寸或主题重绘保留当前缩放范围。`partial` 使用 `AppStatusNotice` 显示警告，范围、空数据和错误使用 `AppStateBlock`。关闭弹窗、切股、换日或重复点击时取消或隔离旧请求，迟到响应不得覆盖当前状态。
 
 ## 验证与运维
 

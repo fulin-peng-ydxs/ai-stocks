@@ -1,12 +1,8 @@
 # 回测
 
-## 文档边界
+回测使用点时选股和事件驱动撮合，产出净值、绩效与逐笔成交，并通过分层命中率减同期全市场 base rate 衡量评分的预测力。本文解释输入、撮合记账、结果复用及评分验证。
 
-本文维护回测输入、事件驱动撮合、记账、结果复用与评分验证的当前实现及业务口径；原子指标定义见 [技术指标架构](technical-indicators.md)，点时 ST 与历史限幅规则见 [ST 架构](st-status.md)。本文只说明回测如何消费这些事实，不另设指标公式或市场规则。
-
-引擎、接口或记账契约变化时同步本文和对应测试；界面规则由 [DESIGN.md](../../DESIGN.md) 维护，运行与夹具操作由 [E2E 指南](../e2e-automation/guide.md) 维护，当次测试结果不在本文累计。
-
-> 用历史数据验证「选股+买卖」策略与「评分」预测力的事件驱动回测引擎：在杜绝未来函数、撮合不失真、复权一致的前提下，产出净值曲线/绩效/逐笔成交，并以「分层命中率减全市场 base rate」量化评分的真实超额能力。
+参考：[技术指标](technical-indicators.md) · [ST 与市场规则](st-status.md) · [设计规范](../../DESIGN.md) · [项目命令与服务保护](../../AGENTS.md) · [E2E 指南](../e2e-automation/guide.md)。
 
 ## 核心技术
 
@@ -43,7 +39,17 @@
 
 两条路径都引用三类方案：筛选方案（`screen_profile`）、评分方案（`score_profile`）、买卖方案（`trade_profile`），运行时可接收 opaque `profile_ref` 并按 `private / tenant / public` 可见性解析真实 owner，解析各自 `version` 后参与去重签名（`BacktestService._resolve_versions/_signature`）。使用他人公开方案运行时，结果仍写当前执行者归属。
 
-**编排服务** `backend/services/backtest_service.py::BacktestService`：`run_strategy`/`run_signal` 跑回测算绩效+分层并落库；`prepare` 在运行前算签名（全条件指纹：日期+三方案及版本+所有数值参数，`_signature`）并查同条件已完成历史，供前端弹框选择「加载历史/重跑覆盖」；落库采用覆盖语义——同签名旧记录先 purge 保证每个条件组合历史唯一（`_purge_signature`）。`backtest_run` 支持 `private / tenant / public` 可见性，公开记录对 viewer 只读；发布到租户前会校验参数引用的筛选/评分/买卖方案至少租户可见，发布到全体前会校验三类依赖均全体公开，并把历史 params 与 `backtest_run` 三类 profile 列从 legacy id 规范化为真实 owner 的 opaque `profile_ref`，同步刷新 signature 且清理同 owner 下其他等价签名记录，同时从公开 params 清除仅供审计留痕的 `source_run_ref`，避免 viewer 复用时命中自己的同名私有方案，并保持同条件历史唯一且不泄漏不可见来源 run 标识。发布校验会为三类方案获取统一资产可见性锁；方案收窄可见性使用同一锁并在事务内把引用它且范围更大的回测同步降为 tenant/private，保留结果数据，消除并发发布窗口。历史列表对已规范化的筛选/评分/买卖 opaque ref 批量读取方案名称和版本，避免逐行 `get_visible()`；详情读取 `backtest_metrics/equity/trade` 时按 run 的真实 `tenant_id + owner_user_id` 查询，不用 viewer 归属猜测从表。
+### 运行编排与签名去重
+
+`backend/services/backtest_service.py::BacktestService.run_strategy/run_signal` 执行计算、绩效和分层分析并落库。`prepare` 通过 `_signature` 对日期、三类方案及版本、全部数值参数生成签名，查询同条件已完成历史，供页面选择“加载历史/重跑覆盖”。落库前 `_purge_signature` 清理同签名旧记录，使同一归属下每组条件只保留一份历史。
+
+### 发布、引用与并发保护
+
+`backtest_run` 支持 `private|tenant|public`，非 owner 对其可见记录只读。发布到租户前要求引用方案至少租户可见，发布到全体前要求三类依赖全部公开。发布时将历史 params 和三类 profile 列的 legacy id 规范化为真实 owner 的 opaque `profile_ref`，刷新签名并清理同 owner 下的等价重复记录，避免复用时误读 viewer 的同名私有方案。公开 params 移除仅供审计的 `source_run_ref`，不泄漏不可见来源 run 标识。
+
+发布与方案可见性收窄共用资产可见性锁。方案收窄时，在同一事务内将引用它且公开范围更大的回测降为 tenant/private，保留结果数据并消除并发发布窗口。
+
+历史列表按规范化 ref 批量取方案名称和版本，避免逐行 `get_visible()`。详情从 `backtest_metrics/equity/trade` 取数时使用 run 的真实 `tenant_id + owner_user_id`，不得用 viewer 归属猜测从表。
 
 **涉及表**（`backend/storage/pg_ddl.py`；`ddl.py` 为迁移保留的旧 DuckDB 定义）：
 - `backtest_run`：任务，含 kind/三方案 id 及 version/signature/区间/params(JSON)/status/visibility/published_at/published_by。
@@ -53,9 +59,29 @@
 
 **盈亏比特殊值**：`profit_factor` 为盈利合计 / 亏损绝对值合计；亏损合计不超过计算阈值且存在盈利时，计算值为无限，接口以 `null` 传输，前端显示 `∞`。没有盈利也没有亏损时返回 `0`，显示 `0.00`；有限值固定两位。旧结果没有提供该字段时才显示缺失值 `—`，不能把上述 `null` 业务哨兵当作缺失，也不能把原始 `Infinity` / `NaN` 直接透传到页面。
 
-**API**（`backend/api/backtest.py`）：`POST /run`（同步执行并落库）、`POST /prepare`（查重）、`POST /robust`（稳健性，不落历史）、`GET /runs`（按 kind 和 `source=mine|tenant|public` 列可见历史）、`GET /runs/{run_ref}`（详情）、`POST /runs/{run_ref}/visibility`（owner 发布/收回，仅 `done` 可公开，且公开范围不能超过引用方案可见范围）、`DELETE /runs/{run_ref}`（owner-only）。前端 `frontend/src/views/BacktestView.vue` 按 kind 分别加载历史、不混展，跑前先 `prepare` 弹框；评分/选股/买卖方案下拉统一展示名称、版本和归属标签，技术 ref/id 仅作为 value 传递；新运行要求选择评分方案，策略回测还要求选择买卖方案；任一运行参数或临时方案变化都会使旧结果和历史归属失效。方案候选遵守 [DESIGN 资产选择契约](../../DESIGN.md#弹窗与抽屉)。回测将 mine 选值与外部运行快照分离：切换到我的方案只释放当前运行快照，再次选择外部候选时恢复“本次运行”展示，运行以快照 ref 为准，不写入 mine 选值；快照不可解析时明示失效并阻止执行；重置参数清空会话候选。历史区页头「回测记录」只加载本人 `source=mine` 且限最近 100 条用于精确选择，首屏不默认选中或载入，用户可以主动选择记录或直接手动配置；租户公开/全体公开记录统一由「浏览公开回测」抽屉承接；删除本人历史记录会清除结果和来源、保留当前表单参数并回到未选择态，不自动载入下一条；只有非 owner 只读公开记录显示“复用参数”入口，用于明确切换为 viewer 自己的重跑并记录复用审计。回测结果区统一呈现初始空态、首次加载态、失败可重试态和有结果态，已有结果刷新时保留原结果。
+### API 与页面会话
 
-**回测页交互契约**：公开记录「加载查看」只生成选择器外只读快照，不写入 mine 候选，也不把 opaque ref 投影到 ElSelect；关闭快照恢复进入公开查看前的表单、结果和运行按钮状态。从公开态切换 mine 记录时，必须先成功取得详情再原子切换，失败保留原公开快照。历史快速切换、加载中关闭和复用参数请求共用请求代次守卫，按 kind 隔离，迟到响应不得覆盖当前状态或串入另一模式。历史候选下拉与输入框同宽并优先向下展开，名称可省略，日期和收益固定可见；公开抽屉的类型和状态使用中文业务文案，不暴露内部枚举。选股方案空值文案固定表达“不额外使用选股方案”，不得写成“全市场候选”。删除记录保留参数时，确认与成功反馈必须明确说明“参数保留”；移除外部方案预览则清空对应外部参数，两种语义不得混用。策略回测和评分验证复用后再次运行都透传 `source_run_ref`。
+`backend/api/backtest.py` 的入口如下：
+
+| 端点 | 行为与约束 |
+| --- | --- |
+| `POST /run`、`POST /prepare` | 同步执行并落库 / 运行前签名查重 |
+| `POST /robust` | 稳健性分析，不落历史 |
+| `GET /runs`、`GET /runs/{run_ref}` | 按 kind、`source=mine\|tenant\|public` 列历史 / 读取详情 |
+| `POST /runs/{run_ref}/visibility` | owner 发布或收回；仅 done 可公开，范围不能超过依赖方案 |
+| `DELETE /runs/{run_ref}` | owner 删除 |
+
+`BacktestView.vue` 按 kind 隔离历史、请求代次和运行状态。新运行必须选择评分方案，策略回测还须选择买卖方案；任一运行参数或临时方案变化都会使旧结果与历史归属失效。运行前先调用 `prepare`，结果区分别承接初始空态、首次加载、失败重试和已有结果；刷新已有结果时保留其内容。
+
+方案候选显示名称、版本、归属标签，技术 ref/id 只作为 value。mine 选值与外部运行快照分离：切回我的方案只释放运行快照，再选外部候选恢复“本次运行”展示，执行以快照 ref 为准；快照不可解析时阻止执行，重置参数清空会话候选。选股方案空值表达“不额外使用选股方案”，不解释为全市场候选。
+
+### 历史查看、切换与复用
+
+- 页头“回测记录”仅取本人 `source=mine` 最近 100 条，不在首屏自动选中或载入。租户/全体公开记录由“浏览公开回测”抽屉承接，类型、状态使用中文业务文案。
+- 公开记录“加载查看”产生选择器外的只读快照，不写入 mine 候选或 ElSelect；关闭时恢复此前表单、结果和运行按钮状态。从公开态切换 mine 记录须先成功取得详情，失败保留公开快照。
+- 快速切换、加载中关闭和复用请求共用代次守卫；迟到响应不能覆盖当前上下文或另一 kind。历史下拉与输入框同宽并优先向下展开，名称可省略，日期和收益固定可见。
+- 删除本人记录清除结果和来源、保留表单参数并回到未选择态，不载入下一条；确认和成功反馈须写明“参数保留”。移除外部方案预览则清空该外部参数，两种动作不能混用。
+- 仅非 owner 的只读公开记录提供“复用参数”，明确转为 viewer 自己的重跑并记录审计；策略回测和评分验证均透传 `source_run_ref`。
 
 ## 页面使用说明书
 
@@ -170,7 +196,7 @@ flowchart LR
 
 CLI 入口为 `backend/cli.py::cmd_backtest` 与 `cmd_robust`。`backtest` 使用 `--kind signal|strategy`、必填 `--start/--end` 及可选 `--profile/--top` 组装服务参数，`--no-persist` 控制结果是否落库；`robust` 同样指定区间，可用 `--param/--values` 做敏感性扫描，或用 `--split` 做样本内外切分，复用 `RobustnessAnalyzer`。
 
-CLI 仍须满足服务的方案、资产归属与数据条件；完整参数取子命令帮助，环境与服务保护统一遵守 [AGENTS](../../AGENTS.md) 和 [环境配置](environment-configuration.md)，不将这些计算列为日常必跑流程。
+CLI 仍须满足服务的方案、资产归属与数据条件；完整参数取子命令帮助，这些计算不是日常必跑流程。
 
 ## 风险事项
 

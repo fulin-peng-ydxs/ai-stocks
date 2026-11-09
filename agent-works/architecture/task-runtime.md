@@ -1,8 +1,8 @@
 # 异步任务与调度运行态
 
-## 文档边界
+本文说明跨模块任务的创建、互斥、进度日志、取消续跑、启动恢复、调度依赖及可靠事件机制。
 
-本文维护跨模块任务的创建、互斥、进度日志、取消续跑、启动恢复、调度依赖及可靠事件机制。系统装配归 [系统架构](system-architecture.md)，变量与存储路由配置归 [环境配置](environment-configuration.md)，业务任务的算法、采集范围与发布结果由各模块维护；数据管理页面及质量台账归 [数据管理](data-management.md)。本文不保存开发计划、迁移执行记录或单次验收结果。
+参考：[系统架构](system-architecture.md) · [环境配置](environment-configuration.md) · [数据管理](data-management.md) · [项目命令与服务保护](../../AGENTS.md)。
 
 ## 入口、存储与执行边界
 
@@ -90,7 +90,7 @@ stateDiagram-v2
 
 `backend/main.py` 先调用 `AsyncTaskService.reconcile()`：残留 `pending/running` 变为 `interrupted`，根据能力提示续跑或重新执行；天梯孤儿处理态转失败并保留最后成功版本；孤儿 fixing 问题复位 open，随后清理超期任务日志。接着调用 `LimitLadderTaskCoordinator.reconcile()` 收敛 PG 日期账本和审计 outbox，再启动调度；天梯专属状态细节见 [天梯架构](limit-ladder.md)。恢复异常会写启动告警，须核对实际账本和任务状态，不能以进程存在判断全部恢复成功。
 
-健康接口返回可信活跃任务数、运行态后端与 DuckDB 读池状态。`start.sh` 的停止、重启及空闲停止共用这些状态：无法可信读取或仍有活跃任务时失败关闭；明确接受中断才使用强制选项。脚本保护、测试前后恢复及精确命令见 AGENTS，不在本文维护第二套启停命令表。
+健康接口返回可信活跃任务数、运行态后端与 DuckDB 读池状态。`start.sh` 的停止、重启及空闲停止共用这些状态：无法可信读取或仍有活跃任务时失败关闭；明确接受中断才使用强制选项。
 
 执行线程、取消集合和 APScheduler 仍在同一后端进程。PG advisory lock 与事件认领不能证明多副本安全；独立 CLI 写库由 DuckDB 文件锁约束。
 

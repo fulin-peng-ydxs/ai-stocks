@@ -3,7 +3,7 @@
 > 确认日期：2026-08-27
 > 上游能力：[`concept-industry-board`](../concept-industry-board/requirement.md)
 > 状态：业务闭环已确认，可进入正式需求与开发计划阶段
-> 当前运行事实：[`stock-board-correlation-closed-loop-flow.md`](stock-board-correlation-closed-loop-flow.md)
+> 业务闭环分析快照（2026-09-02）：[`stock-board-correlation-closed-loop-flow.md`](stock-board-correlation-closed-loop-flow.md)；现行实现见 [走势关联架构](../architecture/stock-board-correlation.md)。
 
 ## 1. 初步需求理解
 

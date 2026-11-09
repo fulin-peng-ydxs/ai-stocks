@@ -1,10 +1,8 @@
 # 环境与配置加载
 
-## 文档边界
+本文说明环境变量、变量文件、YAML 基线和数据库配置覆盖层的加载顺序、生效边界、环境身份与运行档案，并说明布局和用户偏好的配置来源、存储与作用域。
 
-本文维护环境变量、变量文件、YAML 基线配置和数据库配置覆盖层的加载顺序、生效边界、环境身份与运行档案契约。其它 README、AI 协作入口和模块文档只保留必要操作摘要及链接，不重复定义加载细节。
-
-配置字段、加载器或运行档案变化时同步本文及对应测试；调试账号场景由 [测试用户清单](../multi-tenant-rbac/test-users.md) 维护，E2E 夹具与服务切换流程由 [执行指南](../e2e-automation/guide.md) 维护，业务方案参数由对应模块架构维护。布局及用户偏好的配置来源、存储与作用域由本文维护，前端加载、合并、应用和草稿保护由 [前端布局实现](frontend-layout.md) 维护。本文不保存实际连接凭据、个人环境值或当次运行结果。
+参考：[测试用户](../multi-tenant-rbac/test-users.md) · [E2E 指南](../e2e-automation/guide.md) · [前端布局实现](frontend-layout.md)。
 
 ## 核心技术
 
@@ -59,7 +57,7 @@ flowchart TD
 | `AI_STOCKS_SMTP_PASSWORD` | `Settings.smtp_password()`、`backend/common/mailer.py` | SMTP 登录密码/授权码（Gmail 等用应用专用密码） | 真实发信必填；无弱默认 | 真实发信时读取 |
 | `AI_STOCKS_THS_COOKIE` | `backend/datasource/ths_board.py::_login_cookie_from_config()` | 同花顺板块登录态 Cookie 头，优先覆盖页面加密配置；不进入审计明细 | 可选；不配置也能采集，只是被登录墙截断（概念 375→390） | 新建 `ThsBoardSource` 实例时读取；变更后重建实例或重启 |
 | `AI_STOCKS_THS_COOKIE_FILE` | 同上 | 指向权限受控的 Cookie 文件；仅当 `AI_STOCKS_THS_COOKIE` 为空时读取，生产优先使用受控文件避免凭证出现在进程环境导出中 | 可选；优先级低于 `AI_STOCKS_THS_COOKIE` | 同上 |
-| `AI_STOCKS_ADMIN_PASSWORD` | `backend/storage/pg_ddl.py::seed_default_tenant()` | 首次 seed 或补齐 `admin` 密码哈希 | 生产/共享环境必须显式设置；缺失会随机生成并只在日志告警一次 | 仅在 `admin` 不存在或 `password_hash` 为空时使用；不会覆盖已有密码 |
+| `AI_STOCKS_ADMIN_PASSWORD` | `backend/storage/pg_ddl.py::seed_default_tenant()` | 首次 seed 或补齐 `admin` 密码哈希 | 需要初始化密码时，非 `dev/test/local` 环境（含空值、未知值）必须显式设置；仅这三种开发测试环境允许缺失时随机生成 | 仅在 `admin` 不存在或 `password_hash` 为空时使用；已有密码保护及初始化规则见 [数据库专题](database-lifecycle.md#机制初始化数据范围与覆盖策略) |
 | `AI_STOCKS_TEST_USER_PASSWORD` | `backend/devtools/rbac_test_users.py`、`frontend/e2e/helpers/auth.ts` | `debug_*` 本地调试账号与 Playwright 登录统一密码 | 可选；本地开发未设置时回落测试默认值 | 执行 `./start.sh dev-users` 创建/校准及 `npm run test:e2e(:ui)` 启动时读取 |
 | `AI_STOCKS_ENV` / `ENV` | `backend/devtools/environment_guard.py` | 调试账号与 E2E 临时数据写入的环境白名单 | 执行调试数据写入时必填；仅 `dev/development/local/test/testing` 放行，空值、未知值和生产值全部拒绝 | `dev-users`、后端 E2E 健康检查和临时用户夹具每次执行时读取 |
 | `AI_STOCKS_E2E_WRITE` | `backend/devtools/environment_guard.py`、`/api/health/e2e` | 允许 Playwright 创建并物理销毁临时 PG 用户 | 默认未启用；只有精确值 `1` 放行，且必须同时满足本地/测试环境白名单 | 启动被测后端和执行 Playwright 时必须同时显式传入；回归结束后重启后端移除 |

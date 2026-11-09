@@ -1,10 +1,8 @@
 # RBAC 测试用户维护清单
 
-## 文档边界
+本清单列出本地开发/测试库的固定调试租户、账号、角色、权限场景及校准命令；账号配置由 `backend/devtools/rbac_test_users.py` 维护。
 
-本文维护本地开发/测试库的固定调试租户、账号、角色与权限场景及校准命令；生产或共享公网环境禁止创建这些账号。密码来源、变量文件与环境守卫由 [环境配置架构](../architecture/environment-configuration.md) 维护，权限模型由 [RBAC 架构](../architecture/system-rbac-tenant.md) 维护，E2E 夹具生命周期由 [执行指南](../e2e-automation/guide.md) 维护。
-
-调试账号或权限场景变化时同步本文、`backend/devtools/rbac_test_users.py` 及相关测试；不在本文保存真实密码、运行凭据、测试结果，也不将固定账号变成 pytest 的外部依赖。
+参考：[环境与密码配置](../architecture/environment-configuration.md) · [权限与租户](../architecture/system-rbac-tenant.md) · [E2E 指南](../e2e-automation/guide.md)。
 
 ## AI 使用指引
 
@@ -58,7 +56,7 @@ AI_STOCKS_ENV=dev ./start.sh dev-users --keep-password --expected-pg-fingerprint
 ## 维护规则
 
 - 账号和自定义角色均为固定 ID，脚本幂等校准；手工改乱后重新执行命令即可恢复。
-- 启动 seed 只为尚无任何 `sys_user_role` 的存量用户按遗留 `role_code` 补角色；已有自定义角色的最小权限账号不会被重新附加 `normal`。若 `--list` 发现漂移，先执行 `dev-users` 校准，再重启并复查。
+- 调试账号缺角色或权限漂移时，由 `dev-users` 显式校准后用 `--list` 复查；不能依赖重启补角色。既有 RBAC 库中的无角色用户保持失败关闭，初始化与旧关系迁移规则见 [数据库专题](../architecture/database-lifecycle.md#机制初始化数据范围与覆盖策略)。
 - 自定义角色同时维护 `sys_role_menu` 和 `sys_role_resource`，保证菜单可进入、接口有权限。
 - `layout:view`、`trade-calendar:view`、`indicator:registry` 不写入角色授权表，由 `perm_resolver` 对有角色的非 system 用户运行时注入。
 - pytest 仍使用临时用户，不依赖这批固定调试账号。

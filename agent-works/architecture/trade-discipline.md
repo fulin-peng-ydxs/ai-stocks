@@ -1,8 +1,8 @@
 # 交易纪律模块
 
-## 文档边界
+本文说明私人交易规则、持仓记账、自动履约、修订链及页面消费的实现。
 
-本文维护私人规则、持仓记账、自动履约、修订链和页面消费的当前技术事实。规则判定与资产操作在本模块说明；共享权限归 [权限架构](system-rbac-tenant.md)，任务机制归 [任务运行态](task-runtime.md)，页面契约归 [DESIGN](../../DESIGN.md)，夹具执行归 [E2E 指南](../e2e-automation/guide.md)。需求、计划和阶段验收保留原文，不作为本文的事实来源或持续关联引用。
+参考：[权限与租户](system-rbac-tenant.md) · [任务运行态](task-runtime.md) · [设计规范](../../DESIGN.md) · [E2E 指南](../e2e-automation/guide.md) · [项目命令与服务保护](../../AGENTS.md)。
 
 ## 模块定位
 
@@ -167,7 +167,7 @@ flowchart LR
 
 当前计算版本为 `ledger-v4`（新增财报月份限制），持仓上限按规则主记账归属核验，规则评价保存独立的 `peak_positions`，账户峰值继续单独保留；旧修订保持原计算版本和快照，不静默重算。期初超限作为独立日级依据，后续新增股票导致本规则只数增加时归到该笔；同股加仓、减仓及其他规则的成交不重复归集原持仓超限。新增成本只核对被增加的选股分组资金上限，其他分组的期初违规或待核对状态不挂到该笔；附加核对不承接主归属之外的持仓/资金超限。
 
-金额使用 PostgreSQL `NUMERIC` 和前端十进制定点字符串链路，不使用 JavaScript 浮点数作为资金约束事实源。 价格与成本价的四位展示统一消费 `frontend/src/utils/tradeNumeric.ts::formatTradePrice()`；数量最多四位并去尾零，金额两位，显示规范见 [DESIGN 数值展示与输入](../../DESIGN.md#数值展示与输入)。
+金额使用 PostgreSQL `NUMERIC` 和前端十进制定点字符串链路，不使用 JavaScript 浮点数作为资金约束事实源。 价格与成本价的四位展示统一消费 `frontend/src/utils/tradeNumeric.ts::formatTradePrice()`；数量最多四位并去尾零，金额两位。
 
 ## API 与权限
 
@@ -196,6 +196,8 @@ python -m backend.cli trade-discipline-rbac rollback \
 
 ## 配置与运行边界
 
+选股条件的新字典分类沿用既有编辑、核对与折叠入口；停用分类仍保留旧条件及历史版本名称，不改写已保存记录。
+
 - 生产没有新增业务环境变量或业务 `app_config`；页面密度和历史分页复用既有布局/用户偏好链路。
 - E2E 复用 `AI_STOCKS_ENV`、`AI_STOCKS_E2E_WRITE`、`AI_STOCKS_E2E_LOGIN_BYPASS` 安全门控，这些变量不属于生产业务配置。
 - 发布、归档、恢复依赖 DuckDB 已有下一真实开市日；缺失时 fail-closed，不在生命周期事务内联网补采或用工作日推算。
@@ -211,7 +213,6 @@ python -m backend.cli trade-discipline-rbac rollback \
 ## 验证入口
 
 ```bash
-# 后端定向验证前先按 AGENTS.md 停服，结束后恢复并确认健康
 python -m pytest backend/tests/test_trade_ledger.py backend/tests/test_trade_ledger_api.py \
   backend/tests/test_trade_discipline_financial_reports.py \
   backend/tests/test_trade_discipline_t4.py -q

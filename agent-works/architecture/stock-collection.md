@@ -1,10 +1,8 @@
 # 个股数据采集模块架构
 
-## 文档范围与结论摘要
-
 本文说明个股 EOD 数据从任务入口、数据源调用、清洗落库、断点续跑到质量修复的完整机制。持久化对象包括股票基础资料、交易日历、指数行情、个股日线、逐日股本、估值市值、ST 点时事实和数据来源审计。
 
-本文维护个股采集方案、来源优先、日期收敛与股本估值落库规则；ST 专项规则、分时与板块源协议由下方对应文档维护，不在此平行定义。采集实现变化时同步本文及对应测试，通用请求配置更新 [环境配置架构](environment-configuration.md)，质量治理入口更新 [数据管理](data-management.md)，不累计当次采集或验收流水。
+参考：[环境配置](environment-configuration.md) · [数据管理](data-management.md) · [板块采集](board-collection.md) · [分时归档](stock-intraday.md) · [ST 事实](st-status.md) · [项目命令与服务保护](../../AGENTS.md)。
 
 核心结论：
 
@@ -12,8 +10,6 @@
 - “最近开市日”来自 `trade_calendar`，是截止日候选；日常同步遇到今天为交易日时，还会探测行情源是否已发布当日数据，未就绪则整体回退到上一开市日。
 - 行情拉取可并发，DuckDB 写入受单写锁串行保护；任务支持协作式终止、断点续跑和幂等重试。
 - 历史行情、市值、ST 状态是不同采集链路。历史行情补全不会自动补齐全历史市值，ST 的权威事实也不能由当前名称反推。
-
-板块采集见 [board-collection.md](board-collection.md)，按需分时查询见 [stock-intraday.md](stock-intraday.md)，ST 专项口径见 [st-status.md](st-status.md)。
 
 ## 模块定位与职责边界
 
@@ -150,7 +146,7 @@ flowchart LR
 
 CLI 接入由 `backend/cli.py` 定义：`update/backfill` 对应日常增量与历史补全，`refetch-daily` 联网重采区间日线，`delisted --enrich` 补退市资料与历史，`valuation` 补估值、`valuation --fill-gaps` 按已有库缺口补采，`rebuild-price-factors` 使用已有事实重建干净因子与标记。原始因子与清洗因子不可混写；历史股本和跨源核验仍按本模块的统一逐日事实链处理。完整日常编排使用 `daily`，还包含板块采集及质量扫描，不能与仅执行个股日常任务混为一谈。
 
-以上为 CLI 能力定位，不是要求逐条执行的日常命令表；精确参数取对应子命令 `--help`，执行条件复用 [AGENTS](../../AGENTS.md) 和 [环境配置](environment-configuration.md)，普通后台任务仍从数据管理发起并查看结果。
+以上为 CLI 能力定位，不是要求逐条执行的日常命令表；精确参数取对应子命令 `--help`；普通后台任务从数据管理发起并查看结果。
 
 常用校验入口：
 
@@ -234,8 +230,6 @@ ST 刷新先建立批次状态，按每只股票的有效行情区间采集权�
 | ST 点时事实与发布门禁 | `backend/tests/test_st_status_pipeline.py` 及 ST 专项测试 |
 | 运行数据检查 | `python -m backend.cli verify-data`、`verify-catalog` |
 
-涉及 DuckDB 的测试必须先按 [AGENTS.md](../../AGENTS.md) 检查并停止后台服务，结束后恢复原运行状态。
-
 ## 风险、限制与待确认项
 
 - 免费数据源存在延迟、反爬、限流、字段漂移和局部历史缺失；任务成功只表示本次编排完成，仍需结合实际截止日、行数和质量结果判断新鲜度。
@@ -268,7 +262,7 @@ ST 刷新先建立批次状态，按每只股票的有效行情区间采集权�
 - `stock_basic.total_share/float_share` 仅为最新行情日的兼容投影，分别有 `*_share_date`；历史区间补采不能倒灌。指标引擎、筛选/评分/回测与个股详情统一读取对应日股本事实并说明来源，缺失显示空值。股本/市值实际变更与修订日志同事务提交；榜单读取通过输入指纹按需重算。历史回测报告保留原运行事实，新回测去重签名纳入区间内股本修订版本。
 - 采集时拒绝非正/非有限股本和流通大于总股本；数据体检检查全历史（含退市）股本覆盖、生效日期边界与合法性。目录登记鲜活度与全历史质量策略，台账和体检共用股本市值契约。
 - 采集入口复用统一方案选择器与参数组件；行情摘要通过 `StockQuoteSummary`、`buildHeaderSummary` 和 `aggregateKlineBars` 传递指定行情日股本，不另设事后展示股本。
-- 结构以 `backend/storage/ddl.py` 为准，审计副本为 `agent-works/stock-data-ingestion/daily-share-capital/schema.sql`；具体环境备份与执行结果不在本文维护。
+- 结构以 `backend/storage/ddl.py` 为准，审计副本为 `agent-works/stock-data-ingestion/daily-share-capital/schema.sql`。
 
 ### 股本缺口收敛与日常闭环
 
@@ -298,6 +292,8 @@ ST 刷新先建立批次状态，按每只股票的有效行情区间采集权�
 - 完整历史股本补采和自动轮询都在 `data_update_log` 保存 `source=capital_review:股票代码` 的逐股诊断与尝试时间；`status=checked` 表示完成复查，**不表示没有缺口**，也不作为行情修订版本。只有四字段实际变化才另记 `success` 修订。失败仍为 `failed`；取消遵循现有协作式取消与单写互斥。
 - 历史补采诊断不仅保存剩余数量，还保存字段的具体交易日、生效日、可用日样例，区分记录缺失、数值非法、跨源冲突与非空不一致。新浪流通股本也会复查与既有流通市值不一致的旧事件股数；若新备用股数超过已知总股本，保留原事实并继续报告矛盾，不先写入再擦空。
 - 通过原异步入口 `stock_ingest/share_capital_history` 的 `review_only=true` 可即时执行一批轮询，使用相同间隔与数量限制；不能和 `years`、`verified_facts`、`recalculate_only=true` 混用。全量立即复查仍使用不带 `review_only` 的历史补采。
+
+历史轮询范围读取生效配置 `datasource.history_years`，首次执行后冻结；批量与间隔参数同样取生效配置，默认值见 [配置基线](../../config/settings.yaml)，加载来源见 [环境配置](environment-configuration.md)。
 
 历史复查续跑保留独立日期窗口，日常任务优先沿用已收敛的目标日，不修改主采集检查点。缺失原因区分无先前记录、源端无有效股数及交易所股数精度冲突；非空市值不一致会保留该次估值接口的收盘价证据。若源端市值能由同日股本乘源端价格解释，则记为 `*_mv_price_basis_mismatch`，不把价格源差异误记为股本错误，接口原值独立保留，业务值按本地输入计算一致也不关闭来源差异。
 

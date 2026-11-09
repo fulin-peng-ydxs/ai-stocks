@@ -1,12 +1,8 @@
 # 选股与榜单
 
-## 文档边界
+本文说明条件树求值、评分排序、榜单惰性物化、缓存失效及资产可见性的消费链路。筛选先取得全市场点时命中，再按评分方案计算综合分并形成榜单。
 
-本文维护条件树求值、评分排序、榜单物化、缓存与资产可见性的当前消费链路。指标公式与分类见 [技术指标架构](technical-indicators.md)，方案配置结构见 [配置定义](config-definitions.md)，ST 事实见 [ST 架构](st-status.md)；本文不另设原子指标或历史市场规则。
-
-筛选、评分接口或物化失效规则变化时同步本文和对应测试；权限基座由 [RBAC 架构](system-rbac-tenant.md) 维护，界面契约由 [DESIGN.md](../../DESIGN.md) 维护，研究参数与阶段测试结果不在本文固化。
-
-> 用条件树筛选全市场点时命中，再按评分方案打 0~100 综合分并惰性物化成每日榜单。
+参考：[技术指标](technical-indicators.md) · [方案配置](config-definitions.md) · [ST 事实](st-status.md) · [权限与租户](system-rbac-tenant.md) · [设计规范](../../DESIGN.md) · [项目命令与服务保护](../../AGENTS.md)。
 
 ## 核心技术
 
@@ -136,7 +132,7 @@ flowchart LR
 
 - **双栏结构**：左侧 `prof-list` 方案列表（`AssetProfileSelect(list)` + `新建方案`），右侧 `editor-screen` 编辑器（`ed-head` 名称/可见性/`保存`/`删除` + 条件构建器 `b-conds`），下方 `run-head` 运行区 + `run-table-wrap` 结果区；编辑器头直接保存，交互路径与评分页一致。
 - **选择态与编辑态分离**：`curId`（侧栏选中）与 `editId`/`editName`（编辑器当前身份）解耦，避免「选中新方案、误存到旧方案」；载入详情失败回滚到最后一次成功选中的方案并保留旧编辑器内容，新建走空身份由后端 `_make_id` 生成 id 后绑定。
-- **外部预览闭环**：候选保留与移除遵守 [DESIGN 资产选择契约](../../DESIGN.md#弹窗与抽屉)。筛选页移除当前预览时，由 `onScreenTempRemoved` 使在途详情失效，清空方案身份、条件参数、运行口径、旧结果和错误，再刷新 mine；刷新失败仍保持空白新建态。只读历史版本的复制规则见 [配置定义](config-definitions.md#涉及的-api)。
+- **外部预览闭环**：筛选页移除当前预览时，由 `onScreenTempRemoved` 使在途详情失效，清空方案身份、条件参数、运行口径、旧结果和错误，再刷新 mine；刷新失败仍保持空白新建态。只读历史版本的复制规则见 [配置定义](config-definitions.md#涉及的-api)。
 - **结果区四态**：未运行、加载、错误、空结果使用 `AppStateBlock`；有结果统一进入 `RankedStockWorkbench`。摘要同时显示评分方案版本、全市场排名是否含 ST、筛选是否排除 ST。切换评分方案失败保留旧结果且不冒充新方案；迟到响应由请求代次丢弃。
 - **评级标签**：综合评分评级统一复用 `ScoreGradeTag`，主升浪核心/龙头候选/观察分别使用 danger/warning/success；榜单、筛选、评分试算和回测不得维护页面私有映射。
 - **运行主按钮**：`运行筛选` 统一为 primary + `VideoPlay` 图标，与评分试算、回测运行键视觉层级拉齐。
@@ -206,7 +202,7 @@ flowchart LR
 
 `backend/cli.py::cmd_screen` 通过 `ScreenScoreService.run_profile` 执行指定筛选方案，`screen` 接收位置参数 `profile` 和可选 `--date`。`cmd_rank` 通过 `rank_board` 输出榜单，`rank` 接收可选 `--date` 与 `--top`；日期未指定时读取库内最新日线日期。
 
-CLI 的兼容参数不替代页面的方案选择、可见性与 owner 解析契约；精确参数取子命令帮助，环境和服务保护条件统一遵守 [AGENTS](../../AGENTS.md) 与 [环境配置](environment-configuration.md)。
+CLI 的兼容参数不替代页面的方案选择、可见性与 owner 解析契约；精确参数取子命令帮助。
 
 ## 风险事项
 

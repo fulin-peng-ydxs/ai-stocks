@@ -1,6 +1,6 @@
 # 个股走势关联板块开发计划
 
-> 当前基础设施边界（2026-09-09）：任务、日志、调度定义和依赖事件已由后续独立改造迁至 PostgreSQL；DuckDB 只保存行情和相关性快照。本文中“DuckDB 调度表/任务状态”等表述仅记录本功能当时的实施基线，当前运行契约以 `agent-works/architecture/platform.md` 和 `agent-works/duckdb-read-concurrency/` 为准。
+> 当前基础设施边界（2026-09-09）：任务、日志、调度定义和依赖事件已由后续独立改造迁至 PostgreSQL；DuckDB 只保存行情和相关性快照。本文中“DuckDB 调度表/任务状态”等表述仅记录本功能当时的实施基线，当前运行契约以 [系统架构](../architecture/system-architecture.md) 和 [任务运行态](../architecture/task-runtime.md) 为准。
 
 > 计划版本：2026-08-30
 > 当前状态：已完成（T1-T11 全部完成；2026-08-30 完成复审修复、完整门禁与真实全市场任务复验）
@@ -11,7 +11,7 @@
 
 - 需求文档：[requirement.md](requirement.md)。
 - 上游闭环：[requirement-closure.md](requirement-closure.md)。
-- 当前运行闭环：[stock-board-correlation-closed-loop-flow.md](stock-board-correlation-closed-loop-flow.md)。
+- 业务闭环分析快照（2026-09-02）：[stock-board-correlation-closed-loop-flow.md](stock-board-correlation-closed-loop-flow.md)；现行实现见 [走势关联架构](../architecture/stock-board-correlation.md)。
 - 关联能力：`agent-works/concept-industry-board/requirement.md`。
 - 功能目标：基于股票累计行业、概念归属，按上市板对应指数做市场中性化，预计算并原子保存每只股票的行业走势冠军和概念走势冠军，供个股查询、每日榜单、策略筛选毫秒级批量读取。
 - 本次不做：R11-R20（除已实现的按交易日快照）；尤其不保存全部候选明细，不接入个股详情，不做盘中计算、全市场非归属板块比较或人工改冠军。

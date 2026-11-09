@@ -1,14 +1,8 @@
 # 研究方案配置
 
-## 文档边界
+本文说明买卖、评分与筛选方案的配置结构、版本、校验和生效链路。方案保存指标 key 与参数组合；指标按请求日期动态计算，已保存评分方案的榜单按“日期＋方案＋版本”惰性物化。
 
-本文维护指标定义被买卖、评分与筛选方案引用时的配置结构、版本、校验和生效链路。指标分类、公式及计算契约以 [技术指标架构](technical-indicators.md) 为准，环境与系统配置覆盖层以 [环境配置架构](environment-configuration.md) 为准；本文只保留方案消费所需说明，不另定义指标或配置加载顺序。
-
-方案字段、版本或引用协议变更时同步本文及对应测试；各业务执行算法更新对应模块架构，界面规范更新 [DESIGN.md](../../DESIGN.md)，不在本文累计功能计划或验证记录。
-
-> 技术指标是系统唯一的原子定义，买卖方案、评分方案、筛选条件都引用指标 key 组合；指标值按请求日期从行情动态计算（无指标值表），已保存评分方案的榜单结果按“日期+方案+版本”惰性物化并复用。
-
----
+参考：[技术指标](technical-indicators.md) · [环境配置](environment-configuration.md) · [设计规范](../../DESIGN.md)。
 
 ## 核心技术
 
@@ -97,7 +91,7 @@
 - 评分试算 `/api/score-profiles/run`（`backend/api/score_profiles.py::run_score_profile`）：已保存方案走**评分快照层**（`ScoreSnapshotRepo.get_board`，命中即用/失效重算），未保存的 inline 方案当场 `score_day` 实时算不入库。
 - 已保存评分方案的缓存 owner、物化键、综合指纹和 ST 输入版本由 [选股与榜单](screening-and-board.md) 维护；配置页只消费试算结果。
 - 三类方案 `/copy` 请求体可传 `version`；后端在可见性校验后按来源真实 `tenant_id + owner_user_id + id + version` 读取版本快照，副本固定从 v1、private 开始。只读公开方案的历史版本操作只能“复制此版本为我的”，不得把历史内容载入为可写原方案。
-- 外部方案候选的保留、选择和移除统一遵守 [DESIGN 资产选择契约](../../DESIGN.md#弹窗与抽屉)。配置页移除当前预览时，`onScoreTempRemoved/onTradeTempRemoved` 先使在途详情失效，清空对应方案身份、评分项或买卖树及兜底、只读态、试算结果和错误，再刷新 mine；刷新失败仍保持空白新建态。筛选页的清理对象见[选股与榜单](screening-and-board.md#2-策略筛选页)。
+- 配置页移除当前预览时，`onScoreTempRemoved/onTradeTempRemoved` 先使在途详情失效，清空对应方案身份、评分项或买卖树及兜底、只读态、试算结果和错误，再刷新 mine；刷新失败仍保持空白新建态。筛选页的清理对象见[选股与榜单](screening-and-board.md#2-策略筛选页)。
 
 ### 前端配置中心
 

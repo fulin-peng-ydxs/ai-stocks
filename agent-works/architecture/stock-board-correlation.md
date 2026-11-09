@@ -1,10 +1,8 @@
 # 个股走势关联板块
 
-## 文档边界
+本文说明个股与所属板块的走势相关算法、候选口径、快照发布、后台任务及页面批量读取。
 
-本文维护走势相关算法、候选口径、快照发布、后台任务与页面批量消费的当前契约。板块字典、成分和行情源由 [板块采集架构](board-collection.md) 维护，股票与分组页面的请求协调由 [个股与分组架构](stocks-and-groups.md) 维护；本文不把相关度解释为成员归属，也不重复定义采集协议。
-
-算法、版本或发布接口变化时同步本文及对应测试；通用任务能力由 [任务运行态](task-runtime.md) 维护，界面契约由 [DESIGN.md](../../DESIGN.md) 维护，E2E 夹具操作由 [执行指南](../e2e-automation/guide.md) 维护。
+参考：[板块采集](board-collection.md) · [个股与分组](stocks-and-groups.md) · [任务运行态](task-runtime.md) · [设计规范](../../DESIGN.md) · [E2E 指南](../e2e-automation/guide.md)。
 
 ## 模块定位
 
