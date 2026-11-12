@@ -121,7 +121,7 @@
 | --- | --- | --- | --- | --- |
 | 可执行隔离门禁 | `./start.sh database gate` | `backend/tests/test_database_lifecycle.py`、`backend/devtools/database_gate.py` | 新装、冻结旧库升级、幂等、数据保留、结构/seed 负例、故障回滚、真实 CLI 和目录验收 | 数据库变更须通过本门禁；自动调用见 CI 专题，结果以本次输出为准 |
 | 新装声明与目标契约一致 | 独立声明式空库对比 `database_contract.json` | `create_declared_schema()`、`schema_report()` | 防止漏登记/手改契约，以及新装与升级结构不一致 | 结构变化时刷新机器产物并审查差异 |
-| 门禁隔离与失败关闭 | 显式 `AI_STOCKS_DB_GATE_ADMIN_DSN`，或本机 `initdb/pg_ctl` | 临时库名 `ai_stocks_gate_<随机值>`；本地临时集群仅 Unix socket，日志在项目 `logs/` | 不使用业务 DSN；清除环境 Pytest 选项和插件，不接受取消选择、skip/xfail 或空集合冒充完整通过 | 管理连接只用于创建/删除本次随机库；退出关闭连接、删除临时库并停止自建集群 |
+| 门禁执行环境与判定 | [CI 共用隔离协议](continuous-integration.md#机制后端与数据库的共用隔离环境) | 执行器、管理连接、默认客户端、夹具、依赖及清理由 CI 专题维护 | 本文规定安装与升级验收语义，执行协议引用同一正文 | 新增测试文件按 CI 专题接入 |
 | 自动持续检查 | [统一 CI 入口](continuous-integration.md) | 套件、触发与运行环境由 CI 专题维护 | 复用本专题数据库门禁 | 不代表业务实例已升级或验收 |
 | 目标实例验收 | 停服释放文件锁后 `database check` | 只读实例、结构、完成摘要、seed、目录报告 | 与隔离门禁分别回答“代码可安装”和“此实例达标” | 不用一个结果代替另一个 |
 | 运行和规模边界 | 当前单后端进程；离线初始化/升级 | 双库客户端、初始化锁及专项迁移 | 不支持在线并发结构升级、自动跨库原子回滚或任意历史版本降级 | 变更前备份，失败停服并按具体对象恢复 |

@@ -15,7 +15,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.devtools.database_gate import ADMIN_DSN_ENV, temporary_database
 from backend.storage import database_lifecycle as lifecycle
 from backend.storage.duckdb_client import DuckDBClient
 from backend.storage.schema_contract import (
@@ -28,31 +27,7 @@ from backend.storage.schema_contract import (
 )
 
 
-@pytest.fixture
-def databases(monkeypatch):
-    admin = os.environ.get(ADMIN_DSN_ENV)
-    if not admin:
-        pytest.fail(f"必须通过 database gate 或设置 {ADMIN_DSN_ENV}，数据库门禁禁止跳过")
-    monkeypatch.setenv("AI_STOCKS_ENV", "test")
-    monkeypatch.setenv("AI_STOCKS_ADMIN_PASSWORD", "isolated-gate-password")
-    monkeypatch.setenv("AI_STOCKS_TASK_STORAGE_BACKEND", "auto")
-    with temporary_database(admin) as pg, DuckDBClient(":memory:") as duck:
-        from backend.auth import perm_resolver
-        from backend.storage import duckdb_client, pg_client
-
-        # 间接配置读取与兼容仓储也必须落在隔离库，不能读取机器默认业务连接。
-        monkeypatch.setattr(pg_client, "_client", pg)
-        monkeypatch.setattr(duckdb_client, "_client", duck)
-        monkeypatch.setattr(perm_resolver, "clear_perms_cache", lambda _users: None)
-        yield duck, pg
-
-
-@pytest.fixture
-def installed(databases):
-    duck, pg = databases
-    report = lifecycle.initialize_database(duck, pg, mode="init")
-    assert report["ok"], report
-    return duck, pg
+pytest_plugins = ["backend.tests.database_fixtures"]
 
 
 def test_declared_empty_schema_matches_committed_contract(databases):
@@ -596,10 +571,16 @@ def test_gate_runner_removes_environment_selection(monkeypatch):
     from contextlib import contextmanager
 
     from backend.devtools import database_gate
+    from backend.devtools.isolated_environment import clean_environment
 
     @contextmanager
     def fake_server():
         yield "dbname=isolated-admin"
+
+    @contextmanager
+    def fake_environment(admin):
+        assert admin == "dbname=isolated-admin"
+        yield clean_environment()
 
     def subprocess_probe(arguments, **options):
         assert "PYTEST_ADDOPTS" not in options["env"]
@@ -611,6 +592,7 @@ def test_gate_runner_removes_environment_selection(monkeypatch):
     monkeypatch.setenv("PYTEST_ADDOPTS", "-k only_one_test")
     monkeypatch.setenv("PYTEST_PLUGINS", "untrusted_plugin")
     monkeypatch.setattr(database_gate, "gate_server", fake_server)
+    monkeypatch.setattr(database_gate, "isolated_storage_environment", fake_environment)
     monkeypatch.setattr(database_gate.subprocess, "run", subprocess_probe)
     assert database_gate.run_gate() == 0
 

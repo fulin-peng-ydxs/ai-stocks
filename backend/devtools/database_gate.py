@@ -21,7 +21,7 @@ from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
 from backend.config import PROJECT_ROOT
-from backend.devtools.isolated_environment import clean_environment
+from backend.devtools.isolated_environment import isolated_storage_environment
 from backend.storage.duckdb_client import DuckDBClient
 from backend.storage.pg_client import PostgresClient
 from backend.storage.schema_contract import (
@@ -162,21 +162,11 @@ def gate_test_paths(suite: str = "database") -> list[str]:
 
 
 def run_gate(*, refresh_contract: bool = False, suite: str = "database") -> int:
-    """在显式隔离环境运行数据库专项测试；不调用可能访问共享开发库的 pg fixture。"""
+    """默认客户端和公共夹具统一绑定临时三库；用例另建空库仍走测试管理连接。"""
     paths = gate_test_paths(suite)
-    with gate_server() as admin_dsn:
+    with gate_server() as admin_dsn, isolated_storage_environment(admin_dsn) as env:
         if refresh_contract:
             refresh_schema_contract(admin_dsn)
-        env = clean_environment()
-        # 环境中的 -k/-m/--lf 或插件不能缩小“完整门禁”的执行范围。
-        for key in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTEST_CURRENT_TEST"):
-            env.pop(key, None)
-        env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
-        env[ADMIN_DSN_ENV] = admin_dsn
-        env["AI_STOCKS_ENV"] = "test"
-        # 避免测试签名值/管理员密码继承到临时集群外；只用于子进程临时数据库。
-        env["AI_STOCKS_ADMIN_PASSWORD"] = uuid4().hex
-        env["AI_STOCKS_TASK_STORAGE_BACKEND"] = "auto"
         result = subprocess.run(
             [
                 sys.executable,
@@ -185,6 +175,8 @@ def run_gate(*, refresh_contract: bool = False, suite: str = "database") -> int:
                 *paths,
                 "-p",
                 "backend.devtools.database_gate_plugin",
+                "-p",
+                "backend.tests.database_fixtures",
                 "-o",
                 "addopts=",
                 "-q",

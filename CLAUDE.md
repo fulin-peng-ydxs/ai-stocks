@@ -1,6 +1,6 @@
 # Claude Code 项目入口
 
-本文只维护 Claude Code 的工作入口与记忆边界；项目级协作约束、命令、服务保护及验证要求以 [AGENTS.md](AGENTS.md) 为准。
+本文只维护 Claude Code 的工作入口与记忆边界；项目级协作约束及专题导航以 [AGENTS.md](AGENTS.md) 为准，命令、验证和领域机制沿其指向的唯一正文读取与维护。
 
 ## 工作方式
 

@@ -5,17 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import signal
 import subprocess
 import sys
-import tempfile
-import time
-from contextlib import contextmanager
 from pathlib import Path
-from uuid import uuid4
 
-from backend.devtools.isolated_environment import clean_environment
+from backend.devtools.isolated_environment import isolated_storage_environment
 
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = ROOT / "config/ci-suites.json"
@@ -96,59 +91,6 @@ def check_document(*, write: bool = False) -> None:
         raise ValueError("CI 文档登记已过期，请执行 scripts/run-ci.sh docs --write")
 
 
-@contextmanager
-def temporary_redis(root: Path):
-    """仅管理自建 Redis；Unix socket、无 TCP 监听、无持久化，退出销毁。"""
-    import redis
-
-    executable = shutil.which("redis-server")
-    if not executable:
-        raise RuntimeError("后端 CI 需要 redis-server（独立临时实例，不使用业务 Redis）")
-    socket = root / "redis.sock"
-    log = ROOT / "logs" / f"ci-redis-{uuid4().hex}.log"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("wb") as output:
-        process = subprocess.Popen(
-            [
-                executable,
-                "--port",
-                "0",
-                "--unixsocket",
-                str(socket),
-                "--unixsocketperm",
-                "700",
-                "--save",
-                "",
-                "--appendonly",
-                "no",
-                "--dir",
-                str(root),
-            ],
-            stdout=output,
-            stderr=subprocess.STDOUT,
-        )
-        client = redis.Redis(unix_socket_path=str(socket), socket_timeout=1)
-        try:
-            for _ in range(100):
-                if process.poll() is not None:
-                    raise RuntimeError(f"临时 Redis 启动失败，日志：{log}")
-                try:
-                    if client.ping():
-                        yield "unix://" + str(socket) + "?db=0"
-                        return
-                except redis.ConnectionError:
-                    time.sleep(0.05)
-            raise RuntimeError(f"临时 Redis 启动超时，日志：{log}")
-        finally:
-            client.close()
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-
-
 def bootstrap() -> None:
     """子进程在显式临时连接下走正式初始化；环境必须在导入配置前设置。"""
     from backend.storage.database_lifecycle import initialize_database
@@ -180,71 +122,45 @@ def run_test_process(command: list[str], env: dict[str, str]) -> int:
 
 def run_backend(suite: str, scale_stocks: int | None = None) -> int:
     """先准备独立三库，再执行同一套收集和失败关闭机制。"""
-    import yaml
-
-    from backend.devtools.database_gate import gate_server, temporary_database
+    from backend.devtools.database_gate import gate_server
 
     if suite == "backend-scale" and (scale_stocks is None or not 100 <= scale_stocks <= 5000):
         raise ValueError("backend-scale 必须显式传 --scale-stocks 100..5000")
-    # 使用短系统路径满足 Unix socket 长度限制；服务日志始终在项目 logs。
-    with tempfile.TemporaryDirectory(prefix="ai-ci-", dir="/tmp") as directory:
-        root = Path(directory)
-        with (
-            gate_server() as admin,
-            temporary_database(admin) as pg,
-            temporary_redis(root) as redis_url,
-        ):
-            config = yaml.safe_load((ROOT / "config/settings.yaml").read_text())
-            config["paths"] = {
-                "duckdb_file": str(root / "market.duckdb"),
-                "parquet_dir": str(root / "parquet"),
-                "export_dir": str(root / "exports"),
-                "log_dir": str(ROOT / "logs"),
-            }
-            config_path = root / "settings.yaml"
-            config_path.write_text(yaml.safe_dump(config, allow_unicode=True))
-            env = clean_environment()
+    with gate_server() as admin, isolated_storage_environment(admin) as env:
+        env["AI_STOCKS_CI_SUITE"] = suite
+        if scale_stocks is not None:
             env.update(
                 {
-                    "AI_STOCKS_CONFIG": str(config_path),
-                    "AI_STOCKS_PG_DSN": pg.conninfo,
-                    "AI_STOCKS_REDIS_URL": redis_url,
-                    "AI_STOCKS_CI_SUITE": suite,
+                    "INTRADAY_SCALE_STOCKS": str(scale_stocks),
+                    "STOCK_INGEST_SCALE_STOCKS": str(scale_stocks),
                 }
             )
-            if scale_stocks is not None:
-                env.update(
-                    {
-                        "INTRADAY_SCALE_STOCKS": str(scale_stocks),
-                        "STOCK_INGEST_SCALE_STOCKS": str(scale_stocks),
-                    }
-                )
-            subprocess.run(
-                [sys.executable, "-c", "from backend.devtools.ci import bootstrap; bootstrap()"],
-                cwd=ROOT,
-                env=env,
-                check=True,
-            )
-            return run_test_process(
-                [
-                    sys.executable,
-                    "-m",
-                    "pytest",
-                    "backend/tests",
-                    "-p",
-                    "backend.devtools.ci_pytest_plugin",
-                    "-o",
-                    "addopts=",
-                    "--strict-markers",
-                    "-v",
-                    "-o",
-                    "faulthandler_timeout=120",
-                    "--durations=15",
-                    "--tb=short",
-                    "--junitxml=logs/ci-" + suite + ".xml",
-                ],
-                env,
-            )
+        subprocess.run(
+            [sys.executable, "-c", "from backend.devtools.ci import bootstrap; bootstrap()"],
+            cwd=ROOT,
+            env=env,
+            check=True,
+        )
+        return run_test_process(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "backend/tests",
+                "-p",
+                "backend.devtools.ci_pytest_plugin",
+                "-o",
+                "addopts=",
+                "--strict-markers",
+                "-v",
+                "-o",
+                "faulthandler_timeout=120",
+                "--durations=15",
+                "--tb=short",
+                "--junitxml=logs/ci-" + suite + ".xml",
+            ],
+            env,
+        )
 
 
 def run_suite(suite: str, scale_stocks: int | None = None) -> int:

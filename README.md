@@ -168,7 +168,7 @@ ai-stocks/
 
 前端单元与契约测试就近放在 `src/` 各目录的 `__tests__/` 中，浏览器场景位于 `frontend/e2e/`。盘感训练、交易纪律、板块关联等功能的编排可从 `backend/services/` 和对应 `backend/api/` 入口定位，并非每项业务都对应独立的后端顶层目录。
 
-代码分层、模块依赖与数据所有权见 [系统架构](agent-works/architecture/system-architecture.md)，具体机制从该文档进入所属模块正文；开发命令和执行条件以 AGENTS 为准。
+代码分层、模块依赖与数据所有权见 [系统架构](agent-works/architecture/system-architecture.md)，具体机制从该文档进入所属模块正文；服务/CLI 入口见 [AGENTS](AGENTS.md)，验证选择与测试命令见 [开发验证规范](agent-works/testing/guide.md)。
 
 ## 开发、验证与生产访问
 

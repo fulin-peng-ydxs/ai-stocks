@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from backend.devtools import ci, ci_pytest_plugin
+from backend.devtools.isolated_environment import clean_environment
 
 
 def test_common_plan_and_special_suite():
@@ -55,7 +57,7 @@ def test_inherited_business_and_test_options_are_removed(monkeypatch):
         "ENV",
     ):
         monkeypatch.setenv(key, "must-not-inherit")
-    env = ci.clean_environment()
+    env = clean_environment()
     assert "must-not-inherit" not in env.values()
     assert env["AI_STOCKS_ENV"] == "test"
     assert env["AI_STOCKS_SMTP_ENABLED"] == "0"
@@ -168,7 +170,7 @@ def test_missing_special_node_is_error():
 def test_strict_gate_cannot_turn_incomplete_run_green(tmp_path, body, extra, success):
     path = tmp_path / "test_probe.py"
     path.write_text(body)
-    env = ci.clean_environment()
+    env = clean_environment()
     env["PYTHONPATH"] = str(ci.ROOT)
     result = subprocess.run(
         [
@@ -206,3 +208,100 @@ def test_frontend_and_database_wrappers_do_not_duplicate_push_triggers():
 def test_scale_requires_explicit_bounded_input():
     with pytest.raises(ValueError, match="scale-stocks"):
         ci.run_backend("backend-scale")
+
+
+@pytest.mark.parametrize("fail", [False, True], ids=["success", "failure"])
+def test_new_database_file_default_clients_are_isolated_and_cleaned(tmp_path, monkeypatch, fail):
+    """新文件无需专属隔离 fixture；真实三库写入及断言失败均由执行器清理。"""
+    import psycopg
+
+    from backend.devtools import database_gate
+
+    evidence = tmp_path / "targets.json"
+    probe = tmp_path / "test_new_database.py"
+    probe.write_text(
+        """import json
+import os
+from pathlib import Path
+
+import pytest
+from psycopg.conninfo import conninfo_to_dict
+
+pytest_plugins = ["backend.tests.conftest"]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def confirm_targets_before_connecting():
+    # 先验证目标，再允许公共 pg/redis 夹具连接；回归失败也不能访问默认业务库。
+    for key in ("AI_STOCKS_CONFIG", "AI_STOCKS_PG_DSN", "AI_STOCKS_REDIS_URL"):
+        assert os.environ.get(key), f"missing isolated target: {key}"
+    from backend.config import get_settings
+    settings = get_settings()
+    root = Path(os.environ["AI_STOCKS_CONFIG"]).parent
+    assert root.name.startswith("ai-ci-")
+    assert settings.duckdb_path().parent == root
+    assert conninfo_to_dict(settings.pg_conninfo())["dbname"].startswith("ai_stocks_gate_")
+    assert settings.redis_url().startswith("unix://" + str(root) + "/")
+    return settings
+
+
+def test_default_clients(confirm_targets_before_connecting, pg, redis_cli):
+    from backend.storage import get_client, get_pg_client
+    settings = confirm_targets_before_connecting
+    market = get_client()
+    market.execute("CREATE TABLE isolated_probe(value INTEGER)")
+    market.execute("INSERT INTO isolated_probe VALUES (7)")
+    assert market.query_df("SELECT value FROM isolated_probe").iloc[0, 0] == 7
+    pg.execute("INSERT INTO app_config(key,value) VALUES ('ci.isolation.probe','7')")
+    default_pg = get_pg_client()
+    assert default_pg.query_df(
+        "SELECT value FROM app_config WHERE key='ci.isolation.probe'"
+    ).iloc[0, 0] == '7'
+    redis_cli.client.set("ci:isolation:probe", "7", ex=60)
+    assert redis_cli.client.get("ci:isolation:probe") == "7"
+    targets = {
+        "database": pg.query_df("SELECT current_database()").iloc[0, 0],
+        "duckdb_path": str(settings.duckdb_path()),
+        "redis_socket": redis_cli.client.connection_pool.connection_kwargs["path"],
+    }
+    Path(__EVIDENCE__).write_text(json.dumps(targets))
+    assert not __FAIL__, "intentional failure after isolated writes"
+
+
+def test_fresh_database_fixture(installed):
+    from backend.storage.database_lifecycle import verify_database
+    duck, pg = installed
+    assert verify_database(duck, pg)["ok"]
+""".replace("__EVIDENCE__", repr(str(evidence))).replace("__FAIL__", repr(fail))
+    )
+    original_run = database_gate.subprocess.run
+
+    def run_probe(arguments, **options):
+        # 预期失败的子门禁保留独立报告，不能覆盖正式 database 报告或混入后端归档。
+        arguments = [
+            f"--junitxml={tmp_path / 'probe-results.xml'}"
+            if argument.startswith("--junitxml=")
+            else argument
+            for argument in arguments
+        ]
+        return original_run(arguments, **options)
+
+    # 使用真实临时集群，模拟新增文件已经通过登记分流；不改动仓库登记表。
+    with database_gate.gate_server() as admin:
+        monkeypatch.setenv(database_gate.ADMIN_DSN_ENV, admin)
+        monkeypatch.setenv("AI_STOCKS_PG_DSN", "postgresql://blocked@127.0.0.1:1/forbidden")
+        monkeypatch.setenv("AI_STOCKS_REDIS_URL", "redis://127.0.0.1:1/15")
+        monkeypatch.setenv("AI_STOCKS_CONFIG", str(tmp_path / "forbidden-settings.yaml"))
+        monkeypatch.setattr(database_gate, "gate_test_paths", lambda _suite: [str(probe)])
+        monkeypatch.setattr(database_gate.subprocess, "run", run_probe)
+        assert database_gate.run_gate() == int(fail)
+        targets = json.loads(evidence.read_text())
+        with psycopg.connect(admin) as connection:
+            assert (
+                connection.execute(
+                    "SELECT 1 FROM pg_database WHERE datname=%s", [targets["database"]]
+                ).fetchone()
+                is None
+            )
+        assert not Path(targets["duckdb_path"]).parent.exists()
+        assert not Path(targets["redis_socket"]).exists()

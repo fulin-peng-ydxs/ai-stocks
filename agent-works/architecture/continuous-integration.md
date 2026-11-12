@@ -2,8 +2,8 @@
 
 ## 用途与范围
 
-- 读者与技术问题：开发者在这里维护常用 CI、专项 CI、调用方式、隔离与失败判据，以及新增测试和套件的接入规则。其他文档只保留导航；本地按改动选验证仍见[开发验证规范](../testing/guide.md)。
-- 依据范围与当前结论：执行事实由 `.github/workflows/ci.yml`、`ci-suite.yml`、`backend/devtools/ci.py`、`ci_pytest_plugin.py` 及 `config/ci-suites.json` 定义。CI 检查代码，不部署或升级业务实例；远端运行和分支规则须在 GitHub 实际确认。
+- 读者与技术问题：开发者在这里维护常用 CI、专项 CI、调用方式、执行环境、失败判据，以及新增测试和套件的接入规则。此处也维护独立数据库 gate 的资源隔离与执行协议；数据库结构、seed、升级与恢复的验收语义归[数据库专题](database-lifecycle.md)，本地按改动选验证归[开发验证规范](../testing/guide.md)。
+- 依据范围与当前结论：执行事实由 `.github/workflows/ci.yml`、`ci-suite.yml`、`backend/devtools/ci.py`、`isolated_environment.py`、`ci_pytest_plugin.py` 及 `config/ci-suites.json` 定义。CI 检查代码，不部署或升级业务实例；远端运行和分支规则须在 GitHub 实际确认。
 
 ## 技术全景与边界
 
@@ -41,22 +41,22 @@
 - 失败与资源边界：未知套件、失效登记、过期文档直接失败。GitHub 每个检查最多 30 分钟，不用自动重试掩盖断言失败；后端 JUnit 与 Redis 诊断日志归档 7 天，本地产物在 Git 忽略的 `logs/`。
 - 局部风险与复核：本阶段前端仍是现有静态设计、布局契约和类型检查，未扩大全量前端业务测试、生产构建或 E2E；Ruff 存量处理、真实来源核验和性能达标判定另行安排。
 
-### 机制：后端独立环境与业务回归
+### 机制：后端与数据库的共用隔离环境
 
-- 目标与入口：`run_backend()` 使用现有 `database_gate.gate_server()` 和 `temporary_database()`，默认启动独立 PG 集群并创建随机数据库；GitHub 显式管理连接 `AI_STOCKS_DB_GATE_ADMIN_DSN` 仅用于随机建库和删库。
-- 处理与结果：另建只监听 Unix socket 的临时 Redis 和临时 DuckDB 文件。子进程导入配置前注入临时 YAML 与三库连接，调用正式 `initialize_database()` 后串行执行后端测试。覆盖指标/筛选/评分/回测、ST/复权/更码/EOD、权限/租户/资产及任务运行态等现有测试；不访问本机行情库和在线服务。
+- 目标与入口：`run_backend()` 与 `database_gate.run_gate()` 共用 `isolated_environment.isolated_storage_environment()`。`gate_server()` 默认启动独立 PG 集群；显式管理连接 `AI_STOCKS_DB_GATE_ADMIN_DSN` 只供执行器和数据库夹具创建/删除随机测试库，不能作为业务客户端连接。
+- 处理与结果：共用上下文创建随机 PG 数据库、只监听 Unix socket 的临时 Redis、临时 DuckDB 路径及 YAML，在子进程导入配置前设置全部默认目标。普通 `PostgresClient()`、`get_pg_client()`、`get_client()` 和公共 `pg` / `redis_cli` 夹具均落在这些临时资源。后端套件先调用正式 `initialize_database()` 再运行业务回归；数据库套件保留空库、新装和升级夹具各自的前置状态。
 - 数据、权限与状态：子进程剥离全部继承的 `AI_STOCKS_*`、`ENV` 和 `PYTEST_*`，再生成测试身份、密码、配置加密密钥和连接；关闭邮件发送，移除本机 E2E/来源凭据。测试可修改全局配置，因为目标是可销毁的独立库。临时 PG/Redis 生命周期归执行器所有，不停止或重启日常后端。
-- 配置与扩展：普通 `backend/tests/test_*.py` 自动发现、默认进入 `backend`，包括新增模块与新增用例，无需逐项改 workflow。文件级专项在导入前排除，参数级专项在收集后按精确 nodeid 分流；专项表中的 nodeid 失效会失败，避免改名后静默丢覆盖。不要用宽泛文件名匹配排除新业务。
+- 配置与扩展：后端与数据库执行均需要 `redis-server`，以及本机 `initdb/pg_ctl` 或显式测试管理连接。普通 `backend/tests/test_*.py` 自动发现、默认进入 `backend`；文件级专项在导入前排除，参数级专项在收集后按精确 nodeid 分流。专项表中的 nodeid 失效会失败，避免改名后静默丢覆盖；不要用宽泛文件名匹配排除新业务。
 - 失败与资源边界：PG/Redis 缺失、初始化失败或清理失败直接失败；复用 `database_gate_plugin` 的严格结果判定，任何未预先分流的 skip/xfail/xpass、空集合或外部取消选择都失败。插件加载和继承的 `-k/-m/--lf` 被清除。退出关闭子进程、连接、随机 PG 库及临时目录；Redis 不开放 TCP、不持久化。
 - 局部风险与复核：登记的 `manual-market` 为遗留 `test_api.py`，需要已准备的真实行情和前端产物，当前没有可自动调用的专项 CI；按本地服务保护要求准备后单独运行，不能把常用 CI 通过解释为这组已通过。`not-applicable` 仅排除 PG 迁移用例的 DuckDB 参数，其 PG 参数仍常用必跑。普通手动 pytest 的离线 skip 行为不因此改变。
 
 ### 机制：数据库专项复用
 
 - 目标与入口：`scripts/run-ci.sh run database` 最终调用已有 `database_gate.run_gate()`；`./start.sh database gate` 继续有效，两者不刷新结构契约。
-- 处理与结果：复用新装、冻结旧库升级、重跑、数据保留、负例、故障回滚、真实 CLI 与目录验收。代码内的初始化和结构机制只维护于数据库专题，CI 本文维护触发与调用。
+- 处理与结果：执行数据库专题规定的新装、冻结旧库升级、重跑、数据保留、负例、故障回滚及真实 CLI/目录验收；具体通过条件和结构维护步骤由该专题定义。
 - 数据、权限与状态：业务数据库不作为门禁目标；不把隔离新装成功当成某个业务实例已升级。刷新机器契约仍是显式 `database gate --refresh-contract`，CI 不执行刷新。
-- 配置与扩展：数据库相关变更沿数据库接入流程扩展 `test_database_lifecycle.py`，或把新增测试文件登记到 `database`。门禁的 `gate_test_paths()` 直接消费同一登记表，自动执行这些文件；常用后端在导入前分流，常用 CI 调用数据库专项，避免遗漏或重复执行。Python 用例不能登记到前端执行器，文件级和用例级专项不得重叠。
-- 失败与资源边界：沿用随机库清理、依赖不可用失败及禁止跳过/空集合机制；需要 PG >=14，本地须有 `initdb/pg_ctl` 或显式测试管理连接，GitHub 使用 PG 16。
+- 配置与扩展：数据库相关变更沿数据库接入流程扩展 `test_database_lifecycle.py`，或把新增测试文件登记到 `database`。`gate_test_paths()` 消费同一登记表并执行这些文件；常用后端在导入前分流，常用 CI 调用数据库专项。执行器统一加载 `backend.tests.database_fixtures`：`databases` 提供每例未初始化的独立双库，`installed` 提供正式初始化后的双库。新装、升级或故障回滚测试按前置状态选择这两个夹具；普通客户端回归可复用公共夹具，仍受共用默认隔离保护。用例不得显式指定业务 DSN 或业务文件路径。Python 用例不能登记到前端执行器，文件级和用例级专项不得重叠。
+- 失败与资源边界：资源管理和严格结果判定沿用上述共用协议；需要 PG >=14，GitHub 使用 PG 16。新文件接入必须验证真实执行和临时目标，失败后也要清理，不只检查登记表中存在路径。
 - 局部风险与复核：线上权限、容量、备份及实际存量数据库验收仍由部署维护和 `database check` 承接。
 
 ## 接入、扩展与变更影响
@@ -64,6 +64,13 @@
 - 消费与接入方式：首次运行先安装 `requirements-ci.txt`、前端执行 `npm ci`，本机准备 `initdb/pg_ctl/redis-server`。可用 `scripts/run-ci.sh plan` 查看常用集合、`scripts/run-ci.sh check` 检查登记与文档。参数不透传给任意 shell 命令，套件名须经登记校验。
 - 扩展与兼容边界：新增普通后端测试自动收集；新增专项例外登记精确文件/nodeid、归属和原因，执行对应专项与常用分流回归。新增套件登记 `kind/common/description`，同类执行器可复用，新增执行器类型须同步 `registry()`、`run_suite()` 与 `ci-suite.yml` 的依赖准备。之后执行 `docs --write`，校验会阻止忘记同步文档；不由 CI 自动提交代码、修改断言、刷新契约或创建新调度。
 - 依赖及消费方影响：套件登记变化同时影响本地默认集合、远端矩阵与生成表；修改触发器/可复用 workflow 时运行工作流语法检查，修改插件必须覆盖失败、跳过、空集合、取消选择及专项分流负例。CI 规则变更只在本文维护机制正文，AGENTS、README、验证规范和系统架构保留导航。
+
+新增测试或调整 CI 时，按以下顺序完成维护：
+
+1. 按改动风险在开发验证规范选择测试；普通后端测试按默认发现接入，数据库生命周期测试按上述夹具选择前置状态，专项例外再登记归属与原因。前端常用入口目前只运行布局契约目录；其他目录的业务测试仍须定向执行，扩大 CI 覆盖时修改实际执行入口及本文边界。
+2. 修改 `config/ci-suites.json` 后执行 `scripts/run-ci.sh docs --write` 和 `scripts/run-ci.sh check`。生成命令只更新套件/例外表，机制正文由修改者随实现维护；不能用生成表格代替解释新的依赖、隔离或失败行为。
+3. 执行受影响套件；归属变化同时验证常用分流与专项实际执行，执行器变化复核 `test_ci.py`，数据库语义变化继续完成数据库专题要求的 gate。必要检查不通过时修原因，不改断言或例外来掩盖失败。
+4. 交付实际范围、结果和未验证项。远端状态及分支规则以 GitHub 实际证据为准；本地通过不能代替远端运行。
 
 ## 验证入口与已知限制
 
