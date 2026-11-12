@@ -236,6 +236,25 @@ def test_member_repairs_parallel_and_incomplete_snapshot_preserves_old_members(s
     assert client.query_df("SELECT code FROM board_member WHERE board_code=?", [state.codes[0]]).code.tolist() == ["000001.SZ"]
 
 
+def test_old_complete_snapshot_does_not_hide_new_incomplete_members(setup):
+    client, state, service, _ = setup(count=1)
+    code = state.codes[0]
+    client.execute("UPDATE board_dict SET has_members=TRUE,has_bar=FALSE")
+    service.ingest_board_members(snapshot_date=DAY, board_codes=[code], force=True)
+    iid = issue(client, code, kind="board_member_incomplete")
+    state.calls.clear()
+    state.empty.add(code)
+    ctx = Context()
+    result = run([iid], ctx)
+    assert not result["ok"] and result["failed"] == 1 and result["resolved"] == 0
+    assert len(state.calls) == 1
+    assert client.query_df("SELECT status FROM data_quality_issue WHERE id=?", [iid]).iloc[0, 0] == "open"
+    assert set(client.query_df("SELECT code FROM board_member WHERE board_code=?", [code]).code) == {
+        "600000.SH", "300750.SZ",
+    }
+    assert iid not in ctx.checkpoint.get("issue_done_ids", [])
+
+
 def test_fund_missing_reuses_one_market_response_but_only_writes_selected_boards(setup):
     client, state, _, _ = setup(count=4)
     client.execute("UPDATE board_dict SET has_fund_flow=TRUE,has_bar=FALSE")

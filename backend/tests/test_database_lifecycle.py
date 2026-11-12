@@ -891,3 +891,80 @@ def test_existing_pg_task_transaction_admission(installed, monkeypatch):
 
     duck, pg = installed
     test_writer_admission_honors_oldest_ladder_and_releases_expired_queue(pg, duck, monkeypatch)
+
+
+def test_restart_preserves_old_default_labels_and_resource_parent(installed):
+    """旧默认值仍是既有配置，普通初始化不能把它当成覆盖授权。"""
+    duck, pg = installed
+    pg.execute("UPDATE sys_menu SET title='预设管理' WHERE id='/system/layout/presets'")
+    pg.execute("UPDATE sys_resource SET name='布局预设管理' WHERE id='layout:preset-manage'")
+    pg.execute("UPDATE sys_resource SET menu_id='/data/ingest' WHERE id='limit-ladder:recompute'")
+    for key in ("migration.visual_preset_labels_v1", "migration.limit_ladder_recompute_anchor_v1"):
+        pg.execute("DELETE FROM app_config WHERE key=%s", [key])
+    lifecycle.initialize_database(duck, pg, mode="upgrade")
+    assert (
+        pg.query_df("SELECT title FROM sys_menu WHERE id='/system/layout/presets'").iloc[0, 0]
+        == "预设管理"
+    )
+    assert (
+        pg.query_df("SELECT name FROM sys_resource WHERE id='layout:preset-manage'").iloc[0, 0]
+        == "布局预设管理"
+    )
+    assert (
+        pg.query_df("SELECT menu_id FROM sys_resource WHERE id='limit-ladder:recompute'").iloc[0, 0]
+        == "/data/ingest"
+    )
+
+
+@pytest.mark.parametrize(
+    "resource_name,resource_code,expected_name",
+    [
+        ("布局预设管理", "layout:preset-manage", "视觉预设管理"),
+        ("管理员自定义名称", "layout:preset-manage", "管理员自定义名称"),
+        ("布局预设管理", "pytest:reused-layout", "布局预设管理"),
+    ],
+)
+def test_visual_label_sql_requires_confirmation_preserves_custom_and_audits(
+    installed,
+    resource_name,
+    resource_code,
+    expected_name,
+):
+    import psycopg
+
+    _, pg = installed
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "agent-works/configurable-layout-system/visual-preset-menu-rename.sql"
+    ).read_text()
+    # 保留完整 DO 体，在测试外层事务中验证拒绝、执行与重跑；避免脚本 COMMIT 提前结束测试事务。
+    body = script.split("BEGIN;", 1)[1].rsplit("COMMIT;", 1)[0]
+    key = "migration.visual_preset_labels_manual_v1"
+    with pg.transaction() as conn:
+        conn.execute("UPDATE sys_menu SET title='预设管理' WHERE id='/system/layout/presets'")
+        conn.execute(
+            "UPDATE sys_resource SET name=%s,code=%s WHERE id='layout:preset-manage'",
+            [resource_name, resource_code],
+        )
+        with pytest.raises(psycopg.Error, match="确认口令"):
+            with conn.transaction():
+                conn.execute(body)
+        assert (
+            pg.query_df("SELECT title FROM sys_menu WHERE id='/system/layout/presets'").iloc[0, 0]
+            == "预设管理"
+        )
+        assert pg.query_df("SELECT 1 FROM app_config WHERE key=%s", [key]).empty
+        conn.execute(
+            "SELECT set_config('ai_stocks.confirm_menu_overwrite', 'CONFIRM_VISUAL_PRESET_LABELS', true)"
+        )
+        conn.execute(body)
+        record = pg.query_df("SELECT value FROM app_config WHERE key=%s", [key]).iloc[0, 0]
+        audit = json.loads(record)
+        assert audit["menu"]["before"]["title"] == "预设管理"
+        assert audit["menu"]["after"]["title"] == "视觉预设"
+        assert audit["resource"]["before"]["name"] == resource_name
+        assert audit["resource"]["after"]["name"] == expected_name
+        assert audit["resource"]["after"]["code"] == resource_code
+        assert audit["actor"] and audit["applied_at"]
+        conn.execute(body)
+        assert pg.query_df("SELECT value FROM app_config WHERE key=%s", [key]).iloc[0, 0] == record

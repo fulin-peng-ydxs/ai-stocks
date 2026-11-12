@@ -1040,7 +1040,10 @@ def test_update_includes_valuation(client, monkeypatch, eod_session):
     assert called["review"] is True and res["capital_review"] == {"target": 0}
 
 
-def test_index_incremental_uses_each_code_latest_date_and_backfills_new_code(client, monkeypatch):
+@pytest.mark.parametrize("history_years, first_year", [(10, 2016), (15, 2011)])
+def test_index_incremental_uses_each_code_latest_date_and_backfills_new_code(
+    client, monkeypatch, history_years, first_year,
+):
     """旧指数已最新不能阻断新指数按系统历史窗口首次回填。"""
     from backend.config import get_effective_settings
     from backend.services import ingest
@@ -1052,8 +1055,11 @@ def test_index_incremental_uses_each_code_latest_date_and_backfills_new_code(cli
         "('000300.SH', DATE '2026-08-20', 4000)"
     )
 
+    settings = get_effective_settings().model_copy(deep=True)
+    settings.datasource.history_years = history_years
+
     def _init(self, source=None):
-        self.s = get_effective_settings()
+        self.s = settings
         self.c = client
         self.repo = MarketRepository(client)
 
@@ -1070,10 +1076,8 @@ def test_index_incremental_uses_each_code_latest_date_and_backfills_new_code(cli
     by_code = {code: (start, end) for code, start, end in calls}
     assert "000905.SH" not in by_code
     assert by_code["000300.SH"] == (date(2026, 8, 21), date(2026, 8, 25))
-    assert by_code["000001.SH"] == (date(2016, 8, 25), date(2026, 8, 25))
-    assert by_code["000688.SH"] == (date(2016, 8, 25), date(2026, 8, 25))
-    assert by_code["399001.SZ"] == (date(2016, 8, 25), date(2026, 8, 25))
-    assert by_code["399006.SZ"] == (date(2016, 8, 25), date(2026, 8, 25))
+    for code in ("000001.SH", "000688.SH", "399001.SZ", "399006.SZ"):
+        assert by_code[code] == (date(first_year, 8, 25), date(2026, 8, 25))
     assert written == 5
 
 
@@ -1527,6 +1531,8 @@ def test_backfill_refetches_partially_covered_code(client, monkeypatch, eod_sess
     eod_session(client, today)
     start = date(today.year - s.datasource.history_years, today.month, today.day)
     client.execute('INSERT INTO trade_calendar VALUES (?,TRUE)', [start])
+    # 仅起点和末日的日历无法证明中间存在应补交易日；明确准备上市后的缺失开市日。
+    client.execute("INSERT INTO trade_calendar VALUES (DATE '2015-01-05', TRUE)")
     old_day = date(start.year - 1, 3, 1)   # 早于回填起点 → 已覆盖，应跳过
     part_day = date(today.year, 5, 6)       # 仅近期一条 → 部分覆盖（模拟兜底补的近窗口），应重补
 

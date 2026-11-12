@@ -102,7 +102,10 @@ def test_page_file_precedes_route_and_registry_registration():
     assert "<PageSettingsDrawer" in source
     assert "data-scaffold-placeholder" not in source
     assert "<StockAnalysisPanel" in source
-    assert 'size="full"' in source
+    # 图表已嵌入主从工作区；验证分析插槽和真实图表接线，避免约束已退役的抽屉尺寸。
+    assert '<template #analysis>\n          <StockAnalysisPanel' in source
+    assert ':active="activeAnalysisItem"' in source
+    assert '@open-detail="openActiveAnalysisDetail"' in source
     assert "v-permission=\"'limit-ladder:recompute'\"" in source
     assert "recomputeLimitLadder" in source
     assert "name: 'limit-ladder'" in router

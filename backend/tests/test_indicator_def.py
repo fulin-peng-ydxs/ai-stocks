@@ -267,11 +267,10 @@ def test_macd_builtin_metadata_and_registry_api(monkeypatch):
                 repo.delete(key)
 
 
-def test_application_startup_seeds_full_builtin_registry(monkeypatch):
+def test_application_startup_seeds_full_builtin_registry(monkeypatch, pg):
     with DuckDBClient(db_path=":memory:") as c:
         import backend.main as main_module
         import backend.storage as storage_module
-        import backend.storage.pg_ddl as pg_ddl_module
 
         class _ReadyDependency:
             @staticmethod
@@ -284,9 +283,8 @@ def test_application_startup_seeds_full_builtin_registry(monkeypatch):
                 return "test-jwt-secret"
 
         monkeypatch.setattr(storage_module, "get_client", lambda: c)
-        monkeypatch.setattr(storage_module, "get_pg_client", _ReadyDependency)
+        monkeypatch.setattr(storage_module, "get_pg_client", lambda: pg)
         monkeypatch.setattr(storage_module, "get_redis_client", _ReadyDependency)
-        monkeypatch.setattr(pg_ddl_module, "init_pg_db", lambda: None)
         monkeypatch.setattr(main_module, "get_settings", _ReadySettings)
 
         app = main_module.create_app()

@@ -168,7 +168,9 @@ def test_parallel_st_refresh_preserves_publication_and_retry_checkpoint(service,
 
     monkeypatch.setattr(StockSTStatusService, "upsert_facts", upsert)
     ctx = Context()
-    result = service.refresh_st_status(codes=codes, start=DAY, end=DAY, ctx=ctx)
+    # 显式测试进程池路径；不能依赖本机默认并发，否则会绕过桩并访问真实 SDK。
+    with executor.execution_scope(4, tracker=ctx.request_tracker):
+        result = service.refresh_st_status(codes=codes, start=DAY, end=DAY, ctx=ctx)
     assert result["fail"] == int(failed)
     assert result["publication_status"] == ("failed" if failed else "ready")
     facts = service.c.query_df("SELECT code,is_st,quality FROM stock_st_status_daily ORDER BY code")
@@ -188,7 +190,8 @@ def test_parallel_reference_refresh_keeps_prices_and_rejects_unmatched_source(se
     monkeypatch.setattr(service, "_bao_source", lambda: source)
     monkeypatch.setattr(executor, "_query", _mixed_query)
     before = service.c.query_df("SELECT code,open,high,low,close,volume,amount,adj_factor FROM daily_bar ORDER BY code")
-    result = service.refresh_price_references(codes, ctx=Context())
+    with executor.execution_scope(4):
+        result = service.refresh_price_references(codes, ctx=Context())
     assert result["updated"] == result["unmatched"] == 1
     assert list(result["errors"]) == ["600005.SH"]
     after = service.c.query_df("SELECT code,open,high,low,close,volume,amount,adj_factor FROM daily_bar ORDER BY code")

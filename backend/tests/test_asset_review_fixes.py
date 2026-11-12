@@ -257,7 +257,7 @@ def test_score_insert_copy_rolls_back_when_version_insert_fails(market, pg):
     A.pg = _FaultPG(pg)
     try:
         with pytest.raises(StorageError):
-            A._insert_copy("rb_score", "回滚测试", _ITEMS, {})
+            A._insert_copy("rb_score", "回滚测试", _ITEMS, {}, include_st=True)
         main = pg.query_df(
             "SELECT 1 FROM score_profile WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
             [TEST_TENANT, TEST_OWNER, "rb_score"])
@@ -295,7 +295,7 @@ def test_score_insert_copy_does_not_clobber_and_retries_new_id(market, pg):
         A.save("score_keep", "评分原始", _ITEMS)
         before = A.get("score_keep")
         # 同 id 二次插入：第二次撞库返回 False，不覆盖
-        assert A._insert_copy("score_keep", "企图覆盖", _ITEMS, {}) is False
+        assert A._insert_copy("score_keep", "企图覆盖", _ITEMS, {}, include_st=True) is False
         assert A.get("score_keep")["name"] == before["name"] == "评分原始"
         # copy_visible 连点两次得到不同 id（撞库自动换 id），各自成一份
         r1 = A.copy_visible(A.get_visible("score_keep")["profile_ref"] if hasattr(A, "get_visible") else "score_keep")

@@ -12,6 +12,7 @@ import pytest
 from backend.cli import cmd_trade_discipline_rbac
 from backend.common.exceptions import StorageError
 from backend.storage import pg_ddl
+from backend.tests.conftest import insert_test_role
 from backend.storage.pg_ddl import (
     ASSET_PK,
     TRADE_DISCIPLINE_RBAC_MARKER,
@@ -78,11 +79,7 @@ def td_rbac_sandbox(pg, monkeypatch):
         normal_role=role_ids[2],
     )
     for role_id in role_ids:
-        pg.execute(
-            "INSERT INTO sys_role (id,code,name,kind,is_builtin,is_locked) "
-            "VALUES (%s,%s,%s,'custom',FALSE,FALSE)",
-            [role_id, role_id, "交易纪律临时角色"],
-        )
+        insert_test_role(pg, role_id)
     monkeypatch.setattr(pg_ddl, "_TRADE_DISCIPLINE_MENU_ID", menu_id)
     monkeypatch.setattr(pg_ddl, "TRADE_DISCIPLINE_RBAC_MARKER", marker_key)
     monkeypatch.setattr(pg_ddl, "TRADE_DISCIPLINE_RBAC_LOCK", 8500000000 + int(suffix[:6], 16))

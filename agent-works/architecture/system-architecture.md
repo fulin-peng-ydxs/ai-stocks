@@ -117,9 +117,7 @@ flowchart TB
 
 前端制品为 `frontend/dist`，由 Vite 构建、FastAPI 在生产启动方式下托管。构建执行链由 `frontend/package.json` 定义。
 
-仓库的 [Frontend contracts 工作流](../../.github/workflows/frontend-contracts.yml) 在 push 和 pull request 触发，在 `frontend/` 下以 Node.js 22 执行 `npm ci`、`npm run check`，没有路径过滤，也不负责生产构建或部署。作为必过合并检查时，远端仓库还须将该检查纳入分支规则；工作流文件本身不配置分支保护，CI 通过也不代表已部署或完成业务验收。
-
-[Database contracts 工作流](../../.github/workflows/database-contracts.yml) 在同样事件中运行隔离数据库门禁，初始化与升级的契约及覆盖见 [数据库专题](database-lifecycle.md#验证入口与已知限制)。
+常用与专项检查的触发、套件调用、隔离和持续接入统一见 [CI 编排与持续维护](continuous-integration.md)。数据库初始化与升级语义见 [数据库专题](database-lifecycle.md)。
 
 ## 变更与验证入口
 

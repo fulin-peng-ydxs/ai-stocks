@@ -211,6 +211,7 @@ cd frontend && npm run build && cd ..
 | AGENTS／[CLAUDE](CLAUDE.md) | 项目协作与命令／Claude 薄入口 |
 | [系统架构](agent-works/architecture/system-architecture.md) | 分层、运行单元、数据流、持久层和故障边界 |
 | [数据库设计、初始化与演进](agent-works/architecture/database-lifecycle.md) | 实例、目标结构、基础数据范围、升级恢复及持续门禁 |
+| [CI 编排与持续维护](agent-works/architecture/continuous-integration.md) | 常用/专项检查、统一调用、隔离环境及新增测试自动接入 |
 | [任务运行态](agent-works/architecture/task-runtime.md) | 后台任务、调度、可靠事件、取消续跑和恢复 |
 | [环境配置](agent-works/architecture/environment-configuration.md) | 变量、YAML、PG 覆盖层、运行档案、日志与生效规则 |
 | [前端布局实现](agent-works/architecture/frontend-layout.md) | 布局与外观的加载、合并、字段策略、保存、恢复及失败边界 |

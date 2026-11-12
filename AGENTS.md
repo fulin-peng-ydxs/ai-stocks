@@ -2,7 +2,8 @@
 
 ## 文档职责
 
-- `AGENTS.md` 是本仓库 AI 协作与项目命令的权威入口；测试命令、验证选择和总维护清单统一维护在 [开发验证规范](agent-works/testing/guide.md)，README 只摘录使用路径所需命令。
+- `AGENTS.md` 是本仓库 AI 协作与项目命令的权威入口；本地测试命令、验证选择和总维护清单统一维护在 [开发验证规范](agent-works/testing/guide.md)，README 只摘录使用路径所需命令。
+- 常用/专项 CI、触发与调用、隔离、失败判据和新增测试的自动接入统一维护在 [CI 编排与持续维护](agent-works/architecture/continuous-integration.md)；新增普通后端测试默认接入常用 CI，专项例外须登记原因并验证分流，不以 skip 绕过。
 - `CLAUDE.md` 只作为 Claude Code 薄入口，避免复制本文件内容；仓库事实以代码、`README.md`、`DESIGN.md` 和 `agent-works/architecture/` 为准。
 - 页面开发使用 [DESIGN](DESIGN.md) 和 [页面模板](agent-works/configurable-layout-system/page-template.md)，布局与外观配置运行机制见 [前端布局实现](agent-works/architecture/frontend-layout.md)。
 - 数据库实例、结构、初始化数据范围、升级与恢复及持续维护统一遵守 [数据库设计、初始化与演进](agent-works/architecture/database-lifecycle.md)，其他文档只维护导航或所属领域语义。

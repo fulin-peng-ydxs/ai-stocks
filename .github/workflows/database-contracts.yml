@@ -1,39 +1,15 @@
 name: Database contracts
 
 on:
-  pull_request:
-  push:
+  workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   database-contracts:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: gate
-          POSTGRES_PASSWORD: isolated-ci-gate
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U gate -d postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
-    env:
-      AI_STOCKS_DB_GATE_ADMIN_DSN: postgresql://gate:isolated-ci-gate@127.0.0.1:5432/postgres
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-          cache: pip
-      - run: python -m pip install -r requirements.txt
-      - run: python -m backend.cli database gate
+    uses: ./.github/workflows/ci-suite.yml
+    with:
+      suite: database
+      kind: database

@@ -158,6 +158,8 @@ def test_structured_checkup_counts_warning_without_failing(monkeypatch):
             "check_contract",
             "check_board",
             "check_calendar_readiness",
+            "check_history_coverage",
+            "check_intraday",
         ):
             monkeypatch.setattr(verifier, method_name, lambda: None)
 

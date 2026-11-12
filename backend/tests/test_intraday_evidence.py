@@ -192,8 +192,11 @@ def test_unavailable_repair_is_not_technical_failure_or_self_retry(db, monkeypat
 
 
 def test_repair_cancel_resume_freezes_ids_and_does_not_repeat_completed_stock(db, monkeypatch):
+    import threading
     import pytest
 
+    from backend.config.settings import Settings
+    from backend.services import intraday_archive
     from backend.services import async_task, intraday_source
     from backend.services.async_task import TaskCancelled
     from backend.services.data_report import DataIntegrityReport
@@ -204,6 +207,23 @@ def test_repair_cancel_resume_freezes_ids_and_does_not_repeat_completed_stock(db
     q = Windows([window(rows=10)])
     IntradayArchiveService(db, quotes=q).collect()
     q.windows = [window()]
+    settings = Settings()
+    settings.datasource.update_concurrency = 2
+    monkeypatch.setattr(intraday_archive, "get_effective_settings", lambda: settings)
+    # 确定两笔请求均已在途后再允许收口，避免用线程调度时序决定请求数断言。
+    barrier = threading.Barrier(2)
+    first_landed = threading.Event()
+    turns = iter(range(2))
+    fetch_window = q.fetch_window
+
+    def fetch_together(*args, **kwargs):
+        if next(turns, None) is not None:
+            barrier.wait(timeout=5)
+            if args[0] == second:
+                assert first_landed.wait(timeout=5), "首股落库后才释放第二笔在途响应"
+        return fetch_window(*args, **kwargs)
+
+    monkeypatch.setattr(q, "fetch_window", fetch_together)
     monkeypatch.setattr(intraday_source, "IntradaySourceService", lambda **kw: q)
     monkeypatch.setattr(async_task, "get_client", lambda: db)
     monkeypatch.setattr("backend.services.ingest.IngestionService", lambda: None)
@@ -213,6 +233,7 @@ def test_repair_cancel_resume_freezes_ids_and_does_not_repeat_completed_stock(db
             super().set_phase(phase, **data)
             if phase == "fix_issue" and data.get("phase_done") == 1:
                 self.cancel = True
+                first_landed.set()
 
     ctx = Cancelling()
     with pytest.raises(TaskCancelled):

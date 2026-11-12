@@ -2801,8 +2801,8 @@ def seed_rbac(client: PostgresClient | None = None, *, initialize_user_roles: bo
         _SEED_RESOURCES,
         excluded_codes=set(TRADE_DISCIPLINE_RESOURCE_CODES),
     )
-    _migrate_visual_preset_labels(client)
-    _migrate_limit_ladder_recompute_anchor(client)
+    # 启动只补缺失行；既有菜单标题和资源归属即使等于旧默认值，也不构成覆盖授权。
+    # 历史标签/归属调整只能走独立确认及审计的专项迁移，不能由普通 seed 触发。
     # 4) 默认授权（首次 seed + 存量库一次性回填）
     _seed_role_grants(client, [m["code"] for m in menu_rows],
                       newly_created_roles=newly_created_roles)

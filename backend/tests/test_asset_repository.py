@@ -124,9 +124,10 @@ def test_cached_score_board_rejects_changed_st_input_without_writing(market, pg)
         change_reason="seed",
     )
     st_version = st_service.input_version_for_date(day)
-    from backend.indicators.compute import build_params, param_hash
+    from backend.scoring.snapshot import _current_param_hash
 
-    ph = param_hash(build_params())
+    # 本测试只改变 ST 输入，种子快照使用当前评分指纹，避免无关版本先使快照失效。
+    ph = _current_param_hash(market, profile)
     pg.execute(
         "INSERT INTO score_snapshot_meta "
         "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,"
@@ -220,7 +221,7 @@ def test_score_materialization_keeps_old_snapshot_when_st_keeps_changing(
 
 def test_latest_public_snapshot_date_skips_stale_st_version(market, pg):
     """概览/默认日期不能把仅 stale=false、但 ST 版本已过期的 PG 元数据报成 fresh。"""
-    from backend.indicators.compute import build_params, param_hash
+    from backend.scoring.snapshot import _current_param_hash
     from backend.services.public_board import latest_fresh_public_snapshot_date
     from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 
@@ -248,7 +249,7 @@ def test_latest_public_snapshot_date_skips_stale_st_version(market, pg):
         trade_date: service.input_version_for_date(trade_date)
         for trade_date in (older, newer)
     }
-    ph = param_hash(build_params())
+    ph = _current_param_hash(market)
     try:
         for trade_date in (older, newer):
             pg.execute(

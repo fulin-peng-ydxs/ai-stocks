@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'common 或 config/ci-suites.json 中的套件名'
+        default: common
+        type: string
+      scale_stocks:
+        description: '仅 backend-scale 使用，显式填写 100..5000'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.suite || 'common' }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate registry and generate matrix
+        id: plan
+        env:
+          CI_SUITE: ${{ inputs.suite || 'common' }}
+        run: |
+          python3 -m backend.devtools.ci check
+          echo "matrix=$(python3 -m backend.devtools.ci plan "$CI_SUITE")" >> "$GITHUB_OUTPUT"
+  checks:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    uses: ./.github/workflows/ci-suite.yml
+    with:
+      suite: ${{ matrix.suite }}
+      kind: ${{ matrix.kind }}
+      scale_stocks: ${{ inputs.scale_stocks || '' }}
+  result:
+    if: always()
+    needs: [plan, checks]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every selected check
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          CHECK_RESULT: ${{ needs.checks.result }}
+        run: test "$PLAN_RESULT" = success && test "$CHECK_RESULT" = success

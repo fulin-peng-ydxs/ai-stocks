@@ -705,12 +705,18 @@ def test_withdrawn_day_is_auditable_but_excluded_by_default(pg, market):
 
 
 def test_rule_resolution_uses_same_database_snapshot_as_account(pg, market):
+    from backend.storage.pg_client import PostgresClient
     dates = _seed_market(market)
     service = ledger(pg, market)
     with service.repo.transaction() as conn:
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         service.repo.account(conn)  # 固定读快照，随后在另一连接发布不能穿透当前快照。
-        rule_id = _published_rule(service.discipline)
+        # 同一客户端的嵌套事务现在复用连接；用独立客户端提交才能模拟并发发布。
+        writer = PostgresClient(pg.conninfo)
+        try:
+            rule_id = _published_rule(ledger(writer, market).discipline)
+        finally:
+            writer.close()
         assert service._rules(dates[0], conn) == []
     assert service.context(dates[0])["rules"][0]["rule_id"] == rule_id
 

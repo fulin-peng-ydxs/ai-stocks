@@ -5,7 +5,7 @@
 - 读者与技术问题：开发者和部署维护者在这里统一确定数据库实例、结构、初始化数据、升级与回退边界，以及每次数据库改动必须执行的门禁。
 - 依据范围与当前结论：以 `backend/storage/ddl.py`、`pg_ddl.py`、`database_lifecycle.py`、`schema_contract.py`、`backend/cli.py` 和数据库 CI 为事实源。完整初始化只有在实例、结构、必需基础数据和目录全部通过后才登记完成；目标实例是否达标必须实际执行检查，不能由本文推断。
 
-参考：[环境配置](environment-configuration.md) · [项目命令与服务保护](../../AGENTS.md) · [开发验证规范](../testing/guide.md)。
+参考：[环境配置](environment-configuration.md) · [项目命令与服务保护](../../AGENTS.md) · [开发验证规范](../testing/guide.md) · [CI 编排与持续维护](continuous-integration.md)。
 
 ## 技术全景与边界
 
@@ -31,7 +31,7 @@
 ### 机制：实例准备与目标识别
 
 - 目标与入口：由部署维护者准备 PostgreSQL 数据库/角色、Redis 和 DuckDB 文件位置；`inspect_instance()` 校验 PG 版本、编码和当前 schema，`database plan` 提供安装类型与目标指纹。
-- 处理与结果：应用连接必须落到 PG `public`，PostgreSQL 至少 14、编码 UTF8；数据库门禁固定使用 PG 16。应用不自动创建 PG 实例、数据库或数据库角色。DuckDB 使用配置解析后的单文件路径，在可写初始化时创建目录/文件；检查和预演不能创建正式文件。Redis 的实例、逻辑库、认证及持久化由部署配置管理，初始化不清空 Redis、不预置会话或缓存。
+- 处理与结果：应用连接必须落到 PG `public`，PostgreSQL 至少 14、编码 UTF8；隔离门禁的 CI 运行环境见 CI 专题。应用不自动创建 PG 实例、数据库或数据库角色。DuckDB 使用配置解析后的单文件路径，在可写初始化时创建目录/文件；检查和预演不能创建正式文件。Redis 的实例、逻辑库、认证及持久化由部署配置管理，初始化不清空 Redis、不预置会话或缓存。
 - 数据、权限与状态：每个环境使用独立 PG 数据库、DuckDB 文件与 Redis 命名空间/逻辑库。PG 数据库所有者及迁移身份应为项目专用角色，不授予业务账号 `SUPERUSER`、`CREATEDB` 或 `CREATEROLE`；当前自动升级启动需要应用角色具备其对象的 DDL 权限，不支持直接切成仅 DML 身份后仍宣称能自动升级。数据库管理身份只负责外部建库与隔离门禁的临时建库。
 - 配置与扩展：PG 连接来自 `Settings.pg_conninfo()`，DuckDB 路径来自 `Settings.duckdb_path`；敏感值不得进入 DDL、SQL 夹具或结构契约。非 `dev/test/local` 环境只要需要初始化管理员密码（包括旧库缺失密码），就必须显式提供 `AI_STOCKS_ADMIN_PASSWORD`，不随机生成或打印密码。`./start.sh database ...` 与服务共用变量文件加载；直接 `python -m backend.cli ...` 不加载 `.env.local`。
 - 失败与资源边界：PG 连接失败、schema 不符、版本不足或编码不符直接失败；不创建替代库、不猜目标。CLI 写入还须显式 `--apply`，并常量时间比较 `--expected-target-fingerprint` 与 PG 身份、实际连接端点及 DuckDB 解析路径的组合摘要；指纹不匹配时不得创建 DuckDB 文件或写入 PG。启动流程先检查 PG、Redis 和 JWT 密钥，再初始化数据库。
@@ -71,6 +71,8 @@
   菜单和功能点需要覆盖已有配置时，只允许系统管理员通过管理页面/API 显式修改并记录 before/after 审计，或使用独立版本 marker、事务级 advisory lock、精确旧身份检查、确认口令及审计的专项迁移。普通启动、升级 SQL 和测试不得用 `UPDATE/DELETE sys_menu/sys_resource` 或 `ON CONFLICT ... DO UPDATE` 默认覆盖既有行。专项 SQL 还必须包含事务、`app_config` marker、人工显式开关 `ai_stocks.confirm_menu_overwrite` 和 `AI_STOCKS_MENU_OVERWRITE: EXPLICIT_CONFIRMATION_REQUIRED` 标识，由既有 SQL 扫描测试校验；无法无歧义处理的旧菜单保留并告警。
 
 - 配置与扩展：新 seed 必须明确是代码维护、首次默认、管理员维护还是独立业务数据，并进入相应 seed 集合、只读验收和正反例测试。显式双库操作通过 `storage_client_scope()` 绑定间接仓储和有效配置读取，退出恢复原连接上下文，不污染默认运行态缓存。不能用初始化顺便收回权限、改密码、更新全部配置或删除资产。
+
+  视觉预设旧名称、连板天梯资源的旧父级即使仍等于历史默认值，也不由普通 seed 自动覆盖。名称调整可显式使用[视觉预设专项 SQL](../configurable-layout-system/visual-preset-menu-rename.sql)，按其确认口令、独立 marker 和 before/after 审计执行；不运行脚本即保留原配置。
 - 失败与资源边界：必需 seed 缺失导致验收失败；完整入口可补齐缺失数据。显式回滚的资源/权限策略继续以专项 marker 为准，不通过删除 marker“修复”。
 - 局部风险与复核：初始化成功只代表系统基础可用；交易日历前瞻、行情覆盖、ST 准确性和计算结果仍由各领域门禁判断。市场数据未准备时页面应按其契约展示空态或失败关闭。
 
@@ -117,9 +119,9 @@
 
 | 验证或风险事项 | 条件与入口 | 证据状态及位置 | 结果或影响 | 后续处理 |
 | --- | --- | --- | --- | --- |
-| 可执行隔离门禁 | `./start.sh database gate` | `backend/tests/test_database_lifecycle.py`、`backend/devtools/database_gate.py` | 新装、冻结旧库升级、幂等、数据保留、结构/seed 负例、故障回滚、真实 CLI 和目录验收 | 本地及 push/PR 必须执行；结果以本次输出为准 |
+| 可执行隔离门禁 | `./start.sh database gate` | `backend/tests/test_database_lifecycle.py`、`backend/devtools/database_gate.py` | 新装、冻结旧库升级、幂等、数据保留、结构/seed 负例、故障回滚、真实 CLI 和目录验收 | 数据库变更须通过本门禁；自动调用见 CI 专题，结果以本次输出为准 |
 | 新装声明与目标契约一致 | 独立声明式空库对比 `database_contract.json` | `create_declared_schema()`、`schema_report()` | 防止漏登记/手改契约，以及新装与升级结构不一致 | 结构变化时刷新机器产物并审查差异 |
 | 门禁隔离与失败关闭 | 显式 `AI_STOCKS_DB_GATE_ADMIN_DSN`，或本机 `initdb/pg_ctl` | 临时库名 `ai_stocks_gate_<随机值>`；本地临时集群仅 Unix socket，日志在项目 `logs/` | 不使用业务 DSN；清除环境 Pytest 选项和插件，不接受取消选择、skip/xfail 或空集合冒充完整通过 | 管理连接只用于创建/删除本次随机库；退出关闭连接、删除临时库并停止自建集群 |
-| 自动持续检查 | `.github/workflows/database-contracts.yml` | Python 3.12、PG 16 服务，执行不刷新契约的 gate | CI 验证初始化，不部署或升级业务实例 | 远端分支保护是否强制该状态由仓库设置控制 |
+| 自动持续检查 | [统一 CI 入口](continuous-integration.md) | 套件、触发与运行环境由 CI 专题维护 | 复用本专题数据库门禁 | 不代表业务实例已升级或验收 |
 | 目标实例验收 | 停服释放文件锁后 `database check` | 只读实例、结构、完成摘要、seed、目录报告 | 与隔离门禁分别回答“代码可安装”和“此实例达标” | 不用一个结果代替另一个 |
 | 运行和规模边界 | 当前单后端进程；离线初始化/升级 | 双库客户端、初始化锁及专项迁移 | 不支持在线并发结构升级、自动跨库原子回滚或任意历史版本降级 | 变更前备份，失败停服并按具体对象恢复 |

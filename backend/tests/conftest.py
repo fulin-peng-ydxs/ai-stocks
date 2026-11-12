@@ -73,6 +73,15 @@ def _isolate_source_request_runtime(monkeypatch):
 TEST_TENANT = "pytest"
 TEST_OWNER = "pytest_owner"
 
+
+def insert_test_role(pg: PostgresClient, role_id: str) -> None:
+    """临时角色的 ID、code 和名称使用同一随机身份，满足名称规范化唯一约束。"""
+    pg.execute(
+        "INSERT INTO sys_role (id,code,name,kind,is_builtin,is_locked) "
+        "VALUES (%s,%s,%s,'custom',FALSE,FALSE)",
+        [role_id, role_id, role_id],
+    )
+
 _TRADE_DISCIPLINE_CLEAN_ORDER = (
     "trade_discipline_operation",
     "trade_discipline_violation",

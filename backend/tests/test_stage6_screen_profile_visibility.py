@@ -14,6 +14,7 @@ from backend.screening.profile import ProfileRepo
 from backend.services.screen_score import ScreenScoreService
 from backend.backtest.engine import BacktestEngine
 from backend.services.backtest_service import BacktestService
+from backend.tests.conftest import insert_test_role
 
 _SECRET = "test-secret-screen-profile-visibility-0123456789abcdef"
 _EXPR = PRESET_PROFILES[0]["expression"]
@@ -46,11 +47,7 @@ def _mk_user(pg, codes: list[str], tenant: str | None = None) -> tuple[str, str,
         "VALUES (%s,%s,%s,'normal',0,'active')",
         [uid, tid, uid],
     )
-    pg.execute(
-        "INSERT INTO sys_role (id,code,name,kind,is_builtin,is_locked) "
-        "VALUES (%s,%s,'spv','custom',FALSE,FALSE)",
-        [rid, rid],
-    )
+    insert_test_role(pg, rid)
     pg.execute("INSERT INTO sys_user_role (user_id,role_id) VALUES (%s,%s)", [uid, rid])
     for code in codes:
         pg.execute(

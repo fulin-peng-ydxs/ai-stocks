@@ -344,6 +344,8 @@ def test_restart_reconcile_uses_capability_aware_message(market):
 
 
 def test_schedule_crud_normalizes_params_and_run_now_preserves_source(market, monkeypatch):
+    # 调度运行态与行情读取是两个依赖；当前测试明确注入行情校验入口。
+    monkeypatch.setattr("backend.scheduler.scheduler.get_client", lambda: market)
     service = ScheduledJobService(market)
     job = service.create(
         name="走势板块定时计算",

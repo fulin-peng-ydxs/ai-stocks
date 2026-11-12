@@ -21,6 +21,7 @@ from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
 from backend.config import PROJECT_ROOT
+from backend.devtools.isolated_environment import clean_environment
 from backend.storage.duckdb_client import DuckDBClient
 from backend.storage.pg_client import PostgresClient
 from backend.storage.schema_contract import (
@@ -147,12 +148,26 @@ def refresh_schema_contract(admin_dsn: str) -> None:
                 temporary.unlink(missing_ok=True)
 
 
-def run_gate(*, refresh_contract: bool = False) -> int:
+def gate_test_paths(suite: str = "database") -> list[str]:
+    """复用唯一套件登记，新增数据库测试文件不能只分流、却遗漏实际执行。"""
+    from backend.devtools.ci import registry
+
+    paths = [
+        path for path, entry in registry()["special_files"].items()
+        if entry["suite"] == suite
+    ]
+    if not paths:
+        raise ValueError("数据库门禁测试集合为空")
+    return paths
+
+
+def run_gate(*, refresh_contract: bool = False, suite: str = "database") -> int:
     """在显式隔离环境运行数据库专项测试；不调用可能访问共享开发库的 pg fixture。"""
+    paths = gate_test_paths(suite)
     with gate_server() as admin_dsn:
         if refresh_contract:
             refresh_schema_contract(admin_dsn)
-        env = dict(os.environ)
+        env = clean_environment()
         # 环境中的 -k/-m/--lf 或插件不能缩小“完整门禁”的执行范围。
         for key in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTEST_CURRENT_TEST"):
             env.pop(key, None)
@@ -167,7 +182,7 @@ def run_gate(*, refresh_contract: bool = False) -> int:
                 sys.executable,
                 "-m",
                 "pytest",
-                "backend/tests/test_database_lifecycle.py",
+                *paths,
                 "-p",
                 "backend.devtools.database_gate_plugin",
                 "-o",
@@ -175,6 +190,7 @@ def run_gate(*, refresh_contract: bool = False) -> int:
                 "-q",
                 "-x",
                 "--tb=short",
+                "--junitxml=logs/ci-database.xml",
             ],
             cwd=PROJECT_ROOT,
             env=env,

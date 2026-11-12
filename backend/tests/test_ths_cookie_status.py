@@ -5,8 +5,9 @@ from types import SimpleNamespace
 
 
 class _Repo:
-    def __init__(self):
+    def __init__(self, saved_at=None):
         self.record = {}
+        self.saved_at = saved_at or datetime.now(UTC).astimezone().replace(tzinfo=None)
 
     def get_secret_statuses(self):
         return {"ths_board.login_cookie": "usable"}
@@ -19,7 +20,7 @@ class _Repo:
 
     def get_updated_at(self, path):
         assert path == "ths_board.login_cookie"
-        return datetime.now(UTC).replace(tzinfo=None)
+        return self.saved_at
 
 
 def test_cookie_status_is_pending_before_real_validation(monkeypatch):
@@ -28,7 +29,9 @@ def test_cookie_status_is_pending_before_real_validation(monkeypatch):
     monkeypatch.setattr(module, "get_effective_settings", lambda: SimpleNamespace(
         ths_board=SimpleNamespace(cookie_validity_days=30)))
     monkeypatch.setattr(module, "login_cookie_with_source", lambda: ("secret", "app_config"))
-    status = module.ths_cookie_status(repo=_Repo())
+    now = datetime(2026, 11, 12, 12)
+    monkeypatch.setattr(module, "_now_local", lambda: now)
+    status = module.ths_cookie_status(repo=_Repo(saved_at=now))
     assert status["status"] == "pending"
     assert status["remaining_days"] == 30
 

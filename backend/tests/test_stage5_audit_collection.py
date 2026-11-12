@@ -197,6 +197,7 @@ def test_stage5_scheduler_skip_and_failure_record_task_audit(pg, monkeypatch):
 
 def test_stage5_rbac_management_records_domain_audit(client, pg):
     code = f"stage5_rbac_{uuid.uuid4().hex[:8]}"
+    role_id = None
     pg.execute("DELETE FROM audit_log WHERE target_id=%s", [code])
     try:
         resp = client.post(
@@ -206,13 +207,14 @@ def test_stage5_rbac_management_records_domain_audit(client, pg):
         )
         assert resp.status_code == 200
         assert resp.json()["code"] == 0
+        role_id = resp.json()["data"]["id"]
 
         rows = pg.query_df(
             "SELECT event_category, event_type, action, resource_code, target_type, "
             "target_id, actor_user_id, tenant_id, context "
             "FROM audit_log WHERE target_id=%s AND event_category='rbac' "
             "ORDER BY event_time DESC LIMIT 1",
-            [code],
+            [role_id],
         )
         assert len(rows) == 1
         row = rows.iloc[0]
@@ -223,4 +225,6 @@ def test_stage5_rbac_management_records_domain_audit(client, pg):
         assert row["actor_user_id"] == "admin"
         assert row["tenant_id"] == "default"
     finally:
-        pg.execute("DELETE FROM sys_role WHERE id=%s", [code])
+        if role_id:
+            pg.execute("DELETE FROM audit_log WHERE target_id=%s", [role_id])
+            pg.execute("DELETE FROM sys_role WHERE id=%s", [role_id])

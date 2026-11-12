@@ -14,6 +14,7 @@ from backend.storage.catalog import (
 )
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
+from backend.storage.schema_contract import load_contract
 
 LADDER_DUCK_TABLES = {
     "limit_ladder_snapshot_state",
@@ -54,13 +55,16 @@ def test_dual_catalog_discovers_all_current_and_legacy_tables(catalog_env):
     assert payload["summary"]["duckdb"]["active_tables"] == 36
     assert payload["summary"]["duckdb"]["legacy_tables"] == 29
     assert payload["summary"]["duckdb"]["unregistered_tables"] == 0
-    assert payload["summary"]["postgres"]["active_tables"] == 61
+    # PG 新增生命周期表等结构后，发现结果仍须完整覆盖独立机器契约。
+    expected_pg = set(load_contract()["postgres"]["tables"])
+    assert {item["table"] for item in tables if item["database"] == "postgres"} == expected_pg
+    assert payload["summary"]["postgres"]["active_tables"] == len(expected_pg)
     assert payload["summary"]["postgres"]["legacy_tables"] == 0
     assert payload["summary"]["postgres"]["unregistered_tables"] == 0
-    assert len(active) == 97
+    assert len(active) == 36 + len(expected_pg)
     assert len(legacy) == 29
     assert all(item["metadata_complete"] for item in active)
-    assert len({item["key"] for item in tables}) == 126
+    assert len({item["key"] for item in tables}) == 65 + len(expected_pg)
 
     duck_ladder = {
         item["table"] for item in tables

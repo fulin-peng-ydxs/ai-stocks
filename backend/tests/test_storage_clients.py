@@ -36,8 +36,11 @@ def test_pg_password_env_only(monkeypatch):
     assert "password=secret123" in info
 
 
-def test_redis_url_default():
-    url = get_settings().redis_url()
+def test_redis_url_default(monkeypatch):
+    # 验证 YAML 默认组装，不能把调用方的隔离 Redis 覆盖误当成默认值。
+    from backend.config.settings import Settings
+    monkeypatch.delenv("AI_STOCKS_REDIS_URL", raising=False)
+    url = Settings().redis_url()
     assert url.startswith("redis://") and ":6379/" in url
 
 

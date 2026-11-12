@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import time
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
 
 import pandas as pd
@@ -18,6 +19,31 @@ from backend.services.data_report import DataIntegrityReport
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
 
+
+def _offline_ingestion_initializer(client):
+    """分派测试保留因子收尾所需仓库，只替换联网构造部分。"""
+    from backend.config.settings import Settings
+    from backend.storage.repository import MarketRepository
+
+    def initialize(self, source=None):
+        self.c = client
+        self.repo = MarketRepository(client)
+        self.s = Settings()
+
+    return initialize
+
+
+def _offline_board_initializer():
+    """复用板块测试材料源及真实构造，覆盖会话/并发协议；恢复分派断言保持原样。"""
+    from backend.services.board_ingest import BoardIngestService
+    from backend.tests.test_board_ingest import _FakeSource
+
+    original = BoardIngestService.__init__
+
+    def initialize(self, client=None, source=None):
+        original(self, client=client, source=source or _FakeSource({}))
+
+    return initialize
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
@@ -241,7 +267,7 @@ def test_scheduled_fix_resolves_current_open_issues_by_type(client, monkeypatch)
     svc = AsyncTaskService(client)
     from backend.services import ingest
 
-    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _offline_ingestion_initializer(client))
 
     def restore_daily(self, code, start, end, *args, **kwargs):
         client.execute(
@@ -264,8 +290,8 @@ def test_scheduled_fix_resolves_current_open_issues_by_type(client, monkeypatch)
     )
 
     task = _wait(svc, svc.create("fix", {"issue_type": "null_close"}))
-    assert task["status"] == "done"
-    assert task["result"]["ok"] is True and task["result"]["total"] == 1
+    assert task["status"] == "done", task
+    assert task["result"]["ok"] is True and task["result"]["total"] == 1, task
     statuses = client.query_df(
         "SELECT id, status FROM data_quality_issue ORDER BY id"
     ).set_index("id")["status"].to_dict()
@@ -281,7 +307,7 @@ def test_ohl_repaired_fix_reingests_before_resolve(client, monkeypatch):
     svc = AsyncTaskService(client)
     from backend.services import ingest
 
-    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _offline_ingestion_initializer(client))
     monkeypatch.setattr(ingest.IngestionService, "_bao_source", lambda self: object())
     called: list[tuple] = []
 
@@ -299,7 +325,7 @@ def test_ohl_repaired_fix_reingests_before_resolve(client, monkeypatch):
     )
 
     task = _wait(svc, svc.create("fix", {"issue_type": "ohl_repaired"}))
-    assert task["result"]["ok"] is True
+    assert task["result"]["ok"] is True, task
     assert called == [("A.SH", date(2024, 1, 3), date(2024, 1, 3))]
 
 
@@ -393,6 +419,12 @@ def settings_pg(monkeypatch):
 
         def execute(self, sql, params=None):
             self.conn.execute(sql, params)
+
+        @contextmanager
+        def transaction(self):
+            # 配置批量写使用真实 savepoint，仍在本连接的临时表内验事务行为。
+            with self.conn.transaction():
+                yield self.conn
 
         def query_df(self, sql, params=None):
             cursor = self.conn.execute(sql, params)
@@ -1548,20 +1580,25 @@ def test_board_member_incomplete_fix_reingests(client, monkeypatch):
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     monkeypatch.setattr(BoardIngestService, "__init__",
-                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
-    monkeypatch.setattr(BoardIngestService, "ingest_board_members",
-                        lambda self, snapshot_date=None, board_codes=None, ctx=None, **kwargs:
-                        {"309121": {"total": 50}}, raising=True)
+                        _offline_board_initializer(), raising=True)
+    calls = []
+
+    def ingest_members(self, snapshot_date=None, board_codes=None, ctx=None, **kwargs):
+        calls.append((board_codes, kwargs.get("force")))
+        return {"309121": {"total": 50}}
+
+    monkeypatch.setattr(BoardIngestService, "ingest_board_members", ingest_members)
     client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
                    "VALUES ('309121','AI PC','concept',TRUE)")
     client.execute("INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
                    "VALUES (2, '309121', 'board_member_incomplete', 'mid', 'open', now())")
     monkeypatch.setattr("backend.services.data_report.DataIntegrityReport.recheck_clean",
-                        lambda self, issue_type, code, td, **kwargs: True, raising=True)
+                        lambda self, issue_type, code, td, **kwargs: bool(calls), raising=True)
     tid = svc.create("fix", {"issue_id": 2})
     _wait(svc, tid)
     row = client.query_df("SELECT status FROM data_quality_issue WHERE id=2").iloc[0]
     assert row["status"] == "resolved"
+    assert calls == [(["309121"], True)]
 
 
 def test_board_update_uses_latest_open_day(client, monkeypatch, eod_session):
@@ -1775,7 +1812,7 @@ def test_board_index_gap_fix_reingests_and_resolves(client, monkeypatch):
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     monkeypatch.setattr(BoardIngestService, "__init__",
-                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
+                        _offline_board_initializer(), raising=True)
     captured = {}
 
     def fake_ingest_board_bar(self, start, end=None, board_codes=None, ctx=None):
@@ -1824,7 +1861,7 @@ def test_board_index_gap_fix_without_existing_bar_only_fetches_latest_day(client
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     monkeypatch.setattr(BoardIngestService, "__init__",
-                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
+                        _offline_board_initializer(), raising=True)
     captured = {}
 
     def fake_ingest_board_bar(self, start, end=None, board_codes=None, ctx=None):
@@ -1863,7 +1900,7 @@ def test_board_index_gap_fix_skips_remote_when_already_caught_up(client, monkeyp
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     monkeypatch.setattr(BoardIngestService, "__init__",
-                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
+                        _offline_board_initializer(), raising=True)
 
     def fail_if_called(*args, **kwargs):
         raise AssertionError("板块指数已追平，不应再次请求源端")
@@ -1898,7 +1935,7 @@ def test_board_index_gap_daily_fix_reingests_and_resolves(client, monkeypatch):
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     monkeypatch.setattr(BoardIngestService, "__init__",
-                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
+                        _offline_board_initializer(), raising=True)
     captured = {}
 
     def fake_ingest_board_bar(self, start, end=None, board_codes=None, board_type=None, ctx=None):
@@ -1952,7 +1989,7 @@ def test_board_index_batch_fix_survives_rescan_of_siblings(client, monkeypatch):
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     monkeypatch.setattr(BoardIngestService, "__init__",
-                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
+                        _offline_board_initializer(), raising=True)
     # 重采一律把对应板块补到全局最新交易日，使复检通过（OHLC 完整，避免重扫报指数非法）
     def fake_ingest_board_bar(self, start, end=None, board_codes=None, board_type=None, ctx=None):
         for code in (board_codes or []):
@@ -2043,7 +2080,7 @@ def test_board_fund_unmatched_fix_resolves_only_after_mapping(client, monkeypatc
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     monkeypatch.setattr(BoardIngestService, "__init__",
-                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
+                        _offline_board_initializer(), raising=True)
     def refresh_dict(self, snapshot_date=None, board_type=None, ctx=None):
         client.execute("INSERT INTO board_dict (board_code, name, board_type) "
                        "VALUES ('309121','AI PC','concept') ON CONFLICT DO NOTHING")

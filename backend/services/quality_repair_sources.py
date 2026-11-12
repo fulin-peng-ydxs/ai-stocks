@@ -230,7 +230,6 @@ def run_batched_repairs(client, report, ingest, ctx, selected, recover):
         market = operation == "index"
         if market and not hasattr(ingest, "src"):
             continue  # 兼容仅提供恢复接口的导入/测试适配器。
-        base = None if market else board_repair_service(client, ctx)
         metadata = ({} if market else client.query_df(
             "SELECT board_code,board_type FROM board_dict WHERE board_code IN "
             "(SELECT unnest(?::VARCHAR[]))", [targets.code.dropna().unique().tolist()],
@@ -269,6 +268,8 @@ def run_batched_repairs(client, report, ingest, ctx, selected, recover):
             units.append((code, metadata.get(code), pending, intervals, required))
         if not units:
             continue
+        # 本地已收敛的问题直接复检关闭；只有实际需要材料时才创建取源会话。
+        base = None if market else board_repair_service(client, ctx)
         ctx.log(f"批量修复取源：{operation}，{len(targets)} 条问题归并为 {len(units)} 个标的；"
                 "材料有界并发，原恢复入口逐条落库复检")
 
