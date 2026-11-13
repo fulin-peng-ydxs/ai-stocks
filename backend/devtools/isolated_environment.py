@@ -13,6 +13,15 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def create_ci_artifact_dir() -> Path:
+    """每次执行独立保存临时诊断，退出后供排错/CI 上传，不混入服务日志。"""
+    parent = ROOT / ".local/tmp/ai-agent"
+    parent.mkdir(parents=True, exist_ok=True)
+    directory = Path(tempfile.mkdtemp(prefix="ci-", dir=parent))
+    print(f"CI 临时产物：{directory}", flush=True)
+    return directory
+
+
 def clean_environment() -> dict[str, str]:
     """调用方再注入自身临时连接；普通路径不能回落到本机环境覆盖。"""
     env = {
@@ -39,7 +48,7 @@ def clean_environment() -> dict[str, str]:
 
 
 @contextmanager
-def temporary_redis(root: Path):
+def temporary_redis(root: Path, artifact_dir: Path):
     """后端和数据库门禁共用自建 Redis；不开放 TCP，不持久化，退出销毁。"""
     import redis
 
@@ -47,7 +56,7 @@ def temporary_redis(root: Path):
     if not executable:
         raise RuntimeError("隔离门禁需要 redis-server，不使用业务 Redis")
     socket = root / "redis.sock"
-    log = ROOT / "logs" / f"ci-redis-{uuid4().hex}.log"
+    log = artifact_dir / f"ci-redis-{uuid4().hex}.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("wb") as output:
         process = subprocess.Popen(
@@ -92,7 +101,7 @@ def temporary_redis(root: Path):
 
 
 @contextmanager
-def isolated_storage_environment(admin_dsn: str):
+def isolated_storage_environment(admin_dsn: str, artifact_dir: Path | None = None):
     """在导入应用前绑定默认三库；新增测试复用普通客户端也只能进入本次临时资源。
 
     管理连接由调用方管理，本上下文仅借用它创建/删除随机 PG 库。数据库生命周期用例
@@ -103,16 +112,17 @@ def isolated_storage_environment(admin_dsn: str):
     # 延迟导入，避免数据库门禁复用此上下文时产生模块初始化循环。
     from backend.devtools.database_gate import ADMIN_DSN_ENV, temporary_database
 
-    # Unix socket 使用短系统路径，服务日志始终留在项目 logs。
+    artifact_dir = artifact_dir if artifact_dir is not None else create_ci_artifact_dir()
+    # Unix socket 使用短系统路径；诊断另存，退出后仍可查看失败原因。
     with tempfile.TemporaryDirectory(prefix="ai-ci-", dir="/tmp") as directory:
         root = Path(directory)
-        with temporary_database(admin_dsn) as pg, temporary_redis(root) as redis_url:
+        with temporary_database(admin_dsn) as pg, temporary_redis(root, artifact_dir) as redis_url:
             config = yaml.safe_load((ROOT / "config/settings.yaml").read_text())
             config["paths"] = {
                 "duckdb_file": str(root / "market.duckdb"),
                 "parquet_dir": str(root / "parquet"),
                 "export_dir": str(root / "exports"),
-                "log_dir": str(ROOT / "logs"),
+                "log_dir": str(artifact_dir),
             }
             config_path = root / "settings.yaml"
             config_path.write_text(yaml.safe_dump(config, allow_unicode=True))

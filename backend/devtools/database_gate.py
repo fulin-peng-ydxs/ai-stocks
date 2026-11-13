@@ -21,7 +21,10 @@ from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
 from backend.config import PROJECT_ROOT
-from backend.devtools.isolated_environment import isolated_storage_environment
+from backend.devtools.isolated_environment import (
+    create_ci_artifact_dir,
+    isolated_storage_environment,
+)
 from backend.storage.duckdb_client import DuckDBClient
 from backend.storage.pg_client import PostgresClient
 from backend.storage.schema_contract import (
@@ -55,7 +58,7 @@ def temporary_database(admin_dsn: str):
 
 
 @contextmanager
-def gate_server():
+def gate_server(artifact_dir: Path | None = None):
     """优先用显式测试管理连接，否则用本机 PG 二进制启动隔离集群。"""
     configured = os.environ.get(ADMIN_DSN_ENV)
     if configured:
@@ -64,7 +67,8 @@ def gate_server():
     initdb, pg_ctl = shutil.which("initdb"), shutil.which("pg_ctl")
     if not initdb or not pg_ctl:
         raise RuntimeError(f"缺少 initdb/pg_ctl；安装 PG >=14 或设置 {ADMIN_DSN_ENV}")
-    # Unix socket 路径有长度上限，集群目录使用系统短临时路径；服务日志在项目 logs。
+    artifact_dir = artifact_dir if artifact_dir is not None else create_ci_artifact_dir()
+    # Unix socket 路径有长度上限，集群目录使用系统短临时路径，日志另存供排错。
     with tempfile.TemporaryDirectory(prefix="ai-stocks-db-", dir="/tmp") as directory:
         root = Path(directory)
         cluster = root / "cluster"
@@ -83,7 +87,7 @@ def gate_server():
             check=True,
             capture_output=True,
         )
-        log = PROJECT_ROOT / "logs" / f"database-gate-{uuid4().hex}.log"
+        log = artifact_dir / f"database-gate-{uuid4().hex}.log"
         log.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(
             [
@@ -164,7 +168,11 @@ def gate_test_paths(suite: str = "database") -> list[str]:
 def run_gate(*, refresh_contract: bool = False, suite: str = "database") -> int:
     """默认客户端和公共夹具统一绑定临时三库；用例另建空库仍走测试管理连接。"""
     paths = gate_test_paths(suite)
-    with gate_server() as admin_dsn, isolated_storage_environment(admin_dsn) as env:
+    artifact_dir = create_ci_artifact_dir()
+    with (
+        gate_server(artifact_dir) as admin_dsn,
+        isolated_storage_environment(admin_dsn, artifact_dir) as env,
+    ):
         if refresh_contract:
             refresh_schema_contract(admin_dsn)
         result = subprocess.run(
@@ -182,7 +190,7 @@ def run_gate(*, refresh_contract: bool = False, suite: str = "database") -> int:
                 "-q",
                 "-x",
                 "--tb=short",
-                "--junitxml=logs/ci-database.xml",
+                f"--junitxml={artifact_dir / 'ci-database.xml'}",
             ],
             cwd=PROJECT_ROOT,
             env=env,

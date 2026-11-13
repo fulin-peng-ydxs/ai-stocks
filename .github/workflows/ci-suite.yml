@@ -80,7 +80,9 @@ jobs:
         with:
           name: ci-${{ inputs.suite }}-${{ github.run_attempt }}
           path: |
-            logs/ci-*.xml
-            logs/ci-redis-*.log
+            .local/tmp/ai-agent/ci-*/ci-*.xml
+            .local/tmp/ai-agent/ci-*/ci-redis-*.log
+            .local/tmp/ai-agent/ci-*/database-gate-*.log
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7

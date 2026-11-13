@@ -263,6 +263,7 @@ def test_default_clients(confirm_targets_before_connecting, pg, redis_cli):
         "database": pg.query_df("SELECT current_database()").iloc[0, 0],
         "duckdb_path": str(settings.duckdb_path()),
         "redis_socket": redis_cli.client.connection_pool.connection_kwargs["path"],
+        "log_dir": str(settings.paths.log_dir),
     }
     Path(__EVIDENCE__).write_text(json.dumps(targets))
     assert not __FAIL__, "intentional failure after isolated writes"
@@ -275,15 +276,15 @@ def test_fresh_database_fixture(installed):
 """.replace("__EVIDENCE__", repr(str(evidence))).replace("__FAIL__", repr(fail))
     )
     original_run = database_gate.subprocess.run
+    reports = []
+    service_files = set((ci.ROOT / "logs").glob("*"))
 
     def run_probe(arguments, **options):
-        # 预期失败的子门禁保留独立报告，不能覆盖正式 database 报告或混入后端归档。
-        arguments = [
-            f"--junitxml={tmp_path / 'probe-results.xml'}"
-            if argument.startswith("--junitxml=")
-            else argument
-            for argument in arguments
-        ]
+        # 使用执行器真实报告路径，成功和失败都必须保留在独立临时目录。
+        reports.extend(
+            Path(argument.split("=", 1)[1])
+            for argument in arguments if argument.startswith("--junitxml=")
+        )
         return original_run(arguments, **options)
 
     # 使用真实临时集群，模拟新增文件已经通过登记分流；不改动仓库登记表。
@@ -305,3 +306,10 @@ def test_fresh_database_fixture(installed):
             )
         assert not Path(targets["duckdb_path"]).parent.exists()
         assert not Path(targets["redis_socket"]).exists()
+    assert len(reports) == 1
+    report = reports[0]
+    assert report.is_file()
+    assert report.parent.parent == ci.ROOT / ".local/tmp/ai-agent"
+    assert Path(targets["log_dir"]) == report.parent
+    assert list(report.parent.glob("ci-redis-*.log"))
+    assert set((ci.ROOT / "logs").glob("*")) == service_files

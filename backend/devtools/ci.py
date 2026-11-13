@@ -10,7 +10,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from backend.devtools.isolated_environment import isolated_storage_environment
+from backend.devtools.isolated_environment import (
+    create_ci_artifact_dir,
+    isolated_storage_environment,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = ROOT / "config/ci-suites.json"
@@ -126,7 +129,11 @@ def run_backend(suite: str, scale_stocks: int | None = None) -> int:
 
     if suite == "backend-scale" and (scale_stocks is None or not 100 <= scale_stocks <= 5000):
         raise ValueError("backend-scale 必须显式传 --scale-stocks 100..5000")
-    with gate_server() as admin, isolated_storage_environment(admin) as env:
+    artifact_dir = create_ci_artifact_dir()
+    with (
+        gate_server(artifact_dir) as admin,
+        isolated_storage_environment(admin, artifact_dir) as env,
+    ):
         env["AI_STOCKS_CI_SUITE"] = suite
         if scale_stocks is not None:
             env.update(
@@ -157,7 +164,7 @@ def run_backend(suite: str, scale_stocks: int | None = None) -> int:
                 "faulthandler_timeout=120",
                 "--durations=15",
                 "--tb=short",
-                "--junitxml=logs/ci-" + suite + ".xml",
+                f"--junitxml={artifact_dir / ('ci-' + suite + '.xml')}",
             ],
             env,
         )
