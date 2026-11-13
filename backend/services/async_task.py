@@ -1630,7 +1630,22 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
             )
         elif issue_type in ("data_gap", "stale", "history_data_gap"):
             ctx.log(f"恢复(L4 覆盖鲜活)：按缺口收口重采 {code}（与增量更新同口径）")
-            r = ing.reconcile_gaps(code, ctx=ctx, full_history=issue_type == "history_data_gap")
+            material = getattr(ctx, "_stock_repair_material", None)
+            if material is not None and material[0] == code and material[2] is not None:
+                raise material[2]
+            prefetched = (
+                {"_material": material[1]} if material is not None and material[0] == code else {}
+            )
+            cached = prefetched.get("_material")
+            # 同股历史缺口优先，已完成的恢复结果供鲜活/覆盖兄弟问题分别复检；
+            # 剩余源端缺口不能按问题条数重复消耗备用源和事件补充预算。
+            r = cached.get("reconciled") if cached is not None else None
+            if r is None:
+                r = ing.reconcile_gaps(
+                    code, ctx=ctx, full_history=issue_type == "history_data_gap", **prefetched,
+                )
+                if cached is not None:
+                    cached["reconciled"] = r
             if not r["miss"]:
                 note = "无待补缺口（可能已被其它任务补齐）"
             else:
@@ -1677,7 +1692,15 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
             if not pd.isna(span["lo"]):
                 lo, hi = pd.Timestamp(span["lo"]).date(), pd.Timestamp(span["hi"]).date()
                 ctx.log(f"恢复(L3 复权口径)：重采 {code} {lo}~{hi} 整段")
-                ing.ingest_one_daily(code, lo, hi, ctx=ctx)
+                material = getattr(ctx, "_stock_repair_material", None)
+                if material is not None and material[0] == code and material[2] is not None:
+                    raise material[2]
+                prefetched = {}
+                if material is not None and material[0] == code and material[1] is not None:
+                    prefetched = {"_prefetched": material[1]["bars"],
+                                  "_fetch_error": material[1]["error"],
+                                  "_st_material": material[1]["status"]}
+                ing.ingest_one_daily(code, lo, hi, ctx=ctx, **prefetched)
                 factors = ing._recompute_clean([code], ctx=ctx)
                 if factors["fail"]:
                     raise RuntimeError(f"{code} 复权清洗因子重算失败")
@@ -2011,6 +2034,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
         CAPITAL_TYPES,
         run_batched_repairs,
         run_st_repairs,
+        run_stock_repairs,
     )
     capital_codes = {int(r.id): r.code for r in selected.itertuples() if r.issue_type in CAPITAL_TYPES}
     if intraday_codes or capital_codes:
@@ -2163,6 +2187,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
             )
         ctx._intraday_batch_failed = batch_ctx.checkpoint.get("intraday_failed", {})
     run_st_repairs(ing, rep, ctx, selected, recover_issue)
+    run_stock_repairs(ing, rep, ctx, selected, recover_issue, repair_type=repair_type)
     run_batched_repairs(c, rep, ing, ctx, selected, recover_issue)
     for iid in ids:
         recover_issue(iid)

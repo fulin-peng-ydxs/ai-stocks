@@ -15,6 +15,7 @@ BOARD_BAR_TYPES = frozenset({"board_index_gap", "board_index_gap_daily", "board_
 INDEX_TYPES = frozenset({"market_index_gap", "market_index_gap_daily", "market_index_invalid"})
 CAPITAL_TYPES = frozenset({"capital_gap", "capital_invalid", "capital_mismatch", "capital_raw_invalid"})
 ST_TYPES = frozenset({"st_status_missing", "st_status_approximate", "st_status_mismatch"})
+GAP_TYPES = frozenset({"data_gap", "stale", "history_data_gap"})
 
 
 class _TaskBoardSource:
@@ -86,7 +87,9 @@ def repair_source_scope(method):
                 ctx._board_repair_base = None
             ctx._board_repair_material = ctx._market_repair_material = None
             ctx._capital_repair_material = None
+            ctx._capital_repair_prefetched = None
             ctx._st_repair_result = ctx._st_repair_error = None
+            ctx._stock_repair_material = None
     return run
 
 
@@ -95,7 +98,21 @@ def repair_capital_once(ingest, code, ctx):
     cached = getattr(ctx, "_capital_repair_material", None)
     if cached is None or cached[0] != code:
         try:
-            cached = (code, ingest.repair_capital_quality(code, ctx=ctx), None)
+            material = getattr(ctx, "_capital_repair_prefetched", None)
+            if material is not None and material[0] == code and material[3]:
+                # 必须在原恢复入口绑定 fixing 之后合并；提前落库会让扫描关闭台账，
+                # 从而把部分来源失败掩盖成“已被其它扫描解决”。
+                result = ingest._complete_capital_material(
+                    [(1, code, material[1], material[2], 0)], ingest._source_for("share_capital"),
+                    lambda code, source: ingest.repair_capital_quality(
+                        code, ctx=ctx, _source=source),
+                )[0]
+                if result[3] is not None:
+                    raise result[3]
+                value = result[2]
+            else:
+                value = ingest.repair_capital_quality(code, ctx=ctx)
+            cached = (code, value, None)
         except Exception as exc:  # 后续同股问题复用失败，不重新扩大请求次数
             from backend.services.async_task import TaskCancelled
             if isinstance(exc, TaskCancelled):
@@ -134,6 +151,150 @@ def run_st_repairs(ingest, report, ctx, selected, recover):
         ctx._st_repair_error = exc
     for row in pending:
         recover(int(row.id))
+
+
+def run_stock_repairs(ingest, report, ctx, selected, recover, *, repair_type=None):
+    """个股修复复用采集有界队列；线程只取材料，原恢复入口负责持久化及成功断点。
+
+    同股覆盖/鲜活问题共用材料，股本四类共用一次核验；旧调度仍按原近端范围取源。
+    估值事件补充、备用源对剩余坏行的复核仍由原链路按需执行，不能预先重拉全历史。
+    """
+    from backend.common.exceptions import DataSourceError
+    from backend.datasource.baostock_executor import execution_scope
+    from backend.services.async_task import TaskCancelled
+    from backend.services.ingest import _DailySTMaterial
+
+    effective = selected.assign(issue_type=repair_type) if repair_type else selected
+    for operation, types in [("gap", GAP_TYPES), ("adj", {"adj_jump"}), ("capital", CAPITAL_TYPES)]:
+        targets = effective[effective.issue_type.isin(types)]
+        if targets.empty:
+            continue
+        units = [
+            (code, list(group.itertuples())) for code, group in targets.groupby("code", sort=False)
+        ]
+        concurrency = min(ingest.s.datasource.update_concurrency, len(units))
+        tls = local()
+
+        def prepare(item, *, operation=operation):
+            code, rows = item
+            ctx.check_cancel()
+            full = any(row.issue_type == "history_data_gap" for row in rows)
+            if full:
+                # 同股同时选中历史缺口和鲜活问题时，先完成包含近端的历史恢复。
+                rows = sorted(rows, key=lambda row: row.issue_type != "history_data_gap")
+            if operation == "capital" and all(
+                report.recheck_clean(row.issue_type, code, None) for row in rows
+            ):
+                return code, rows, full, [], None, None, None
+            if operation == "gap":
+                from backend.services.history_quality import HistoryQualityService
+                dates = (HistoryQualityService(report.c).dates(code) if full
+                         else report.missing_days_for(code))
+                lo, hi = (min(dates), max(dates)) if dates else (None, None)
+            else:
+                span = report.c.query_df(
+                    "SELECT min(trade_date) lo,max(trade_date) hi FROM daily_bar WHERE code=?",
+                    [code],
+                ).iloc[0]
+                lo, hi = ((pd.Timestamp(span.lo).date(), pd.Timestamp(span.hi).date())
+                          if pd.notna(span.lo) else (None, None))
+                dates = []
+            status = _DailySTMaterial(report.c.query_df(
+                "SELECT trade_date,is_st,source,source_ref,quality FROM stock_st_status_daily "
+                "WHERE code=? AND trade_date BETWEEN ? AND ? AND quality='accurate'",
+                [code, lo, hi],
+            )) if lo is not None and operation != "capital" else None
+            return code, rows, full, dates, lo, hi, status
+
+        def fetch(item, *, operation=operation, tls=tls):
+            code, _rows, full, dates, lo, hi, status = item
+            if lo is None:
+                return None
+            # 取源之前使用同一收盘上界，不能只在回放落库时裁掉未来响应。
+            hi = eod_dates.cap_range(lo, hi)
+            dates = [day for day in dates if day <= hi]
+            if operation == "capital":
+                source = ingest._source_for("share_capital")
+                source = ingest._thread_source(tls, source.name)
+                return ingest._fetch_capital_material(code, source, lo, hi)
+            result = {"status": status, "bars": None, "error": None, "capital": None}
+
+            def fetch_status():
+                try:
+                    status.fetched = ingest._fetch_st_status_rows(code, lo, hi)
+                except TaskCancelled:
+                    raise
+                except DataSourceError as exc:
+                    status.error = exc
+
+            pending = set(dates)
+            if full:
+                fetch_status()
+                if status.fetched is not None:
+                    frame = status.fetched[1]
+                    if frame is not None and not frame.empty and "trade_status" in frame:
+                        # 仅一致的逐日零状态可省去行情请求；主线程仍走原证据门禁。
+                        stopped = pd.to_numeric(frame.trade_status, errors="coerce").eq(0)
+                        by_day = stopped.groupby(pd.to_datetime(frame.trade_date).dt.date).all()
+                        pending -= set(by_day[by_day].index)
+                if not pending:
+                    return result
+            start, end = (min(pending), max(pending)) if pending else (lo, hi)
+            try:
+                result["bars"] = ingest._fetch_daily_with_fallback(
+                    code, start, end, ingest._thread_source(tls, ingest.src.name),
+                    allow_fallback=not (full and status.error is not None),
+                )
+            except TaskCancelled:
+                raise
+            except DataSourceError as exc:
+                result["error"] = exc
+            frame = eod_dates.bound_bars(result["bars"][0], start, end) if result["bars"] else None
+            known = set(pd.to_datetime(status.stored.trade_date).dt.date)
+            returned = (set(pd.to_datetime(frame.trade_date).dt.date)
+                        if frame is not None and not frame.empty else set())
+            if not full and (result["error"] is not None or returned - known
+                             or (operation == "gap" and set(dates) - returned)):
+                fetch_status()
+            backfilled = sorted(returned & set(dates))
+            if operation == "gap" and backfilled:
+                try:
+                    source = ingest._source_for("valuation")
+                    source = ingest._thread_source(tls, source.name)
+                    # 主源可能只返回部分日期，备用源随后会补齐其余行情。
+                    # 估值预取覆盖计划区间，回放时仍按实际补回范围过滤，避免漏掉来源证据。
+                    result["capital"] = (ingest._fetch_capital_material(
+                        code, source, start, end), None)
+                except TaskCancelled:
+                    raise
+                except Exception as exc:  # noqa: BLE001 -- 原多源链继续其它来源并记录失败
+                    result["capital"] = (None, exc)
+            return result
+
+        def complete(_i, item, material, error, _pending, *, operation=operation):
+            code, rows, _full, _dates, lo, _hi, _status = item
+            if operation == "capital":
+                ctx._capital_repair_prefetched = (code, material, error, lo is not None)
+            else:
+                ctx._stock_repair_material = (code, material, error)
+            try:
+                for row in rows:
+                    recover(int(row.id))
+            finally:
+                ctx._stock_repair_material = ctx._capital_repair_material = None
+                ctx._capital_repair_prefetched = None
+
+        ctx.log(f"个股修复取源：{operation}，{len(targets)} 条问题归并为 {len(units)} 只股票（并发 {concurrency}）")
+        tracker = getattr(ctx, "request_tracker", None)
+        if tracker:
+            tracker.meta.update(work_concurrency=concurrency,
+                                configured_work_concurrency=ingest.s.datasource.update_concurrency)
+        with execution_scope(concurrency, tracker=tracker):
+            ingest._run_bounded_parallel(
+                units, fetch, prepare=prepare, concurrency=concurrency, ctx=ctx,
+                wait_label="个股修复取源", on_complete=complete, prefetch_next_batch=True,
+                transform_batch=lambda entries: entries, batch_size=1,
+            )
 
 
 class _MaterialSource:

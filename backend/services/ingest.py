@@ -889,7 +889,14 @@ class IngestionService:
             # tradestatus=0 + isST. Only that positive suspension evidence may turn an empty
             # daily result into a successful zero-row update; weekends/source failures still fail.
             try:
-                st_source, status_rows = self._fetch_st_status_rows(code, start, end, ctx=ctx)
+                if _st_material is not None and _st_material.error is not None:
+                    raise _st_material.error
+                st_source, status_rows = (
+                    _st_material.fetched
+                    if _st_material is not None and _st_material.fetched is not None
+                    else self._fetch_st_status_rows(code, start, end, ctx=ctx)
+                )
+                status_rows = eod_dates.bound_bars(status_rows, start, end)
                 if status_rows is None or status_rows.empty:
                     raise DataSourceError("ST 状态亦为空")
                 trade_status = pd.to_numeric(status_rows["trade_status"], errors="coerce")
@@ -2377,11 +2384,13 @@ class IngestionService:
         return "源端仍无数据，保持待处理"
 
     def reconcile_gaps(self, code: str, ctx=None, confirm: bool = True,
-                       through: date | None = None, full_history: bool = False) -> dict:
+                       through: date | None = None, full_history: bool = False,
+                       _material=None) -> dict:
         """收口单只股票窗口内的覆盖缺口（增量更新与质量修复-补采共用，统一口径）。
 
         重采后仍缺的日期必须取得逐日 trade_status=0 证据才确认停牌。
         full_history 使用全历史应有日期；through 限定本轮目标日，防止跨日扩大范围。
+        _material 只回放当前股票的并发取源结果，停牌、清洗和股本合并仍走原校验。
         """
         from backend.services.data_report import DataIntegrityReport
         from backend.services.history_quality import HistoryQualityService
@@ -2397,10 +2406,12 @@ class IngestionService:
         lo, hi = min(miss), max(miss)
         status_checked = False
         stage_errors = {}
+        status = _material["status"] if _material is not None else None
+        status_kwargs = {"material": status} if status is not None else {}
         # 历史缺口常是未归档的真实停牌。先查窄字段状态，避免为确认停牌重拉十年 OHLC。
         if confirm and full_history:
             try:
-                self._confirm_gap_suspensions(code, miss, rep, ctx=ctx)
+                self._confirm_gap_suspensions(code, miss, rep, ctx=ctx, **status_kwargs)
                 status_checked = True
             except TaskCancelled:
                 raise
@@ -2418,7 +2429,14 @@ class IngestionService:
                 ctx.check_cancel()
                 ctx.log(f"缺口收口：重采 {code} {min(pending)}~{max(pending)}（{len(pending)} 个待补开市日）")
             try:
-                rows = self.ingest_one_daily(code, min(pending), max(pending), ctx=ctx, **({"status_unavailable": True} if "suspension" in stage_errors else {}))
+                prefetched = ({"_prefetched": _material["bars"],
+                               "_fetch_error": _material["error"], "_st_material": status}
+                              if _material is not None else {})
+                if "suspension" in stage_errors:
+                    prefetched["status_unavailable"] = True
+                rows = self.ingest_one_daily(
+                    code, min(pending), max(pending), ctx=ctx, **prefetched,
+                )
             except DataSourceError as exc:
                 if not confirm:
                     raise
@@ -2431,7 +2449,10 @@ class IngestionService:
                 if ctx:
                     ctx.check_cancel()
                 try:
-                    rows += self.ingest_one_daily(code, min(still), max(still), source=self._bao_source(), ctx=ctx)
+                    rows += self.ingest_one_daily(
+                        code, min(still), max(still), source=self._bao_source(), ctx=ctx,
+                        **({"_st_material": status} if status is not None else {}),
+                    )
                 except DataSourceError as exc:
                     if ctx:
                         ctx.log(f"备用源历史补采未完成：{exc}", "warn")
@@ -2440,7 +2461,7 @@ class IngestionService:
                 still = [d for d in still if d <= through]
             if confirm and still and not status_checked:
                 try:
-                    self._confirm_gap_suspensions(code, still, rep, ctx=ctx)
+                    self._confirm_gap_suspensions(code, still, rep, ctx=ctx, **status_kwargs)
                 except DataSourceError as exc:
                     stage_errors["suspension"] = str(exc)
         # 补回数 = miss 中重采后"确实已有行情"的日期（按 daily_bar 实判）。不能用 miss−still：次新股
@@ -2463,8 +2484,19 @@ class IngestionService:
                 raise RuntimeError(f"{code} 补回行情后复权因子重算失败")
             try:
                 with thread_cancel_scope(ctx.check_cancel if ctx else None):
-                    self._collect_capital_one(code, self._source_for("valuation"),
-                                              min(backfilled), max(backfilled))
+                    source = self._source_for("valuation")
+                    def collect(_item, source):
+                        return self._collect_capital_one(
+                            code, source, min(backfilled), max(backfilled),
+                        )
+                    if _material is not None and _material.get("capital") is not None:
+                        material, error = _material["capital"]
+                        result = self._complete_capital_material(
+                            [(1, code, material, error, 0)], source, collect)[0]
+                        if result[3] is not None:
+                            raise result[3]
+                    else:
+                        collect(code, source)
             except TaskCancelled:
                 raise
             except Exception as e:  # noqa: BLE001
@@ -2477,13 +2509,16 @@ class IngestionService:
         return {"miss": miss, "backfilled": backfilled, "confirmed": confirmed, "rows": rows,
                 "stage_errors": stage_errors}
 
-    def _confirm_gap_suspensions(self, code, dates, report, *, ctx=None):
+    def _confirm_gap_suspensions(self, code, dates, report, *, ctx=None, material=None):
         """只确认缺口日期上的一致停牌证据；空值、未知、相反重复记录均不算证据。"""
         if not dates:
             return 0
         if ctx:
             ctx.check_cancel()
-        source, rows = self._fetch_st_status_rows(code, min(dates), max(dates), ctx=ctx)
+        if material is not None and material.error is not None:
+            raise material.error
+        source, rows = (material.fetched if material is not None and material.fetched is not None
+                        else self._fetch_st_status_rows(code, min(dates), max(dates), ctx=ctx))
         return self._persist_gap_status(code, source, rows, dates, report, ctx=ctx)
 
     def _persist_gap_status(self, code, source, rows, dates, report, *, ctx=None,
@@ -3253,8 +3288,8 @@ class IngestionService:
             raise DataSourceError("；".join(errors))
         return count
 
-    def repair_capital_quality(self, code, ctx=None):
-        """按已有完整历史走共同多源链路；全量含退市股，不把近端通过当历史已修复。"""
+    def repair_capital_quality(self, code, ctx=None, *, _source=None):
+        """按已有完整历史走共同多源链路；_source 可回放已取估值，其它来源仍按需核验。"""
         span = self.c.query_df(
             "SELECT min(trade_date) lo,max(trade_date) hi FROM daily_bar WHERE code=?", [code]).iloc[0]
         if pd.isna(span.lo):
@@ -3262,7 +3297,7 @@ class IngestionService:
         if ctx:
             ctx.check_cancel()
         diagnostics = {}
-        rows = self._collect_capital_one(code, self._source_for("share_capital"),
+        rows = self._collect_capital_one(code, _source or self._source_for("share_capital"),
                                         pd.Timestamp(span.lo).date(), pd.Timestamp(span.hi).date(), diagnostics)
         return {"rows": rows, "diagnostics": diagnostics}
 

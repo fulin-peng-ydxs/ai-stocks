@@ -74,7 +74,7 @@ class Source:
             self.state.calls.append((operation, code, threading.get_ident()))
             self.state.active += 1
             self.state.maximum = max(self.state.maximum, self.state.active)
-        time.sleep(.015)
+        time.sleep(getattr(self.state, "delay", .015))
         with self.state.lock:
             self.state.active -= 1
         check_thread_cancel()
@@ -329,12 +329,251 @@ def test_four_capital_issue_types_do_not_repeat_full_history_or_close_remaining_
     monkeypatch.setattr(DataIntegrityReport, "recheck_clean", lambda self, kind, code, day, **kw:
                         False if kind in quality_repair_sources.CAPITAL_TYPES else recheck(self, kind, code, day, **kw))
     calls = []
-    svc.repair_capital_quality = lambda code, ctx: calls.append(code) or {"rows": 0}
+    client.execute("INSERT INTO daily_bar(code,trade_date,close) VALUES ('600519.SH',?,10)", [DAY])
+    svc._source_for = lambda *_: SimpleNamespace(name="test")
+    svc._thread_source = lambda *_: SimpleNamespace(name="test")
+    svc._fetch_capital_material = lambda *_: (pd.DataFrame(), None)
+    svc.repair_capital_quality = lambda code, ctx, **kw: calls.append(code) or {"rows": 0}
     for _ in range(2):
         result = run(ids, Context())
         assert result["resolved"] == result["failed"] == 0
         assert client.query_df("SELECT count(*) FROM data_quality_issue WHERE status='open'").iloc[0,0] == 8
     assert calls == codes * 2  # 缓存仅本任务有效，下一任务仍可真实重试。
+
+
+def wire_stock_repairs(setup, monkeypatch, *, name="stocks", count=12):
+    """真实行情/ST/股本落库；固定网络延时并记录线程，禁止工作线程访问数据库。"""
+    from backend.tests.test_daily_collection_performance import bars
+
+    client, state, _, svc = setup(name=name, count=count)
+    main = threading.get_ident()
+    codes = [f"{600001 + i}.SH" for i in range(count)]
+    state.codes = codes
+    client.executemany("INSERT INTO stock_basic(code,list_date) VALUES (?,?)", [(code, DAYS[0]) for code in codes])
+    client.executemany(
+        "INSERT INTO daily_bar(code,trade_date,open,high,low,close,volume,amount,adj_factor) "
+        "VALUES (?,?,10,10,10,10,100,1000,1)", [(code, DAYS[0]) for code in codes],
+    )
+    state.stopped, state.partial = set(), set()
+    source = Source(state)
+    svc._bao = None
+    svc.src = source
+    svc._thread_source = lambda *_: source
+    svc._source_for = lambda *_: source
+    svc._bao_source = lambda: source
+
+    def frame(code, start, end):
+        return pd.concat([bars(code).assign(trade_date=day) for day in DAYS if start <= day <= end], ignore_index=True)
+
+    def daily(code, start, end, *_args, **kw):
+        source._begin("daily", code)
+        if code in state.errors:
+            raise DataSourceError("测试来源失败")
+        result = frame(code, start, end)
+        if code in state.partial:
+            result = result[result.trade_date != DAY]
+        return result, source.name
+
+    def status(code, start, end, **kw):
+        source._begin("status", code)
+        return source, pd.DataFrame([
+            {"trade_date": day, "is_st": False, "trade_status": 0 if code in state.stopped else 1}
+            for day in DAYS if start <= day <= end
+        ])
+
+    def capital(code, _source, start, end):
+        source._begin("capital", code)
+        return frame(code, start, end).assign(total_mv=1000., float_mv=800.), None
+
+    source.get_valuation = lambda code, start, end: capital(code, source, start, end)[0]
+
+    def collect(code, source, start, end, diagnostics=None):
+        assert threading.get_ident() == main
+        value = svc._valuation_one(code, source, start, end)
+        if diagnostics is not None:
+            diagnostics[code] = {"remaining": {}}
+        return value
+
+    original_query = client.query_df
+    def query(*args, **kw):
+        assert threading.get_ident() == main
+        return original_query(*args, **kw)
+
+    monkeypatch.setattr(client, "query_df", query)
+    monkeypatch.setattr(svc, "_fetch_daily_with_fallback", daily)
+    monkeypatch.setattr(svc, "_fetch_st_status_rows", status)
+    monkeypatch.setattr(svc, "_fetch_capital_material", capital)
+    monkeypatch.setattr(svc, "_collect_capital_one", collect)
+    # 使用真实因子、日线及股本合并；仅多来源事件补充在上述 collect 中隔离。
+    svc.repair_capital_quality = type(svc).repair_capital_quality.__get__(svc)
+    return client, state, svc, codes
+
+
+@pytest.mark.parametrize("kind", ["history_data_gap", "stale", "adj_jump", "capital_gap"])
+def test_stock_repairs_fetch_concurrently_and_commit_on_main_thread(setup, monkeypatch, kind):
+    client, state, _, codes = wire_stock_repairs(setup, monkeypatch)
+    ids = [issue(client, code, kind=kind, day=None) for code in codes]
+    ctx = Context()
+    result = run(ids, ctx)
+    assert result["resolved"] == len(ids) and result["failed"] == 0, ctx.logs
+    assert state.maximum == 4 and state.active == 0
+    assert set(ctx.checkpoint["issue_done_ids"]) == set(ids)
+    assert ctx._stock_repair_material is None and ctx._capital_repair_material is None
+    assert ctx.request_tracker.meta["work_concurrency"] == 4
+    expected = (len(codes) if kind in {"adj_jump", "capital_gap"} else len(codes) * 4)
+    assert client.query_df("SELECT count(*) FROM daily_bar WHERE code<> '600000.SH'").iloc[0, 0] == expected
+    if kind != "adj_jump":
+        assert sum(op == "capital" for op, *_ in state.calls) == len(codes)
+    if kind == "history_data_gap":
+        assert sum(op == "status" for op, *_ in state.calls) == len(codes)
+
+
+def test_history_repair_suspension_skips_prices_and_duplicate_stale_reuses_material(setup, monkeypatch):
+    client, state, _, codes = wire_stock_repairs(setup, monkeypatch, count=4)
+    state.stopped = {codes[0]}
+    ids = [issue(client, code, kind=kind, day=None) for code in codes
+           for kind in ["history_data_gap", "stale"]]
+    ctx = Context()
+    result = run(ids, ctx)
+    assert result["resolved"] == len(ids), ctx.logs
+    assert len([op for op, code, _ in state.calls if code == codes[0]]) == 1
+    assert client.query_df("SELECT count(*) FROM stock_suspension WHERE code=?", [codes[0]]).iloc[0, 0] == 3
+    assert sum(op == "daily" for op, *_ in state.calls) == 3
+    assert sum(op == "status" for op, *_ in state.calls) == 4
+
+
+def test_stock_repair_cancel_drains_prefetch_and_resumes_only_uncommitted(setup, monkeypatch):
+    client, state, _, codes = wire_stock_repairs(setup, monkeypatch, count=12)
+    ids = [issue(client, code, kind="history_data_gap", day=None) for code in codes]
+    ctx = Context()
+    ctx.cancel_after = 1
+    with pytest.raises(TaskCancelled):
+        run(ids, ctx)
+    assert state.active == 0 and len(ctx.checkpoint["issue_done_ids"]) == 1
+    assert client.query_df("SELECT count(*) FROM data_quality_issue WHERE status='fixing'").iloc[0, 0] == 0
+    done = client.query_df("SELECT code FROM data_quality_issue WHERE status='resolved'").iloc[0, 0]
+    before = len(state.calls)
+    ctx.cancel, ctx.cancel_after = False, None
+    result = run(ids, ctx)
+    assert result["resolved"] == 11, ctx.logs
+    assert done not in {code for _, code, _ in state.calls[before:]}
+
+
+def test_stock_repair_failed_source_remains_open_without_retrying_material(setup, monkeypatch):
+    client, state, _, codes = wire_stock_repairs(setup, monkeypatch, count=4)
+    state.errors = {codes[0]}
+    ids = [issue(client, code, kind="history_data_gap", day=None) for code in codes]
+    ctx = Context()
+    result = run(ids, ctx)
+    assert result["resolved"] == 3 and not result["ok"], ctx.logs
+    assert ids[0] not in ctx.checkpoint["issue_done_ids"]
+    assert client.query_df("SELECT status FROM data_quality_issue WHERE id=?", [ids[0]]).iloc[0, 0] == "open"
+
+
+def test_remaining_history_gap_does_not_repeat_fallback_for_sibling_issue(setup, monkeypatch):
+    client, state, _, codes = wire_stock_repairs(setup, monkeypatch, count=1)
+    state.partial = set(codes)
+    # 逆序选择也必须先处理包含近端的历史范围，再逐类复检。
+    ids = [issue(client, codes[0], kind=kind, day=None) for kind in ["stale", "history_data_gap"]]
+    ctx = Context()
+    result = run(ids, ctx)
+    assert not result["ok"] and result["resolved"] == 0, ctx.logs
+    assert sum(op == "daily" for op, *_ in state.calls) == 2  # 主源一次 + 剩余日期备用源一次
+    assert sum(op == "status" for op, *_ in state.calls) == 1
+    assert client.query_df("SELECT count(*) FROM data_quality_issue WHERE status='fixing'").iloc[0, 0] == 0
+
+
+def test_capital_partial_write_failure_is_not_hidden_by_early_ledger_resolution(setup, monkeypatch):
+    client, state, svc, codes = wire_stock_repairs(setup, monkeypatch, count=4)
+    collect = svc._collect_capital_one
+    def partial(code, *args, **kwargs):
+        result = collect(code, *args, **kwargs)
+        if code == codes[0]:
+            raise DataSourceError("股本事件来源失败，估值已保留")
+        return result
+    monkeypatch.setattr(svc, "_collect_capital_one", partial)
+    ids = [issue(client, code, kind="capital_gap", day=None) for code in codes]
+    ctx = Context()
+    result = run(ids, ctx)
+    assert not result["ok"] and result["failed"] == 1 and result["resolved"] == 3, ctx.logs
+    assert ids[0] not in ctx.checkpoint["issue_done_ids"]
+    assert client.query_df("SELECT status FROM data_quality_issue WHERE id=?", [ids[0]]).iloc[0, 0] == "open"
+    assert sum(op == "capital" for op, *_ in state.calls) == 4
+
+
+@pytest.mark.parametrize("missing_day", [DAYS[1], DAY])
+def test_fallback_completed_dates_keep_full_valuation_evidence(setup, monkeypatch, missing_day):
+    """主源缺首日/末日、备用源补齐时，预取估值仍须覆盖最终补回范围。"""
+    batch = quality_repair_sources.run_stock_repairs
+    snapshots = []
+    for mode in ["serial", "parallel"]:
+        client, state, svc, codes = wire_stock_repairs(
+            setup, monkeypatch, name=mode, count=4,
+        )
+        daily = svc._fetch_daily_with_fallback
+        calls = {}
+
+        def partial_first(code, start, end, *args, daily=daily, calls=calls, **kwargs):
+            frame, source = daily(code, start, end, *args, **kwargs)
+            calls[code] = calls.get(code, 0) + 1
+            return (frame[frame.trade_date != missing_day] if calls[code] == 1 else frame), source
+
+        monkeypatch.setattr(svc, "_fetch_daily_with_fallback", partial_first)
+        monkeypatch.setattr(
+            quality_repair_sources, "run_stock_repairs",
+            (lambda *args, **kwargs: None) if mode == "serial" else batch,
+        )
+        ids = [issue(client, code, kind="history_data_gap", day=None) for code in codes]
+        ctx = Context()
+        result = run(ids, ctx)
+        assert result["resolved"] == len(ids) and result["failed"] == 0, ctx.logs
+        assert all(calls[code] == 2 for code in codes)
+        assert sum(op == "capital" for op, *_ in state.calls) == len(codes)
+        frame = client.query_df(
+            "SELECT code,trade_date,total_mv,float_mv,reported_total_mv,reported_float_mv "
+            "FROM daily_metrics WHERE code IN (SELECT unnest(?::VARCHAR[])) "
+            "ORDER BY code,trade_date", [codes],
+        )
+        assert len(frame) == len(codes) * (len(DAYS) - 1)
+        assert frame[["reported_total_mv", "reported_float_mv"]].notna().all().all()
+        snapshots.append(frame)
+    pd.testing.assert_frame_equal(*snapshots)
+
+
+def test_stock_serial_parallel_equivalence_and_request_cost(setup, monkeypatch):
+    """同量固定响应，真实落库与复检对比；耗时只观测，避免机器负载导致脆弱门限。"""
+    import json
+
+    batch = quality_repair_sources.run_stock_repairs
+    snapshots, timings = [], []
+    for mode in ["serial", "parallel"]:
+        client, state, _, codes = wire_stock_repairs(setup, monkeypatch, name=mode, count=48)
+        state.delay = .025
+        ids = [issue(client, code, kind="history_data_gap", day=None) for code in codes]
+        monkeypatch.setattr(quality_repair_sources, "run_stock_repairs",
+                            (lambda *args, **kwargs: None) if mode == "serial" else batch)
+        started = time.monotonic()
+        ctx = Context()
+        result = run(ids, ctx)
+        assert result["resolved"] == len(ids), ctx.logs
+        assert state.maximum == (1 if mode == "serial" else 4)
+        snapshots.append([
+            client.query_df(sql) for sql in [
+                "SELECT code,trade_date,open,high,low,close,volume,amount,adj_factor,adj_factor_clean FROM daily_bar ORDER BY code,trade_date",
+                "SELECT code,trade_date,is_st,source,quality FROM stock_st_status_daily ORDER BY code,trade_date",
+                "SELECT code,trade_date,total_share,float_share FROM stock_share_capital_daily ORDER BY code,trade_date",
+                ("SELECT code,trade_date,total_mv,float_mv,reported_total_mv,reported_float_mv "
+                 "FROM daily_metrics ORDER BY code,trade_date"),
+                "SELECT code,issue_type,status FROM data_quality_issue ORDER BY code,issue_type",
+            ]
+        ])
+        timings.append({"mode": mode, "seconds": round(time.monotonic() - started, 3),
+                        "source_calls": len(state.calls), "max_active": state.maximum,
+                        "resolved": result["resolved"]})
+    for before, after in zip(*snapshots, strict=True):
+        pd.testing.assert_frame_equal(before, after)
+    assert timings[1]["source_calls"] < timings[0]["source_calls"]
+    print("STOCK_REPAIR_EQUIVALENCE " + json.dumps(timings))
 
 
 @pytest.mark.parametrize("cancel", [False, True])
