@@ -437,28 +437,41 @@ class DataIntegrityReport:
             _FRAME_CACHE.update(key=key, frame=frame, latest=str(latest))
         return frame, str(latest)
 
-    def missing_days_for(self, code: str, window_days: int = GAP_WINDOW_DAYS) -> list[date]:
-        """单股窗口内待补的开市日（内部缺口 + 尾部滞后，已减去确认停牌）——供反向重采。"""
+    def missing_days_many(self, codes, window_days: int = GAP_WINDOW_DAYS):
+        """有界股票批次共用近端日期计算；保持上市、首条行情与已确认停牌口径。"""
+        empty = pd.DataFrame(columns=["code", "trade_date"])
+        codes = list(dict.fromkeys(codes))
+        if not codes:
+            return empty
         latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
         if latest is None:
-            return []
+            return empty
         latest = pd.Timestamp(latest).date()
-        win, win_lo = self._recent_open_days(latest, window_days)
-        if win_lo is None:
-            return []
-        span = self.c.query_df(
-            "SELECT min(trade_date) lo, max(trade_date) hi FROM daily_bar WHERE code=?", [code]).iloc[0]
-        min_bar = None if pd.isna(span["lo"]) else pd.Timestamp(span["lo"]).date()
-        ldf = self.c.query_df("SELECT list_date FROM stock_basic WHERE code=?", [code])
-        ld = None
-        if not ldf.empty and not pd.isna(ldf.iloc[0]["list_date"]):
-            ld = pd.Timestamp(ldf.iloc[0]["list_date"]).date()
-        lo = win_lo if min_bar is None else max(max(min_bar, ld) if ld else min_bar, win_lo)
-        have = set(pd.Timestamp(d).date() for d in self.c.query_df(
-            "SELECT trade_date FROM daily_bar WHERE code=? AND trade_date>=?", [code, win_lo])["trade_date"])
-        suspd = set(pd.Timestamp(d).date() for d in self.c.query_df(
-            "SELECT trade_date FROM stock_suspension WHERE code=? AND trade_date>=?", [code, win_lo])["trade_date"])
-        return [d for d in win if d >= lo and d not in have and d not in suspd]
+        _win, lo = self._recent_open_days(latest, window_days)
+        if lo is None:
+            return empty
+        slots = ",".join("?" for _ in codes)
+        return self.c.query_df(
+            "WITH targets AS (SELECT unnest(?::VARCHAR[]) code), "
+            "spans AS (SELECT code,min(trade_date) first_day FROM daily_bar "
+            f"WHERE code IN ({slots}) GROUP BY code), "
+            "expected AS (SELECT t.code,cal.trade_date FROM targets t "
+            "LEFT JOIN spans p USING(code) LEFT JOIN stock_basic s USING(code) "
+            "JOIN trade_calendar cal ON cal.is_open AND cal.trade_date BETWEEN ? AND ? "
+            "AND cal.trade_date>=CASE WHEN p.first_day IS NULL THEN ? "
+            "ELSE greatest(p.first_day,coalesce(s.list_date,p.first_day),?) END) "
+            "SELECT e.code,e.trade_date FROM expected e "
+            f"ANTI JOIN (SELECT code,trade_date FROM daily_bar WHERE code IN ({slots}) "
+            "AND trade_date>=?) b USING(code,trade_date) "
+            f"ANTI JOIN (SELECT code,trade_date FROM stock_suspension WHERE code IN ({slots}) "
+            "AND trade_date>=?) x USING(code,trade_date) ORDER BY code,trade_date",
+            [codes, *codes, lo, latest, lo, lo, *codes, lo, *codes, lo],
+        )
+
+    def missing_days_for(self, code: str, window_days: int = GAP_WINDOW_DAYS) -> list[date]:
+        """单股与批次共用同一近端缺口规则。"""
+        return [pd.Timestamp(day).date()
+                for day in self.missing_days_many([code], window_days).trade_date]
 
     def confirm_suspension(self, code: str, dates: list[date]) -> int:
         """保存调用方已核验逐日停牌状态的日期；空行情响应本身不是证据。"""

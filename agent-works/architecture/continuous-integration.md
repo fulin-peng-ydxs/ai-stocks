@@ -17,7 +17,7 @@
   | `frontend` | frontend | 是 | 前端设计静态检查、布局契约测试与类型检查 |
   | `backend` | backend | 是 | 隔离三库中的后端业务、权限及任务回归；新增测试默认加入 |
   | `database` | database | 是 | 现有数据库新装、旧库升级、结构及初始化数据契约 |
-  | `backend-scale` | backend | 否 | 显式规模参数下的分时与估值规模回归 |
+  | `backend-scale` | backend | 否 | 显式规模参数下的分时、估值与质量修复规模回归 |
 
   | 专项文件或用例 | 归属 | 原因 |
   | --- | --- | --- |
@@ -27,6 +27,8 @@
   | `backend/tests/test_intraday_parallel.py::test_repair_commits_quality_and_progress_before_full_market_finishes[5000]` | `backend-scale` | 全市场规模参数 |
   | `backend/tests/test_intraday_performance.py::test_fixed_response_repair_cost[1000]` | `backend-scale` | 千股规模参数 |
   | `backend/tests/test_valuation_batch.py::test_latest_batch_scale_keeps_every_target_and_reported_evidence` | `backend-scale` | 显式估值补采规模参数 |
+  | `backend/tests/test_quality_repair_scale.py::test_full_history_repair_scale[capital_gap]` | `backend-scale` | 显式全历史股本修复规模参数 |
+  | `backend/tests/test_quality_repair_scale.py::test_full_history_repair_scale[history_data_gap]` | `backend-scale` | 显式全历史行情缺口修复规模参数 |
   | `backend/tests/test_schedule_downstream.py::test_multi_upstream_runtime_migration_round_trip[duckdb]` | `not-applicable` | 该迁移只支持 PG schema；同一测试的 postgres 参数仍在常用回归执行 |
   <!-- ci-inventory:end -->
 

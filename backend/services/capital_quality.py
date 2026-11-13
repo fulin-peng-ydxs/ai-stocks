@@ -117,12 +117,13 @@ class CapitalQualityService:
             "FROM stock_share_capital_event WHERE active AND (effective_date IS NULL "
             "OR total_share<=0 OR float_share<0 OR float_share>total_share)" + raw_scope + " GROUP BY code"
         ) if source_only else ""
-        params = ([codes] if codes is not None else []) * (2 if source_only else 1)
+        params = (([codes] if codes is not None else []) + (list(codes) * 2 if codes is not None else [])
+                  + ([codes] if codes is not None and source_only else []))
         return self.c.query_df(
             "WITH facts AS (SELECT b.code,b.trade_date," + flags + ","
             "s.total_share IS NULL missing_total_share,s.float_share IS NULL missing_float_share,"
             "m.total_mv IS NULL missing_total_mv,m.float_mv IS NULL missing_float_mv "
-            "FROM (SELECT * FROM daily_bar " + scope + ") b " + historical_joins() + ") "
+            "FROM (SELECT * FROM daily_bar " + scope + ") b " + historical_joins(codes=codes) + ") "
             "SELECT code,issue_type,count(*) issue_days,min(trade_date) date_start,max(trade_date) date_end,"
             "count(*) FILTER(WHERE missing_total_share) missing_total_share,"
             "count(*) FILTER(WHERE missing_float_share) missing_float_share,"
@@ -187,13 +188,20 @@ class CapitalQualityService:
         with self.c.temp_view(
             frame[["code", "issue_type", "date_start"]], prefix="capital_findings"
         ) as view:
+            sample_codes = frame.code.unique().tolist()
+            slots = ",".join("?" for _ in sample_codes)
             samples = self.c.query_df(
                 f"SELECT f.issue_type,b.code,b.trade_date,b.close,s.* EXCLUDE(code,trade_date),"
-                f"m.total_mv,m.float_mv,m.reported_total_mv,m.reported_float_mv,"
-                f"m.reported_total_close,m.reported_float_close FROM {view} f JOIN daily_bar b "
+                "m.total_mv,m.float_mv,m.reported_total_mv,m.reported_float_mv,"
+                f"m.reported_total_close,m.reported_float_close FROM {view} f JOIN "
+                f"(SELECT * FROM daily_bar WHERE code IN ({slots}) "
+                "AND trade_date BETWEEN ? AND ?) b "
                 "ON b.code=f.code AND b.trade_date=f.date_start "
-                + historical_joins()
+                + historical_joins(codes=sample_codes),
+                [*sample_codes, frame.date_start.min(), frame.date_start.max(),
+                 *sample_codes, *sample_codes],
             )
+
         sample_map = {
             (row["code"], row["issue_type"]): row
             for row in json.loads(samples.to_json(orient="records", date_format="iso"))

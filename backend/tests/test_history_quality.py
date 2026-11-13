@@ -58,6 +58,20 @@ def test_ledger_identity_recheck_and_other_stock_preserved(market):
     assert not r.recheck_clean("history_data_gap", "B.SZ", None)
 
 
+def test_recent_batch_keeps_original_start_suspension_and_delisting_semantics(market):
+    report = DataIntegrityReport(market)
+    market.execute("UPDATE stock_basic SET delist_date='2017-01-05' WHERE code='B.SZ'")
+    market.execute("INSERT INTO stock_suspension(code,trade_date) VALUES ('A.SH','2017-01-05')")
+    rows = report.missing_days_many(["A.SH", "B.SZ", "C.BJ", "A.SH"])
+    actual = [(row.code, row.trade_date.date()) for row in rows.itertuples()]
+    # 近端规则从已有首条行情开始，且原规则并不按退市日期裁剪，不能拿历史规则替代。
+    assert actual == [("B.SZ", date(2017, 1, 5)), ("B.SZ", date(2017, 1, 6)),
+                      *(('C.BJ', date(2017, 1, day)) for day in range(2, 7))]
+    assert HistoryQualityService(market).dates("B.SZ") == [date(2017, 1, 3)]
+    assert report.missing_days_for("A.SH") == []
+    assert report.missing_days_many([]).empty
+
+
 @pytest.mark.parametrize("status,expected", [(None, 0), (1, 0), (0, 3)])
 def test_empty_source_never_implies_suspension(market, status, expected):
     ing = IngestionService.__new__(IngestionService)

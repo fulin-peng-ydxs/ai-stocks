@@ -74,9 +74,15 @@ class Source:
             self.state.calls.append((operation, code, threading.get_ident()))
             self.state.active += 1
             self.state.maximum = max(self.state.maximum, self.state.active)
-        time.sleep(getattr(self.state, "delay", .015))
-        with self.state.lock:
-            self.state.active -= 1
+            request_number = len(self.state.calls)
+        try:
+            gate = getattr(self.state, "first_wave_gate", None)
+            if gate is not None and request_number <= gate.parties:
+                gate.wait(timeout=10)
+            time.sleep(getattr(self.state, "delay", .015))
+        finally:
+            with self.state.lock:
+                self.state.active -= 1
         check_thread_cancel()
         if code in self.state.errors:
             raise DataSourceError("测试来源失败")
@@ -227,6 +233,8 @@ def test_cancel_drains_workers_keeps_only_committed_checkpoints_then_resumes(set
 def test_member_repairs_parallel_and_incomplete_snapshot_preserves_old_members(setup):
     client, state, _, _ = setup(count=12)
     client.execute("UPDATE board_dict SET has_members=TRUE,has_bar=FALSE")
+    # 显式首轮会合，避免忙机上15ms延时不足以稳定观察八路工作并发。
+    state.first_wave_gate = threading.Barrier(8)
     state.empty = {state.codes[0]}
     client.execute("INSERT INTO board_member(board_code,code) VALUES (?, '000001.SZ')", [state.codes[0]])
     ids = [issue(client, code, kind="board_member_incomplete") for code in state.codes]
@@ -334,6 +342,14 @@ def test_four_capital_issue_types_do_not_repeat_full_history_or_close_remaining_
     svc._thread_source = lambda *_: SimpleNamespace(name="test")
     svc._fetch_capital_material = lambda *_: (pd.DataFrame(), None)
     svc.repair_capital_quality = lambda code, ctx, **kw: calls.append(code) or {"rows": 0}
+    def batch(entries, source, windows, one, **kwargs):
+        checks = kwargs["checks"]
+        for _i, code, _frame, _error, _pending in entries:
+            checks.update({(kind, code): False for kind in quality_repair_sources.CAPITAL_TYPES})
+        material = [(i, code, (frame, None), error, pending)
+                    for i, code, frame, error, pending in entries]
+        return svc._complete_capital_material(material, source, one)
+    monkeypatch.setattr(svc, "_merge_valuation_batch", batch)
     for _ in range(2):
         result = run(ids, Context())
         assert result["resolved"] == result["failed"] == 0
@@ -484,11 +500,26 @@ def test_remaining_history_gap_does_not_repeat_fallback_for_sibling_issue(setup,
 
 
 def test_capital_partial_write_failure_is_not_hidden_by_early_ledger_resolution(setup, monkeypatch):
+    from backend.services.capital_quality import CapitalQualityService
+    from backend.services.share_capital import ShareCapitalService
+    from backend.tests.test_daily_collection_performance import bars
+
     client, state, svc, codes = wire_stock_repairs(setup, monkeypatch, count=4)
+    fetch = svc._fetch_capital_material
+    def conflicting(code, *args):
+        frame, prices = fetch(code, *args)
+        if code == codes[0]:
+            frame = frame.assign(total_share=90.)  # 与接口市值不一致，必须进入事件核验。
+        return frame, prices
+    monkeypatch.setattr(svc, "_fetch_capital_material", conflicting)
     collect = svc._collect_capital_one
     def partial(code, *args, **kwargs):
         result = collect(code, *args, **kwargs)
         if code == codes[0]:
+            # 模拟补充源已补齐业务值，但随后来源事件归档失败；事实干净也不能掩盖失败。
+            clean = pd.concat([bars(code).assign(trade_date=day, total_mv=1000., float_mv=800.)
+                               for day in DAYS], ignore_index=True)
+            ShareCapitalService(client).merge(clean, "eastmoney_daily", reported=True)
             raise DataSourceError("股本事件来源失败，估值已保留")
         return result
     monkeypatch.setattr(svc, "_collect_capital_one", partial)
@@ -499,11 +530,21 @@ def test_capital_partial_write_failure_is_not_hidden_by_early_ledger_resolution(
     assert ids[0] not in ctx.checkpoint["issue_done_ids"]
     assert client.query_df("SELECT status FROM data_quality_issue WHERE id=?", [ids[0]]).iloc[0, 0] == "open"
     assert sum(op == "capital" for op, *_ in state.calls) == 4
+    assert CapitalQualityService(client).aggregate(codes).empty
+    assert set(ctx.checkpoint["stock_repair_pending"]) == {f"capital:{codes[0]}"}
+    monkeypatch.setattr(svc, "_fetch_capital_material", fetch)
+    result = run(ids, ctx)
+    assert not result["ok"] and result["failed"] == 1, ctx.logs
+    assert ids[0] not in ctx.checkpoint["issue_done_ids"]
+    monkeypatch.setattr(svc, "_collect_capital_one", collect)
+    result = run(ids, ctx)
+    assert result["ok"] and result["resolved"] == 1, ctx.logs
+    assert not ctx.checkpoint["stock_repair_pending"]
 
 
 @pytest.mark.parametrize("missing_day", [DAYS[1], DAY])
 def test_fallback_completed_dates_keep_full_valuation_evidence(setup, monkeypatch, missing_day):
-    """主源缺首日/末日、备用源补齐时，预取估值仍须覆盖最终补回范围。"""
+    """备用源补齐首日/末日后，来源证据和干净因子均须与逐条恢复一致。"""
     batch = quality_repair_sources.run_stock_repairs
     snapshots = []
     for mode in ["serial", "parallel"]:
@@ -536,8 +577,113 @@ def test_fallback_completed_dates_keep_full_valuation_evidence(setup, monkeypatc
         )
         assert len(frame) == len(codes) * (len(DAYS) - 1)
         assert frame[["reported_total_mv", "reported_float_mv"]].notna().all().all()
-        snapshots.append(frame)
-    pd.testing.assert_frame_equal(*snapshots)
+        prices = client.query_df(
+            "SELECT code,trade_date,adj_factor,adj_factor_clean,pre_close FROM daily_bar "
+            "WHERE code IN (SELECT unnest(?::VARCHAR[])) ORDER BY code,trade_date", [codes],
+        )
+        assert prices.adj_factor_clean.notna().all()
+        assert not svc._dirty_daily_codes(codes)
+        assert set(ctx.checkpoint["issue_done_ids"]) == set(ids)
+        assert not ctx.checkpoint.get("stock_repair_pending")
+        snapshots.append((frame, prices))
+    for serial, parallel in zip(*snapshots, strict=True):
+        pd.testing.assert_frame_equal(serial, parallel)
+
+
+@pytest.mark.parametrize("kind", ["stale", "data_gap", "history_data_gap", "adj_jump"])
+def test_batch_daily_validation_failure_keeps_diagnostics_and_resumes(setup, monkeypatch, kind):
+    import json
+
+    client, state, svc, codes = wire_stock_repairs(setup, monkeypatch, count=2)
+    original = svc.ingest_one_daily
+    attempts = {}
+    def invalid(code, *args, **kwargs):
+        attempts[code] = attempts.get(code, 0) + 1
+        if code == codes[0]:
+            raise ValueError("行情材料校验失败")
+        return original(code, *args, **kwargs)
+    monkeypatch.setattr(svc, "ingest_one_daily", invalid)
+    ids = [issue(client, code, kind=kind, day=None) for code in codes]
+    ctx = Context()
+    result = run(ids, ctx)
+    assert not result["ok"] and result["failed"] == result["technical_failure"] == 1, ctx.logs
+    assert result["resolved"] == 1
+    row = client.query_df("SELECT status,fix_task_id,detail FROM data_quality_issue WHERE id=?", [ids[0]]).iloc[0]
+    assert row.status == "open" and pd.isna(row.fix_task_id)
+    assert json.loads(row.detail)["last_repair"]["error"] == "行情材料校验失败"
+    assert ids[0] not in ctx.checkpoint["issue_done_ids"]
+    assert attempts[codes[0]] == 1
+    assert sum(op == "daily" and code == codes[0] for op, code, _ in state.calls) == 1
+    monkeypatch.setattr(svc, "ingest_one_daily", original)
+    before = len(state.calls)
+    result = run(ids, ctx)
+    assert result["ok"] and result["resolved"] == 1 and result["failed"] == 0, ctx.logs
+    assert {code for _, code, _ in state.calls[before:]} == {codes[0]}
+    assert not svc._dirty_daily_codes(codes)
+    assert not ctx.checkpoint["stock_repair_pending"]
+
+
+def test_batch_primary_source_failure_still_uses_original_gap_fallback(setup, monkeypatch):
+    client, _state, svc, codes = wire_stock_repairs(setup, monkeypatch, count=2)
+    original = svc._fetch_daily_with_fallback
+    calls = {}
+    def unavailable(code, *args, **kwargs):
+        calls[code] = calls.get(code, 0) + 1
+        if code == codes[0] and calls[code] == 1:
+            raise DataSourceError("主源暂不可用")
+        return original(code, *args, **kwargs)
+    monkeypatch.setattr(svc, "_fetch_daily_with_fallback", unavailable)
+    ids = [issue(client, code, kind="history_data_gap", day=None) for code in codes]
+    ctx = Context()
+    result = run(ids, ctx)
+    assert result["ok"] and result["resolved"] == 2 and result["failed"] == 0, ctx.logs
+    assert calls == {codes[0]: 2, codes[1]: 1}
+    assert any("主源暂不可用" in message for message in ctx.logs)
+    assert not svc._dirty_daily_codes(codes)
+    assert client.query_df("SELECT count(*) FROM data_quality_issue WHERE status='fixing'").iloc[0, 0] == 0
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_fallback_factor_failure_keeps_pending_scope_and_resumes(setup, monkeypatch, cancel):
+    client, _state, svc, codes = wire_stock_repairs(setup, monkeypatch, count=1)
+    code = codes[0]
+    daily, factors = svc._fetch_daily_with_fallback, svc._recompute_clean
+    fetches = recomputes = 0
+    ctx = Context()
+    def partial(*args, **kwargs):
+        nonlocal fetches
+        frame, source = daily(*args, **kwargs)
+        fetches += 1
+        return (frame[frame.trade_date != DAY] if fetches == 1 else frame), source
+    def unfinished(*args, **kwargs):
+        nonlocal recomputes
+        recomputes += 1
+        if recomputes == 2:
+            if cancel:
+                ctx.cancel = True
+                ctx.check_cancel()
+            return {"fail": 1}
+        return factors(*args, **kwargs)
+    monkeypatch.setattr(svc, "_fetch_daily_with_fallback", partial)
+    monkeypatch.setattr(svc, "_recompute_clean", unfinished)
+    iid = issue(client, code, kind="history_data_gap", day=None)
+    if cancel:
+        with pytest.raises(TaskCancelled):
+            run([iid], ctx)
+    else:
+        result = run([iid], ctx)
+        assert not result["ok"] and result["failed"] == 1, ctx.logs
+    assert recomputes == 2
+    assert not ctx.checkpoint.get("issue_done_ids")
+    assert set(ctx.checkpoint["stock_repair_pending"]) == {f"gap:{code}"}
+    assert svc._dirty_daily_codes(codes) == {code}
+    assert client.query_df("SELECT status FROM data_quality_issue WHERE id=?", [iid]).iloc[0, 0] == "open"
+    monkeypatch.setattr(svc, "_recompute_clean", factors)
+    ctx.cancel = False
+    result = run([iid], ctx)
+    assert result["ok"] and result["resolved"] == 1, ctx.logs
+    assert not svc._dirty_daily_codes(codes)
+    assert not ctx.checkpoint["stock_repair_pending"]
 
 
 def test_stock_serial_parallel_equivalence_and_request_cost(setup, monkeypatch):
@@ -699,3 +845,172 @@ def test_grouped_dates_keep_partial_responses_and_retry_missing_targets(technica
     assert len(early) == 1 and early.attrs["failed_years"] == []
     assert late.empty == technical_failure
     assert late.attrs["failed_years"] == ([2024] if technical_failure else [])
+
+
+def test_gap_repair_uses_shared_batch_landing_and_batch_quality(setup, monkeypatch):
+    from backend.services.capital_quality import CapitalQualityService
+
+    _client, _state, svc, codes = wire_stock_repairs(setup, monkeypatch, count=16)
+    batches, quality = [], []
+    landing, sync = svc._write_daily_batch, CapitalQualityService.sync
+    def write(materials, **kwargs):
+        batches.append([item.code for item in materials])
+        return landing(materials, **kwargs)
+    def checked(self, scope=None):
+        quality.append(scope)
+        return sync(self, scope)
+    monkeypatch.setattr(svc, "_write_daily_batch", write)
+    monkeypatch.setattr(CapitalQualityService, "sync", checked)
+    ids = [issue(svc.c, code, kind="history_data_gap", day=None) for code in codes]
+    ctx = Context()
+    result = run(ids, ctx)
+    assert result["resolved"] == len(ids), ctx.logs
+    assert any(len(batch) > 1 for batch in batches)
+    assert any(len(scope) > 1 for scope in quality)
+    assert max(map(len, batches)) <= svc.s.datasource.update_concurrency
+    assert {code for batch in batches for code in batch} == set(codes)
+    assert not ctx.checkpoint.get("stock_repair_pending")
+
+
+@pytest.mark.parametrize("kind", ["capital_gap", "history_data_gap"])
+def test_batch_cancel_after_landing_resumes_unfinished_maintenance(setup, monkeypatch, kind):
+    from backend.services.capital_quality import CapitalQualityService
+
+    client, state, svc, codes = wire_stock_repairs(setup, monkeypatch, count=4)
+    ids = [issue(client, code, kind=kind, day=None) for code in codes]
+    ctx = Context()
+    merge = svc._merge_valuation_batch
+    def cancel(*args, **kwargs):
+        merge(*args, **kwargs)
+        ctx.cancel = True
+        ctx.check_cancel()
+    monkeypatch.setattr(svc, "_merge_valuation_batch", cancel)
+    with pytest.raises(TaskCancelled):
+        run(ids, ctx)
+    assert state.active == 0
+    assert ctx.checkpoint["stock_repair_pending"]
+    assert not ctx.checkpoint.get("issue_done_ids")
+    assert client.query_df(
+        "SELECT count(*) FROM data_quality_issue WHERE status='fixing'"
+    ).iloc[0, 0] == 0
+    monkeypatch.setattr(svc, "_merge_valuation_batch", merge)
+    ctx.cancel = False
+    result = run(ids, ctx)
+    assert result["resolved"] == len(ids), ctx.logs
+    assert not ctx.checkpoint["stock_repair_pending"]
+    remaining = CapitalQualityService(client).aggregate(codes)
+    if kind == "capital_gap":
+        assert remaining.empty
+    else:
+        # 夹具原有首日不属于本次日线缺口，不能把修复扩大成其它历史股本补采。
+        assert remaining.date_end.dt.date.eq(DAYS[0]).all()
+    assert client.query_df(
+        "SELECT count(*) FROM daily_metrics WHERE code IN (SELECT unnest(?::VARCHAR[])) "
+        "AND trade_date>? AND reported_total_mv IS NULL", [codes, DAYS[0]],
+    ).iloc[0, 0] == 0
+
+
+def test_gap_batch_landing_failure_keeps_all_checkpoints_and_claims_uncommitted(setup, monkeypatch):
+    from backend.common.exceptions import StorageError
+
+    client, state, svc, codes = wire_stock_repairs(setup, monkeypatch, count=4)
+    ids = [issue(client, code, kind="history_data_gap", day=None) for code in codes]
+    def fail(_frame):
+        raise StorageError("批次写入失败")
+    monkeypatch.setattr(svc.repo, "upsert_daily_bar", fail)
+    ctx = Context()
+    with pytest.raises(StorageError, match="批次写入失败"):
+        run(ids, ctx)
+    assert not ctx.checkpoint.get("issue_done_ids")
+    assert state.active == 0
+    assert client.query_df(
+        "SELECT count(*) FROM data_quality_issue WHERE status='open' AND fix_task_id IS NULL"
+    ).iloc[0, 0] == len(ids)
+    assert client.query_df(
+        "SELECT count(*) FROM daily_bar WHERE code IN (SELECT unnest(?::VARCHAR[]))", [codes],
+    ).iloc[0, 0] == len(codes)
+
+
+def test_batch_claim_cannot_take_over_another_tasks_issue(setup, monkeypatch):
+    from backend.services.data_report import DataIntegrityReport
+
+    client, state, svc, codes = wire_stock_repairs(setup, monkeypatch, count=1)
+    iid = issue(client, codes[0], kind="capital_gap", day=None)
+    client.execute("UPDATE data_quality_issue SET status='fixing',fix_task_id='other' WHERE id=?", [iid])
+    ctx = Context()
+    ctx._stock_batch_claimed = {iid}
+    with pytest.raises(ValueError, match="仅未处理问题"):
+        async_task._recover_one(client, DataIntegrityReport(client), svc, ctx, iid)
+    assert client.query_df("SELECT fix_task_id FROM data_quality_issue WHERE id=?", [iid]).iloc[0, 0] == "other"
+    assert not state.calls
+
+
+def test_capital_cancel_before_terminal_callback_keeps_maintenance(setup, monkeypatch):
+    client, _state, svc, codes = wire_stock_repairs(setup, monkeypatch, count=4)
+    ids = [issue(client, code, kind="capital_gap", day=None) for code in codes]
+    ctx = Context()
+    queue = svc._run_bounded_parallel
+    def interrupted(*args, **kwargs):
+        commit = kwargs["transform_batch"]
+        def after_commit(entries):
+            result = commit(entries)
+            ctx.cancel = True
+            ctx.check_cancel()
+            return result
+        kwargs["transform_batch"] = after_commit
+        return queue(*args, **kwargs)
+    monkeypatch.setattr(svc, "_run_bounded_parallel", interrupted)
+    with pytest.raises(TaskCancelled):
+        run(ids, ctx)
+    assert not ctx.checkpoint.get("issue_done_ids")
+    assert set(ctx.checkpoint["stock_repair_pending"]) == {f"capital:{code}" for code in codes}
+    assert client.query_df("SELECT count(*) FROM data_quality_issue WHERE status='fixing'").iloc[0, 0] == 0
+    monkeypatch.setattr(svc, "_run_bounded_parallel", queue)
+    ctx.cancel = False
+    assert run(ids, ctx)["resolved"] == len(ids), ctx.logs
+    assert not ctx.checkpoint["stock_repair_pending"]
+
+
+def test_factor_failure_after_batch_landing_keeps_maintenance_for_resume(setup, monkeypatch):
+    client, _state, svc, codes = wire_stock_repairs(setup, monkeypatch, count=4)
+    ids = [issue(client, code, kind="history_data_gap", day=None) for code in codes]
+    factors = svc._recompute_clean
+    monkeypatch.setattr(svc, "_recompute_clean", lambda *a, **kw: {"fail": 1})
+    ctx = Context()
+    result = run(ids, ctx)
+    assert not result["ok"] and result["failed"] == len(ids), ctx.logs
+    assert set(ctx.checkpoint["stock_repair_pending"]) == {f"gap:{code}" for code in codes}
+    assert not ctx.checkpoint.get("issue_done_ids")
+    monkeypatch.setattr(svc, "_recompute_clean", factors)
+    result = run(ids, ctx)
+    assert result["resolved"] == len(ids), ctx.logs
+    assert not ctx.checkpoint["stock_repair_pending"]
+    assert client.query_df(
+        "SELECT count(*) FROM daily_metrics WHERE code IN (SELECT unnest(?::VARCHAR[])) "
+        "AND trade_date>? AND reported_total_mv IS NULL", [codes, DAYS[0]],
+    ).iloc[0, 0] == 0
+
+
+def test_gap_maintenance_does_not_replace_other_operation_and_keeps_frozen_history(setup, monkeypatch):
+    client, _state, _svc, codes = wire_stock_repairs(setup, monkeypatch, count=1)
+    code = codes[0]
+    # 续跑时历史问题已被扫描收口，但同股近端问题仍在冻结范围中；维护要补完原历史日期。
+    client.executemany(
+        "INSERT INTO daily_bar(code,trade_date,open,high,low,close,volume,amount,adj_factor) "
+        "VALUES (?,?,10,10,10,10,100,1000,1)", [(code, day) for day in DAYS[1:]],
+    )
+    iid = issue(client, code, kind="stale", day=DAY)
+    ctx = Context()
+    other = {"operation": "adj", "code": code, "full": False, "dates": []}
+    ctx.checkpoint["stock_repair_pending"] = {
+        f"adj:{code}": other,
+        f"gap:{code}": {"operation": "gap", "code": code, "full": True,
+                        "dates": [str(day) for day in DAYS[1:]]},
+    }
+    result = run([iid], ctx)
+    assert result["resolved"] == 1, ctx.logs
+    assert ctx.checkpoint["stock_repair_pending"] == {f"adj:{code}": other}
+    assert client.query_df(
+        "SELECT count(*) FROM daily_metrics WHERE code=? AND trade_date>? "
+        "AND reported_total_mv IS NOT NULL", [code, DAYS[0]],
+    ).iloc[0, 0] == len(DAYS) - 1

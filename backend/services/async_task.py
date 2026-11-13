@@ -1538,7 +1538,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
     """恢复单条质检问题 → 复检 → 回写状态。返回 (复检是否通过, 受影响日期, 文案)。"""
     import pandas as pd
     df = c.query_df(
-        "SELECT code, trade_date, issue_type, detail, status "
+        "SELECT code, trade_date, issue_type, detail, status, fix_task_id "
         "FROM data_quality_issue WHERE id=?", [issue_id])
     if df.empty:
         raise ValueError(f"质检问题不存在: id={issue_id}")
@@ -1547,9 +1547,17 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
         # 已被其它扫描/任务收敛为已解决（如板块 fix 修完重扫把兄弟 issue 一并收敛）：
         # 视为已解决跳过，不报失败——批量任务里同板块兄弟问题会被重扫先收敛。
         return True, [], "已被扫描收敛为已解决，无需再修"
-    if current_status != "open":
+    claimed = (current_status == "fixing" and df.iloc[0]["fix_task_id"] == ctx.tid
+               and issue_id in getattr(ctx, "_stock_batch_claimed", set()))
+    if current_status != "open" and not claimed:
         raise ValueError(f"仅未处理问题可恢复: id={issue_id}, status={current_status}")
     code, trade_date, issue_type = df.iloc[0]["code"], df.iloc[0]["trade_date"], df.iloc[0]["issue_type"]
+    def recheck(kind, stock, day, **kwargs):
+        checks = getattr(ctx, "_stock_batch_checks", {})
+        if (kind, stock) in checks:
+            return checks[kind, stock]
+        return rep.recheck_clean(kind, stock, day, **kwargs)
+
     ledger_type = issue_type
     issue_type = repair_type or issue_type
     issue_detail = df.iloc[0]["detail"]
@@ -1574,7 +1582,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
         # 仍走下方状态回写和关联扫描，不能只跳过采集而留下 open 旧问题。
         if issue_type in (scan_board_types | scan_market_index_types | {
             "abnormal_change", "st_status_missing", "st_status_approximate", "st_status_mismatch",
-        }) and rep.recheck_clean(
+        }) and recheck(
             issue_type, code, td, detail=issue_detail,
         ):
             note = "目标数据已满足复检要求，无需重复采集"
@@ -1597,9 +1605,13 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
             else:
                 note = f"{td} 目标分时已满足复检要求"
         elif issue_type in ("capital_gap", "capital_invalid", "capital_mismatch", "capital_raw_invalid"):
-            if rep.recheck_clean(issue_type, code, td, detail=issue_detail):
+            cached = getattr(ctx, "_capital_repair_material", None)
+            if cached is not None and cached[0] == code and cached[2] is not None:
+                raise cached[2]
+            if recheck(issue_type, code, td, detail=issue_detail):
                 from backend.services.capital_quality import CapitalQualityService
-                CapitalQualityService(c).sync([code])
+                if (issue_type, code) not in getattr(ctx, "_stock_batch_checks", {}):
+                    CapitalQualityService(c).sync([code])
                 note = "全历史复检已通过，无需重复采集"
             else:
                 ctx.log(f"恢复(股本市值)：{code} 全历史多来源补采与复检")
@@ -1700,8 +1712,13 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
                     prefetched = {"_prefetched": material[1]["bars"],
                                   "_fetch_error": material[1]["error"],
                                   "_st_material": material[1]["status"]}
-                ing.ingest_one_daily(code, lo, hi, ctx=ctx, **prefetched)
-                factors = ing._recompute_clean([code], ctx=ctx)
+                ready = material[1] if material is not None and material[0] == code else None
+                if ready is not None and ready.get("daily_error") is not None:
+                    raise ready["daily_error"]
+                if ready is None or "daily_committed" not in ready:
+                    ing.ingest_one_daily(code, lo, hi, ctx=ctx, **prefetched)
+                factors = ({"fail": 0} if ready is not None and ready.get("factors_complete")
+                           else ing._recompute_clean([code], ctx=ctx))
                 if factors["fail"]:
                     raise RuntimeError(f"{code} 复权清洗因子重算失败")
             else:
@@ -1882,9 +1899,9 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
         if issue_type in ("intraday_gap", "intraday_partial", "intraday_invalid"):
             scope_clean = clean = (issue_type, str(td)) not in remaining
         else:
-            scope_clean = rep.recheck_clean(issue_type, code, td, detail=issue_detail)
+            scope_clean = recheck(issue_type, code, td, detail=issue_detail)
             clean = (scope_clean if ledger_type == issue_type else
-                     rep.recheck_clean(ledger_type, code, td, detail=issue_detail))
+                     recheck(ledger_type, code, td, detail=issue_detail))
     except Exception as error:
         # 恢复中途失败：复位为待处理（清绑定）再上抛，由 _h_fix 计入失败、不污染状态
         try:
@@ -1925,7 +1942,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
                 note += "；关联问题复检失败，请稍后重新质检"
     else:
         c.execute("UPDATE data_quality_issue SET status='open', fix_task_id=NULL WHERE id=?", [issue_id])
-    if ledger_type == "history_data_gap":
+    if ledger_type == "history_data_gap" and code not in getattr(ctx, "_stock_batch_synced", set()):
         from backend.services.history_quality import HistoryQualityService
         HistoryQualityService(c).sync([code])
     msg = (f"已恢复：{code} {note}（复检通过，已解决）" if clean

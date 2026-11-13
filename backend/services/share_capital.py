@@ -87,6 +87,14 @@ class ShareCapitalService:
         df["total_available_date"] = df.available_date
         return self.merge(df, "verified_notice")
 
+    @staticmethod
+    def _read_scope(frame, *, alias=""):
+        """临时材料驱动的外连接须显式裁剪股票和日期，避免逐股扫描全市场历史。"""
+        codes = list(dict.fromkeys(frame.code))
+        placeholders = ",".join("?" for _ in codes)
+        return (f"{alias}code IN ({placeholders}) AND {alias}trade_date BETWEEN ? AND ?",
+                [*codes, frame.trade_date.min(), frame.trade_date.max()])
+
     def merge(self, frame: pd.DataFrame, source: str, *, reported=False,
               _in_transaction: bool = False) -> int:
         """只接收已有行情日期的有效股本；逐日报告优先，事件比较生效日；冲突不擦除已有有效事实。"""
@@ -98,12 +106,16 @@ class ShareCapitalService:
         # 每批只读一次目标股票日线，同时获得真实最新日期；避免每个字段重复扫大表。
         # 日常通常只合并一天；按目标日期取价格，最新日单独聚合，避免每股装载十年
         # 行情到 pandas。历史补采同样使用真实目标键，最新投影边界保持不变。
+        scope, params = self._read_scope(df, alias="b.")
+        codes = df.code.unique().tolist()
+        slots = ",".join("?" for _ in codes)
         with self.c.temp_view(df[["code", "trade_date"]], prefix="share_targets") as targets:
             market = self.c.query_df(
                 "WITH latest AS (SELECT code,max(trade_date) latest_date FROM daily_bar "
-                f"WHERE code IN (SELECT code FROM {targets}) GROUP BY code) "
+                f"WHERE code IN ({slots}) GROUP BY code) "
                 f"SELECT b.code,b.trade_date,b.close AS _raw_close,l.latest_date FROM {targets} t "
-                "JOIN daily_bar b USING(code,trade_date) JOIN latest l USING(code)"
+                f"JOIN daily_bar b USING(code,trade_date) JOIN latest l USING(code) WHERE {scope}",
+                [*codes, *params],
             )
         if market.empty:
             return 0
@@ -156,14 +168,14 @@ class ShareCapitalService:
         # 日线批次调用方已持有同连接事务，股本与行情必须一起提交或回滚。
         transaction = nullcontext() if _in_transaction else self.c.transaction()
         with transaction, self.c.temp_view(df[cols], prefix="share_input") as t:
-            bounds = [df.trade_date.min(), df.trade_date.max()]
+            scope, bounds = self._read_scope(df)
             previous = self.c.query_df(
                 f"SELECT v.code,v.trade_date,s.total_share,s.float_share,m.total_mv,m.float_mv,"
                 f"m.reported_total_mv,m.reported_float_mv,m.reported_total_close,m.reported_float_close FROM {t} v "
                 "LEFT JOIN (SELECT * FROM stock_share_capital_daily "
-                "WHERE trade_date BETWEEN ? AND ?) s USING(code,trade_date) "
+                f"WHERE {scope}) s USING(code,trade_date) "
                 "LEFT JOIN (SELECT * FROM daily_metrics "
-                "WHERE trade_date BETWEEN ? AND ?) m USING(code,trade_date)",
+                f"WHERE {scope}) m USING(code,trade_date)",
                 bounds * 2,
             )
             for field in ("total", "float"):
@@ -297,7 +309,7 @@ class ShareCapitalService:
                     + ("AND v.total_mv_eligible=true" if source == "sina_events" else "")
                 )
             with self.c.temp_view(latest, prefix="share_latest") as latest_view:
-                self._project_latest(latest_view)
+                self._project_latest(latest_view, latest)
             self._merge_market_values(df, t, source, reported)
             self._log_changes(previous, source)
         return len(df)
@@ -369,14 +381,14 @@ class ShareCapitalService:
         return result
 
     def _log_changes(self, previous, source):
-        bounds = [previous.trade_date.min(), previous.trade_date.max()]
+        scope, bounds = self._read_scope(previous)
         with self.c.temp_view(previous, prefix="capital_previous") as previous_view:
             changed = self.c.query_df(
                 f"SELECT count(*) n,min(p.trade_date) lo,max(p.trade_date) hi FROM {previous_view} p "
                 "LEFT JOIN (SELECT * FROM stock_share_capital_daily "
-                "WHERE trade_date BETWEEN ? AND ?) s USING(code,trade_date) "
+                f"WHERE {scope}) s USING(code,trade_date) "
                 "LEFT JOIN (SELECT * FROM daily_metrics "
-                "WHERE trade_date BETWEEN ? AND ?) m USING(code,trade_date) WHERE "
+                f"WHERE {scope}) m USING(code,trade_date) WHERE "
                 "p.total_share IS DISTINCT FROM s.total_share OR p.float_share IS DISTINCT FROM s.float_share "
                 "OR p.total_mv IS DISTINCT FROM m.total_mv OR p.float_mv IS DISTINCT FROM m.float_mv"
                 + "".join(f" OR p.{col} IS DISTINCT FROM m.{col}" for col in
@@ -389,21 +401,23 @@ class ShareCapitalService:
                                  pd.Timestamp(changed.lo).date(), pd.Timestamp(changed.hi).date(),
                                  int(changed.n), "success", "股本/市值实际值变更")
 
-    def _project_latest(self, latest_view):
+    def _project_latest(self, latest_view, latest):
+        scope, params = self._read_scope(latest.rename(columns={"latest_date": "trade_date"}), alias="s.")
         # 只投影真实最新行情日；旧范围回填与部分字段缺失不会冒充最新事实。
         for field in ("total", "float"):
             self.c.execute(
                 f"UPDATE stock_basic b SET {field}_share=s.{field}_share, "
                 f"{field}_share_date=s.trade_date FROM stock_share_capital_daily s "
                 f"JOIN {latest_view} l ON s.code=l.code AND s.trade_date=l.latest_date "
-                "WHERE b.code=s.code "
+                f"WHERE b.code=s.code AND {scope} "
                 f"AND (s.{field}_share IS NOT NULL OR b.{field}_share_date=s.trade_date) "
-                f"AND (b.{field}_share_date IS NULL OR b.{field}_share_date<=s.trade_date)"
+                f"AND (b.{field}_share_date IS NULL OR b.{field}_share_date<=s.trade_date)", params,
             )
 
     def _merge_market_values(self, df, share_view, source, reported):
         # 显式日期边界让小批增量裁剪历史行组；键关联仍决定实际读写对象。
-        bounds = [df.trade_date.min(), df.trade_date.max()]
+        scope, bounds = self._read_scope(df)
+        metric_scope, _ = self._read_scope(df, alias="m.")
         # 先保全旧接口值，随后写入本次接口证据；计算值绝不归档为接口值。
         for field in ("total", "float"):
             col = f"{field}_mv"
@@ -412,7 +426,8 @@ class ShareCapitalService:
                 f"reported_{col}_source=coalesce(m.{col}_source,'legacy_unknown') "
                 f"FROM {share_view} v WHERE m.code=v.code AND m.trade_date=v.trade_date "
                 f"AND m.reported_{col} IS NULL AND m.{col}>0 AND isfinite(m.{col}) "
-                f"AND NOT coalesce(starts_with(m.{col}_source,'computed:'),false)"
+                f"AND NOT coalesce(starts_with(m.{col}_source,'computed:'),false) "
+                f"AND {metric_scope}", bounds,
             )
             if reported and col in df:
                 values = df[["code", "trade_date", col]].copy()
@@ -436,9 +451,9 @@ class ShareCapitalService:
                 f"ELSE m.reported_{col} END,CASE WHEN {valid} THEN {self._computed_source(field)} "
                 f"ELSE m.reported_{col}_source END FROM {share_view} v "
                 "LEFT JOIN (SELECT * FROM stock_share_capital_daily "
-                "WHERE trade_date BETWEEN ? AND ?) s USING(code,trade_date) "
+                f"WHERE {scope}) s USING(code,trade_date) "
                 "LEFT JOIN (SELECT * FROM daily_metrics "
-                "WHERE trade_date BETWEEN ? AND ?) m USING(code,trade_date) "
+                f"WHERE {scope}) m USING(code,trade_date) "
                 f"ON CONFLICT (code,trade_date) DO UPDATE SET {col}=excluded.{col}, "
                 f"{col}_source=excluded.{col}_source", bounds * 2,
             )

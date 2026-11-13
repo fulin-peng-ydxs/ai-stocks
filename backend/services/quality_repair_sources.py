@@ -87,9 +87,19 @@ def repair_source_scope(method):
                 ctx._board_repair_base = None
             ctx._board_repair_material = ctx._market_repair_material = None
             ctx._capital_repair_material = None
-            ctx._capital_repair_prefetched = None
             ctx._st_repair_result = ctx._st_repair_error = None
             ctx._stock_repair_material = None
+            claimed = getattr(ctx, "_stock_batch_claimed", set())
+            client = getattr(ctx, "_stock_batch_client", None)
+            if client is not None and claimed:
+                client.execute(
+                    "UPDATE data_quality_issue SET status='open',fix_task_id=NULL "
+                    "WHERE status='fixing' AND fix_task_id=? AND id IN "
+                    "(SELECT unnest(?::BIGINT[]))", [ctx.tid, list(claimed)],
+                )
+            ctx._stock_batch_checks = {}
+            ctx._stock_batch_synced = set()
+            ctx._stock_batch_claimed = set()
     return run
 
 
@@ -98,20 +108,7 @@ def repair_capital_once(ingest, code, ctx):
     cached = getattr(ctx, "_capital_repair_material", None)
     if cached is None or cached[0] != code:
         try:
-            material = getattr(ctx, "_capital_repair_prefetched", None)
-            if material is not None and material[0] == code and material[3]:
-                # 必须在原恢复入口绑定 fixing 之后合并；提前落库会让扫描关闭台账，
-                # 从而把部分来源失败掩盖成“已被其它扫描解决”。
-                result = ingest._complete_capital_material(
-                    [(1, code, material[1], material[2], 0)], ingest._source_for("share_capital"),
-                    lambda code, source: ingest.repair_capital_quality(
-                        code, ctx=ctx, _source=source),
-                )[0]
-                if result[3] is not None:
-                    raise result[3]
-                value = result[2]
-            else:
-                value = ingest.repair_capital_quality(code, ctx=ctx)
+            value = ingest.repair_capital_quality(code, ctx=ctx)
             cached = (code, value, None)
         except Exception as exc:  # 后续同股问题复用失败，不重新扩大请求次数
             from backend.services.async_task import TaskCancelled
@@ -154,7 +151,7 @@ def run_st_repairs(ingest, report, ctx, selected, recover):
 
 
 def run_stock_repairs(ingest, report, ctx, selected, recover, *, repair_type=None):
-    """个股修复复用采集有界队列；线程只取材料，原恢复入口负责持久化及成功断点。
+    """个股修复复用采集队列及主线程批次提交，原恢复入口逐条发布状态和成功断点。
 
     同股覆盖/鲜活问题共用材料，股本四类共用一次核验；旧调度仍按原近端范围取源。
     估值事件补充、备用源对剩余坏行的复核仍由原链路按需执行，不能预先重拉全历史。
@@ -174,23 +171,62 @@ def run_stock_repairs(ingest, report, ctx, selected, recover, *, repair_type=Non
         ]
         concurrency = min(ingest.s.datasource.update_concurrency, len(units))
         tls = local()
+        capital_bad, capital_spans = set(), {}
+        gap_plans, positions = {}, {code: i for i, (code, _) in enumerate(units)}
+        history_planner = None
+        if operation == "gap":
+            from backend.services.history_quality import HistoryQualityService
+            history_planner = HistoryQualityService(report.c).freeze_window()
+        if operation == "capital":
+            from backend.services.capital_quality import CapitalQualityService
+            codes = [code for code, _ in units]
+            frame = CapitalQualityService(report.c).aggregate(codes)
+            capital_bad = set(zip(frame.issue_type, frame.code, strict=True))
+            spans = report.c.query_df(
+                "SELECT code,min(trade_date) lo,max(trade_date) hi FROM daily_bar "
+                "WHERE code IN (SELECT unnest(?::VARCHAR[])) GROUP BY code", [codes],
+            )
+            capital_spans = {row.code: (row.lo.date(), row.hi.date()) for row in spans.itertuples()}
 
-        def prepare(item, *, operation=operation):
+        def prepare(item, *, operation=operation, capital_bad=capital_bad, spans=capital_spans,
+                    plans=gap_plans, positions=positions, planner=history_planner, units=units,
+                    concurrency=concurrency):
             code, rows = item
             ctx.check_cancel()
-            full = any(row.issue_type == "history_data_gap" for row in rows)
+            maintenance = ctx.checkpoint.get("stock_repair_pending", {}).get(f"{operation}:{code}")
+            full = (any(row.issue_type == "history_data_gap" for row in rows)
+                    or bool(maintenance and maintenance.get("full")))
             if full:
                 # 同股同时选中历史缺口和鲜活问题时，先完成包含近端的历史恢复。
                 rows = sorted(rows, key=lambda row: row.issue_type != "history_data_gap")
-            if operation == "capital" and all(
-                report.recheck_clean(row.issue_type, code, None) for row in rows
+            if operation == "capital" and not maintenance and all(
+                (row.issue_type, code) not in capital_bad for row in rows
             ):
                 return code, rows, full, [], None, None, None
             if operation == "gap":
-                from backend.services.history_quality import HistoryQualityService
-                dates = (HistoryQualityService(report.c).dates(code) if full
-                         else report.missing_days_for(code))
+                if full and not any(row.issue_type == "history_data_gap" for row in rows):
+                    plans[code] = []  # 原历史范围由已持久化的维护日期补足。
+                if code not in plans:
+                    group = units[positions[code]:positions[code] + concurrency]
+                    historical = [stock for stock, items in group
+                                  if any(row.issue_type == "history_data_gap" for row in items)]
+                    recent = [stock for stock, _ in group if stock not in historical]
+                    plans.update({stock: [] for stock, _ in group})
+                    frames = []
+                    if historical:
+                        frames.append(planner.dates_many(historical))
+                    if recent:
+                        frames.append(report.missing_days_many(recent))
+                    for facts in frames:
+                        for stock, frame in facts.groupby("code", sort=False):
+                            plans[stock] = pd.to_datetime(frame.trade_date).dt.date.tolist()
+                dates = plans.pop(code)
+                if maintenance and maintenance.get("operation") == "gap":
+                    dates = sorted(set(dates) | {date.fromisoformat(day) for day in maintenance["dates"]})
                 lo, hi = (min(dates), max(dates)) if dates else (None, None)
+            elif operation == "capital":
+                lo, hi = spans.get(code, (None, None))
+                dates = []
             else:
                 span = report.c.query_df(
                     "SELECT min(trade_date) lo,max(trade_date) hi FROM daily_bar WHERE code=?",
@@ -271,18 +307,31 @@ def run_stock_repairs(ingest, report, ctx, selected, recover, *, repair_type=Non
                     result["capital"] = (None, exc)
             return result
 
+        def commit(entries, *, operation=operation):
+            from backend.services.quality_repair_batch import commit_stock_repairs
+            return commit_stock_repairs(ingest, report, ctx, entries, operation)
+
         def complete(_i, item, material, error, _pending, *, operation=operation):
-            code, rows, _full, _dates, lo, _hi, _status = item
+            code, rows, _full, _dates, _lo, _hi, _status = item
             if operation == "capital":
-                ctx._capital_repair_prefetched = (code, material, error, lo is not None)
+                ctx._capital_repair_material = (code, material, error)
             else:
                 ctx._stock_repair_material = (code, material, error)
             try:
                 for row in rows:
                     recover(int(row.id))
+                    getattr(ctx, "_stock_batch_claimed", set()).discard(int(row.id))
+                maintenance = dict(ctx.checkpoint.get("stock_repair_pending", {}))
+                completed = set(ctx.checkpoint.get("issue_done_ids", []))
+                maintained = (error is None if operation == "capital" else
+                              material is None or "reconciled" in material
+                              or all(int(row.id) in completed for row in rows))
+                key = f"{operation}:{code}"
+                if key in maintenance and maintained:
+                    maintenance.pop(key)
+                    ctx.set_checkpoint(stock_repair_pending=maintenance)
             finally:
                 ctx._stock_repair_material = ctx._capital_repair_material = None
-                ctx._capital_repair_prefetched = None
 
         ctx.log(f"个股修复取源：{operation}，{len(targets)} 条问题归并为 {len(units)} 只股票（并发 {concurrency}）")
         tracker = getattr(ctx, "request_tracker", None)
@@ -293,7 +342,7 @@ def run_stock_repairs(ingest, report, ctx, selected, recover, *, repair_type=Non
             ingest._run_bounded_parallel(
                 units, fetch, prepare=prepare, concurrency=concurrency, ctx=ctx,
                 wait_label="个股修复取源", on_complete=complete, prefetch_next_batch=True,
-                transform_batch=lambda entries: entries, batch_size=1,
+                transform_batch=commit, batch_size=concurrency,
             )
 
 

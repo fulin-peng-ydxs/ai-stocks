@@ -1173,6 +1173,33 @@ class IngestionService:
             "AND code IN (SELECT unnest(?::VARCHAR[]))", [list(codes)],
         )["code"])
 
+    def _commit_daily_materials(self, entries, starts, end, *, ends=None, limits=None, ctx=None):
+        """正常采集与质量修复共用单股校验、批次事务及逐股失败结果。"""
+        ends = ends or {}
+        results, prepared = [], []
+        for index, item, bars, error, pending in entries:
+            code, status = item
+            item_end = ends.get(code, end)
+            check_thread_cancel()
+            try:
+                value = (0 if starts[code] > item_end else self.ingest_one_daily(
+                    code, starts[code], item_end, (limits or {}).get(code), ctx=ctx,
+                    _prefetched=bars, _fetch_error=error, _st_material=status,
+                    _defer_write=True,
+                ))
+                if isinstance(value, _PreparedDaily):
+                    prepared.append(value)
+                    value = len(value.frame)
+                error = None
+            except TaskCancelled:
+                raise
+            except Exception as exc:  # noqa: BLE001 -- 单股校验失败不阻止其它材料提交
+                value, error = None, exc
+            results.append((index, code, value, error, pending))
+        # 批次事务失败直接退出，不推进其中任何成功断点；续跑会重取未提交项。
+        self._write_daily_batch(prepared, ctx=ctx)
+        return results
+
     def _run_daily_parallel(
         self, codes, starts, end, *, concurrency, ctx, label, on_complete, limits=None, source=None, ends=None,
     ):
@@ -1215,29 +1242,9 @@ class IngestionService:
             return bars
 
         def commit(entries):
-            results, prepared = [], []
-            for index, item, bars, error, pending in entries:
-                code, status = item
-                item_end = ends.get(code, end)
-                check_thread_cancel()
-                try:
-                    value = (0 if starts[code] > item_end else self.ingest_one_daily(
-                        code, starts[code], item_end, (limits or {}).get(code), ctx=ctx,
-                        _prefetched=bars, _fetch_error=error, _st_material=status,
-                        _defer_write=True,
-                    ))
-                    if isinstance(value, _PreparedDaily):
-                        prepared.append(value)
-                        value = len(value.frame)
-                    error = None
-                except TaskCancelled:
-                    raise
-                except Exception as exc:  # noqa: BLE001 -- 单股校验失败不阻止其它材料提交
-                    value, error = None, exc
-                results.append((index, code, value, error, pending))
-            # 批次事务失败直接退出，不推进其中任何成功断点；续跑会重取未提交项。
-            self._write_daily_batch(prepared, ctx=ctx)
-            return results
+            return self._commit_daily_materials(
+                entries, starts, end, ends=ends, limits=limits, ctx=ctx,
+            )
 
         from backend.datasource.baostock_executor import execution_scope
 
@@ -1247,6 +1254,76 @@ class IngestionService:
                 prepare=prepare, transform_batch=commit, batch_size=concurrency,
                 prefetch_next_batch=True, on_complete=on_complete,
             )
+
+    def _merge_valuation_batch(self, entries, source, windows, one, *, ctx=None, checks=None,
+                               force_review=()):
+        """日常与修复共用批次合并、按需多源核验和定向质检；提交后才可推进断点。"""
+        from backend.services.capital_quality import CAPITAL_ISSUE_TYPES, CapitalQualityService
+        from backend.services.share_capital import ShareCapitalService
+        from backend.services.share_capital_history import (
+            ShareCapitalHistoryService,
+            historical_joins,
+        )
+
+        frames, normalized = [], []
+        for index, code, frame, error, pending in entries:
+            if error is None:
+                try:
+                    prices = frame.attrs.get("source_valuation_prices") if frame is not None else None
+                    frame = self._validated_valuation_frame(code, frame, *windows[code])
+                    frame.attrs["source_valuation_prices"] = prices
+                    if not frame.empty:
+                        frames.append(frame)
+                except TaskCancelled:
+                    raise
+                except Exception as exc:  # noqa: BLE001 -- 失败材料沿原多来源链继续核验
+                    error = exc
+            normalized.append((index, code, frame, error, pending))
+        check_thread_cancel()
+        if frames:
+            ShareCapitalService(self.c).merge(
+                pd.concat(frames, ignore_index=True), "eastmoney_daily", reported=True,
+            )
+        codes = [entry[1] for entry in normalized]
+        bounds = pd.DataFrame([
+            {"code": code, "date_start": windows[code][0], "date_end": windows[code][1]}
+            for code in codes
+        ])
+        slots = ",".join("?" for _ in codes)
+        with self.c.temp_view(bounds, "capital_windows") as view:
+            review = set(self.c.query_df(
+                "SELECT DISTINCT b.code FROM (SELECT * FROM daily_bar "
+                f"WHERE code IN ({slots}) AND trade_date BETWEEN ? AND ?) b "
+                f"JOIN {view} w ON w.code=b.code AND b.trade_date BETWEEN w.date_start AND w.date_end "
+                + historical_joins(codes=codes)
+                + f"WHERE ({ShareCapitalService.review_predicate()}) UNION "
+                "SELECT code FROM stock_share_capital_event WHERE active "
+                f"AND code IN ({slots}) AND (effective_date IS NULL OR total_share<=0 "
+                "OR float_share<0 OR float_share>total_share)",
+                [*codes, bounds.date_start.min(), bounds.date_end.max(), *codes, *codes, *codes],
+            ).code)
+        results = []
+        for index, code, frame, error, pending in normalized:
+            check_thread_cancel()
+            if (error is not None or code in review or code in force_review
+                    or frame is None or frame.empty):
+                prices = frame.attrs.get("source_valuation_prices") if frame is not None else None
+                result = self._complete_capital_material(
+                    [(index, code, (frame, prices), error, pending)], source, one,
+                )[0]
+            else:
+                result = (index, code, int(frame.total_mv.notna().sum()), None, pending)
+            results.append(result)
+        # 后续维护失败时不发布任何本批成功检查点；重跑可幂等消费已落库事实。
+        CapitalQualityService(self.c).sync(codes)
+        ShareCapitalHistoryService(self.c).rebuild_many(codes)
+        if checks is not None:
+            remaining = CapitalQualityService(self.c).aggregate(codes)
+            bad = set(zip(remaining.issue_type, remaining.code, strict=True))
+            for code in codes:
+                for kind in (*CAPITAL_ISSUE_TYPES, "capital_raw_invalid"):
+                    checks[kind, code] = (kind, code) not in bad
+        return results
 
     # ── 估值/市值（总市值/总股本，补 G2）──
     def _history_window(self, years: int, ctx=None, *, end: date | None = None) -> tuple[date, date]:
@@ -1493,54 +1570,10 @@ class IngestionService:
                         ctx.flush()
         else:
             def _merge_batch(entries):
-                from backend.services.capital_quality import CapitalQualityService
-                frames, normalized = [], []
-                for index, code, frame, error, in_flight in entries:
-                    if error is None:
-                        try:
-                            frame = self._validated_valuation_frame(code, frame, trade_date, trade_date)
-                            if not frame.empty:
-                                frames.append(frame)
-                        except Exception as exc:
-                            error = exc
-                    normalized.append((index, code, frame, error, in_flight))
-                # 一批提交后才调用完成回调；事务失败不会把任何待提交股票登记成功。
-                check_thread_cancel()
-                if frames:
-                    ShareCapitalService(self.c).merge(pd.concat(frames, ignore_index=True),
-                                                     "eastmoney_daily", reported=True)
-                codes_in_batch = [entry[1] for entry in normalized]
-                review = set(self.c.query_df(
-                    "SELECT DISTINCT b.code FROM daily_bar b "
-                    "LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
-                    "LEFT JOIN daily_metrics m USING(code,trade_date) "
-                    "WHERE b.trade_date=? AND b.code IN (SELECT unnest(?::VARCHAR[])) "
-                    f"AND ({ShareCapitalService.review_predicate()}) UNION "
-                    "SELECT code FROM stock_share_capital_event WHERE active "
-                    "AND code IN (SELECT unnest(?::VARCHAR[])) AND "
-                    "(effective_date IS NULL OR total_share<=0 OR float_share<0 OR float_share>total_share)",
-                    [trade_date, codes_in_batch, codes_in_batch])["code"])
-                results = []
-                for index, code, frame, error, in_flight in normalized:
-                    try:
-                        # 缺口、拒用原始记录及来源冲突仍走既有多来源补采，不能以批量
-                        # 计算一致掩盖来源核验。源请求失败也继续尝试原有补充来源。
-                        if error is not None or code in review or frame is None or frame.empty:
-                            prices = frame.attrs.get("source_valuation_prices") if frame is not None else None
-                            prepared = self._complete_capital_material(
-                                [(index, code, (frame, prices), error, in_flight)], val_src, _one)[0]
-                            value, error = prepared[2], prepared[3]
-                        else:
-                            value = int(frame["total_mv"].notna().sum())
-                    except TaskCancelled:
-                        raise
-                    except Exception as exc:
-                        value, error = None, exc
-                    results.append((index, code, value, error, in_flight))
-                CapitalQualityService(self.c).sync(codes_in_batch)
-                from backend.services.share_capital_history import ShareCapitalHistoryService
-                ShareCapitalHistoryService(self.c).rebuild_many(codes_in_batch)
-                return results
+                return self._merge_valuation_batch(
+                    entries, val_src, {entry[1]: (trade_date, trade_date) for entry in entries},
+                    _one, ctx=ctx,
+                )
 
             processed = 0
 
@@ -2390,7 +2423,7 @@ class IngestionService:
 
         重采后仍缺的日期必须取得逐日 trade_status=0 证据才确认停牌。
         full_history 使用全历史应有日期；through 限定本轮目标日，防止跨日扩大范围。
-        _material 只回放当前股票的并发取源结果，停牌、清洗和股本合并仍走原校验。
+        _material 包含当前股票的预取材料与批次提交结果；剩余缺口仍走原停牌及备用源校验。
         """
         from backend.services.data_report import DataIntegrityReport
         from backend.services.history_quality import HistoryQualityService
@@ -2398,7 +2431,15 @@ class IngestionService:
         def missing():
             return (HistoryQualityService(rep.c).dates(code) if full_history
                     else rep.missing_days_for(code))
-        miss = missing()
+        committed = _material is not None and "daily_committed" in _material
+        if committed and (error := _material.get("daily_error")) is not None:
+            # 批次已尝试主源：校验/清洗异常仍交给原恢复入口计数、诊断及复位；
+            # 来源失败保留原降级语义，不重复消费已经尝试过的主源材料。
+            if not isinstance(error, DataSourceError) or not confirm:
+                raise error
+            if ctx:
+                ctx.log(f"{code} 主源补采未完成：{error}", "warn")
+        miss = _material["initial_missing"] if committed else missing()
         if through is not None:
             miss = [d for d in miss if d <= through]
         if not miss:
@@ -2423,25 +2464,26 @@ class IngestionService:
         pending = missing()
         if through is not None:
             pending = [d for d in pending if d <= through]
-        rows = 0
+        rows = _material["daily_committed"] if committed else 0
         if pending:
             if ctx:
                 ctx.check_cancel()
                 ctx.log(f"缺口收口：重采 {code} {min(pending)}~{max(pending)}（{len(pending)} 个待补开市日）")
-            try:
-                prefetched = ({"_prefetched": _material["bars"],
-                               "_fetch_error": _material["error"], "_st_material": status}
-                              if _material is not None else {})
-                if "suspension" in stage_errors:
-                    prefetched["status_unavailable"] = True
-                rows = self.ingest_one_daily(
-                    code, min(pending), max(pending), ctx=ctx, **prefetched,
-                )
-            except DataSourceError as exc:
-                if not confirm:
-                    raise
-                if ctx:
-                    ctx.log(f"{code} 主源补采未完成：{exc}", "warn")
+            if not committed:
+                try:
+                    prefetched = ({"_prefetched": _material["bars"],
+                                   "_fetch_error": _material["error"], "_st_material": status}
+                                  if _material is not None else {})
+                    if "suspension" in stage_errors:
+                        prefetched["status_unavailable"] = True
+                    rows = self.ingest_one_daily(
+                        code, min(pending), max(pending), ctx=ctx, **prefetched,
+                    )
+                except DataSourceError as exc:
+                    if not confirm:
+                        raise
+                    if ctx:
+                        ctx.log(f"{code} 主源补采未完成：{exc}", "warn")
             still = missing()
             if through is not None:
                 still = [d for d in still if d <= through]
@@ -2479,35 +2521,42 @@ class IngestionService:
         # ingest_valuation 又整股跳过已有 total_mv 的票 → 这些天会永久缺市值。故对实际补回的股顺带补
         # 一次估值（仅这只股 + 补回区间），一步到位。失败不影响补回主结果。
         if backfilled:
-            factors = self._recompute_clean([code], ctx=ctx)
-            if factors["fail"]:
-                raise RuntimeError(f"{code} 补回行情后复权因子重算失败")
+            factors_complete = (_material is not None and _material.get("factors_complete")
+                                and not self._dirty_daily_codes([code]))
+            # 批次清洗后备用源可能又写入行情；旧标记不能证明新行已完成因子收尾。
+            if not factors_complete:
+                factors = self._recompute_clean([code], ctx=ctx)
+                if factors["fail"]:
+                    raise RuntimeError(f"{code} 补回行情后复权因子重算失败")
             try:
                 with thread_cancel_scope(ctx.check_cancel if ctx else None):
-                    source = self._source_for("valuation")
-                    def collect(_item, source):
-                        return self._collect_capital_one(
-                            code, source, min(backfilled), max(backfilled),
-                        )
-                    if _material is not None and _material.get("capital") is not None:
-                        material, error = _material["capital"]
-                        result = self._complete_capital_material(
-                            [(1, code, material, error, 0)], source, collect)[0]
-                        if result[3] is not None:
-                            raise result[3]
-                    else:
-                        collect(code, source)
+                    self._reconcile_capital_material(code, backfilled, _material)
             except TaskCancelled:
                 raise
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001 -- 保留行情并报告关联股本失败
                 stage_errors["capital"] = str(e)
-                log.warning("%s 收口补市值失败(不影响补回): %s", code, e)
                 if ctx:
                     ctx.log(f"{code} 行情已补回，股本市值补采失败：{e}", "warn")
             from backend.services.capital_quality import CapitalQualityService
             CapitalQualityService(rep.c).sync([code])
         return {"miss": miss, "backfilled": backfilled, "confirmed": confirmed, "rows": rows,
                 "stage_errors": stage_errors}
+
+    def _reconcile_capital_material(self, code, backfilled, material):
+        """剩余缺口需要备用源补齐时，沿原区间消费预取估值，保留多源核验。"""
+        source = self._source_for("valuation")
+        def collect(_item, source):
+            return self._collect_capital_one(
+                code, source, min(backfilled), max(backfilled),
+            )
+        if material is not None and material.get("capital") is not None:
+            material, error = material["capital"]
+            result = self._complete_capital_material(
+                [(1, code, material, error, 0)], source, collect)[0]
+            if result[3] is not None:
+                raise result[3]
+        else:
+            collect(code, source)
 
     def _confirm_gap_suspensions(self, code, dates, report, *, ctx=None, material=None):
         """只确认缺口日期上的一致停牌证据；空值、未知、相反重复记录均不算证据。"""
@@ -3067,7 +3116,12 @@ class IngestionService:
         except Exception as exc:  # noqa: BLE001 - 后续来源继续，最后向任务报告失败
             errors.append(str(exc))
         service = ShareCapitalService(self.c)
-        from backend.services.share_capital_history import ShareCapitalHistoryService
+        from backend.services.share_capital_history import (
+            ShareCapitalHistoryService,
+            historical_joins,
+        )
+        joins = historical_joins(bounded=True)
+        join_params = [code, start, end] * 3
         history_service = ShareCapitalHistoryService(self.c)
         dates = self.c.query_df(
             "SELECT trade_date FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ?",
@@ -3078,10 +3132,10 @@ class IngestionService:
             [code])["source"])
         if diagnostics is None and not errors and not invalid_raw_sources:
             remaining = self.c.query_df(
-                "SELECT count(*) n FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
-                "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE b.code=? AND b.trade_date BETWEEN ? AND ? "
-                f"AND ({service.review_predicate()})",
-                [code, start, end]).iloc[0, 0]
+                "SELECT count(*) n FROM (SELECT * FROM daily_bar WHERE code=? "
+                "AND trade_date BETWEEN ? AND ?) b " + joins
+                + f"WHERE ({service.review_predicate()})",
+                join_params).iloc[0, 0]
             if remaining == 0:
                 history_service.rebuild(code)
                 from backend.services.capital_quality import CapitalQualityService
@@ -3113,10 +3167,10 @@ class IngestionService:
         exchange = getattr(source, "get_exchange_share_capital", None)
         if exchange is not None:
             candidates = self.c.query_df(
-                "SELECT b.trade_date FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
-                "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE b.code=? AND b.trade_date BETWEEN ? AND ? "
-                "AND (s.total_share IS NULL OR s.total_source IN ('eastmoney_events','sina_events') OR "
-                "starts_with(s.total_source,'sse_conversion_100share:'))", [code,start,end])["trade_date"]
+                "SELECT b.trade_date FROM (SELECT * FROM daily_bar WHERE code=? "
+                "AND trade_date BETWEEN ? AND ?) b " + joins + "WHERE "
+                "(s.total_share IS NULL OR s.total_source IN ('eastmoney_events','sina_events') OR "
+                "starts_with(s.total_source,'sse_conversion_100share:'))", join_params)["trade_date"]
             if not candidates.empty:
                 try:
                     converted = exchange(code, candidates)
@@ -3138,10 +3192,9 @@ class IngestionService:
                          f"(abs(m.float_mv-s.float_share*b.close)>greatest(abs(m.float_mv)*{MV_REL_TOLERANCE},1) "
                          f"OR abs(m.reported_float_mv-s.float_share*b.close)>greatest(abs(m.reported_float_mv)*{MV_REL_TOLERANCE},1)))")
             missing = self.c.query_df(
-                "SELECT b.trade_date FROM daily_bar b LEFT JOIN stock_share_capital_daily s "
-                "USING(code,trade_date) LEFT JOIN daily_metrics m USING(code,trade_date) "
-                f"WHERE b.code=? AND b.trade_date BETWEEN ? AND ? AND ({condition})",
-                [code, start, end])["trade_date"]
+                "SELECT b.trade_date FROM (SELECT * FROM daily_bar WHERE code=? "
+                "AND trade_date BETWEEN ? AND ?) b " + joins + f"WHERE ({condition})",
+                join_params)["trade_date"]
             # 原始源记录异常也必须重新请求，不能因逐日字段已被其它来源补齐而跳过修复。
             if missing.empty and source_label in invalid_raw_sources:
                 missing = dates
@@ -3173,19 +3226,18 @@ class IngestionService:
         history_service.rebuild(code)
         evidence["daily_facts"] = {
             "daily_missing": self.c.query_df(
-                "SELECT count(*) n FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
-                "WHERE b.code=? AND (s.total_share IS NULL OR s.float_share IS NULL)", [code]).iloc[0,0].item()}
+                "SELECT count(*) n FROM (SELECT * FROM daily_bar WHERE code=?) b "
+                "LEFT JOIN (SELECT * FROM stock_share_capital_daily WHERE code=?) s USING(code,trade_date) "
+                "WHERE s.total_share IS NULL OR s.float_share IS NULL", [code] * 2).iloc[0,0].item()}
 
         if diagnostics is not None:
             from backend.services.capital_quality import capital_predicates
-            from backend.services.share_capital_history import historical_joins
             predicates = capital_predicates(historical=True, include_sources=True)
             gaps = self.c.query_df(
                 "SELECT b.trade_date,b.close,s.total_share,s.float_share,m.total_mv,m.float_mv,"
                 "m.reported_total_mv,m.reported_float_mv,m.reported_total_close,m.reported_float_close "
                 "FROM (SELECT * FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ?) b "
-                + historical_joins() + "WHERE (" + " OR ".join(predicates.values()) + ")",
-                [code, start, end])
+                + joins + "WHERE (" + " OR ".join(predicates.values()) + ")", join_params)
             reasons = {}
             primary = facts.assign(trade_date=pd.to_datetime(facts.trade_date).dt.date).set_index("trade_date") if not facts.empty else None
             exchange_totals = (dict(zip(pd.to_datetime(converted.trade_date).dt.date,
@@ -3260,7 +3312,7 @@ class IngestionService:
             from backend.services.capital_quality import capital_predicates
             invalid = self.c.query_df(
                 "SELECT b.trade_date FROM (SELECT * FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ?) b "
-                + historical_joins() + f"WHERE ({predicates['capital_invalid']}) ORDER BY b.trade_date", [code,start,end])
+                + joins + f"WHERE ({predicates['capital_invalid']}) ORDER BY b.trade_date", join_params)
             if not invalid.empty:
                 reasons["capital_invalid"] = {"count": len(invalid),
                     "samples": [str(pd.Timestamp(day).date()) for day in invalid.trade_date.head(3)]}
@@ -4151,7 +4203,10 @@ class IngestionService:
                 "UPDATE daily_bar AS b SET "
                 f"adj_factor_clean = v.adj_factor_clean, pre_close = v.pre_close{marker_sql} "
                 f"FROM {v} AS v "
-                "WHERE b.code = v.code AND b.trade_date = v.trade_date"
+                "WHERE b.code = v.code AND b.trade_date = v.trade_date "
+                "AND b.code=? AND b.trade_date BETWEEN ? AND ?",
+                [code, pd.Timestamp(marked.trade_date.min()).date(),
+                 pd.Timestamp(marked.trade_date.max()).date()],
             )
             # 指标共享缓存按行情更新日志版本读取；纯因子重算也必须推进版本。
             self.repo.log_update(

@@ -103,7 +103,12 @@ npm test -- src/layout/__tests__/pageRegistry.spec.ts
 
 全量批处理、超长参数列表、窗口/聚合 SQL 或明确规模门槛的改动，小夹具之外必须补代表性规模回归。阶段验收通过真实入口或等价规模覆盖输入加载、计算、落表及重跑结果；纯算法基准、Mock 响应和页面结果不能替代此链路。
 
-质量修复并发使用 `backend/tests/test_quality_repair_parallel.py`：以固定来源响应走真实 `_h_fix`、DuckDB 落库、因子收尾和台账复检，比较串并行结果、来源请求数和工作并发，并覆盖同股去重、停牌、部分失败及取消续跑。固定网络延时下的墙钟耗时仅用于对照，不代表真实来源或全市场吞吐已达标；真实接口验证另按来源额度和目标环境执行。
+质量修复验证入口：
+
+- `backend/tests/test_quality_repair_parallel.py`：落库、复检及失败续跑。
+- `backend/tests/test_quality_repair_scale.py`：真实 API 与规模回归，执行见[CI 专项](../architecture/continuous-integration.md)。
+
+测试固定外部响应，耗时仅用于本地处理成本对比，不代表真实来源吞吐。
 
 ### 页面与响应式实测
 
