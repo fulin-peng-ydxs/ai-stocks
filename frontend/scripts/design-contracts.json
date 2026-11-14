@@ -2623,6 +2623,11 @@
   },
   "styleDelegates": [
     {
+      "tags": ["ElConfigProvider"],
+      "owner": "App.vue",
+      "reason": "应用根级消息策略配置，不生成 DOM 或样式；消息实体继续消费 ElMessage 的全局视觉规则"
+    },
+    {
       "tags": [
         "TradeLedgerEventTable"
       ],

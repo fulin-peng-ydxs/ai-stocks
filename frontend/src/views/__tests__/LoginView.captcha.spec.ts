@@ -61,6 +61,53 @@ beforeEach(() => {
 })
 
 describe('LoginView captcha', () => {
+  it.each([
+    ['查询失败 SQL: SELECT password FROM users', '账号或密码错误'],
+    ['认证失败 https://upstream.invalid/login', '账号或密码错误'],
+    ['账号已被禁用', '账号已被禁用'],
+  ])('登录字段反馈过滤技术错误，业务原因仍可展示：%s', async (msg, expected) => {
+    vi.mocked(authApi.getPublicConfig).mockResolvedValue({ require_email_code: false, login_captcha_enabled: false, captcha_after_fails: 3, auto_scale_exponent: 0.1, appearance_presets: [] })
+    login.mockRejectedValueOnce({ response: { data: { msg } } })
+    const wrapper = mountLogin()
+    await flushPromises()
+    await wrapper.get('input[name="account"]').setValue('debug_normal')
+    await wrapper.get('input[name="password"]').setValue('test-password')
+    await wrapper.get('button.login-primary').trigger('click')
+    await flushPromises()
+    expect(login).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain(expected)
+    if (msg !== expected) expect(wrapper.text()).not.toContain(msg)
+    expect(wrapper.get('button.login-primary').attributes('disabled')).toBeUndefined()
+  })
+
+  it('注册失败与验证码发送失败均过滤技术原文，并允许重新提交', async () => {
+    vi.mocked(authApi.getPublicConfig).mockResolvedValue({ require_email_code: true, login_captcha_enabled: false, captcha_after_fails: 3, auto_scale_exponent: 0.1, appearance_presets: [] })
+    const failure = { uiMessage: '请求失败 SQL: SELECT secret FROM users' }
+    register.mockRejectedValueOnce(failure)
+    vi.mocked(authApi.sendEmailCode).mockRejectedValueOnce(failure)
+    const wrapper = mountLogin()
+    await flushPromises()
+    await wrapper.get('button.login-link').trigger('click')
+    await wrapper.get('input[name="account"]').setValue('debug_normal')
+    await wrapper.get('input[name="password"]').setValue('test-password')
+    await wrapper.get('input[name="confirm"]').setValue('test-password')
+    await wrapper.get('input[name="email"]').setValue('debug@example.com')
+    await wrapper.get('input[name="emailCode"]').setValue('123456')
+    await wrapper.get('button.login-primary').trigger('click')
+    await flushPromises()
+    expect(register).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('操作失败，请稍后重试')
+    expect(wrapper.text()).not.toContain('SELECT')
+    expect(wrapper.get('button.login-primary').attributes('disabled')).toBeUndefined()
+    await wrapper.get('input[name="email"]').setValue('debug@example.com')
+    await wrapper.get('button.send').trigger('click')
+    await flushPromises()
+    expect(authApi.sendEmailCode).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('验证码发送失败，请稍后重试')
+    expect(wrapper.text()).not.toContain('SELECT')
+    expect(wrapper.get('button.send').attributes('disabled')).toBeUndefined()
+  })
+
   it('只有一个研究空间预设时不显示空操作切换按钮', async () => {
     ;(authApi.getPublicConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
       require_email_code: true,

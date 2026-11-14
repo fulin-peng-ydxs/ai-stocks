@@ -12,7 +12,7 @@ from datetime import date, timedelta
 import pandas as pd
 import pytest
 
-from backend.common.exceptions import StorageError
+from backend.common.exceptions import DataSourceError, StorageError
 from backend.services.async_task import TaskCancelled
 from backend.services.board_ingest import BoardIngestService
 from backend.storage.ddl import init_db
@@ -298,7 +298,7 @@ def test_incomplete_snapshot_not_applied(tmp_path):
     svc, c = _make_service(tmp_path, src)
     c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, member_count) "
               "VALUES ('309121','AI PC','concept',TRUE, 10)")
-    with pytest.raises(Exception):
+    with pytest.raises(DataSourceError):
         svc._ingest_one_member("309121", "concept", date(2026, 1, 5))
     # board_member 不落库，member_count 不刷新
     assert len(c.query_df("SELECT 1 FROM board_member")) == 0
@@ -484,7 +484,7 @@ def test_unmatched_quality_idempotent_and_net_validation(tmp_path):
 def test_member_upsert_transaction_atomicity(tmp_path):
     """成分落库事务原子性：中途失败整体回滚（board_member 与 member_count 都不写）。"""
     src = _FakeSource({"309121": ["300476"]})
-    svc, c = _make_service(tmp_path, src)
+    _svc, c = _make_service(tmp_path, src)
     c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
               "VALUES ('309121','AI PC','concept',TRUE)")
     # 事务内先写成分，再抛错 → 回滚（board_member 与 member_count 都不落）
@@ -509,15 +509,14 @@ def test_write_lock_classification():
 def test_member_upsert_member_count_atomic(tmp_path):
     """成分落库与 member_count 同事务：中途失败整体回滚，member_count 不残留（R2 原子性）。"""
     src = _FakeSource({"309121": ["300476", "603936", "002913"]})
-    svc, c = _make_service(tmp_path, src)
+    _svc, c = _make_service(tmp_path, src)
     c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
               "VALUES ('309121','AI PC','concept',TRUE)")
     # 事务内先写成分 + member_count，再抛错 → 整体回滚
-    with pytest.raises(StorageError):
-        with c.transaction():
-            c.execute("INSERT INTO board_member (board_code, code) VALUES ('309121','300476.SZ')")
-            c.execute("UPDATE board_dict SET member_count=1 WHERE board_code='309121'")
-            raise RuntimeError("注入失败")
+    with pytest.raises(StorageError), c.transaction():
+        c.execute("INSERT INTO board_member (board_code, code) VALUES ('309121','300476.SZ')")
+        c.execute("UPDATE board_dict SET member_count=1 WHERE board_code='309121'")
+        raise RuntimeError("注入失败")
     # 回滚后：board_member 无新增行、member_count 无残留（仍 NULL/原值）
     assert len(c.query_df("SELECT 1 FROM board_member")) == 0
     mc = _member_count(c, "309121")
@@ -580,7 +579,7 @@ def test_fund_checkpoint_legacy_and_scope(tmp_path):
 
     # 新格式指定子集：scope=md5(309121)，done_keys 与之匹配 → 跳过
     from hashlib import md5
-    scope = md5("309121".encode()).hexdigest()[:8]
+    scope = md5(b"309121").hexdigest()[:8]
     scoped = _Ctx({"fund_snapshot_date": "2026-01-05",
                    "fund_done_keys": [f"{scope}:concept:即时"]})
     r2 = svc.ingest_board_fund_flow(date(2026, 1, 5), periods=("即时",),
@@ -588,7 +587,7 @@ def test_fund_checkpoint_legacy_and_scope(tmp_path):
     assert r2["rows"] == 0
 
     # 改范围续跑：旧 scope 键（309121）与新区间（302035）不交 → 重拉 302035 范围资金流
-    other_scope = md5("302035".encode()).hexdigest()[:8]
+    other_scope = md5(b"302035").hexdigest()[:8]
     changed = _Ctx({"fund_snapshot_date": "2026-01-05",
                     "fund_done_keys": [f"{scope}:concept:即时"]})
     r3 = svc.ingest_board_fund_flow(date(2026, 1, 5), periods=("即时",),
@@ -1235,6 +1234,7 @@ def test_parallel_members_market_scale_main_thread_writes_and_source_cleanup(tmp
     """481板块走真实服务读清单→并发取源→串行完整性门禁/事务落表，验证工作线程隔离。"""
     import threading
     import time
+
     from backend.config.settings import Settings
 
     settings = Settings()
@@ -1356,6 +1356,7 @@ def test_member_concurrency_rejects_invalid_values(tmp_path, concurrency):
 def test_board_task_passes_concurrency_to_collection_entry(monkeypatch):
     """任务并发覆盖送达正式编排入口，强制刷新参数保持独立。"""
     from types import SimpleNamespace
+
     from backend.services import ingest
     from backend.services.async_task import _h_board
 
@@ -1388,6 +1389,7 @@ def test_parallel_bar_market_scale_bounds_and_main_thread_writes(tmp_path, monke
     """481板块走完整服务，源端越界行被拦截，线程会话隔离且只有主线程落库。"""
     import threading
     import time
+
     from backend.config.settings import Settings
 
     settings = Settings()

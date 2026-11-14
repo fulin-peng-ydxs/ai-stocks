@@ -6,6 +6,8 @@
  * 源码强制。新增页面若违规，`npm test` 直接失败，不靠人肉 review 或浏览器肉眼检查。
  */
 import { describe, expect, it } from 'vitest'
+import { parse as parseSfc } from '@vue/compiler-sfc'
+import { baseParse, type RootNode, type TemplateChildNode } from '@vue/compiler-dom'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { PAGE_DRAWER_WIDTHS } from '@/components/pageDrawerSize'
@@ -62,6 +64,23 @@ const allVueFiles = vueFiles(SOURCE_DIR)
 const rel = (f: string) => relative(VIEWS_DIR, f).split('\\').join('/')
 const sourceRel = (f: string) => relative(SOURCE_DIR, f).split('\\').join('/')
 
+// 只检查路由页直接声明的抽屉；共享组件的宿主来自消费页，由浏览器装配验证。
+function unhostedDrawers(template: string): string[] {
+  const result: string[] = []
+  function visit(node: RootNode | TemplateChildNode, hosted = false) {
+    if (node.type !== 0 && node.type !== 1) return
+    if (node.type === 1) {
+      if (['PageSettingsDrawer', 'PageDrawer', 'AppDetailDrawer'].includes(node.tag) && !hosted) {
+        result.push(node.tag)
+      }
+      hosted ||= node.tag === 'LayoutHost'
+    }
+    node.children.forEach(child => visit(child, hosted))
+  }
+  visit(baseParse(template))
+  return result
+}
+
 describe('布局契约守卫（M6）', () => {
   it('页面设置业务分组声明稳定且同页唯一的记忆标识', () => {
     const offenders: string[] = []
@@ -115,6 +134,23 @@ describe('布局契约守卫（M6）', () => {
       }
     }
     expect(offenders, `以下页面手写了布局契约类，应改用 <LayoutHost>：\n${offenders.join('\n')}`).toEqual([])
+  })
+
+  it('路由页直接声明的抽屉必须位于 LayoutHost 内，复用页面追加目标', () => {
+    const router = readFileSync(resolve(SOURCE_DIR, 'router/index.ts'), 'utf8')
+    const entries = [...router.matchAll(/import\('@\/views\/([^']+\.vue)'\)/g)]
+    expect(entries.length).toBeGreaterThan(0)
+    const offenders = entries.flatMap(([, file]) => {
+      const { descriptor } = parseSfc(readFileSync(resolve(VIEWS_DIR, file), 'utf8'))
+      return unhostedDrawers(descriptor.template?.content ?? '').map(tag => `${file}: ${tag}`)
+    })
+    expect(offenders).toEqual([])
+  })
+
+  it('抽屉宿主检查识别阶段外的悬空抽屉，允许 overlays 中的嵌套与条件内容', () => {
+    expect(unhostedDrawers('<LayoutHost v-if="ready" /><PageSettingsDrawer />')).toEqual(['PageSettingsDrawer'])
+    expect(unhostedDrawers('<section><AppDetailDrawer /></section>')).toEqual(['AppDetailDrawer'])
+    expect(unhostedDrawers('<LayoutHost><template #overlays><section v-if="ready"><PageSettingsDrawer /></section></template></LayoutHost>')).toEqual([])
   })
 
   it('registry 页面不得保留脚手架占位内容', () => {

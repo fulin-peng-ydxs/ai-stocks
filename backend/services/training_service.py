@@ -22,6 +22,7 @@ import pandas as pd
 from backend.auth.context import get_current_owner
 from backend.backtest.broker import can_buy_at_open, can_sell_at_open
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.config import get_effective_settings
 from backend.indicators.compute import compute_macd
 from backend.market_rules import price_limit_pct_for
@@ -38,7 +39,7 @@ GRADE_BANDS = [(90, "S"), (80, "A"), (70, "B"), (60, "C")]
 
 
 def _now() -> datetime:
-    return datetime.now()
+    return shanghai_now_naive()
 
 
 def _to_date(v) -> date:

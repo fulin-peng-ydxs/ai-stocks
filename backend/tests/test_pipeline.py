@@ -9,6 +9,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
+from backend.common.timeutil import shanghai_now_naive
 from backend.scheduler.scheduler import (
     ScheduledJobService,
     compile_trigger,
@@ -187,9 +188,8 @@ def test_schedule_delay_and_retry_count_reject_decimals():
 
 def _insert_terminal_task(c, *, tid: str, job_id: str, status: str,
                           retry_count: int = 0, attempt: int = 1):
-    from datetime import datetime
 
-    now = datetime.now()
+    now = shanghai_now_naive()
     c.execute(
         "INSERT INTO async_task "
         "(id,task_type,params,status,progress,message,trigger_source,job_id,job_name,chain_id,"
@@ -709,7 +709,6 @@ def test_board_schedulable_and_catalog(tmp_path):
 def test_source_status_includes_board_source(monkeypatch):
     """数据源健康列表把同花顺标为独立板块源，不混入行情主备源。"""
     from backend.config.settings import Settings
-
     from backend.services import data_sources, ths_cookie_status
 
     class _Repo:
@@ -732,7 +731,6 @@ def test_source_status_includes_board_source(monkeypatch):
 def test_source_status_persists_latest_probe_and_keeps_last_success(monkeypatch):
     """失败测试更新最近状态和原因，但保留此前成功时间。"""
     from backend.config.settings import Settings
-
     from backend.services import data_sources, ths_cookie_status
 
     class _Repo:
@@ -786,13 +784,14 @@ def test_source_status_persists_latest_probe_and_keeps_last_success(monkeypatch)
 
 def test_partial_daily_update_still_runs_quality_and_reports_failure(monkeypatch):
     from types import SimpleNamespace
+
     from backend.services import data_report
     seen = []
     monkeypatch.setattr('backend.services.IngestionService', lambda: SimpleNamespace(
         update=lambda **kw: {'ok':10,'fail':0,'stage_failures':{'valuation':'timeout'}}))
     monkeypatch.setattr(data_report, 'DataIntegrityReport', lambda c: SimpleNamespace(
         scan_quality_issues=lambda: seen.append('quality') or {},
-        scan_market_index_quality=lambda: {}, scan_board_quality=lambda: {}))
+        scan_market_index_quality=dict, scan_board_quality=dict))
     with DuckDBClient(':memory:') as c:
         init_db(c)
         c.execute("INSERT INTO daily_bar(code,trade_date,close) VALUES ('A.SH','2026-01-05',10)")

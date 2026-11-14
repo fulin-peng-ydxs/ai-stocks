@@ -132,20 +132,20 @@ export interface SectorWatchlist {
   total: number
 }
 
-export function listSectorWatchlist(): Promise<SectorWatchlist> {
-  return http.get('/sectors/watchlist')
+export function listSectorWatchlist(config?: AppRequestConfig): Promise<SectorWatchlist> {
+  return http.get('/sectors/watchlist', config)
 }
 
 export function listWatchlistSectors(params?: SectorListParams): Promise<SectorList> {
   return http.get('/sectors/watchlist/markets', { params })
 }
 
-export function addSectorWatchlist(boardCode: string): Promise<{ board_code: string; added: boolean }> {
-  return http.post('/sectors/watchlist', { board_code: boardCode })
+export function addSectorWatchlist(boardCode: string, config?: AppRequestConfig): Promise<{ board_code: string; added: boolean }> {
+  return http.post('/sectors/watchlist', { board_code: boardCode }, config)
 }
 
-export function removeSectorWatchlist(boardCode: string): Promise<{ board_code: string; removed: boolean }> {
-  return http.delete(`/sectors/watchlist/${encodeURIComponent(boardCode)}`)
+export function removeSectorWatchlist(boardCode: string, config?: AppRequestConfig): Promise<{ board_code: string; removed: boolean }> {
+  return http.delete(`/sectors/watchlist/${encodeURIComponent(boardCode)}`, config)
 }
 
 export function getSector(code: string, tradeDate?: string): Promise<SectorDetail> {

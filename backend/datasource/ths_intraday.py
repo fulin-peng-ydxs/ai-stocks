@@ -34,12 +34,12 @@ def fetch_ths_minutes(
         },
     )
     response.raise_for_status()
-    match = re.fullmatch(re.escape(callback) + r"\((.*)\);?", response.text.strip(), re.S)
+    match = re.fullmatch(re.escape(callback) + r"\((.*)\);?", response.text.strip(), re.DOTALL)
     if match is None:
         raise ValueError("同花顺分钟响应标的、周期或年份与请求不符")
     payload = json.loads(match[1])
     if not isinstance(payload, dict) or not isinstance(payload.get("data"), str):
-        raise ValueError("同花顺分钟响应缺少 data 字段")
+        raise TypeError("同花顺分钟响应缺少 data 字段")
     rows = []
     for record in payload["data"].split(";"):
         if not record:

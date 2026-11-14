@@ -57,6 +57,15 @@ describe('auth store', () => {
     expect(auth.menusStatus).toBe('error')
   })
 
+  it('调用方接管刷新失败提示时仍关闭权限边界，并透传现有请求选项', async () => {
+    const auth = useAuthStore()
+    auth.menusStatus = 'ready'
+    const getMe = vi.spyOn(authApi, 'getMe').mockRejectedValueOnce(new Error('failed'))
+    await expect(auth.fetchMe({ background: true }, { skipGlobalError: true })).rejects.toThrow('failed')
+    expect(getMe).toHaveBeenCalledWith({ skipGlobalError: true })
+    expect(auth.menusStatus).toBe('error')
+  })
+
   it('logout sends the latest persisted refresh token after silent refresh rotation', async () => {
     writeAuth({
       accessToken: 'new-access',

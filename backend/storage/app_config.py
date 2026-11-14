@@ -14,6 +14,7 @@ import math
 from datetime import datetime
 
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.security.config_crypto import (
     ConfigEncryptionError,
     decrypt_config_value,
@@ -278,7 +279,7 @@ class AppConfigRepo:
 
     def set_ths_cookie_validation(self, value: dict) -> None:
         """保存不含 Cookie 明文的真实校验结果。"""
-        now = datetime.now()  # noqa: DTZ005 -- 与 app_config 既有无时区时间口径一致
+        now = shanghai_now_naive()
         self.pg.execute(
             "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s) "
             "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
@@ -307,7 +308,7 @@ class AppConfigRepo:
                 stored_values[path] = encrypt_config_value(str(value))
             except ConfigEncryptionError as exc:
                 raise ConfigValidationError(str(exc)) from exc
-        now = datetime.now()
+        now = shanghai_now_naive()
         # 整批值与 Cookie 旧验证状态原子提交；快照读取不能看到半批配置。
         with self.pg.transaction() as conn, conn.cursor() as cur:
             for path, value in stored_values.items():
@@ -353,7 +354,7 @@ class AppConfigRepo:
         if "ths_board.login_cookie" in normalized:
             self.clear_ths_cookie_validation()
         self._invalidate_requests(normalized)
-        return int(len(df))
+        return len(df)
 
     @staticmethod
     def _invalidate_requests(paths):

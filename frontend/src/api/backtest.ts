@@ -1,5 +1,5 @@
 // 回测 API（对应 backend/api/backtest.py）
-import http from './client'
+import http, { type AppRequestConfig } from './client'
 import type {
   AssetBrowseParams,
   AssetBrowseResult,
@@ -163,14 +163,14 @@ export function runRobust(body: {
   param?: string
   values?: number[]
   split_date?: string
-}): Promise<ParamSweepResult | InOutSampleResult> {
+}, config?: AppRequestConfig): Promise<ParamSweepResult | InOutSampleResult> {
   // 稳健性会跑多次回测，耗时更长，单独放宽超时
-  return http.post('/backtest/robust', body, { timeout: 600000 })
+  return http.post('/backtest/robust', body, { timeout: 600000, ...config })
 }
 
 // 运行回测（同步长任务：全市场逐日打分+事件驱动，全年约 45s，远超默认 30s 超时）
-export function runBacktest(body: RunParams): Promise<StrategyResult | Layers> {
-  return http.post('/backtest/run', body, { timeout: 300000 })
+export function runBacktest(body: RunParams, config?: AppRequestConfig): Promise<StrategyResult | Layers> {
+  return http.post('/backtest/run', body, { timeout: 300000, ...config })
 }
 
 // 运行前查重：同条件（含方案版本）是否已有历史记录
@@ -179,8 +179,8 @@ export interface PrepareResult {
   versions: Record<string, number | null>
   duplicate: { run_id: string; kind: string; date_start: string; date_end: string; created_at: string } | null
 }
-export function prepareBacktest(body: RunParams): Promise<PrepareResult> {
-  return http.post('/backtest/prepare', body)
+export function prepareBacktest(body: RunParams, config?: AppRequestConfig): Promise<PrepareResult> {
+  return http.post('/backtest/prepare', body, config)
 }
 
 // 交易日历（已有行情的真实交易日），供日历组件只放行交易日
@@ -194,8 +194,9 @@ export function getTradeDates(): Promise<{
 }
 
 // 页头精确选择器只承载最近记录，避免不同签名长期积累后一次性 JOIN、传输和渲染全量历史。
-export function listRuns(kind?: string, source?: string, limit = 100): Promise<{ runs: RunSummary[] }> {
+export function listRuns(kind?: string, source?: string, limit = 100, config?: AppRequestConfig): Promise<{ runs: RunSummary[] }> {
   return http.get('/backtest/runs', {
+    ...config,
     params: {
       ...(kind ? { kind } : {}),
       ...(source && source !== 'all' ? { source } : {}),
@@ -227,23 +228,24 @@ export async function browseRuns(
   }
 }
 
-export function deleteRun(runId: string): Promise<{ deleted: string }> {
-  return http.delete(`/backtest/runs/${runId}`)
+export function deleteRun(runId: string, config?: AppRequestConfig): Promise<{ deleted: string }> {
+  return http.delete(`/backtest/runs/${runId}`, config)
 }
 
 export function setRunVisibility(
   runId: string,
   visibility: 'private' | 'tenant' | 'public',
+  config?: AppRequestConfig,
 ): Promise<RunSummary> {
-  return http.post(`/backtest/runs/${runId}/visibility`, { visibility })
+  return http.post(`/backtest/runs/${runId}/visibility`, { visibility }, config)
 }
 
-export function getRun(runId: string): Promise<{
+export function getRun(runId: string, config?: AppRequestConfig): Promise<{
   run: RunSummary
   metrics: BacktestMetrics
   layers: Layers | null
   equity: EquityPoint[]
   trades: TradeRow[]
 }> {
-  return http.get(`/backtest/runs/${runId}`)
+  return http.get(`/backtest/runs/${runId}`, config)
 }

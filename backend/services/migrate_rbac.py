@@ -30,9 +30,9 @@ from backend.common.logging import get_logger
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.pg_client import get_pg_client
 from backend.storage.pg_ddl import (
+    _ASSET_TABLES,
     DEFAULT_OWNER_USER_ID,
     DEFAULT_TENANT_ID,
-    _ASSET_TABLES,
     asset_pk_mismatches,
     init_pg_db,
     recreate_asset_tables,
@@ -113,10 +113,9 @@ def _load_table(pg, table: str, df: pd.DataFrame) -> int:
     cols = list(df.columns)
     placeholders = "(" + ", ".join(["%s"] * len(cols)) + ")"
     sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES {placeholders}"  # 已清空,无需 ON CONFLICT
-    with pg.transaction() as conn:
-        with conn.cursor() as cur:
-            cur.executemany(sql, _to_pg_rows(df))
-            return cur.rowcount if cur.rowcount and cur.rowcount > 0 else len(df)
+    with pg.transaction() as conn, conn.cursor() as cur:
+        cur.executemany(sql, _to_pg_rows(df))
+        return cur.rowcount if cur.rowcount and cur.rowcount > 0 else len(df)
 
 
 def _orphans_duck(duck, child: str, parent: str, pairs: list[tuple[str, str]]) -> int:
@@ -189,11 +188,10 @@ def migrate_rbac(dry_run: bool = True, recreate: bool = False) -> dict:
         ]
         ac = ac[ac["value"].notna()]
     if not dry_run and not ac.empty:
-        with pg.transaction() as conn:
-            with conn.cursor() as cur:
-                cur.executemany(
-                    "INSERT INTO app_config (key,value,updated_at) VALUES (%s,%s,%s) "
-                    "ON CONFLICT (key) DO NOTHING", _to_pg_rows(ac))
+        with pg.transaction() as conn, conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO app_config (key,value,updated_at) VALUES (%s,%s,%s) "
+                "ON CONFLICT (key) DO NOTHING", _to_pg_rows(ac))
     report["app_config"] = {"duck": len(ac), "migrated": 0 if dry_run else len(ac), "problems": []}
 
     # 核对：迁移后 PG default 租户行数应等于 DuckDB 源行数；归属列非空

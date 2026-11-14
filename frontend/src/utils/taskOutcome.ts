@@ -15,12 +15,26 @@ function count(value: unknown): number | undefined {
 export function taskOutcomeDisplay(task: Pick<AsyncTask, 'task_type' | 'status' | 'result' | 'message' | 'params' | 'cancel_requested_at'>) {
   const cancelling = task.status === 'running' && Boolean(task.cancel_requested_at)
   const executionLabel = enumText(STATUS_LABEL, task.status, '状态未识别')
+  const result = task.result
+  const failedRepair = task.task_type === 'fix' && (task.status === 'failed'
+    || (task.status === 'done' && result?.ok === false))
+  // 新任务提供安全的失败原因；旧任务仍保留原有可读文案。
+  const failureReason = failedRepair ? businessMessage(result?.failure_reason,
+    businessMessage(task.message, '')) : ''
+  // 修复的技术原文仍由日志承接，但普通反馈须保留结果及质量台账的处置入口。
+  const repairFallback = task.status === 'done' && task.result?.ok === true
+    ? '恢复完成，复检通过'
+    : task.status === 'interrupted'
+      ? '恢复已中断，未完成的问题仍待处理，可重新修复'
+      : '恢复未完成，问题仍待处理；可查看该问题的诊断详情后重试'
   const original = {
     label: cancelling ? '终止中' : executionLabel,
-    tone: cancelling ? 'warning' as const : (STATUS_TONE[task.status] ?? 'info'),
-    message: businessMessage(task.message, '任务执行结果请查看日志'),
+    tone: cancelling ? 'warning' as const : failedRepair ? 'danger' as const
+      : (STATUS_TONE[task.status] ?? 'info'),
+    message: failureReason || businessMessage(task.message, task.task_type === 'fix'
+      && ['done', 'failed', 'interrupted'].includes(task.status)
+      ? repairFallback : '任务执行结果请查看日志'),
   }
-  const result = task.result
   let display = original
   // 旧任务没有结构化计数时保留原说明，不从中文日志猜测结果。
   if (result && (task.status === 'done' || task.status === 'failed')) {
@@ -39,7 +53,9 @@ export function taskOutcomeDisplay(task: Pick<AsyncTask, 'task_type' | 'status' 
         && count(result.failed) !== undefined) {
         const remaining = total - completed
         const summary = `已解决 ${completed}/${total} 条；剩余 ${remaining} 条，其中等待源更新或复查 ${deferred} 条、当前来源无法覆盖 ${unavailable} 条、技术失败 ${technical} 条`
-        if (technical > 0) display = { label: '技术失败', tone: 'danger', message: summary }
+        // 单项结果同时保留具体原因；统计摘要不能覆盖缺失日期、覆盖范围或失败说明。
+        const reason = total === 1 && failureReason ? `；${failureReason}` : ''
+        if (technical > 0) display = { label: '技术失败', tone: 'danger', message: summary + reason }
         else if (remaining > 0) {
           const waiting = deferred === remaining
           const retryAt = waiting && typeof result.next_retry_at === 'string'
@@ -48,7 +64,7 @@ export function taskOutcomeDisplay(task: Pick<AsyncTask, 'task_type' | 'status' 
             label: waiting ? '等待来源更新' : unavailable === remaining ? '来源无法覆盖'
               : completed > 0 ? '部分完成' : '修复未完成',
             tone: 'warning',
-            message: `${summary}；问题仍保留在质量台账${waiting ? `，${retryAt ? `建议 ${retryAt} 后复查，` : ''}可用“重新核验”立即取源` : ''}`,
+            message: `${summary}${reason}；问题仍保留在质量台账${waiting ? `，${retryAt ? `建议 ${retryAt} 后复查，` : ''}可用“重新核验”立即取源` : ''}`,
           }
         }
       }

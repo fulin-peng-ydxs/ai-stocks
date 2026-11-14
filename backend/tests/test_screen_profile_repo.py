@@ -55,11 +55,8 @@ def test_screen_profile_save_with_id_auto_generates(pg):
     assert len(pid2) == 32 and pid2 != pid and v2 == 1
     # 明确传 id 仍走原语义
     assert repo.save_with_id("fixed_id", "固定标识", _EXPR)[0] == "fixed_id"
-    try:
-        pg.execute("DELETE FROM screen_profile_version WHERE id=%s AND owner_user_id=%s", [pid, TEST_OWNER])
-        pg.execute("DELETE FROM screen_profile WHERE id=%s AND owner_user_id=%s", [pid, TEST_OWNER])
-        pg.execute("DELETE FROM screen_profile_version WHERE id=%s AND owner_user_id=%s", [pid2, TEST_OWNER])
-        pg.execute("DELETE FROM screen_profile WHERE id=%s AND owner_user_id=%s", [pid2, TEST_OWNER])
-        pg.execute("DELETE FROM screen_profile WHERE id='fixed_id' AND owner_user_id=%s", [TEST_OWNER])
-    except Exception:
-        pass
+    pg.execute("DELETE FROM screen_profile_version WHERE id=%s AND owner_user_id=%s", [pid, TEST_OWNER])
+    pg.execute("DELETE FROM screen_profile WHERE id=%s AND owner_user_id=%s", [pid, TEST_OWNER])
+    pg.execute("DELETE FROM screen_profile_version WHERE id=%s AND owner_user_id=%s", [pid2, TEST_OWNER])
+    pg.execute("DELETE FROM screen_profile WHERE id=%s AND owner_user_id=%s", [pid2, TEST_OWNER])
+    pg.execute("DELETE FROM screen_profile WHERE id='fixed_id' AND owner_user_id=%s", [TEST_OWNER])

@@ -287,9 +287,7 @@ def test_application_startup_seeds_full_builtin_registry(monkeypatch, pg):
         monkeypatch.setattr(storage_module, "get_redis_client", _ReadyDependency)
         monkeypatch.setattr(main_module, "get_settings", _ReadySettings)
 
-        app = main_module.create_app()
-        startup = next(fn for fn in app.router.on_startup if fn.__name__ == "_check_storages")
-        startup()
+        main_module._check_storages()
         assert set(c.query_df(
             "SELECT key FROM indicator_def WHERE is_builtin"
         )["key"]) == {d.key for d in REGISTRY}

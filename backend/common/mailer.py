@@ -75,7 +75,7 @@ def send_email(to: str, subject: str, body: str, *, html: str | None = None) -> 
                 s.send_message(msg)
     except MailError:
         raise
-    except Exception as exc:  # noqa: BLE001 —— 统一转译为 MailError 供上层软失败
+    except Exception as exc:
         # 不记录 password；仅记录目标与服务器信息便于排查
         log.exception("SMTP 发信失败 to=%s host=%s:%s", to, cfg.host, cfg.port)
         raise MailError("邮件发送失败，请稍后再试") from exc

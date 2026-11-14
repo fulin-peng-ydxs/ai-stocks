@@ -43,7 +43,7 @@ def create_task(body: TaskIn) -> ApiResponse:
     except ConcurrentTaskError as e:
         return err(409, e.user_message,
                    e.conflict_details)
-    except ValueError as e:
+    except (TypeError, ValueError) as e:
         return err(400, str(e))
     return ok({"task_id": tid})
 
@@ -70,7 +70,7 @@ def resume_task(task_id: str) -> ApiResponse:
         AsyncTaskService().resume(task_id)
     except ConcurrentTaskError as e:
         return err(409, e.user_message, e.conflict_details)
-    except ValueError as e:
+    except (TypeError, ValueError) as e:
         return err(400, str(e))
     return ok({"task_id": task_id})
 

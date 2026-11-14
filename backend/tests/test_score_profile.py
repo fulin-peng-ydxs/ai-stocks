@@ -5,6 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from backend.common.timeutil import SHANGHAI
 from backend.scoring.score_profile import (
     ScoreProfileModel,
     ScoreProfileRepo,
@@ -352,7 +353,7 @@ def test_delete_blocked_for_public_or_referenced_profile(market, pg):
             "date_start,date_end,params,status,created_at,finished_at) "
             "VALUES ('bt_del_ref',%s,%s,'strategy',%s,%s,%s,'{}','done',%s,%s)",
             [TEST_TENANT, TEST_OWNER, ref, date(2024, 1, 1), date(2024, 1, 31),
-             datetime(2024, 2, 1), datetime(2024, 2, 1)],
+             datetime(2024, 2, 1, tzinfo=SHANGHAI).replace(tzinfo=None), datetime(2024, 2, 1, tzinfo=SHANGHAI).replace(tzinfo=None)],
         )
         with pytest.raises(ValueError, match="被回测记录引用"):
             repo.delete("del_ref")
@@ -384,7 +385,7 @@ def test_delete_not_blocked_by_other_owner_same_id_run(market, pg):
             "date_start,date_end,params,status,created_at,finished_at) "
             "VALUES ('bt_other_owner',%s,'pytest_other','strategy',%s,%s,%s,'{}','done',%s,%s)",
             [TEST_TENANT, same_id, date(2024, 1, 1), date(2024, 1, 31),
-             datetime(2024, 2, 1), datetime(2024, 2, 1)],
+             datetime(2024, 2, 1, tzinfo=SHANGHAI).replace(tzinfo=None), datetime(2024, 2, 1, tzinfo=SHANGHAI).replace(tzinfo=None)],
         )
         mine.delete(same_id)  # 不应被他人回测误挡
         assert mine.get(same_id) is None
@@ -414,7 +415,7 @@ def test_delete_cascades_others_opaque_ref_reference(market, pg):
             "date_start,date_end,params,status,created_at,finished_at) "
             "VALUES ('bt_other_ref',%s,'pytest_other','strategy',%s,'public',%s,%s,'{}','done',%s,%s)",
             [TEST_TENANT, ref, date(2024, 1, 1), date(2024, 1, 31),
-             datetime(2024, 2, 1), datetime(2024, 2, 1)],
+             datetime(2024, 2, 1, tzinfo=SHANGHAI).replace(tzinfo=None), datetime(2024, 2, 1, tzinfo=SHANGHAI).replace(tzinfo=None)],
         )
         # 公开态删除：先级联降级他人 run → 再收回 private（无他人引用）→ 删除成功
         mine.delete("del_other_ref")
@@ -449,7 +450,7 @@ def test_delete_own_ref_blocks_even_with_others_ref(market, pg):
             "date_start,date_end,params,status,created_at,finished_at) "
             "VALUES ('bt_own_ref',%s,%s,'strategy',%s,%s,%s,'{}','done',%s,%s)",
             [TEST_TENANT, TEST_OWNER, ref, date(2024, 1, 1), date(2024, 1, 31),
-             datetime(2024, 2, 1), datetime(2024, 2, 1)],
+             datetime(2024, 2, 1, tzinfo=SHANGHAI).replace(tzinfo=None), datetime(2024, 2, 1, tzinfo=SHANGHAI).replace(tzinfo=None)],
         )
         # 他人回测引用（同一 opaque ref）
         pg.execute(
@@ -457,7 +458,7 @@ def test_delete_own_ref_blocks_even_with_others_ref(market, pg):
             "date_start,date_end,params,status,created_at,finished_at) "
             "VALUES ('bt_other_ref2',%s,'pytest_other','strategy',%s,'public',%s,%s,'{}','done',%s,%s)",
             [TEST_TENANT, ref, date(2024, 1, 1), date(2024, 1, 31),
-             datetime(2024, 2, 1), datetime(2024, 2, 1)],
+             datetime(2024, 2, 1, tzinfo=SHANGHAI).replace(tzinfo=None), datetime(2024, 2, 1, tzinfo=SHANGHAI).replace(tzinfo=None)],
         )
         # 本人引用存在 → 删除必须被拦（即使他人引用也存在）
         with pytest.raises(ValueError, match="被回测记录引用"):

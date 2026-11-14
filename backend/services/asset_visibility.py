@@ -93,7 +93,7 @@ def parse_asset_ref(ref: str, *, expected_type: str | None = None) -> AssetRef:
     if expected_type is not None:
         expected_type = normalize_asset_type(expected_type)
     if not isinstance(ref, str):
-        raise ValueError("不是有效的资产引用")
+        raise TypeError("不是有效的资产引用")
     # 旧前缀过渡兼容:3 元 payload,asset_type 由前缀映射补齐
     for prefix, legacy_type in LEGACY_REF_PREFIXES.items():
         if ref.startswith(prefix):
@@ -339,14 +339,14 @@ def scoped_where(
         if not has_preset:
             raise ValueError("该资产类型无系统内置（preset）来源")
         return (
-            f"({p}is_preset=true AND {p}visibility='public' "
-            f"AND {p}tenant_id=%s AND {p}owner_user_id=%s)",
+            (f"({p}is_preset=true AND {p}visibility='public' "
+            f"AND {p}tenant_id=%s AND {p}owner_user_id=%s)"),
             [pub_t, pub_o],
         )
     if source == SCOPE_TENANT:
         return (
-            f"({p}visibility='tenant' AND {p}tenant_id=%s "
-            f"AND NOT ({p}tenant_id=%s AND {p}owner_user_id=%s))",
+            (f"({p}visibility='tenant' AND {p}tenant_id=%s "
+            f"AND NOT ({p}tenant_id=%s AND {p}owner_user_id=%s))"),
             [tenant_id, tenant_id, owner_user_id],
         )
     if source == SCOPE_PUBLIC:
@@ -492,7 +492,7 @@ def bare_asset_id(ref_or_id: str) -> str:
     """opaque ref → 原始裸 id;非 ref 原样返回。"""
     try:
         return parse_asset_ref(ref_or_id).asset_id
-    except ValueError:
+    except (TypeError, ValueError):
         return ref_or_id
 
 

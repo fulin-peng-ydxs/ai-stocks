@@ -16,6 +16,7 @@ import threading
 import time
 from contextlib import contextmanager
 from datetime import date
+from typing import ClassVar
 
 import pandas as pd
 
@@ -36,7 +37,7 @@ _MIN_INTERVAL = 1.0 / max(_s.rate_limit_per_sec, 0.1)
 
 # 进程级单例 + 会话复用：baostock 登录 ~6s，且 bs.login/logout 是库级全局单会话。若每个任务/每只
 # 股都新建实例重登，既慢又会互相踩（一个实例析构 logout 掉全局会话）。统一走 shared_baostock()。
-_SHARED: "BaostockSource | None" = None
+_SHARED: BaostockSource | None = None
 # 会话复用上限：超过则重登——_collect 在会话失效时返回空表(不抛错)，靠 TTL 重登从"过期后一直空"恢复。
 _LOGIN_TTL_SEC = 25 * 60
 
@@ -64,7 +65,7 @@ def _break_stalled_session() -> None:
         sock = getattr(ctx, "default_socket", None)
         if sock is not None:
             sock.close()
-        setattr(ctx, "default_socket", None)
+        ctx.default_socket = None
     except Exception as exc:  # noqa: BLE001
         log.debug("看门狗断开会话失败: %s", exc)
 
@@ -134,7 +135,7 @@ def _collect(rs) -> pd.DataFrame:
 class BaostockSource(DataSource):
     name = "baostock"
     # baostock：日线/指数/日历 + 退市股 + 上市退市日 + 行业
-    capabilities = {
+    capabilities: ClassVar[set[str]] = {
         "daily", "index", "calendar", "delisted", "adj_factor", "basic_dates",
         "industry", "st_status",
     }
@@ -190,8 +191,8 @@ class BaostockSource(DataSource):
         if self._logged_in:   # 已超过会话复用上限 → 先登出再重登，刷新会话（防长时空闲后服务端已失效）
             try:
                 bs.logout()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # 登出失败仍须重新建立会话
+                log.debug("baostock 旧会话登出失败，继续重新登录：%s", exc, exc_info=True)
             self._logged_in = False
         # SDK 每次 login 都会新建 socket，登录后 settimeout 来不及保护登录收包。
         # 仅替换 SDK 单例的本次连接器，不修改进程 socket 默认超时，避免影响并发 HTTP。
@@ -240,7 +241,7 @@ class BaostockSource(DataSource):
             sock = getattr(ctx, "default_socket", None)
             if sock is not None:
                 sock.close()
-            setattr(ctx, "default_socket", None)
+            ctx.default_socket = None
         except Exception as exc:  # noqa: BLE001
             log.debug("清理失效 baostock socket 失败: %s", exc)
 
@@ -543,7 +544,7 @@ class BaostockSource(DataSource):
         )
 
 
-def shared_baostock() -> "BaostockSource":
+def shared_baostock() -> BaostockSource:
     """进程级单例 baostock 源（复用登录会话）。所有 get_source('baostock') 经此返回同一实例，
     避免每个任务/每只股重登 ~6s；会话型，SDK查询由进程内_SESSION_LOCK保护，业务作用域可通过公共执行器复用独立进程。"""
     global _SHARED

@@ -446,6 +446,22 @@ describe('LimitLadderView polling deadline', () => {
     expect(stateProbe(wrapper).attributes('data-business-code')).toBe('READY')
   })
 
+  it.each([
+    [new Error('查询失败 SQL: SELECT secret FROM source'), '天梯加载失败，请稍后重试', '重算提交失败，请稍后重试'],
+    [{ uiMessage: '等待来源更新后重试', message: 'TimeoutError' }, '等待来源更新后重试', '等待来源更新后重试'],
+  ])('天梯加载和重算共用业务错误转换：%s', async (failure, loadMessage, actionMessage) => {
+    vi.mocked(limitLadderApi.getLimitLadder).mockRejectedValueOnce(failure)
+    const wrapper = await mountView()
+    expect(stateProbe(wrapper).attributes('data-error')).toBe(loadMessage)
+    vi.mocked(limitLadderApi.recomputeLimitLadder).mockRejectedValueOnce(failure)
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
+    const error = vi.spyOn(ElMessage, 'error')
+    await wrapper.get('[data-testid="limit-ladder-recompute"]').trigger('click')
+    await flushPromises()
+    expect(error).toHaveBeenCalledWith(actionMessage)
+    expect(stateProbe(wrapper).attributes('data-loading')).toBe('false')
+  })
+
   it('403 转为无权限状态，不退化成普通可重试错误', async () => {
     vi.mocked(limitLadderApi.getLimitLadder).mockRejectedValue({
       response: { status: 403 },

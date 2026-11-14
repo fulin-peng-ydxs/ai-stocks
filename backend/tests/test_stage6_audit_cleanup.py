@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from backend.services.audit_service import AuditService
-from backend.storage.ddl import init_db
 from backend.storage.audit_repository import AuditRepository
+from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
 
 
@@ -45,7 +45,7 @@ def _cleanup_test_rows(pg, *cutoffs: str | None) -> None:
 
 
 def test_stage6_audit_cleanup_deletes_only_records_before_cutoff(pg, monkeypatch):
-    fixed_now = datetime(2001, 1, 1, tzinfo=timezone.utc)
+    fixed_now = datetime(2001, 1, 1, tzinfo=UTC)
     retention_days = 90
     cutoff = fixed_now - timedelta(days=retention_days)
     cutoff_text = cutoff.isoformat()
@@ -87,7 +87,7 @@ def test_stage6_audit_cleanup_deletes_only_records_before_cutoff(pg, monkeypatch
 
 
 def test_stage6_audit_cleanup_skips_invalid_retention_without_delete(pg, monkeypatch):
-    fixed_now = datetime(2001, 1, 1, tzinfo=timezone.utc)
+    fixed_now = datetime(2001, 1, 1, tzinfo=UTC)
     monkeypatch.setattr(
         "backend.services.audit_service.get_effective_settings",
         lambda: SimpleNamespace(audit=SimpleNamespace(retention_days=0)),

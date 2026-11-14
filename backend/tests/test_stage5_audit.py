@@ -54,6 +54,72 @@ def _clear_stage5_audit(pg) -> None:
     pg.execute("DELETE FROM audit_log WHERE target_type='stage5_test'")
 
 
+def test_query_metadata_keeps_repeated_filters_and_required_dates(client, pg, monkeypatch):
+    """Annotated 元数据不改变重复查询参数或必填日期的 HTTP 契约。"""
+    from backend.services.audit_service import AuditService
+
+    captured = {}
+
+    def list_logs(self, ctx, **kwargs):
+        captured.update(kwargs)
+        return {"list": [], "total": 0}
+
+    monkeypatch.setattr(AuditService, "list_logs", list_logs)
+    response = client.get("/api/audit", headers=_admin_headers(pg), params=[
+        ("event_category", "config"), ("event_category", "task"),
+        ("result", "success"), ("result", "failed"),
+    ])
+    assert response.status_code == 200 and response.json()["code"] == 0
+    assert captured["event_category"] == ["config", "task"]
+    assert captured["result"] == ["success", "failed"]
+    assert captured["tenant_id"] is None
+    parameters = client.app.openapi()["paths"]["/api/sectors/{code}/bars"]["get"]["parameters"]
+    assert {p["name"] for p in parameters if p.get("required")} == {"code", "start", "end"}
+
+
+def test_invalid_board_parameter_type_keeps_business_error_response(client, pg):
+    """服务类型拒绝仍由既有 HTTP 边界解释，不能成为 500 系统错误。"""
+    response = client.post("/api/data/tasks", headers=_admin_headers(pg), json={
+        "task_type": "board", "params": {"mode": "update", "force_current_day": "yes"},
+    })
+    assert response.status_code == 200
+    assert response.json()["code"] == 400
+    assert "必须是布尔值" in response.json()["msg"]
+
+
+@pytest.mark.parametrize(("body", "message"), [
+    pytest.param({"issue_ids": [None]}, "issue_ids 必须是整数数组", id="null-item"),
+    pytest.param({"issue_ids": [{}]}, "issue_ids 必须是整数数组", id="object-item"),
+    pytest.param({"issue_ids": [[]]}, "issue_ids 必须是整数数组", id="array-item"),
+    pytest.param({"issue_ids": 1}, "issue_ids 必须是整数数组", id="integer-body"),
+    pytest.param({"issue_ids": 1.5}, "issue_ids 必须是整数数组", id="float-body"),
+    pytest.param({"issue_ids": True}, "issue_ids 必须是整数数组", id="boolean-body"),
+    pytest.param({"issue_ids": ["invalid"]}, "issue_ids 必须是整数数组", id="invalid-value"),
+    pytest.param({}, "缺少 issue_ids", id="missing"),
+    pytest.param({"issue_ids": None}, "缺少 issue_ids", id="null"),
+    pytest.param({"issue_ids": []}, "缺少 issue_ids", id="empty"),
+])
+def test_quality_fix_batch_invalid_ids_keep_business_error_without_side_effects(
+    client, pg, monkeypatch, body, message,
+):
+    """非法参数在读取质检库和创建任务前拒绝，沿用统一业务错误响应。"""
+    from unittest.mock import Mock
+
+    from backend.api import data_admin
+    from backend.services.async_task import AsyncTaskService
+
+    read = Mock(side_effect=AssertionError("非法参数不应读取质检库"))
+    create = Mock(side_effect=AssertionError("非法参数不应创建修复任务"))
+    monkeypatch.setattr(data_admin, "get_client", read)
+    monkeypatch.setattr(AsyncTaskService, "create", create)
+    response = client.post("/api/data/quality/fix-batch", headers=_admin_headers(pg), json=body)
+
+    assert response.status_code == 200
+    assert response.json() == {"code": 400, "msg": message, "data": None}
+    read.assert_not_called()
+    create.assert_not_called()
+
+
 def test_stage5_audit_system_can_query_summary_and_detail(client, pg):
     _clear_stage5_audit(pg)
     repo = AuditRepository(pg)

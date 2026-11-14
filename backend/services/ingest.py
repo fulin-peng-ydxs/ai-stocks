@@ -15,13 +15,13 @@ import threading
 from bisect import bisect_left
 from contextlib import nullcontext
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 import pandas as pd
 
 from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
-from backend.common.timeutil import years_before
+from backend.common.timeutil import shanghai_now_naive, years_before
 from backend.config import get_effective_settings
 from backend.dataquality.checker import (
     MV_REL_TOLERANCE,
@@ -776,7 +776,7 @@ class IngestionService:
         self.repo.c.execute(
             "INSERT INTO data_source_provenance "
             "(code, table_name, date_start, date_end, source, rows, fetched_at) VALUES (?,?,?,?,?,?,?)",
-            [code, table_name, start, end, source, int(rows), datetime.now()])
+            [code, table_name, start, end, source, int(rows), shanghai_now_naive()])
 
     def _reuse_stored_references(self, frame, code):
         """主源无直接参考价时，保留与本次原始收盘价一致的既有校准证据。"""
@@ -1763,7 +1763,6 @@ class IngestionService:
         同一 (code, date, type) 的 open/fixing 问题幂等复用：定时恢复遇到源端持续坏数据时，
         将原 fixing 问题退回 open，不每次再堆一条重复台账。
         """
-        from datetime import datetime
 
         from backend.dataquality.checker import severity_for
         from backend.dataquality.ignore_rules import filter_ignored_issues
@@ -1779,7 +1778,7 @@ class IngestionService:
         )
         for candidate in candidates:
             td = candidate["trade_date"]
-            now = datetime.now()
+            now = shanghai_now_naive()
             existing = self.c.query_df(
                 "SELECT id, status FROM data_quality_issue WHERE code=? AND trade_date=? AND issue_type=? "
                 "AND status IN ('open','fixing') ORDER BY id LIMIT 1",
@@ -2037,7 +2036,7 @@ class IngestionService:
         各类"补到最新"的采集（行情/市值/退市/补数）统一用它当截止日，避免把非交易日（周末/节假日）
         当成数据截止，导致日志区间出现"今天=非交易日"这种语义错乱。日历缺该日时回退到 _previous_open_day。
         """
-        ref = ref or date.today()
+        ref = ref or shanghai_now_naive().date()
         cal = self.repo.c.query_df(
             "SELECT is_open FROM trade_calendar WHERE trade_date = ?", [ref])
         if not cal.empty and bool(cal.iloc[0]["is_open"]):
@@ -2793,6 +2792,7 @@ class IngestionService:
             except TaskCancelled:
                 raise
             except Exception as exc:
+                log.warning("%s 停牌复查失败，保留原记录待重试：%s", code, exc, exc_info=True)
                 result["errors"][code] = str(exc)
                 result["unverified"] += len(days)
                 if ctx:
@@ -3721,6 +3721,7 @@ class IngestionService:
             except TaskCancelled:
                 raise
             except Exception as exc:
+                log.warning("%s 参考价复核失败：%s", code, exc, exc_info=True)
                 result["errors"][code] = str(exc)
                 if ctx:
                     ctx.log(f"{code} 参考价复核失败：{exc}", "warn")
@@ -4471,7 +4472,7 @@ class IngestionService:
         if limit is not None and limit <= 0:
             raise ValueError("板块采集 limit 必须大于 0")
         if not isinstance(force_current_day, bool):
-            raise ValueError("板块强制采集当日必须是布尔值")
+            raise TypeError("板块强制采集当日必须是布尔值")
         if mode != "update" and force_current_day:
             raise ValueError("只有板块增量采集支持强制采集当日")
         explicit_start, explicit_end = normalize_board_date_range(

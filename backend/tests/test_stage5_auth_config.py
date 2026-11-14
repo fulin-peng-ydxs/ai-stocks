@@ -145,7 +145,7 @@ def test_stage5_settings_save_ignores_audit_write_failure(
 ):
     from backend.storage.audit_repository import AuditRepository
 
-    def fail_record(self, **kwargs):  # noqa: ARG001
+    def fail_record(self, **kwargs):
         raise RuntimeError("audit down")
 
     monkeypatch.setattr(AuditRepository, "record", fail_record)

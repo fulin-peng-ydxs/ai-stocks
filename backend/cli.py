@@ -19,8 +19,8 @@ import sys
 from datetime import date
 
 from backend.common.logging import get_logger
-from backend.common.timeutil import years_before
-from backend.config import get_settings, get_effective_settings
+from backend.common.timeutil import shanghai_now_naive, years_before
+from backend.config import get_effective_settings, get_settings
 
 log = get_logger("cli")
 
@@ -140,7 +140,8 @@ def cmd_trade_discipline_rbac(args: argparse.Namespace) -> int:
         return 2
     try:
         report = _rollback_trade_discipline_rbac()
-    except Exception as exc:  # 存储层会把事务内拒绝包装成 StorageError
+    except Exception as exc:  # CLI 最终边界保持拒绝/存储故障的稳定退出码
+        log.exception("交易纪律 RBAC 回滚失败")
         print(f"交易纪律 RBAC 回滚失败：{exc}", file=sys.stderr)
         return 1
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
@@ -281,7 +282,7 @@ def cmd_refetch_daily(args: argparse.Namespace) -> int:
     from backend.storage import get_client
 
     codes = _resolve_codes(args)
-    end = date.fromisoformat(args.end) if args.end else date.today()
+    end = date.fromisoformat(args.end) if args.end else shanghai_now_naive().date()
     if args.start:
         start = date.fromisoformat(args.start)
     else:
@@ -394,7 +395,7 @@ def cmd_migrate_rbac(args: argparse.Namespace) -> int:
         if bad:
             ok = False
         flag = "  ⚠" + ("/".join(["映射" if probs else "", "行数不一致" if count_bad else ""]).strip("/")) if bad else ""
-        print(f"{t:<24}{r['duck']:>10}{r['migrated']:>8}{str(after):>14}{flag}")
+        print(f"{t:<24}{r['duck']:>10}{r['migrated']:>8}{after!s:>14}{flag}")
     if all_problems:
         print("\n校验问题：")
         for p in all_problems:
@@ -427,7 +428,7 @@ def cmd_migrate_config_storage(args: argparse.Namespace) -> int:
         print(
             f"{table:<24}{r.get('duck', 0):>10}{r.get('pg_before', 0):>8}"
             f"{r.get('pending', 0):>8}{r.get('conflicts', 0):>8}{r.get('migrated', 0):>8}"
-            f"{str(r.get('pg_after', '-')):>8}"
+            f"{r.get('pg_after', '-')!s:>8}"
         )
         missing = r.get("missing_keys") or []
         conflicts = r.get("conflict_keys") or []
@@ -617,13 +618,12 @@ def cmd_robust(args: argparse.Namespace) -> int:
 
 
 def cmd_check_data(args: argparse.Namespace) -> int:
-    from datetime import date
 
     from backend.config import get_effective_settings
     from backend.services.data_report import DataIntegrityReport
 
     s = get_effective_settings()
-    end = date.today()
+    end = shanghai_now_naive().date()
     start = years_before(end, s.datasource.history_years)
     DataIntegrityReport().run(start, end)
     return 0
@@ -693,8 +693,9 @@ def cmd_purge_suspension_bars(args: argparse.Namespace) -> int:
         print("\n[dry-run] 未做任何改动。加 --apply 提交逐日交易状态核验任务，只有证实停牌才清理。")
         return 0
     # 使用同一异步写任务入口，禁止零量直接转停牌或删除行情。
-    from backend.services.async_task import AsyncTaskService
     import time
+
+    from backend.services.async_task import AsyncTaskService
     service = AsyncTaskService()
     task_id = service.create("fix", {"review_suspensions": True, "purge_candidates": True})
     print(f"已提交停牌证据核验任务：{task_id}")
@@ -737,7 +738,7 @@ def cmd_dev_users(args: argparse.Namespace) -> int:
     for account in res["users"]:
         print(f"  - {account}")
     if getattr(args, "list", False):
-        print("")
+        print()
         return cmd_dev_users(argparse.Namespace(list=True, ensure=False))
     return 0
 

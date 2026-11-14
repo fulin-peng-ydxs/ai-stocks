@@ -1,5 +1,5 @@
 // 买卖指标方案 API（对应 backend/api/trade_profiles.py）
-import http from './client'
+import http, { type AppRequestConfig } from './client'
 
 export interface TradeCond {
   indicator: string
@@ -123,6 +123,6 @@ export function previewConditions(body: {
   tree: CondTree
   run_date?: string
   top?: number
-}): Promise<{ run_date: string; hit: number; list: { code: string; name: string | null }[] }> {
-  return http.post('/trade-profiles/preview', body)
+}, config?: AppRequestConfig): Promise<{ run_date: string; hit: number; list: { code: string; name: string | null }[] }> {
+  return http.post('/trade-profiles/preview', body, config)
 }

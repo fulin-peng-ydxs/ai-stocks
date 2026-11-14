@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+from backend.common.timeutil import SHANGHAI
+
 
 class _Repo:
     def __init__(self, saved_at=None):
@@ -29,7 +31,7 @@ def test_cookie_status_is_pending_before_real_validation(monkeypatch):
     monkeypatch.setattr(module, "get_effective_settings", lambda: SimpleNamespace(
         ths_board=SimpleNamespace(cookie_validity_days=30)))
     monkeypatch.setattr(module, "login_cookie_with_source", lambda: ("secret", "app_config"))
-    now = datetime(2026, 11, 12, 12)
+    now = datetime(2026, 11, 12, 12, tzinfo=SHANGHAI).replace(tzinfo=None)
     monkeypatch.setattr(module, "_now_local", lambda: now)
     status = module.ths_cookie_status(repo=_Repo(saved_at=now))
     assert status["status"] == "pending"

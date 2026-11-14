@@ -260,7 +260,7 @@ def test_stage5_dict_items_support_sort_params(client, pg):
 
 def test_stage5_dict_fallback_builtin_when_repo_fails():
     class BrokenRepo:
-        def get_type(self, type_code):  # noqa: ARG002
+        def get_type(self, type_code):
             raise RuntimeError("dict storage down")
 
     data = DictService(BrokenRepo()).get_enabled_items("audit_result")  # type: ignore[arg-type]

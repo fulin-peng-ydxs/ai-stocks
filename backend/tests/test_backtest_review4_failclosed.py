@@ -179,7 +179,7 @@ def test_reuse_audit_failure_marks_run_failed_and_compensates_results(market, pg
 def test_new_id_unique_under_concurrent_same_second(market, pg):
     """同一服务实例同秒多次 _new_id：全部唯一（秒级时间戳+短 UUID，并发/多标签/重试不碰撞）。"""
     svc = _svc(market)
-    ids = {svc._new_id("strategy") for _ in range(200)}  # noqa: SLF001
+    ids = {svc._new_id("strategy") for _ in range(200)}
     assert len(ids) == 200
     assert all(i.startswith("bt_strategy_") for i in ids)
 
@@ -191,8 +191,8 @@ def test_persist_run_state_transition_keeps_single_row(market, pg):
     run_id = svc._new_id("strategy")
     params = {"date_start": "2024-01-02", "date_end": "2024-01-03"}
     try:
-        svc._persist_run(run_id, "strategy", params, "running")  # noqa: SLF001
-        svc._persist_run(run_id, "strategy", params, "done", finished=True)  # noqa: SLF001
+        svc._persist_run(run_id, "strategy", params, "running")
+        svc._persist_run(run_id, "strategy", params, "done", finished=True)
         df = pg.query_df(
             "SELECT status, finished_at FROM backtest_run WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
             [run_id, TEST_TENANT, TEST_OWNER])
@@ -213,7 +213,7 @@ def test_same_signature_runs_reject_concurrent_duplicate_and_leave_one_record(ma
     release_first = threading.Event()
     second_started = threading.Event()
 
-    def fake_analyze(self, *args, **kwargs):  # noqa: ARG001
+    def fake_analyze(self, *args, **kwargs):
         nonlocal entered
         with entered_lock:
             entered += 1
@@ -331,7 +331,9 @@ def test_signature_lock_connection_error_uses_safe_public_message(market, monkey
         raise psycopg.OperationalError("internal connection details")
 
     monkeypatch.setattr("backend.services.backtest_service.psycopg.connect", fail_connect)
-    with pytest.raises(RuntimeError, match="回测并发锁连接失败，请稍后重试") as exc_info:
-        with svc._signature_run_lock("safe-error-test"):  # noqa: SLF001
-            pass
+    with (
+        pytest.raises(RuntimeError, match="回测并发锁连接失败，请稍后重试") as exc_info,
+        svc._signature_run_lock("safe-error-test"),
+    ):
+        pass
     assert "internal connection details" not in str(exc_info.value)

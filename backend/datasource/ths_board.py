@@ -69,7 +69,7 @@ _BAR_LINE_URL = "https://d.10jqka.com.cn/v4/line/bk_{clid}/01/{year}.js"
 _MAX_PAGES = 50
 
 
-def _ths_js_path() -> "str":
+def _ths_js_path() -> str:
     """akshare 打包的同花顺 v cookie 脚本路径（akshare.data/ths.js，走 importlib.resources）。"""
     return str(resources.files("akshare.data").joinpath("ths.js"))
 
@@ -549,7 +549,7 @@ def _parse_bar_js(text: str, year: int) -> list[dict]:
     行字段：date,open,high,low,close,volume,amount,后续未知列忽略。
     返回 trade_date(ISO 字符串), open/high/low/close(float), volume/amount(int)。
     """
-    m = re.search(r"\{.*\}", text, re.S)
+    m = re.search(r"\{.*\}", text, re.DOTALL)
     if not m:
         return []
     try:

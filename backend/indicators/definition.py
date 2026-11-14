@@ -10,10 +10,11 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict
-from datetime import datetime
 from string import Formatter
 
+from backend.common.exceptions import StorageError
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.indicators.registry import REGISTRY, governance_metadata, preset_categories
 from backend.screening.expression import ExprError, validate_expr
 from backend.storage.duckdb_client import get_client
@@ -172,8 +173,8 @@ class IndicatorDefRepo:
         # 兼容旧库：补 categories 列（幂等）
         try:
             self.c.execute("ALTER TABLE indicator_def ADD COLUMN IF NOT EXISTS categories VARCHAR")
-        except Exception:  # noqa: BLE001
-            pass
+        except StorageError as exc:  # 初始化后的兼容补列不阻断旧库读取
+            log.debug("指标分类兼容补列失败：%s", exc)
 
     def list(self, include_disabled: bool = True) -> list[dict]:
         sql = ("SELECT key,name_cn,category,dtype,direction,kind,expression,params,"
@@ -189,7 +190,7 @@ class IndicatorDefRepo:
         return _parse(df.iloc[0].to_dict()) if not df.empty else None
 
     def _upsert(self, row: dict) -> None:
-        now = datetime.now()
+        now = shanghai_now_naive()
         created = self.c.query_df("SELECT created_at FROM indicator_def WHERE key=?", [row["key"]])
         created_at = created.iloc[0]["created_at"] if not created.empty else now
         self.c.execute(
@@ -247,11 +248,11 @@ class IndicatorDefRepo:
 
     def set_enabled(self, key: str, enabled: bool) -> None:
         self.c.execute("UPDATE indicator_def SET enabled=?, updated_at=? WHERE key=?",
-                       [enabled, datetime.now(), key])
+                       [enabled, shanghai_now_naive(), key])
 
     def set_categories(self, key: str, categories: list[str]) -> None:
         self.c.execute("UPDATE indicator_def SET categories=?, updated_at=? WHERE key=?",
-                       [json.dumps(categories or [], ensure_ascii=False), datetime.now(), key])
+                       [json.dumps(categories or [], ensure_ascii=False), shanghai_now_naive(), key])
 
     def delete(self, key: str) -> None:
         d = self.get(key)

@@ -26,7 +26,6 @@ from backend.storage.schema_contract import (
     schema_report,
 )
 
-
 pytest_plugins = ["backend.tests.database_fixtures"]
 
 
@@ -310,11 +309,10 @@ def test_completed_install_rejects_stale_completion_digest(installed):
 def test_startup_uses_complete_initializer(databases, monkeypatch):
     duck, pg = databases
     from backend import storage
-    from backend.main import create_app
+    from backend.main import _check_storages
 
     monkeypatch.setattr(storage, "get_redis_client", lambda: SimpleNamespace(ping=lambda: True))
-    app = create_app()
-    next(handler for handler in app.router.on_startup if handler.__name__ == "_check_storages")()
+    _check_storages()
     assert lifecycle.verify_database(duck, pg, require_pg_routes=True)["ok"]
 
 
@@ -450,7 +448,7 @@ def test_explicit_discipline_rollback_is_preserved(installed):
 def test_readonly_startup_verifies_without_initializing(installed, monkeypatch):
     duck, _pg = installed
     from backend import storage
-    from backend.main import create_app
+    from backend.main import _check_storages
 
     def forbidden(*args, **kwargs):
         raise AssertionError("只读启动不能初始化")
@@ -458,22 +456,17 @@ def test_readonly_startup_verifies_without_initializing(installed, monkeypatch):
     monkeypatch.setattr(duck, "read_only", True)
     monkeypatch.setattr(lifecycle, "initialize_database", forbidden)
     monkeypatch.setattr(storage, "get_redis_client", lambda: SimpleNamespace(ping=lambda: True))
-    app = create_app()
-    next(handler for handler in app.router.on_startup if handler.__name__ == "_check_storages")()
+    _check_storages()
 
 
 def test_dependency_failure_precedes_initialization(databases, monkeypatch):
     _, pg = databases
     from backend import storage
-    from backend.main import create_app
+    from backend.main import _check_storages
 
     monkeypatch.setattr(storage, "get_redis_client", lambda: SimpleNamespace(ping=lambda: False))
-    app = create_app()
-    handler = next(
-        handler for handler in app.router.on_startup if handler.__name__ == "_check_storages"
-    )
     with pytest.raises(RuntimeError, match="Redis"):
-        handler()
+        _check_storages()
     assert not lifecycle._tables(pg, "public")
 
 
@@ -574,12 +567,14 @@ def test_gate_runner_removes_environment_selection(monkeypatch):
     from backend.devtools.isolated_environment import clean_environment
 
     @contextmanager
-    def fake_server():
+    def fake_server(artifact_dir):
+        assert artifact_dir.is_dir()
         yield "dbname=isolated-admin"
 
     @contextmanager
-    def fake_environment(admin):
+    def fake_environment(admin, artifact_dir):
         assert admin == "dbname=isolated-admin"
+        assert artifact_dir.is_dir()
         yield clean_environment()
 
     def subprocess_probe(arguments, **options):
@@ -928,9 +923,8 @@ def test_visual_label_sql_requires_confirmation_preserves_custom_and_audits(
             "UPDATE sys_resource SET name=%s,code=%s WHERE id='layout:preset-manage'",
             [resource_name, resource_code],
         )
-        with pytest.raises(psycopg.Error, match="确认口令"):
-            with conn.transaction():
-                conn.execute(body)
+        with pytest.raises(psycopg.Error, match="确认口令"), conn.transaction():
+            conn.execute(body)
         assert (
             pg.query_df("SELECT title FROM sys_menu WHERE id='/system/layout/presets'").iloc[0, 0]
             == "预设管理"

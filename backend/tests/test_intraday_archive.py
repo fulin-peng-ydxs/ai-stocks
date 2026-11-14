@@ -11,8 +11,11 @@ from backend.services.intraday_archive import IntradayArchiveService
 from backend.services.intraday_contract import normalize_intraday_params, sanitize_minutes
 from backend.services.intraday_quotes import IntradayQuoteService
 from backend.services.intraday_source import IntradaySourceService
-from backend.tests.test_intraday_quotes import _frame, _Redis
-from backend.tests.test_intraday_source import request_settings as request_settings
+from backend.tests.test_intraday_quotes import _frame
+from backend.tests.test_intraday_source import _Redis, request_settings
+
+# 显式导出共享的自动夹具，避免静态清理误删 pytest 的隐式消费。
+__all__ = ["request_settings"]
 
 CODE = "600000.SH"
 DAY = "2026-09-10"
@@ -310,8 +313,8 @@ def test_quality_detects_physical_loss_even_with_ready_coverage(db):
 
 
 def test_async_write_mutex_failure_resume_and_terminal_logs(db, monkeypatch):
-    from backend.services import async_task, intraday_source
     from backend.config.settings import Settings
+    from backend.services import async_task, intraday_source
 
     # 本例替换 Thread 来接管任务启动；线程池并发由专门回归覆盖，避免一并替换其工作线程。
     settings = Settings()
@@ -870,6 +873,7 @@ def test_bounded_collection_real_archive_scale_and_cancel_resume(db, monkeypatch
     """64只×240分钟经实际规划、候选选择、落库和复检；并发只用于取源。"""
     import threading
     import time
+
     from backend.config.settings import Settings
     from backend.services import intraday_archive, intraday_source
 

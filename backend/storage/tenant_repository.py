@@ -7,10 +7,9 @@ admin_user_id 指定该租户管理员（须属本租户）。列表附 user_cou
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from backend.common.ids import uuid_hex_id
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
 log = get_logger("storage.tenant_repository")
@@ -95,23 +94,23 @@ class TenantRepository:
         tenant_id = uuid_hex_id()
         self.pg.execute(
             "INSERT INTO sys_tenant (id, name, status, created_at) VALUES (%s, %s, %s, %s)",
-            [tenant_id, name, status, datetime.now()])
+            [tenant_id, name, status, shanghai_now_naive()])
         return tenant_id
 
     def update(self, tenant_id: str, *, name: str, admin_user_id: str | None) -> None:
         self.pg.execute(
             "UPDATE sys_tenant SET name=%s, admin_user_id=%s, updated_at=%s WHERE id=%s",
-            [name, admin_user_id, datetime.now(), tenant_id])
+            [name, admin_user_id, shanghai_now_naive(), tenant_id])
 
     def set_status(self, tenant_id: str, status: str, *, conn=None) -> None:
         """启停租户。conn 非空则并入调用方事务（停用与该租户成员 perm_ver 自增原子提交）。"""
         with self.pg.cursor_in(conn) as cur:
             cur.execute("UPDATE sys_tenant SET status=%s, updated_at=%s WHERE id=%s",
-                        [status, datetime.now(), tenant_id])
+                        [status, shanghai_now_naive(), tenant_id])
 
     def delete(self, tenant_id: str, *, conn=None) -> None:
         """逻辑删除:打 deleted_at 标记（软删后不恢复,数据保留供审计）。"""
-        now = datetime.now()
+        now = shanghai_now_naive()
         with self.pg.cursor_in(conn) as cur:
             cur.execute("UPDATE sys_tenant SET deleted_at=%s, updated_at=%s WHERE id=%s",
                         [now, now, tenant_id])

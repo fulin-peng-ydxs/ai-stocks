@@ -15,6 +15,14 @@ export const intradayRepairLabels: Readonly<Record<string, string>> = {
   unavailable: '当前来源无法覆盖', technical_failure: '请求失败', deferred: '等待源更新或复查',
 }
 
+/** 列表和诊断详情共用最近失败原因；旧记录可读 error 兼容展示，技术原文仍留在技术详情。 */
+export function qualityRepairFailureReason(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
+  const repair = value as Record<string, unknown>
+  return businessMessage(repair.failure_reason, businessMessage(repair.error,
+    repair.failure_reason || repair.error ? '修复未完成，详细原因见技术详情' : ''))
+}
+
 interface CheckupDetailColumn { key: string; label: string; role: AdaptiveColumnRole }
 export interface CheckupDetailGroup {
   label: string
@@ -27,7 +35,7 @@ export interface CheckupDetailGroup {
 /** 兼容已保存的分时体检字典摘要，仅识别固定统计字段，不执行历史文本。 */
 export function checkupSummaryText(check: CheckupCheck): string {
   if (check.name !== '分时监控范围覆盖' || !check.detail.trim().startsWith('{')) {
-    return check.detail
+    return businessMessage(check.detail, check.detail ? '检查详情请查看关联任务日志' : '')
   }
   const types = ['intraday_gap', 'intraday_partial', 'intraday_invalid'] as const
   try {
@@ -150,12 +158,14 @@ export function qualityDetailText(detail: string): string {
         return [range, failure].filter(Boolean).join('；')
       })
       const repair = payload.last_repair
+      const failureReason = qualityRepairFailureReason(repair)
       return [summary,
         coverage ? `必需分钟覆盖 ${countText(coverage.covered_count)}/${countText(coverage.required_count)}` : '',
         ranges.length ? `缺失 ${ranges.join('、')}` : '',
         payload.availability?.reason
           ? businessMessage(payload.availability.reason, '来源核验详情请查看关联任务日志') : '', ...sources,
         repair ? `最近修复：${enumText(intradayRepairLabels, repair.outcome, '结果未识别')}，归档 ${countText(repair.before_points)}→${countText(repair.after_points)} 点` : '',
+        failureReason ? `失败原因：${failureReason}` : '',
       ].filter(Boolean).join('；')
     }
     const collection = payload.last_collection
@@ -187,11 +197,12 @@ export function qualityDetailText(detail: string): string {
 export function intradayRecoveryAction(row: QualityIssue) {
   if (!row.issue_type.startsWith('intraday_')) return null
   const recheck = row.intraday?.can_repair === false
+  const reason = businessMessage(row.intraday?.reason, '核验来源并补采，只有复检通过才关闭问题')
   return {
     label: recheck ? '重新核验' : '补采复检', recheck,
     tooltip: row.intraday?.status === 'deferred'
-      ? `${row.intraday.reason}；重新核验会立即请求来源，结果在任务中心查看`
+      ? `${reason}；重新核验会立即请求来源，结果在任务中心查看`
       : recheck ? '当前来源尚未提供更完整候选；发起一次来源范围重新核验，结果在任务中心查看'
-      : (row.intraday?.reason ?? '核验来源并补采，只有复检通过才关闭问题'),
+      : reason,
   }
 }

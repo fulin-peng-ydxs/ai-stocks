@@ -9,11 +9,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 
 from backend.auth.context import get_current_owner
 from backend.common.ids import uuid_hex_id
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.screening.condition import validate_ast
 from backend.screening.presets import PRESET_PROFILES
 from backend.services.asset_visibility import (
@@ -95,7 +95,7 @@ class ProfileRepo:
         cur = self.pg.query_df(
             f"SELECT version, name, expression, created_at FROM screen_profile "
             f"WHERE id=%s AND {self._own}", [pid, *self._op])
-        now = datetime.now()
+        now = shanghai_now_naive()
         if not cur.empty:
             old = cur.iloc[0]
             unchanged = (old["expression"] == expr_json and old["name"] == name)
@@ -245,7 +245,7 @@ class ProfileRepo:
         )
         if ref.tenant_id != self.tenant_id or ref.owner_user_id != self.owner_user_id:
             raise PermissionError("只能修改自己的筛选方案可见性")
-        now = datetime.now() if visibility != VISIBILITY_PRIVATE else None
+        now = shanghai_now_naive() if visibility != VISIBILITY_PRIVATE else None
         with asset_visibility_locks(self.pg, [ref]), self.pg.transaction() as conn:
             with self.pg.cursor_in(conn) as cur:
                 cur.execute(
@@ -266,7 +266,7 @@ class ProfileRepo:
                     "published_by=%s, updated_at=%s "
                     "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
                     [visibility, now, published_by if visibility != VISIBILITY_PRIVATE else None,
-                     datetime.now(), ref.tenant_id, ref.owner_user_id, ref.asset_id],
+                     shanghai_now_naive(), ref.tenant_id, ref.owner_user_id, ref.asset_id],
                 )
         result = self.get_visible(profile_ref_or_id)
         if result is not None:
@@ -294,7 +294,7 @@ class ProfileRepo:
 
         主表 + 版本表在**同一事务同一游标**内写入：`INSERT ... ON CONFLICT DO NOTHING`
         主表 0 行即撞库（换 id 重试）；版本表失败则整体回滚，杜绝「主表残留、无版本历史」的半成品。"""
-        now = datetime.now()
+        now = shanghai_now_naive()
         expr_json = json.dumps(expression, ensure_ascii=False)
         with self.pg.transaction() as conn, conn.cursor() as cur:
             cur.execute(

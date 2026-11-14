@@ -6,10 +6,11 @@ delete/abort、跨归属隔离。完整开局→交易→结算的计算流逻�
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 import pandas as pd
 
+from backend.common.timeutil import shanghai_now_naive
 from backend.indicators.compute import compute_macd
 from backend.services.training_service import TrainingService
 from backend.tests.conftest import TEST_OWNER, TEST_TENANT
@@ -20,7 +21,7 @@ def _mk_session(pg, sid, owner=TEST_OWNER, status="completed", score=80.0):
         "INSERT INTO training_session (id,tenant_id,owner_user_id,mode,n_rounds,window_days,"
         "initial_capital,status,cur_round,total_return,score,grade,win_rate,created_at,completed_at) "
         "VALUES (%s,%s,%s,'single',1,20,100000,%s,0,0.1,%s,'A',0.6,%s,%s)",
-        [sid, TEST_TENANT, owner, status, score, datetime.now(), datetime.now()])
+        [sid, TEST_TENANT, owner, status, score, shanghai_now_naive(), shanghai_now_naive()])
 
 
 def _mk_round(pg, sid, code, start, end, owner=TEST_OWNER, status="completed"):

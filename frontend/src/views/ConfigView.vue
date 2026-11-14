@@ -77,7 +77,9 @@ import IndicatorParamFields from '@/components/indicator/IndicatorParamFields.vu
 import IndicatorParamSchemaEditor from '@/components/indicator/IndicatorParamSchemaEditor.vue'
 import IndicatorSelect from '@/components/indicator/IndicatorSelect.vue'
 import StrategyItemEnabledSwitch from '@/components/strategy/StrategyItemEnabledSwitch.vue'
+import type { AppRequestConfig } from '@/api/client'
 import { getErrorMessage } from '@/utils/error'
+import { businessMessage } from '@/utils/displayText'
 import { formatDateTimeMinutes, formatDateTimeSeconds } from '@/utils/dateTime'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -112,6 +114,8 @@ import { hasPermission } from '@/utils/permission'
 import { confirmProfileVisibilityReduction } from '@/utils/assetVisibility'
 import type { AppRowAction } from '@/components/rowActions'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
+
+const pageErrorRequest: AppRequestConfig = { skipGlobalError: true }
 
 const settingsOpen = ref(false)
 const route = useRoute()
@@ -1228,7 +1232,7 @@ async function tryRun() {
         : { items: items.value, include_st: includeSt.value }),
       run_date: runDate.value || undefined,
       top: 30,
-    })
+    }, pageErrorRequest)
     runRows.value = res.list
     scoreRunCompleted.value = true
     runDate.value = res.run_date
@@ -1579,7 +1583,7 @@ async function previewSide(side: 'buy' | 'sell') {
   previewDate.value[side] = null
   try {
     const logic = side === 'buy' ? buyLogic.value : sellLogic.value
-    const res = await previewConditions({ tree: toTree(logic, conds), top: 10 })
+    const res = await previewConditions({ tree: toTree(logic, conds), top: 10 }, pageErrorRequest)
     previewHit.value[side] = res.hit
     previewDate.value[side] = res.run_date
     ElMessage.success(`${side === 'buy' ? '买入' : '卖出'}条件命中 ${res.hit} 只（${res.run_date}）`)
@@ -2573,7 +2577,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                         </AppTableColumn>
                         <AppTableColumn v-if="sourceColVisible('status')" label="最近测试结果" role="status">
                           <template #default="{ row }">
-                            <AppHoverInfo :content="row.failure_reason || row.probe_scope">
+                            <AppHoverInfo :content="businessMessage(row.failure_reason, row.failure_reason ? '来源测试失败，请查看服务日志中的详细原因' : row.probe_scope)">
                               <el-tag :type="row.up === true ? 'success' : row.up === false ? 'danger' : 'info'" effect="plain">
                                 {{ sourceTesting === row.source ? '测试中' : row.up === true ? '通过' : row.up === false ? '未通过' : '未测试' }}
                               </el-tag>

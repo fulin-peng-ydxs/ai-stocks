@@ -95,9 +95,12 @@ import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSectorsSessionStore } from '@/stores/sectorsSession'
+import type { AppRequestConfig } from '@/api/client'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
 import { hasPermission } from '@/utils/permission'
 import { sectorDetailLocation } from '@/utils/sectorNavigation'
+
+const pageErrorRequest: AppRequestConfig = { skipGlobalError: true }
 
 const route = useRoute()
 const router = useRouter()
@@ -687,7 +690,7 @@ function isWatchlistBusy(code: string): boolean {
 async function loadWatchlist(): Promise<void> {
   if (!canViewWatchlist.value) return
   try {
-    const data = await listSectorWatchlist()
+    const data = await listSectorWatchlist(pageErrorRequest)
     watchlistCodes.value = new Set(data.list.map((row) => row.board_code))
   } catch (error) {
     ElMessage.error(getErrorMessage(error, '板块自选加载失败'))
@@ -699,8 +702,8 @@ async function toggleWatchlist(row: SectorRow): Promise<void> {
   watchlistBusyCodes.value = new Set([...watchlistBusyCodes.value, row.board_code])
   const removing = isWatchlisted(row.board_code)
   try {
-    if (removing) await removeSectorWatchlist(row.board_code)
-    else await addSectorWatchlist(row.board_code)
+    if (removing) await removeSectorWatchlist(row.board_code, pageErrorRequest)
+    else await addSectorWatchlist(row.board_code, pageErrorRequest)
     const next = new Set(watchlistCodes.value)
     if (removing) next.delete(row.board_code)
     else next.add(row.board_code)

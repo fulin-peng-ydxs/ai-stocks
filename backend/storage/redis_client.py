@@ -33,7 +33,7 @@ class RedisClient:
             try:
                 self._client = redis.Redis.from_url(self.url, decode_responses=True)
                 log.info("Redis client created")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 raise StorageError(f"Redis 连接失败: {e}") from e
         return self._client
 
@@ -41,7 +41,7 @@ class RedisClient:
         """连通性自检（启动期调用）。"""
         try:
             return bool(self.client.ping())
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             raise StorageError(f"Redis ping 失败: {e}") from e
 
     def close(self) -> None:

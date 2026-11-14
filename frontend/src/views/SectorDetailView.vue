@@ -64,6 +64,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useSectorsSessionStore } from '@/stores/sectorsSession'
 import { useStockSet } from '@/stores/stockSet'
+import type { AppRequestConfig } from '@/api/client'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
 import { hasPermission } from '@/utils/permission'
 import { formatMoney } from '@/utils/money'
@@ -80,6 +81,8 @@ import {
   sectorValueClass,
   toBoardChartBars,
 } from '@/utils/sectorCompare'
+
+const pageErrorRequest: AppRequestConfig = { skipGlobalError: true }
 
 const route = useRoute()
 const router = useRouter()
@@ -352,7 +355,7 @@ function openStock(row: SectorMember): void {
 async function loadWatchlistState(): Promise<void> {
   if (!canViewWatchlist.value) return
   try {
-    const data = await listSectorWatchlist()
+    const data = await listSectorWatchlist(pageErrorRequest)
     watchlisted.value = data.list.some((row) => row.board_code === code.value)
   } catch (error) {
     ElMessage.error(getErrorMessage(error, '板块自选状态加载失败'))
@@ -362,8 +365,8 @@ async function toggleWatchlist(): Promise<void> {
   if (!canUpdateWatchlist.value || watchlistBusy.value) return
   watchlistBusy.value = true
   try {
-    if (watchlisted.value) await removeSectorWatchlist(code.value)
-    else await addSectorWatchlist(code.value)
+    if (watchlisted.value) await removeSectorWatchlist(code.value, pageErrorRequest)
+    else await addSectorWatchlist(code.value, pageErrorRequest)
     watchlisted.value = !watchlisted.value
     ElMessage.success(watchlisted.value ? '已加入板块自选' : '已移出板块自选')
   } catch (error) {

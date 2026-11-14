@@ -10,11 +10,10 @@ T5 落**只读**部分（按 id 取角色、可分配角色集）；T6 扩展角
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from backend.auth.constants import EXPLICIT_SYSTEM_ONLY_RESOURCE_CODES
 from backend.common.ids import uuid_hex_id
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
 log = get_logger("storage.role_repository")
@@ -102,7 +101,7 @@ class RoleRepository:
             "INSERT INTO sys_role "
             "(id, code, name, kind, is_builtin, is_locked, tenant_assignable, description, created_at) "
             "VALUES (%s, %s, %s, 'custom', FALSE, FALSE, %s, %s, %s)",
-            [role_id, code, name, tenant_assignable, description, datetime.now()])
+            [role_id, code, name, tenant_assignable, description, shanghai_now_naive()])
         return role_id
 
     def update(self, role_id: str, *, name: str, description: str | None,
@@ -111,7 +110,7 @@ class RoleRepository:
         self.pg.execute(
             "UPDATE sys_role SET name = %s, description = %s, tenant_assignable = %s, "
             "updated_at = %s WHERE id = %s",
-            [name, description, tenant_assignable, datetime.now(), role_id])
+            [name, description, tenant_assignable, shanghai_now_naive(), role_id])
 
     def assigned_role_ids(self, user_id: str) -> list[str]:
         """读取用户当前角色 id，供租户管理员编辑时保留平台收回下放的角色。"""

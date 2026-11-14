@@ -10,8 +10,6 @@
 
 from __future__ import annotations
 
-from datetime import date
-
 from backend.common.logging import get_logger
 from backend.services.backtest_service import BacktestService
 

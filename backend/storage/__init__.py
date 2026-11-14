@@ -14,12 +14,12 @@ from backend.storage.redis_client import RedisClient, get_redis_client
 __all__ = [
     "DuckDBClient",
     "DuckDBReadClient",
+    "PostgresClient",
+    "RedisClient",
     "close_duckdb_clients",
     "get_client",
-    "get_read_client",
-    "get_write_client",
-    "PostgresClient",
     "get_pg_client",
-    "RedisClient",
+    "get_read_client",
     "get_redis_client",
+    "get_write_client",
 ]

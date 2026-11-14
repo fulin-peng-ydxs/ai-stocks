@@ -8,11 +8,12 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 
 import pandas as pd
 
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.config import get_effective_settings
 from backend.market_identity import trading_code_active_sql
 from backend.price_adjustment import adjust_price_columns
@@ -272,5 +273,5 @@ class MarketRepository:
             "INSERT INTO data_update_log "
             "(id, table_name, source, date_start, date_end, row_count, status, detail, updated_at) "
             "VALUES (nextval('seq_update_log'), ?, ?, ?, ?, ?, ?, ?, ?)",
-            [table_name, source, date_start, date_end, row_count, status, detail, datetime.now()],
+            [table_name, source, date_start, date_end, row_count, status, detail, shanghai_now_naive()],
         )

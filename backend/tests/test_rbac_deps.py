@@ -43,15 +43,13 @@ def test_require_system_passes_for_system():
 
 
 def test_require_system_forbids_non_system():
-    with _with_ctx(_TADMIN):
-        with pytest.raises(ForbiddenError):
-            require_system()
+    with _with_ctx(_TADMIN), pytest.raises(ForbiddenError):
+        require_system()
 
 
 def test_require_system_401_without_context():
-    with _with_ctx(None):
-        with pytest.raises(AuthError):
-            require_system()
+    with _with_ctx(None), pytest.raises(AuthError):
+        require_system()
 
 
 # ── require_perm ──
@@ -70,24 +68,21 @@ def test_require_perm_passes_when_code_granted():
 
 def test_require_perm_forbids_when_code_missing():
     dep = require_perm("user:delete")   # tadmin 未被授予
-    with _with_ctx(_TADMIN):
-        with pytest.raises(ForbiddenError):
-            dep()
+    with _with_ctx(_TADMIN), pytest.raises(ForbiddenError):
+        dep()
 
 
 def test_require_perm_401_without_context():
     dep = require_perm("user:list")
-    with _with_ctx(None):
-        with pytest.raises(AuthError):
-            dep()
+    with _with_ctx(None), pytest.raises(AuthError):
+        dep()
 
 
 def test_require_perm_exact_match_no_wildcard():
     """精确匹配：拥有 user:list 不代表拥有 user:list-all（防前缀/通配误放行）。"""
     dep = require_perm("user:list-all")
-    with _with_ctx(_TADMIN):
-        with pytest.raises(ForbiddenError):
-            dep()
+    with _with_ctx(_TADMIN), pytest.raises(ForbiddenError):
+        dep()
 
 
 # ── sectors:view（板块概念 T8/T10b）──
@@ -102,6 +97,5 @@ def test_require_perm_sectors_view_passes_when_granted():
 def test_require_perm_sectors_view_forbids_when_missing():
     """无 sectors:view 授权 → 403（tadmin 未授板块查看，fail-closed）。"""
     dep = require_perm("sectors:view")
-    with _with_ctx(_TADMIN):
-        with pytest.raises(ForbiddenError):
-            dep()
+    with _with_ctx(_TADMIN), pytest.raises(ForbiddenError):
+        dep()

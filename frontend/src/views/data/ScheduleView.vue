@@ -47,6 +47,7 @@ import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import type { AppRequestConfig } from '@/api/client'
 import { getErrorMessage } from '@/utils/error'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
 import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
@@ -72,6 +73,8 @@ import {
   resultMaintenanceTaskFormFromParams,
   type ResultMaintenanceTaskForm,
 } from '@/utils/resultMaintenanceTask'
+
+const pageErrorRequest: AppRequestConfig = { skipGlobalError: true }
 
 const router = useRouter()
 const settingsOpen = ref(false)
@@ -200,7 +203,7 @@ async function loadDependencyOptions(query = '') {
   const requestId = dependencyOptionsRequest.begin()
   dependencyOptionsLoading.value = true
   try {
-    const result = await listScheduleOptions(query)
+    const result = await listScheduleOptions(query, undefined, pageErrorRequest)
     if (!dependencyOptionsRequest.isCurrent(requestId)) return
     const selected = dependencyOptions.value.filter((item) => form.dependency_job_ids.includes(item.id))
     const next = result.list.filter((item) => item.id !== editingId.value)
@@ -729,16 +732,16 @@ const menuPageTitle = useMenuPageTitle()
       @retry="loadTriggerEvents"
     >
       <AppDataTable :data="triggerEvents" size="small" aria-label="调度触发记录表" data-testid="schedule-trigger-events-table">
-        <AppTableColumn label="来源任务">
+        <AppTableColumn label="上游任务" role="name">
           <template #default="{ row }">{{ row.source_job_name || row.source_task_id || '—' }}</template>
         </AppTableColumn>
-        <AppTableColumn label="来源结果" role="status">
+        <AppTableColumn label="上游结果" role="status">
           <template #default="{ row }">{{ sourceStatusLabel(row.source_status) }}</template>
         </AppTableColumn>
         <AppTableColumn label="类型" role="status">
           <template #default="{ row }">{{ triggerKindLabel(row) }}</template>
         </AppTableColumn>
-        <AppTableColumn label="命中规则" role="status">
+        <AppTableColumn label="上游规则" role="status">
           <template #default="{ row }">{{ triggerConditionLabel(row.trigger_condition) }}</template>
         </AppTableColumn>
         <AppTableColumn label="计划时间">

@@ -11,6 +11,7 @@ from uuid import uuid4
 import pandas as pd
 
 from backend.auth.context import AuthContext
+from backend.common.logging import get_logger
 from backend.common.request import trusted_client_ip
 from backend.services.limit_ladder_snapshot import RULE_VERSION
 from backend.services.limit_ladder_task_policy import (
@@ -25,6 +26,8 @@ from backend.storage.limit_ladder_task_repository import (
     TaskSource,
 )
 from backend.storage.user_repository import UserRepository
+
+log = get_logger("services.limit_ladder_task_coordinator")
 
 _LOCK_NAME = "limit-ladder-task-reconcile-v1"
 _MAX_CREATE_ATTEMPTS = 3
@@ -327,6 +330,7 @@ class LimitLadderTaskCoordinator:
                         task_id = self._submit_requested(command)
                         updated += int(task_id is not None)
                     except Exception:  # 已记录真实失败，继续协调其它日期。
+                        log.exception("天梯任务对账继续处理其他日期")
                         updated += 1
                     continue
                 created_at = self._as_datetime(command.get("created_at"))

@@ -1,5 +1,5 @@
 // 榜单/评分 API（对应 backend/api/board.py）
-import http from './client'
+import http, { type AppRequestConfig } from './client'
 import type { ScoreProfileBrowseResult, ScoreProfileSummary, ScoreRunRow } from './scoreProfile'
 
 export interface SubScores {
@@ -17,9 +17,11 @@ export function computeBoard(
   date: string,
   top = 50,
   scoreProfileRefOrId?: string,
+  config?: AppRequestConfig,
 ): Promise<{ date: string; top: number; include_st: boolean; profile_version?: number; list: BoardRow[] }> {
   // 评分方案引用：与回测所选评分方案一致才能让名次对上 entry_rank。
   return http.get('/board/compute', {
+    ...config,
     params: { date, top, ...(scoreProfileRefOrId ? { score_profile_id: scoreProfileRefOrId } : {}) },
   })
 }
@@ -59,7 +61,7 @@ export function runBoardProfile(body: {
   related_board_keyword?: string
   export_all?: boolean
   force?: boolean
-}): Promise<{
+}, config?: AppRequestConfig): Promise<{
   run_date: string
   page: number
   page_size: number
@@ -74,7 +76,7 @@ export function runBoardProfile(body: {
   cache_status?: 'cached' | 'materialized'
   list: ScoreRunRow[]
 }> {
-  return http.post('/board/run', body)
+  return http.post('/board/run', body, config)
 }
 
 // 评分维度元信息；热力颜色由 SubScoreBars 的共享语义色板计算。

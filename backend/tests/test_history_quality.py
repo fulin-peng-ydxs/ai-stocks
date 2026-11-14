@@ -163,7 +163,6 @@ def test_history_legacy_ignore_does_not_hide_leading_gap(market):
 
 
 def test_mark_delisted_preserves_pre_delisting_history_gap(market, monkeypatch):
-    from backend.api import data_admin
     q = HistoryQualityService(market)
     DataIntegrityReport(market)._upsert_scan_issues(q.issues(), ('history_data_gap',))
     iid = int(market.query_df("SELECT id FROM data_quality_issue WHERE code='A.SH'").iloc[0,0])
@@ -226,9 +225,11 @@ def test_baostock_unknown_trade_status_is_not_suspension(monkeypatch):
 
 def test_baostock_login_timeout_does_not_change_global_socket(monkeypatch):
     import socket
+
     import baostock
     from baostock.common import context
     from baostock.util.socketutil import SocketUtil
+
     from backend.datasource.baostock_source import BaostockSource
 
     source = BaostockSource.__new__(BaostockSource)
@@ -260,6 +261,7 @@ def test_baostock_login_timeout_does_not_change_global_socket(monkeypatch):
 def test_baostock_login_restores_connector_on_failure(monkeypatch):
     import baostock
     from baostock.util.socketutil import SocketUtil
+
     from backend.datasource.baostock_source import BaostockSource
     source = BaostockSource.__new__(BaostockSource)
     source._logged_in = False
@@ -313,7 +315,7 @@ def test_adj_repair_recomputes_clean_factor_before_recheck(market):
 
 
 def test_reference_price_restores_dividend_before_factor_reset():
-    from backend.datasource.akshare_source import dejitter_adj_factor, compute_pre_close
+    from backend.datasource.akshare_source import compute_pre_close, dejitter_adj_factor
     raw = pd.Series([1.0, 1.0, 4.18, 4.18])
     close = pd.Series([24.14, 21.33, 21.4, 21.5])
     reference = pd.Series([24.0, 21.71, 21.33, 21.4])
@@ -347,13 +349,13 @@ def test_reference_factor_rebuild_is_persistent_and_idempotent(market):
 def test_factor_reset_calibrates_reference_before_reset_too():
     ing = IngestionService.__new__(IngestionService)
     dates = [date(2017,1,2), date(2017,1,3), date(2017,1,4)]
-    frame = pd.DataFrame(dict(trade_date=dates,close=[24.14,21.33,21.4],
-                              pre_close=[24,24.14,5.1],adj_factor=[1,1,4.18],
-                              _pre_close_factor_event=[False,False,True]))
+    frame = pd.DataFrame({"trade_date": dates,"close": [24.14,21.33,21.4],
+                              "pre_close": [24,24.14,5.1],"adj_factor": [1,1,4.18],
+                              "_pre_close_factor_event": [False,False,True]})
     seen = []
     def reference(code,start,end):
         seen.append((start,end))
-        return pd.DataFrame(dict(trade_date=dates,pre_close=[24,21.71,21.33],close=[24.14,21.33,21.4]))
+        return pd.DataFrame({"trade_date": dates,"pre_close": [24,21.71,21.33],"close": [24.14,21.33,21.4]})
     ing._bao_source = lambda: SimpleNamespace(name="baostock",get_daily_bar=reference)
     calibrated, _ = ing._calibrate_corporate_action_pre_close(frame,"001872.SZ",0.1,"akshare")
     assert seen == [(dates[0], dates[-1])]
@@ -469,8 +471,8 @@ def test_suspension_review_removes_post_delisting_records_without_network(market
 
 
 def test_suspension_review_stops_after_repeated_provider_failure(market):
-    from backend.storage.repository import MarketRepository
     from backend.common.exceptions import DataSourceError
+    from backend.storage.repository import MarketRepository
     market.execute("INSERT INTO stock_suspension(code,trade_date) SELECT i::VARCHAR||'.SZ',DATE '2017-01-03' FROM range(5) t(i)")
     ing=IngestionService.__new__(IngestionService)
     ing.c,ing.repo=market,MarketRepository(market)

@@ -13,7 +13,6 @@ import pytest
 from backend.datasource import ths_board as tb
 from backend.datasource.ths_board import ThsBoardSource
 
-
 # ── 测试页夹具 ────────────────────────────────────────────────
 
 _LOGIN_WALL = '<script>location.href="//upass.10jqka.com.cn/login?redir=..."</script>'
@@ -538,8 +537,8 @@ def test_login_cookie_source_priority(monkeypatch):
 
     # FILE 优先于空 COOKIE
     monkeypatch.delenv("AI_STOCKS_THS_COOKIE")
-    import tempfile
     import os
+    import tempfile
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
         f.write("file-cookie=xyz")
         p = f.name

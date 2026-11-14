@@ -1,5 +1,5 @@
 // 评分规则方案 + 技术指标注册表 API（对应 backend/api/score_profiles.py、indicators.py）
-import http from './client'
+import http, { type AppRequestConfig } from './client'
 import type { KlinePeriod } from './stocks'
 import type { StockRelatedBoards } from '@/types/relatedBoards'
 
@@ -242,6 +242,6 @@ export function runScoreProfile(body: {
   include_st?: boolean
   run_date?: string
   top?: number
-}): Promise<{ run_date: string; top: number; count: number; include_st: boolean; profile_version: number | null; cache_status?: string; list: ScoreRunRow[] }> {
-  return http.post('/score-profiles/run', body)
+}, config?: AppRequestConfig): Promise<{ run_date: string; top: number; count: number; include_st: boolean; profile_version: number | null; cache_status?: string; list: ScoreRunRow[] }> {
+  return http.post('/score-profiles/run', body, config)
 }

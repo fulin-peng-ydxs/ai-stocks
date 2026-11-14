@@ -310,9 +310,9 @@ async function onMenuReorder(next: MenuNode[]): Promise<void> {
   try {
     await reorderMenus(changes)
     saved = true
-    ElMessage.success('菜单顺序已保存')
     await loadTree(true)
-    await auth.fetchMe({ background: true })
+    await auth.fetchMe({ background: true }, { skipGlobalError: true })
+    ElMessage.success('菜单顺序已保存')
   } catch {
     if (!saved) {
       tree.value = previous

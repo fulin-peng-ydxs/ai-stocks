@@ -1,5 +1,6 @@
 """批量修复真实落库回归：有界取源、原口径复检、失败不重复取源及取消续跑。"""
 
+import json
 import threading
 import time
 from datetime import date
@@ -8,7 +9,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from backend.common.exceptions import DataSourceError
+from backend.common.exceptions import DataQualityError, DataSourceError, StorageError
 from backend.config.settings import Settings
 from backend.datasource.base import check_thread_cancel, thread_cancel_scope
 from backend.datasource.observability import RequestTracker, observe_work
@@ -327,6 +328,101 @@ def test_st_three_issue_types_share_one_refresh_and_failures_stay_open(setup, mo
     assert rows.status.tolist() == (["resolved", "resolved", "open"] if partial else ["resolved"] * 3)
 
 
+@pytest.mark.parametrize(("failures", "reason"), [
+    ([{"code": "600000.SH", "error": "600000.SH ST 点时事实缺 1 个行情日，示例: 2026-11-13"}],
+     "600000.SH ST 点时事实缺 1 个行情日，示例: 2026-11-13"),
+    ([], "未取得完整的逐日 ST 事实"),
+    ([{"code": "600000.SH"}], "未取得完整的逐日 ST 事实"),
+    ([{"code": "600000.SH", "error": "The read operation timed out"}],
+     "数据源请求超时，未能完成取数，请稍后重试"),
+    ([{"code": "600000.SH", "error": "Connection reset by peer"}],
+     "数据源连接失败，未能取得数据，请检查网络后重试"),
+])
+def test_single_st_failure_exposes_readable_reason_and_keeps_diagnostic(setup, monkeypatch, failures, reason):
+    """单条失败摘要不回显字典；原因与台账状态仍可在质量页直接消费。"""
+    from backend.services.data_report import DataIntegrityReport
+
+    client, _, _, svc = setup()
+    iid = issue(client, "600000.SH", kind="st_status_missing")
+    monkeypatch.setattr(DataIntegrityReport, "recheck_clean", lambda *args, **kwargs: False)
+    svc.refresh_st_status = lambda **kwargs: {"fail": 1, "failures": failures}
+    result = run([iid], Context())
+    assert result["message"] == f"恢复失败，已退回待处理：ST 状态刷新失败：{reason}"
+    assert result["ok"] is False and result["failed"] == 1
+    assert result["failure_reason"] == f"ST 状态刷新失败：{reason}"
+    row = client.query_df("SELECT status,fix_task_id,detail FROM data_quality_issue WHERE id=?", [iid]).iloc[0]
+    assert row.status == "open" and pd.isna(row.fix_task_id)
+    assert reason in json.loads(row.detail)["last_repair"]["error"]
+    assert json.loads(row.detail)["last_repair"]["failure_reason"] == result["failure_reason"]
+
+
+@pytest.mark.parametrize(("error", "expected"), [
+    (RuntimeError("源端仍无数据，保持待处理"), "源端仍无数据"),
+    (DataSourceError("ReadTimeout: GET https://secret.test/token"), "请求超时"),
+    (ConnectionError("connection failed https://secret.test/token"), "连接失败"),
+    (RuntimeError("HTTPError: 429 for https://secret.test/token"), "限流"),
+    (RuntimeError("HTTPError: 403 for https://secret.test/token"), "拒绝访问"),
+    (DataSourceError("HTTPError: 502 for https://secret.test/token"), "数据源请求失败"),
+    (ValueError("invalid response at /Users/private/secret"), "参数或返回数据"),
+    (StorageError("SQL: SELECT secret FROM private_table"), "读取或写入失败"),
+    (DataQualityError("invalid data at /tmp/secret"), "质量校验"),
+    (RuntimeError("SQL: SELECT secret FROM private_table"), "修复执行异常"),
+    (RuntimeError("未知异常 Traceback: /tmp/secret"), "修复执行异常"),
+])
+def test_repair_failure_translation_preserves_cause_without_technical_details(error, expected):
+    from backend.services.quality_repair_feedback import repair_failure_reason
+
+    reason = repair_failure_reason(error)
+    assert expected in reason
+    assert not any(value in reason for value in ("secret", "HTTPError", "SQL:", "Traceback", "查看日志"))
+
+
+def test_repair_failure_translation_checks_wrapped_cause():
+    from backend.services.quality_repair_feedback import repair_failure_reason
+
+    error = RuntimeError("source failed")
+    error.__cause__ = TimeoutError("request timed out")
+    assert "请求超时" in repair_failure_reason(error)
+
+
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("concept/即时: empty", "数据源返回空数据"),
+    ("300001: years [2025, 2026]", "2025, 2026 年的采集"),
+    ("concept/即时:板块: net_inflow=1 != inflow-outflow=2", "净流入与流入减流出"),
+])
+def test_board_collection_known_failure_formats_are_translated(raw, expected):
+    from backend.services.quality_repair_feedback import repair_collection_reason
+
+    assert expected in repair_collection_reason([raw])
+
+
+@pytest.mark.parametrize("kind", [
+    "board_index_gap_daily", "board_fund_missing", "board_fund_stale", "board_fund_unmatched",
+])
+def test_board_failure_list_keeps_reason_and_raw_log(setup, monkeypatch, kind):
+    from backend.services.data_report import DataIntegrityReport
+
+    client, state, service, _ = setup(count=1)
+    code = state.codes[0]
+    iid = issue(client, code, kind=kind)
+    # 本用例验证采集返回失败后的反馈；明确保持目标问题未通过复检，避免
+    # 来源级 stale 因空快照被现有扫描判为无需恢复而提前收敛。
+    monkeypatch.setattr(DataIntegrityReport, "recheck_clean", lambda *args, **kwargs: False)
+    fail = lambda *args, **kwargs: {
+        "failed": [{"error": "源端尚未提供目标日指数"}], "rows": 0,
+    }
+    service.ingest_board_bar = fail
+    service.ingest_board_fund_flow = fail
+    service.ingest_board_dict = lambda **kwargs: None
+    ctx = Context()
+    result = run([iid], ctx)
+    label = "板块指数" if kind == "board_index_gap_daily" else "板块资金流"
+    assert result["failure_reason"] == f"{label}重采失败：源端尚未提供目标日指数"
+    assert result["failed"] == 1 and result["resolved"] == 0
+    assert any("'error':" in message for message in ctx.logs)
+    assert client.query_df("SELECT status FROM data_quality_issue WHERE id=?", [iid]).iloc[0, 0] == "open"
+
+
 def test_four_capital_issue_types_do_not_repeat_full_history_or_close_remaining_issues(setup, monkeypatch):
     from backend.services.data_report import DataIntegrityReport
 
@@ -351,10 +447,12 @@ def test_four_capital_issue_types_do_not_repeat_full_history_or_close_remaining_
         return svc._complete_capital_material(material, source, one)
     monkeypatch.setattr(svc, "_merge_valuation_batch", batch)
     for _ in range(2):
+        before = len(calls)
         result = run(ids, Context())
         assert result["resolved"] == result["failed"] == 0
         assert client.query_df("SELECT count(*) FROM data_quality_issue WHERE status='open'").iloc[0,0] == 8
-    assert calls == codes * 2  # 缓存仅本任务有效，下一任务仍可真实重试。
+        # 并发完成顺序不固定；每轮严格验证每股仅调用一次，且下一任务重新取源。
+        assert sorted(calls[before:]) == sorted(codes)
 
 
 def wire_stock_repairs(setup, monkeypatch, *, name="stocks", count=12):

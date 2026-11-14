@@ -126,9 +126,9 @@ def test_stage4_business_routes_have_precise_code(client):
         if path in _DYNAMIC_SCOPE_ROUTES:
             continue
         # 属 stage4 前缀但排除平台管理模块（/api/users 等；注意 /api/data 属 stage4）
-        if path.startswith(_STAGE4_PREFIXES) and not path.startswith(_MANAGE_PREFIXES):
-            if not _has_resource_code(route):
-                missing.append(path)
+        if (path.startswith(_STAGE4_PREFIXES) and not path.startswith(_MANAGE_PREFIXES)
+                and not _has_resource_code(route)):
+            missing.append(path)
     assert not missing, f"stage4 端点缺精确资源码: {sorted(set(missing))}"
 
 

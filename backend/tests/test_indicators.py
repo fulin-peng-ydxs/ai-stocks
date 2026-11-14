@@ -89,13 +89,13 @@ def test_no_future_shift_in_indicator_code():
         tree = ast.parse(src)
         for node in ast.walk(tree):
             # 匹配 .shift(<负数字面量>) 或 .shift(-x)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "shift":
-                if node.args:
-                    a = node.args[0]
-                    if isinstance(a, ast.UnaryOp) and isinstance(a.op, ast.USub):
-                        offenders.append(f"{pyf.name}: shift(-...)")
-                    if isinstance(a, ast.Constant) and isinstance(a.value, (int, float)) and a.value < 0:
-                        offenders.append(f"{pyf.name}: shift({a.value})")
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "shift" and node.args):
+                a = node.args[0]
+                if isinstance(a, ast.UnaryOp) and isinstance(a.op, ast.USub):
+                    offenders.append(f"{pyf.name}: shift(-...)")
+                if isinstance(a, ast.Constant) and isinstance(a.value, (int, float)) and a.value < 0:
+                    offenders.append(f"{pyf.name}: shift({a.value})")
     assert not offenders, f"发现未来函数 shift 负移: {offenders}"
 
 

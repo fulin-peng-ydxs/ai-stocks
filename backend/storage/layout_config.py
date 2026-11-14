@@ -17,6 +17,7 @@ from typing import Any, Literal
 from backend.auth.context import get_current_owner
 from backend.common.exceptions import ValidationError
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.pg_client import get_pg_client
 from backend.storage.pg_ddl import (
@@ -180,7 +181,7 @@ def check_component_config_ownership(values: dict[str, Any], layout: dict[str, A
         if isinstance(s, dict) and isinstance(s.get("id"), str)
     }
     errors: list[str] = []
-    for path in values:
+    for path, value in values.items():
         m = COMPONENT_CONFIG_PATH_RE.fullmatch(path)
         if not m:
             continue
@@ -241,7 +242,6 @@ def check_component_config_ownership(values: dict[str, Any], layout: dict[str, A
             errors.append(f"组件 {kind} 的当前实例未启用默认排序，不能配置 defaultSort（slot {slot_id}）")
             continue
         options = COMPONENT_CONFIG_OPTIONS_BY_KIND_FIELD.get((kind, field))
-        value = values[path]
         if options and (
             (isinstance(value, list) and any(item not in options for item in value))
             or (not isinstance(value, list) and value not in options)
@@ -915,14 +915,14 @@ class LayoutConfigRepo:
                     self.pg.execute(
                         "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, %s) "
                         "ON CONFLICT (key) DO NOTHING",
-                        [_SINGLE_BLUE_PRESET_MARKER, '{"applied":true,"source":"duckdb"}', datetime.now()],
+                        [_SINGLE_BLUE_PRESET_MARKER, '{"applied":true,"source":"duckdb"}', shanghai_now_naive()],
                     )
                 return 0
             inserted = self._apply_builtin_preset_migration()
             self.pg.execute(
                 "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, %s) "
                 "ON CONFLICT (key) DO NOTHING",
-                [_SINGLE_BLUE_PRESET_MARKER, '{"applied":true}', datetime.now()],
+                [_SINGLE_BLUE_PRESET_MARKER, '{"applied":true}', shanghai_now_naive()],
             )
             self._migrate_visual_preset_split()
             self._ensure_default_preset_enabled()
@@ -976,34 +976,34 @@ class LayoutConfigRepo:
                     if changed:
                         self.pg.execute(
                             "UPDATE layout_page_config SET config=%s, updated_at=%s WHERE page_key=%s",
-                            [_json_dump(values), datetime.now(), page_key],
+                            [_json_dump(values), shanghai_now_naive(), page_key],
                         )
             visual = _visual_preset_values(raw)
             if visual != raw:
                 self.pg.execute(
                     "UPDATE layout_preset SET config=%s, updated_at=%s WHERE key=%s",
-                    [_json_dump(visual), datetime.now(), row["key"]],
+                    [_json_dump(visual), shanghai_now_naive(), row["key"]],
                 )
         # 预设已不再是页面布局层；解除历史页面引用，避免产生无消费的假关联。
         self.pg.execute(
             "UPDATE layout_page_config SET preset_key=NULL, updated_at=%s WHERE preset_key IS NOT NULL",
-            [datetime.now()],
+            [shanghai_now_naive()],
         )
         self.pg.execute(
             "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s) "
             "ON CONFLICT (key) DO NOTHING",
-            [_AUTO_SCALE_CONFIG_PATH, _json_dump(auto_scale), datetime.now()],
+            [_AUTO_SCALE_CONFIG_PATH, _json_dump(auto_scale), shanghai_now_naive()],
         )
         self.pg.execute(
             "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s) "
             "ON CONFLICT (key) DO NOTHING",
-            [_VISUAL_PRESET_SPLIT_MARKER, '{"applied":true}', datetime.now()],
+            [_VISUAL_PRESET_SPLIT_MARKER, '{"applied":true}', shanghai_now_naive()],
         )
 
     def _apply_builtin_preset_migration(self) -> int:
         """一次性收敛为单一内置蓝色预设；自定义预设继续保留并可扩展。"""
         before = self._pg_layout_count("layout_preset")
-        now = datetime.now()
+        now = shanghai_now_naive()
         for preset in BUILTIN_PRESETS:
             cfg = normalize_preset_override(preset["config"])
             self.pg.execute(
@@ -1087,7 +1087,7 @@ class LayoutConfigRepo:
         existing = self.get_preset(key)
         if existing and existing["is_builtin"] and not is_builtin:
             is_builtin = True
-        now = datetime.now()
+        now = shanghai_now_naive()
         created_at = now
         if existing and existing.get("created_at"):
             created_at = datetime.fromisoformat(str(existing["created_at"]))
@@ -1159,7 +1159,7 @@ class LayoutConfigRepo:
             "ON CONFLICT (page_key) DO UPDATE SET "
             "preset_key=EXCLUDED.preset_key, config=EXCLUDED.config, "
             "schema_version=EXCLUDED.schema_version, updated_at=EXCLUDED.updated_at",
-            [page_key, None, _json_dump(cfg["values"]), cfg["schemaVersion"], datetime.now()],
+            [page_key, None, _json_dump(cfg["values"]), cfg["schemaVersion"], shanghai_now_naive()],
         )
         return self.get_page_config(page_key)
 
@@ -1210,7 +1210,7 @@ class LayoutConfigRepo:
             "ON CONFLICT (user_id, page_key) DO UPDATE SET "
             "config=EXCLUDED.config, schema_version=EXCLUDED.schema_version, updated_at=EXCLUDED.updated_at",
             [user_id, self.tenant_id, user_id, page_key, _json_dump(cfg["values"]),
-             cfg["schemaVersion"], datetime.now()],
+             cfg["schemaVersion"], shanghai_now_naive()],
         )
         return self.get_user_config(page_key, user_id)
 
@@ -1314,7 +1314,7 @@ class LayoutConfigRepo:
             "VALUES (%s,%s,%s,%s) "
             "ON CONFLICT (component_kind, field) DO UPDATE SET "
             "allowed_layers=EXCLUDED.allowed_layers, updated_at=EXCLUDED.updated_at",
-            [component_kind, field, _json_dump(ordered), datetime.now()],
+            [component_kind, field, _json_dump(ordered), shanghai_now_naive()],
         )
         log.info("组件字段开放策略已保存: %s.%s -> %s", component_kind, field, ordered)
         return {

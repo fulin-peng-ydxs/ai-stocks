@@ -99,10 +99,10 @@ class DailyPipeline:
         # 1. 增量更新（最慢，可跳过：数据已最新时）
         if not skip_update:
             from backend.services import IngestionService
-            if not step("更新数据", lambda stage_ctx: IngestionService().update(codes=codes, ctx=stage_ctx)):
-                # 返回了部分成果时仍需运行后续质检；整体异常无结果才提前停止。
-                if not isinstance(steps[-1]["detail"], dict):
-                    return {"ok": False, "steps": steps}
+            # 返回了部分成果时仍需运行后续质检；整体异常无结果才提前停止。
+            if (not step("更新数据", lambda stage_ctx: IngestionService().update(codes=codes, ctx=stage_ctx))
+                    and not isinstance(steps[-1]["detail"], dict)):
+                return {"ok": False, "steps": steps}
 
         checkpoint = (getattr(ctx, 'checkpoint', {}) or {}) if ctx else {}
         target = checkpoint.get('pipeline_target_end')

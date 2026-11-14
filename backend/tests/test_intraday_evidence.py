@@ -11,10 +11,12 @@ from backend.services.intraday_archive import IntradayArchiveService
 from backend.services.intraday_contract import REQUIRED_TIMES
 from backend.services.intraday_evidence import IntradayEvidence, missing_ranges
 from backend.services.intraday_source import IntradaySourceService
-from backend.tests.test_intraday_archive import CODE, DAY, Context, Windows, window
-from backend.tests.test_intraday_archive import db as db
+from backend.tests.test_intraday_archive import CODE, DAY, Context, Windows, db, window
 from backend.tests.test_intraday_quotes import _frame
-from backend.tests.test_intraday_source import request_settings as request_settings
+from backend.tests.test_intraday_source import request_settings
+
+# pytest 按名称消费共享夹具；原生导出清单保留其导入与自动生效范围。
+__all__ = ["db", "request_settings"]
 
 
 def _boundary(db, monkeypatch, first_points=81):
@@ -193,11 +195,11 @@ def test_unavailable_repair_is_not_technical_failure_or_self_retry(db, monkeypat
 
 def test_repair_cancel_resume_freezes_ids_and_does_not_repeat_completed_stock(db, monkeypatch):
     import threading
+
     import pytest
 
     from backend.config.settings import Settings
-    from backend.services import intraday_archive
-    from backend.services import async_task, intraday_source
+    from backend.services import async_task, intraday_archive, intraday_source
     from backend.services.async_task import TaskCancelled
     from backend.services.data_report import DataIntegrityReport
 

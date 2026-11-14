@@ -19,8 +19,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from backend.services.limit_ladder_calculator import LimitLadderCalculator
 from backend.indicators.stock_board_correlation import ALGORITHM_VERSION
+from backend.services.limit_ladder_calculator import LimitLadderCalculator
 from backend.services.limit_ladder_query import LimitLadderFilters, LimitLadderQueryService
 from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
 from backend.storage.ddl import init_db

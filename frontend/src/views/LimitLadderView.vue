@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { getErrorMessage } from '@/utils/error'
 import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSelect from '@/components/AppSelect.vue'
@@ -329,14 +330,6 @@ async function resetAllSettings(): Promise<void> {
   ElMessage.success('已恢复并应用系统默认设置')
 }
 
-function errorMessage(value: unknown, fallback: string): string {
-  return String(
-    (value as { uiMessage?: string; message?: string })?.uiMessage
-      || (value as { message?: string })?.message
-      || fallback,
-  )
-}
-
 function isPermissionError(value: unknown): boolean {
   return (value as { response?: { status?: number } })?.response?.status === 403
 }
@@ -532,7 +525,7 @@ async function requestLadder(background: boolean, retryQueue = false): Promise<v
       error.value = ''
       forbidden.value = true
     } else if (!background) {
-      error.value = errorMessage(value, '天梯加载失败，请稍后重试')
+      error.value = getErrorMessage(value, '天梯加载失败，请稍后重试')
     }
   } finally {
     if (sequence === requestSequence) {
@@ -575,7 +568,7 @@ async function recomputeCurrentDate(): Promise<void> {
       resultPolling.observe(true, `${tradeDate.value}:snapshot`)
     }
   } catch (value) {
-    ElMessage.error(errorMessage(value, '重算提交失败，请稍后重试'))
+    ElMessage.error(getErrorMessage(value, '重算提交失败，请稍后重试'))
   } finally {
     recomputing.value = false
   }
@@ -635,7 +628,7 @@ async function exportCsv(): Promise<void> {
     URL.revokeObjectURL(url)
     ElMessage.success(`已按当前 ${filters.value.window} 日筛选口径导出`)
   } catch (value) {
-    ElMessage.error(errorMessage(value, '导出失败，请稍后重试'))
+    ElMessage.error(getErrorMessage(value, '导出失败，请稍后重试'))
   } finally {
     exporting.value = false
   }
@@ -721,7 +714,7 @@ async function initializePage(): Promise<void> {
       error.value = ''
       forbidden.value = true
     } else {
-      error.value = errorMessage(value, '交易日加载失败，请稍后重试')
+      error.value = getErrorMessage(value, '交易日加载失败，请稍后重试')
     }
     loading.value = false
   }

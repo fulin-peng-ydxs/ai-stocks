@@ -82,7 +82,7 @@ def run_backtest(body: BacktestRunIn) -> ApiResponse:
         if body.kind in ("signal", "score_check"):
             return ok(svc.run_signal(params))  # 落库进历史（同条件覆盖，唯一）
         return ok(svc.run_strategy(params))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
@@ -94,7 +94,7 @@ def prepare_backtest(body: BacktestRunIn) -> ApiResponse:
     kind = "score_check" if body.kind in ("signal", "score_check") else "strategy"
     try:
         return ok(BacktestService().prepare(kind, params))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
@@ -125,7 +125,7 @@ def robust(body: RobustIn) -> ApiResponse:
         if not body.values:
             raise ValueError("param_sweep 需提供 values")
         return ok(ra.param_sweep(body.params, body.param, body.values))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 

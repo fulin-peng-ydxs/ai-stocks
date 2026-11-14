@@ -250,6 +250,26 @@ describe('页面布局操作闭环', () => {
     expect(pageSelect().props('modelValue')).toBe('board')
   })
 
+  it('页面导入接管校验与保存提示，普通报告保留默认全局提示', async () => {
+    await mountPage()
+    await selectTab('import')
+    await wrapper.get('textarea[placeholder="粘贴页面/用户配置 JSON"]').setValue(JSON.stringify({
+      type: 'layout-page-config', page: pageConfig('limit-ladder'),
+    }))
+    await button('校验并导入').trigger('click')
+    await flushPromises()
+    expect(api.validateLayoutConfig).toHaveBeenCalledWith(expect.objectContaining({
+      config: pageConfig('limit-ladder').config,
+    }), { skipGlobalError: true })
+    expect(api.saveLayoutPageConfig).toHaveBeenCalledWith('limit-ladder', expect.objectContaining({
+      config: pageConfig('limit-ladder').config,
+    }), { skipGlobalError: true })
+    api.validateLayoutConfig.mockClear()
+    await selectTab('report')
+    expect(api.validateLayoutConfig).toHaveBeenCalledTimes(2)
+    for (const call of api.validateLayoutConfig.mock.calls) expect(call).toHaveLength(1)
+  })
+
   it('报告请求失败显示错误，重试完成后才展示校验结果', async () => {
     await mountPage()
     api.getLayoutUserConfig.mockRejectedValueOnce(new Error('用户覆盖读取失败'))

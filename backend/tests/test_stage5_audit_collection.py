@@ -162,20 +162,20 @@ def test_stage5_scheduler_skip_and_failure_record_task_audit(pg, monkeypatch):
                 "params": {},
             }
 
-        def set_last_run(self, job_id, tid):  # noqa: ARG002
+        def set_last_run(self, job_id, tid):
             raise AssertionError("skip/failure path should not set last run")
 
     class FailingTaskService:
-        def create(self, *args, **kwargs):  # noqa: ARG002
+        def create(self, *args, **kwargs):
             raise RuntimeError("scheduler down")
 
     monkeypatch.setattr(scheduler, "ScheduledJobService", FakeJobService)
-    monkeypatch.setattr(scheduler, "_is_trading_day", lambda d: False)  # noqa: ARG005
+    monkeypatch.setattr(scheduler, "_is_trading_day", lambda d: False)
     scheduler._fire_job("stage5_job_skip")
 
     import backend.services.async_task as async_task_module
 
-    monkeypatch.setattr(scheduler, "_is_trading_day", lambda d: True)  # noqa: ARG005
+    monkeypatch.setattr(scheduler, "_is_trading_day", lambda d: True)
     monkeypatch.setattr(async_task_module, "AsyncTaskService", FailingTaskService)
     scheduler._fire_job("stage5_job_fail")
 

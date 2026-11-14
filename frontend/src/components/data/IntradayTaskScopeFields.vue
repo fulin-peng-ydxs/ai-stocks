@@ -32,9 +32,6 @@ function patch(value: Partial<IntradayIngestForm>) {
       ? '补采缺失、不完整和新增日期，已有完整归档会跳过。'
       : '指定区间重新取源，完整日期也会刷新；较差、空或失败结果不会覆盖已有较好数据。' }}</AppFormHelp>
   </el-form-item>
-  <el-form-item>
-    <AppFormHelp>采集范围与模式独立。全市场采集可能运行数小时，可在任务中心查看进度、终止或续跑。</AppFormHelp>
-  </el-form-item>
   <el-form-item label="采集对象" required>
     <PageSegmented :model-value="modelValue.asset_type"
       :test-id="testIdPrefix + '-asset-type'" aria-label="分时采集对象"
@@ -76,5 +73,6 @@ function patch(value: Partial<IntradayIngestForm>) {
       />
     </el-form-item>
   </template>
+  <AppFormHelp>采集范围与模式独立。全市场采集可能运行数小时，可在任务中心查看进度、终止或续跑。</AppFormHelp>
   <AppFormHelp>个股与指数共用采集和质检；首次从全局监控起点采集。成功补采更早数据会自动前移全部标的质检起点，数据丢失不会使起点后移；当天须已收盘且对应日线就绪。</AppFormHelp>
 </template>

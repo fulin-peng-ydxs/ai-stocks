@@ -545,8 +545,8 @@ TABLE_CATALOG.update({'stock_share_capital_event': {'name_cn': '股本原始事�
                                  'purpose': '兼容旧版数据库保留；重建任务清理旧派生行，不再写入或参与业务读取。统一事实见 stock_share_capital_daily。',
                                  'date_col': 'trade_date',
                                  'relations': ['(code,trade_date) → daily_bar',
-                                               'total_event_id/float_event_id → '
-                                               'stock_share_capital_event',
+                                               ('total_event_id/float_event_id → '
+                                               'stock_share_capital_event'),
                                                '回测及选股仍读取stock_share_capital_daily/daily_metrics'],
                                  'fields': [{'name': 'code',
                                              'type': 'VARCHAR',

@@ -6,12 +6,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 import pandas as pd
 
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.pg_client import PostgresClient, get_pg_client
 from backend.storage.pg_ddl import (
@@ -213,23 +213,22 @@ def migrate_config_storage(
         log.info("配置存储迁移 dry-run 完成")
         return report
 
-    with pg.transaction() as conn:
-        with conn.cursor() as cur:
-            for table, columns in _LAYOUT_TABLES.items():
-                src = _source_df(duck, table, columns)
-                report[table]["migrated"] = _upsert_layout(cur, table, src, columns)
-            app_df = _app_config_source_df(duck)
-            report["app_config"]["migrated"] = _insert_missing_app_config(cur, app_df)
-            # 明确保留旧三主题 seed marker：若旧库已有，app_config 缺失补迁会带过来；此处只补本次迁移 marker。
-            cur.execute(
-                "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s) "
-                "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
-                [
-                    CONFIG_STORAGE_MARKER,
-                    '{"applied":true,"source":"migrate-config-storage"}',
-                    datetime.now(),
-                ],
-            )
+    with pg.transaction() as conn, conn.cursor() as cur:
+        for table, columns in _LAYOUT_TABLES.items():
+            src = _source_df(duck, table, columns)
+            report[table]["migrated"] = _upsert_layout(cur, table, src, columns)
+        app_df = _app_config_source_df(duck)
+        report["app_config"]["migrated"] = _insert_missing_app_config(cur, app_df)
+        # 明确保留旧三主题 seed marker：若旧库已有，app_config 缺失补迁会带过来；此处只补本次迁移 marker。
+        cur.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s) "
+            "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
+            [
+                CONFIG_STORAGE_MARKER,
+                '{"applied":true,"source":"migrate-config-storage"}',
+                shanghai_now_naive(),
+            ],
+        )
 
     for table, keys in _CONFLICT_KEYS.items():
         report[table]["pg_after"] = len(_existing_keys(pg, table, keys))

@@ -79,6 +79,7 @@ import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
+import type { AppRequestConfig } from '@/api/client'
 import { getErrorMessage } from '@/utils/error'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
 import {
@@ -89,6 +90,9 @@ import {
 } from '@/utils/money'
 
 type Visibility = 'private' | 'tenant' | 'public'
+// 页面负责错误反馈；公开重跑回调继续使用 API 默认的拦截器反馈。
+const pageErrorRequest: AppRequestConfig = { skipGlobalError: true }
+
 const auth = useAuthStore()
 const settingsOpen = ref(false)
 const backtestDefaults = {
@@ -847,7 +851,7 @@ async function loadHistory(sequence?: number): Promise<boolean> {
   const requestedKind = kind.value
   historyError.value = ''
   try {
-    const runs = (await listRuns(requestedKind, 'mine')).runs
+    const runs = (await listRuns(requestedKind, 'mine', undefined, pageErrorRequest)).runs
     if (
       requestSequence !== historyLoadSequence
       || requestedKind !== kind.value
@@ -967,7 +971,7 @@ function applyRunParams(run: RunSummary, summary?: RunSummary) {
 // apply 才写表单/结果/resultScoreRef。调用方可在「获取成功」后原子执行 应用详情+commitMineRun，
 // 避免详情加载失败时已永久清掉公开摘要与进入前快照（用户既看不到新结果也无法恢复原现场）。
 async function fetchRunDetail(id: string) {
-  const r = await getRun(id)
+  const r = await getRun(id, pageErrorRequest)
   if (!r?.run) throw new Error('历史回测载入失败')
   return r
 }
@@ -1043,7 +1047,7 @@ async function removeCurrentRun() {
   } catch { return /* 取消 */ }
   try {
     const deletedRef = selectedRun.value
-    await deleteRun(deletedRef)
+    await deleteRun(deletedRef, pageErrorRequest)
     invalidateRunViewOperation()
     clearDisplayedRunResult()
     nextRunSourceRef.value = ''
@@ -1056,7 +1060,7 @@ async function removeCurrentRun() {
     selectedRun.value = ''
     ElMessage.success('记录已删除，参数已保留，可重新运行或选择其他记录')
   } catch (e) {
-    ElMessage.error((e as Error).message || '删除失败')
+    ElMessage.error(getErrorMessage(e, '删除失败'))
   }
 }
 
@@ -1073,13 +1077,13 @@ async function publishRunVisibility(visibility: Visibility) {
   }
   runVisibilitySaving.value = true
   try {
-    const updated = await setRunVisibility(selectedRun.value, visibility)
+    const updated = await setRunVisibility(selectedRun.value, visibility, pageErrorRequest)
     const idx = runHistory.value.findIndex((r) => r.id === updated.id || runKey(r) === selectedRun.value)
     if (idx >= 0) runHistory.value[idx] = { ...runHistory.value[idx], ...updated }
     ElMessage.success(visibility === 'private' ? '已设为私有' : '公开设置已更新')
     await loadHistory()
   } catch (e) {
-    ElMessage.error((e as Error).message || '公开设置失败')
+    ElMessage.error(getErrorMessage(e, '公开设置失败'))
   } finally {
     runVisibilitySaving.value = false
   }
@@ -1091,7 +1095,7 @@ async function reuseCurrentRunParams() {
   const sequence = beginRunViewOperation('load')
   loading.value = true
   try {
-    const r = await getRun(runRef)
+    const r = await getRun(runRef, pageErrorRequest)
     if (sequence !== runLoadSequence) return
     loadingRun.value = true
     applyRunParams(r.run, selectedRunSummary.value)
@@ -1109,7 +1113,7 @@ async function reuseCurrentRunParams() {
     ElMessage.success('已复用参数')
   } catch (e) {
     if (sequence !== runLoadSequence) return
-    ElMessage.error((e as Error).message || '复用参数失败')
+    ElMessage.error(getErrorMessage(e, '复用参数失败'))
     loadingRun.value = false
   } finally {
     finishRunViewOperation(sequence)
@@ -1331,14 +1335,14 @@ async function runRobustTest() {
   try {
     if (robustMode.value === 'in_out_sample') {
       if (!robustSplit.value) { ElMessage.warning('请选择样本切分日'); return }
-      inOutRes.value = (await runRobust({ mode: 'in_out_sample', params: buildStrategyParams(), split_date: robustSplit.value })) as InOutSampleResult
+      inOutRes.value = (await runRobust({ mode: 'in_out_sample', params: buildStrategyParams(), split_date: robustSplit.value }, pageErrorRequest)) as InOutSampleResult
     } else {
       const values = parseRobustValues()
       if (!values.length) { ElMessage.warning('请填写扫描取值'); return }
-      sweepRes.value = (await runRobust({ mode: 'param_sweep', params: buildStrategyParams(), param: robustParam.value, values })) as ParamSweepResult
+      sweepRes.value = (await runRobust({ mode: 'param_sweep', params: buildStrategyParams(), param: robustParam.value, values }, pageErrorRequest)) as ParamSweepResult
     }
   } catch (e) {
-    ElMessage.error((e as Error).message || '稳健性测试失败')
+    ElMessage.error(getErrorMessage(e, '稳健性测试失败'))
   } finally {
     robustLoading.value = false
   }
@@ -1401,7 +1405,7 @@ async function run() {
   const sequence = beginRunViewOperation('run')
   const frozen = buildBody()
   try {
-    const pre = await prepareBacktest(body)
+    const pre = await prepareBacktest(body, pageErrorRequest)
     if (sequence !== runLoadSequence) return // prepare 晚到：页面已切换，丢弃本次操作
     if (pre.duplicate) {
       let choice: 'load' | 'rerun' | 'abort' = 'abort'
@@ -1471,7 +1475,7 @@ async function doRun(body: RunParams, sequence?: number) {
   resultError.value = ''
   resultErrorContext.value = 'run'
   try {
-    const res = (await runBacktest(body)) as StrategyResult | Layers
+    const res = (await runBacktest(body, pageErrorRequest)) as StrategyResult | Layers
     if (stale()) return // 回测请求 pending 期间页面已切换：丢弃本次写回（后台记录仍落库，留待刷新）
     // 先取内部 id 局部持有，loadHistory 后按 id 归一化为 run_ref 再选中
     const internalId = body.kind === 'strategy'
@@ -1646,7 +1650,7 @@ async function openDayBoard(buyDate: string, highlightCode: string) {
   boardLoading.value = true
   boardDlg.value = true
   try {
-    boardRows.value = (await computeBoard(sigDate, 50, resultScoreRef.value || undefined)).list
+    boardRows.value = (await computeBoard(sigDate, 50, resultScoreRef.value || undefined, pageErrorRequest)).list
     boardMissing.value = !boardRows.value.some((r) => r.code === highlightCode)
     // 自动滚动高亮行到可视区
     nextTick(() => {
@@ -1654,7 +1658,7 @@ async function openDayBoard(buyDate: string, highlightCode: string) {
       el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
     })
   } catch (e) {
-    ElMessage.error((e as Error).message || '榜单计算失败')
+    ElMessage.error(getErrorMessage(e, '榜单计算失败'))
   } finally {
     boardLoading.value = false
   }
@@ -1687,7 +1691,7 @@ async function openTradeChart(row: TradeRow) {
     const firstEntry = ymd(ts[0].entry_date)
     const lastExit = ymd(ts[ts.length - 1].exit_date)
     // 同花顺式：加载该股全部历史（含卖出后），默认缩放到交易区间，可自由缩放看全部
-    const data = await getBars(code, { adjust: 'qfq', lookback: 6000 })
+    const data = await getBars(code, { adjust: 'qfq', lookback: 6000 }, undefined, pageErrorRequest)
     dlgName.value = data.name
     dlgBars.value = data.bars
     // 买卖点标记
@@ -1720,7 +1724,7 @@ async function openTradeChart(row: TradeRow) {
       ...t, fwd10: fwd(t.exit_date, 10), fwd30: fwd(t.exit_date, 30), fwd120: fwd(t.exit_date, 120),
     }))
   } catch (e) {
-    ElMessage.error((e as Error).message || 'K线载入失败')
+    ElMessage.error(getErrorMessage(e, 'K线载入失败'))
   } finally {
     await indicatorRequest
     dlgLoading.value = false

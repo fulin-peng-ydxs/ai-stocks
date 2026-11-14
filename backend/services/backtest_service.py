@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
-from datetime import date, datetime
-from typing import Iterator
+from datetime import date
 
 import pandas as pd
 import psycopg
@@ -29,6 +29,7 @@ from backend.backtest.engine import BacktestEngine
 from backend.backtest.metrics import compute_metrics
 from backend.backtest.signal import SignalAnalyzer
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.market_identity import IDENTITY_VERSION
 from backend.price_adjustment import PRICE_CONSUMPTION_VERSION
 from backend.services.asset_audit import record_backtest_reuse_audit
@@ -79,7 +80,7 @@ class BacktestService:
 
     def _new_id(self, kind: str) -> str:
         # 秒级时间戳 + 短 UUID：同一用户并发/多标签/重试同秒启动会得到不同 id，避免互相覆盖（P1-5）。
-        return f"bt_{kind}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        return f"bt_{kind}_{shanghai_now_naive().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
     def _persist_run(self, run_id: str, kind: str, params: dict, status: str,
                      detail: str = "", finished: bool = False,
@@ -92,7 +93,7 @@ class BacktestService:
             "UPDATE backtest_run SET status=%s, detail=%s, finished_at=%s, params=%s, "
             "score_profile_version=%s, profile_version=%s, trade_profile_version=%s, signature=%s "
             "WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
-            [status, detail, datetime.now() if finished else None,
+            [status, detail, shanghai_now_naive() if finished else None,
              json.dumps(stored_params, ensure_ascii=False, default=str),
              v.get("score_profile_version"), v.get("profile_version"), v.get("trade_profile_version"), signature,
              run_id, *self._op])
@@ -111,11 +112,11 @@ class BacktestService:
              date.fromisoformat(params["date_start"]) if isinstance(params["date_start"], str) else params["date_start"],
              date.fromisoformat(params["date_end"]) if isinstance(params["date_end"], str) else params["date_end"],
              json.dumps(stored_params, ensure_ascii=False, default=str), status, detail,
-             datetime.now(), datetime.now() if finished else None],
+             shanghai_now_naive(), shanghai_now_naive() if finished else None],
         )
 
     # ── 版本解析 + 去重签名（全条件一致则同一记录，唯一）──
-    _SIG_KEYS = list(BACKTEST_SIGNATURE_KEYS)
+    _SIG_KEYS = tuple(BACKTEST_SIGNATURE_KEYS)
 
     def _visible_score_profile(self, profile_ref_or_id: str | None) -> dict | None:
         if not profile_ref_or_id:
@@ -432,7 +433,7 @@ class BacktestService:
                                       versions=versions, signature=sig)
                     self._record_reuse_if_needed(params, run_id, source_run)
                 return res
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 if persist:
                     self._delete_run_results(run_id)
                     self._persist_run(run_id, "score_check", params, "failed", detail=str(e), finished=True,
@@ -488,7 +489,7 @@ class BacktestService:
                                       versions=versions, signature=sig)
                     self._record_reuse_if_needed(params, run_id, source_run)
                 return result
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 if persist:
                     self._delete_run_results(run_id)
                     self._persist_run(run_id, "strategy", params, "failed", detail=str(e), finished=True,
@@ -564,7 +565,7 @@ class BacktestService:
             if run.get("status") != "done" and visibility != VISIBILITY_PRIVATE:
                 raise ValueError("仅已完成回测记录可公开")
             normalized = self._normalize_run_dependencies_for_visibility(run, visibility)
-            now = datetime.now() if visibility != VISIBILITY_PRIVATE else None
+            now = shanghai_now_naive() if visibility != VISIBILITY_PRIVATE else None
             params = normalized["params"] if normalized else run.get("params")
             params_json = (
                 json.dumps(params, ensure_ascii=False, default=str)
@@ -695,9 +696,7 @@ class BacktestService:
                 "score_check": ("score_check", "signal", "评分", "评分验证"),
                 "signal": ("score_check", "signal", "评分", "评分验证"),
             }.get(kind, (kind,))
-            if any(q_norm in alias for alias in aliases):
-                return True
-            return False
+            return bool(any(q_norm in alias for alias in aliases))
         return _hit
 
     def list_runs_page(
@@ -769,8 +768,7 @@ class BacktestService:
         # 防御：非正 limit 归一为「不截断」，避免无 q 时 SQL LIMIT 负值报错、有 q 时 Python 切片语义反常
         if limit is not None and limit < 1:
             limit = None
-        if offset < 0:
-            offset = 0
+        offset = max(offset, 0)
         where, args = self._runs_where(kind, source)
         q_norm = q.strip().lower() if q and q.strip() else None
         order_by, owner_args = self._runs_order()

@@ -73,7 +73,8 @@ def test_concurrent_task_error_crosses_postgres_transaction_boundary():
 def test_queue_deadline_is_absolute_and_inclusive():
     from backend.config.settings import LimitLadderConfig
     from backend.services.limit_ladder_task_policy import (
-        LimitLadderQueueTimeoutError, check_queue_deadline,
+        LimitLadderQueueTimeoutError,
+        check_queue_deadline,
     )
 
     deadline = datetime.now(UTC)

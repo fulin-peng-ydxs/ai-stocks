@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import itertools
 from datetime import date
 
 import pandas as pd
@@ -382,7 +383,7 @@ def test_engine_no_same_day_sell_then_rebuy():
             assert t["entry_date"] != t["exit_date"], f"出现同日买卖：{t}"
         # 每个交易日 TGT 至多被持有一段连续区间——校验没有"卖出日当天又买入"的重叠
         tgt_trades = sorted([t for t in out["trades"] if t["code"] == "TGT.SH"], key=lambda x: x["entry_date"])
-        for a, b in zip(tgt_trades, tgt_trades[1:]):
+        for a, b in itertools.pairwise(tgt_trades):
             assert b["entry_date"] > a["exit_date"], "卖出当日不应重新买回"
 
 
@@ -475,11 +476,11 @@ def test_backtest_service_resolves_visible_score_profile_ref(market, pg):
             "date_end": "2024-01-03",
             "score_profile_id": src["profile_ref"],
         }
-        versions = svc._resolve_versions(params)  # noqa: SLF001
+        versions = svc._resolve_versions(params)
         assert versions["score_profile_version"] == 1
-        assert svc._load_score_profile(params)["name"] == "公开回测评分"  # noqa: SLF001
+        assert svc._load_score_profile(params)["name"] == "公开回测评分"
 
-        svc._persist_run("r_score_ref", "strategy", params, "done", finished=True, versions=versions)  # noqa: SLF001
+        svc._persist_run("r_score_ref", "strategy", params, "done", finished=True, versions=versions)
         mine = [r for r in svc.list_runs(kind="strategy") if r["id"] == "r_score_ref"]
         assert mine and mine[0]["score_profile_name"] == "公开回测评分"
         assert mine[0]["score_profile_version"] == 1
@@ -490,7 +491,6 @@ def test_backtest_service_resolves_visible_score_profile_ref(market, pg):
 
 def test_list_runs_join_no_cross_owner(market, pg):
     """回归(P0)：list_runs 的 run⋈profile⋈metrics JOIN 必须带归属，否则同 id 会串其他 owner。"""
-    from datetime import date as _date
 
     from backend.services.backtest_service import BacktestService
     from backend.tests.conftest import TEST_OWNER, TEST_TENANT

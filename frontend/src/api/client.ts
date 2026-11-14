@@ -147,7 +147,7 @@ http.interceptors.response.use(
       // 也只是旧页面尾随请求的会话失效，必须静默清态，避免退出后连续弹错。
       const config = error?.config as RetryableConfig | undefined
       if (isLoginRequest(config)) {
-        const message = msg || '账号或密码错误'
+        const message = businessMessage(msg, '账号或密码错误')
         decorateError(error, message)
         if (!skip) ElMessage.error(message)
       } else {

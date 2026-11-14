@@ -97,7 +97,6 @@ def test_screen_run_preset():
 
 def test_spa_fallback():
     """前端路由深链接/刷新需回退到 index.html（T-M4-7 实测踩坑修复）。"""
-    from pathlib import Path
 
     from backend.config import PROJECT_ROOT
 

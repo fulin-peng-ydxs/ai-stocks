@@ -6,6 +6,7 @@ import type { QualityIssue } from '@/api/data'
 import AppJsonViewer from '@/components/AppJsonViewer.vue'
 import QualityDiagnosticContent from '../QualityDiagnosticContent.vue'
 import { qualityDiagnostic } from '../../qualityDiagnostic'
+import { qualityDetailText, qualityRepairFailureReason } from '../../qualityReport'
 
 const issue = { id: 168525, code: '000737.SZ', issue_type: 'intraday_partial', status: 'open', trade_date: '2026-10-08',
   detail: JSON.stringify({ message: '分时分钟不完整，有效 178 点',
@@ -20,6 +21,35 @@ const issue = { id: 168525, code: '000737.SZ', issue_type: 'intraday_partial', s
   }) } as QualityIssue
 
 describe('质量诊断详情', () => {
+  it('列表与诊断详情共用可读失败原因，消息消失后不必展开技术详情', async () => {
+    const reason = '数据源请求超时，未能完成取数，请稍后重试'
+    const failed = { ...issue, detail: JSON.stringify({
+      ...JSON.parse(issue.detail), last_repair: { outcome: 'technical_failure',
+        failure_reason: reason, error: 'HTTPError: https://secret.test/private',
+        before_points: 178, after_points: 178, checked_at: '2026-10-20T17:01:00+08:00' },
+    }) }
+    expect(qualityDetailText(failed.detail)).toContain(`失败原因：${reason}`)
+    expect(qualityDiagnostic(failed).repairFields).toContainEqual({ label: '失败原因', value: reason })
+    const wrapper = mount(QualityDiagnosticContent, { props: { issue: failed }, global: { plugins: [ElementPlus] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain(reason)
+    expect(wrapper.text()).not.toContain('secret.test')
+    expect(wrapper.findComponent(AppJsonViewer).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('兼容旧失败说明并过滤技术原文，不为没有原因的记录虚构失败', () => {
+    expect(qualityRepairFailureReason({ error: '来源尚未提供目标日数据' })).toBe('来源尚未提供目标日数据')
+    expect(qualityRepairFailureReason({ failure_reason: 'SQL: SELECT secret', error: 'HTTPError: secret' }))
+      .toBe('修复未完成，详细原因见技术详情')
+    expect(qualityRepairFailureReason({ outcome: 'resolved' })).toBe('')
+    expect(qualityRepairFailureReason(null)).toBe('')
+    expect(qualityRepairFailureReason([])).toBe('')
+    const detail = JSON.stringify({ ...JSON.parse(issue.detail),
+      last_repair: { outcome: 'technical_failure', failure_reason: 'Traceback: SQL: SELECT secret' } })
+    expect(qualityDetailText(detail)).not.toContain('secret')
+    expect(JSON.stringify(qualityDiagnostic({ ...issue, detail }))).not.toContain('secret')
+  })
   it('等待源更新沿用来源诊断和修复结果映射，不解释为永久不可覆盖', () => {
     const result = qualityDiagnostic({ ...issue, detail: JSON.stringify({
       availability: { status: 'deferred', decisions: [{ source: 'ths', request: false,

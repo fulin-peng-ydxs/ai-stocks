@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -35,7 +36,7 @@ def _bad_params(msg: str) -> HTTPException:
 
 @router.get("", response_model=ApiResponse, dependencies=_VIEW)
 def list_sectors(
-    trade_date: date | None = Query(None, description="指定交易日（缺省=最新）"),
+    trade_date: Annotated[date | None, Query(description="指定交易日（缺省=最新）")] = None,
     board_type: str | None = Query(None, pattern="^(concept|industry)$"),
     sort_by: str = Query("pct_today"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
@@ -64,7 +65,7 @@ def list_watchlist() -> ApiResponse:
     dependencies=[*_VIEW, *_WATCHLIST_VIEW],
 )
 def list_watchlist_markets(
-    trade_date: date | None = Query(None),
+    trade_date: Annotated[date | None, Query()] = None,
     board_type: str | None = Query(None, pattern="^(concept|industry)$"),
     sort_by: str = Query("pct_today"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
@@ -112,8 +113,8 @@ def remove_watchlist(board_code: str) -> ApiResponse:
 )
 def get_benchmark_bars(
     index_code: str,
-    start: date = Query(..., description="区间起点"),
-    end: date = Query(..., description="区间终点"),
+    start: Annotated[date, Query(description="区间起点")],
+    end: Annotated[date, Query(description="区间终点")],
 ) -> ApiResponse:
     """板块相对强弱使用的市场指数基准，只开放系统已配置的回测基准。"""
     if start > end:
@@ -133,7 +134,7 @@ def get_benchmark_bars(
 
 
 @router.get("/{code}", response_model=ApiResponse, dependencies=_VIEW)
-def get_sector(code: str, trade_date: date | None = Query(None)) -> ApiResponse:
+def get_sector(code: str, trade_date: Annotated[date | None, Query()] = None) -> ApiResponse:
     """板块详情摘要（含能力字段 + 指定交易日截面）。"""
     data = BoardQueryService().get_sector(code, trade_date)
     if data is None:
@@ -144,8 +145,8 @@ def get_sector(code: str, trade_date: date | None = Query(None)) -> ApiResponse:
 @router.get("/{code}/bars", response_model=ApiResponse, dependencies=_VIEW)
 def get_sector_bars(
     code: str,
-    start: date = Query(..., description="区间起点"),
-    end: date = Query(..., description="区间终点"),
+    start: Annotated[date, Query(description="区间起点")],
+    end: Annotated[date, Query(description="区间终点")],
     include_indicators: bool = Query(False, description="是否返回板块指数 MACD"),
     period: IndicatorPeriod = "day",
 ) -> ApiResponse:
@@ -171,7 +172,7 @@ def get_sector_bars(
 @router.get("/{code}/members", response_model=ApiResponse, dependencies=_VIEW)
 def get_sector_members(
     code: str,
-    trade_date: date | None = Query(None),
+    trade_date: Annotated[date | None, Query()] = None,
     keyword: str | None = Query(None, max_length=50),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=200),

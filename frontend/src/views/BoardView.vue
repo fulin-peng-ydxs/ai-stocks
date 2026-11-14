@@ -62,6 +62,7 @@ import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
 import { getApiErrorCode, getErrorMessage } from '@/utils/error'
+import { businessMessage } from '@/utils/displayText'
 import { listGroups, type GroupSummary } from '@/api/stockGroup'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { isSameSelectedFilter, normalizeAllSelectedFilter } from '@/utils/multiSelectFilter'
@@ -506,12 +507,11 @@ async function loadBoard(force: boolean, background = false): Promise<boolean> {
       keyword: keyword.value || undefined,
       related_board_keyword: relatedBoardKeyword.value || undefined,
       ...(force ? { force: true } : {}),
-    })
+    }, { skipGlobalError: true })
     if (sequence !== loadSequence) return false
     if (res.business_code === 'ST_STATUS_NOT_READY') {
       if (!background) {
-        error.value = res.st_status_error
-          || 'ST 状态刷新尚未完整发布，请等待完成后重试'
+        error.value = businessMessage(res.st_status_error, 'ST 状态刷新尚未完整发布，请等待完成后重试')
         cacheStatus.value = ''
       }
       return false
@@ -615,9 +615,9 @@ async function exportCsv(): Promise<void> {
       keyword: keyword.value || undefined,
       related_board_keyword: relatedBoardKeyword.value || undefined,
       export_all: true,
-    })
+    }, { skipGlobalError: true })
     if (res.business_code === 'ST_STATUS_NOT_READY') {
-      ElMessage.error(res.st_status_error || 'ST 状态刷新尚未完整发布，请等待完成后重试')
+      ElMessage.error(businessMessage(res.st_status_error, 'ST 状态刷新尚未完整发布，请等待完成后重试'))
       return
     }
     const headers = ['全市场排名', '代码', '名称', '板块', '综合分', '评级', ...subKeys.value.map((k) => nameOf(k))]
@@ -658,7 +658,7 @@ onMounted(async () => {
     tradeDatesReady.value = true
     await maybeLoadInitialBoard()
   } catch (e) {
-    error.value = (e as Error).message
+    error.value = getErrorMessage(e, '榜单初始化失败')
     loading.value = false
   }
 })

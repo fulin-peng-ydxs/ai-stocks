@@ -35,6 +35,8 @@ flowchart TB
 | 持久层 | `backend/storage/`、领域仓储 | 根据事实所有权分别读写 DuckDB、PG 和 Redis，不统一绕行行情仓库 |
 | CLI 与启动脚本 | `backend/cli.py`、`start.sh`、`start-web.sh` | CLI 复用服务；脚本管理进程、变量文件、日志和健康检查 |
 
+业务墙上时间共用 `backend/common/timeutil.py::shanghai_now_naive()` 与 `SHANGHAI`，用于既有无时区 `TIMESTAMP`、诊断 JSON 和业务“今天”，不随主机时区变化。采集收盘上界仍由 `services/eod_dates.py` 的带时区时钟和日历门禁决定；令牌、来源证据和绝对期限等 UTC 时点保持原契约。纯日期解析不构造隐含时区的时间戳，时间格式和存储类型不因辅助函数收敛而改变。
+
 ## 业务能力与模块依赖
 
 运行单元说明进程和存储的关系，业务模块则按输入事实、计算职责和资产所有权分工：
@@ -105,7 +107,7 @@ flowchart TB
 - 开发由 Vite 的 5173 代理 `/api` 到 `127.0.0.1:8000`；后端热重载。5181 为独立验证实例，不占用日常 5173。
 - `backend/main.py` 的开发 CORS 白名单为 `localhost:5173` 与 `127.0.0.1:5173`；验证实例同样经 Vite 的同源 `/api` 代理访问后端，不因前端端口不同而直接开放跨域来源。前端 history 路由、动态首页与权限跳转以 `router/index.ts` 和当前授权菜单为准，不固定假设所有用户首页都是榜单。
 - 生产启动方式关闭热重载并监听 `0.0.0.0:8000`，FastAPI 在 `frontend/dist` 存在时托管静态资源，非 API 深链接回退 `index.html`；未匹配 API 仍返回 404。公网反代与 TLS 的配置责任不由 SPA 托管替代。
-- 启动先检查 PG、Redis 和 JWT 密钥，再通过 [统一数据库生命周期](database-lifecycle.md) 初始化或验收双库结构及基础数据，然后恢复任务与模块协调态、启动调度。依赖或数据库验收失败阻止正常启动；任务恢复的具体顺序见 [任务运行态](task-runtime.md#启动恢复与受控停止)。
+- 应用启动和关闭统一由 `backend/main.py` 的 FastAPI `lifespan` 入口编排。启动先检查 PG、Redis 和 JWT 密钥，再通过 [统一数据库生命周期](database-lifecycle.md) 初始化或验收双库结构及基础数据，然后恢复任务与模块协调态、启动调度。依赖或数据库验收失败阻止正常启动；任务恢复的具体顺序见 [任务运行态](task-runtime.md#启动恢复与受控停止)。
 - `start.sh` 识别独立进程组，停止/重启前核对可信活跃任务数；读不到状态或有任务时拒绝停止，接受中断时才显式使用强制选项。退出时关闭调度、DuckDB 读池/写连接、PG 和 Redis。
 - `mode=dev|prod` 表示启动方式，环境身份由有效运行档案和环境守卫判定，二者不能混用。变量来源、运行档案、日志归档和密钥规则归 [环境配置](environment-configuration.md)。
 

@@ -1,5 +1,5 @@
 // 盘感训练 API（agent-works/market-sense-training/）
-import http from './client'
+import http, { type AppRequestConfig } from './client'
 import type { Bar } from './stocks'
 
 export interface TrainTradeMarker {
@@ -148,8 +148,8 @@ export interface GrowthPoint {
   completed_at: string | null
 }
 
-export function startSession(body: StartParams): Promise<RunningView> {
-  return http.post('/training/sessions', body)
+export function startSession(body: StartParams, config?: AppRequestConfig): Promise<RunningView> {
+  return http.post('/training/sessions', body, config)
 }
 
 export function getSession(sid: string): Promise<RunningView & DetailView> {
@@ -166,22 +166,22 @@ export function growth(): Promise<GrowthPoint[]> {
   return http.get('/training/growth')
 }
 
-export function revealNext(sid: string, cursor_idx: number | null): Promise<RunningView> {
-  return http.post(`/training/sessions/${sid}/reveal`, { cursor_idx })
+export function revealNext(sid: string, cursor_idx: number | null, config?: AppRequestConfig): Promise<RunningView> {
+  return http.post(`/training/sessions/${sid}/reveal`, { cursor_idx }, config)
 }
 
 export function placeTrade(
-  sid: string, side: 'buy' | 'sell', hands: number, reason = '',
+  sid: string, side: 'buy' | 'sell', hands: number, reason = '', config?: AppRequestConfig,
 ): Promise<RunningView> {
-  return http.post(`/training/sessions/${sid}/trade`, { side, hands, reason })
+  return http.post(`/training/sessions/${sid}/trade`, { side, hands, reason }, config)
 }
 
-export function cancelIntent(sid: string): Promise<RunningView> {
-  return http.post(`/training/sessions/${sid}/cancel`, {})
+export function cancelIntent(sid: string, config?: AppRequestConfig): Promise<RunningView> {
+  return http.post(`/training/sessions/${sid}/cancel`, {}, config)
 }
 
-export function settleRound(sid: string): Promise<RunningView & DetailView> {
-  return http.post(`/training/sessions/${sid}/settle-round`, {})
+export function settleRound(sid: string, config?: AppRequestConfig): Promise<RunningView & DetailView> {
+  return http.post(`/training/sessions/${sid}/settle-round`, {}, config)
 }
 
 export function saveReview(sid: string, note: string): Promise<unknown> {

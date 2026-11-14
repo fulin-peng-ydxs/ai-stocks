@@ -48,8 +48,11 @@ import {
   type ComponentConfigLayer,
   type FieldPolicyRecord,
 } from '@/api/layout'
+import type { AppRequestConfig } from '@/api/client'
 import { getErrorMessage } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
+
+const pageErrorRequest: AppRequestConfig = { skipGlobalError: true }
 
 // 仅接收基础密度同步，不增加个人设置抽屉或组件配置。
 const { effective: componentsLayout } = useRemoteLayoutConfig(getPageLayout('layout-components'))
@@ -272,7 +275,7 @@ async function persistPolicy(field: string, layers: ComponentConfigLayer[]): Pro
   const kind = selectedKind.value
   if (!kind) return
   try {
-    const rec = await saveFieldPolicy({ componentKind: kind, field, allowedLayers: layers })
+    const rec = await saveFieldPolicy({ componentKind: kind, field, allowedLayers: layers }, pageErrorRequest)
     const next = new Map(policyMap.value)
     next.set(`${kind}.${field}`, rec)
     policyMap.value = next

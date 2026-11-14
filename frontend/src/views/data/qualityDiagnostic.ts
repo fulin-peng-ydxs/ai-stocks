@@ -2,7 +2,7 @@ import { formatNumber } from '@/utils/numberFormat'
 import type { QualityIssue } from '@/api/data'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
 import { businessMessage, enumText } from '@/utils/displayText'
-import { intradaySourceLabels, intradayRepairLabels } from './qualityReport'
+import { intradaySourceLabels, intradayRepairLabels, qualityRepairFailureReason } from './qualityReport'
 
 type RecordValue = Record<string, unknown>
 const record = (value: unknown): RecordValue => value !== null && typeof value === 'object'
@@ -67,6 +67,8 @@ export function qualityDiagnostic(row: QualityIssue) {
     { label: '修复前归档', value: quantity(repair.before_points, '点') },
     { label: '修复后归档', value: quantity(repair.after_points, '点') },
   ] : []
+  const failureReason = qualityRepairFailureReason(repair)
+  if (failureReason) repairFields.push({ label: '失败原因', value: failureReason })
   return { structured: coverageFields.length > 0 || sources.length > 0 || repairFields.length > 0,
     day: text(day), coverageFields, sources, repairFields,
     availability: enumText({ available: '可尝试补采', needs_verification: '需核验来源',

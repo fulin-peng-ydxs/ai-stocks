@@ -24,6 +24,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 import pandas as pd
 
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.dataquality.checker import ISSUE_LAYER, mv_inverted_sql
 from backend.datasource.ths_board import FUND_FLOW_PERIODS
 from backend.price_adjustment import adjust_price_columns, effective_factors
@@ -339,9 +340,9 @@ class DataIntegrityReport:
         )
         bars = self.c.query_df(f"SELECT code, trade_date FROM daily_bar WHERE trade_date >= ? {scope}", [win_lo, *params])
         susp = self.c.query_df(f"SELECT code, trade_date FROM stock_suspension WHERE trade_date >= ? {scope}", [win_lo, *params])
-        bar_map: dict[str, set] = {c: set(pd.Timestamp(d).date() for d in g["trade_date"])
+        bar_map: dict[str, set] = {c: {pd.Timestamp(d).date() for d in g["trade_date"]}
                                    for c, g in bars.groupby("code", sort=False)}
-        susp_map: dict[str, set] = {c: set(pd.Timestamp(d).date() for d in g["trade_date"])
+        susp_map: dict[str, set] = {c: {pd.Timestamp(d).date() for d in g["trade_date"]}
                                     for c, g in susp.groupby("code", sort=False)}
         from backend.services.capital_quality import CAPITAL_LABELS, CapitalQualityService
         capital = CapitalQualityService(self.c).aggregate(codes)
@@ -477,13 +478,12 @@ class DataIntegrityReport:
         """保存调用方已核验逐日停牌状态的日期；空行情响应本身不是证据。"""
         if not dates:
             return 0
-        from datetime import datetime
-        existing = set(pd.Timestamp(d).date() for d in self.c.query_df(
-            "SELECT trade_date FROM stock_suspension WHERE code=?", [code])["trade_date"])
+        existing = {pd.Timestamp(d).date() for d in self.c.query_df(
+            "SELECT trade_date FROM stock_suspension WHERE code=?", [code])["trade_date"]}
         fresh = [d for d in dates if d not in existing]
         if not fresh:
             return 0
-        df = pd.DataFrame({"code": code, "trade_date": fresh, "confirmed_at": datetime.now()})
+        df = pd.DataFrame({"code": code, "trade_date": fresh, "confirmed_at": shanghai_now_naive()})
         with self.c.temp_view(df, "susp") as v:
             self.c.execute(
                 f"INSERT INTO stock_suspension (code, trade_date, confirmed_at) "
@@ -584,7 +584,7 @@ class DataIntegrityReport:
             by_layer.append({**spec, "pass_stocks": passed, "total": n,
                              "pass_rate": round(passed / n, 4), "issues": issues[k]})
         all_ok = ok["L1"] & ok["L2"] & ok["L3"] & ok["L4"]
-        score = int(round(100 * float(all_ok.sum()) / n))
+        score = round(100 * float(all_ok.sum()) / n)
         gap_mask = (df["gap_days"] > 0) | (df["stale_days"] > 0)
         return {
             "score": score, "latest_trade_date": latest_s, "by_layer": by_layer,
@@ -638,10 +638,9 @@ class DataIntegrityReport:
         """批量写 data_quality_issue（severity 由类型映射，status=open，detected_at=now）。"""
         if not issues:
             return 0
-        from datetime import datetime
 
         from backend.dataquality.checker import severity_for
-        now = datetime.now()
+        now = shanghai_now_naive()
         df = pd.DataFrame([{
             "id": self._next_qid(), "code": x["code"], "trade_date": x.get("trade_date"),
             "issue_type": x["issue_type"], "severity": severity_for(x["issue_type"]),
@@ -665,7 +664,6 @@ class DataIntegrityReport:
         - 新出现的逻辑问题：插入新行（同键复用后自然新 id）。
         收敛的旧行与 _recover_one 的复检语义一致：数据已追平、扫描不再上报 = 问题已消失。
         """
-        from datetime import datetime
 
         from backend.dataquality.checker import severity_for
         from backend.dataquality.ignore_rules import filter_ignored_issues
@@ -690,7 +688,7 @@ class DataIntegrityReport:
         key_old: dict[tuple, int] = {}
         for _, r in old.iterrows():
             key_old[(str(r["issue_type"]), _norm_code(r["code"]), _norm_td(r["trade_date"]))] = int(r["id"])
-        now = datetime.now()
+        now = shanghai_now_naive()
         new_rows: list[list] = []
         upd_rows: list[list] = []
         fresh_keys: set[tuple] = set()

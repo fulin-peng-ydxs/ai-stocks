@@ -62,12 +62,15 @@ import {
   type PageRegistryEntry,
   type SlotSpec,
 } from '@/layout'
+import type { AppRequestConfig } from '@/api/client'
 import { getErrorMessage } from '@/utils/error'
 import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
 import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 
 type TabKey = 'workbench' | 'import' | 'report'
 type ExportScope = 'page' | 'user' | 'effective'
+
+const pageErrorRequest: AppRequestConfig = { skipGlobalError: true }
 
 // 仅接收基础密度同步，不增加个人设置抽屉或组件配置。
 const { effective: pagesLayout } = useRemoteLayoutConfig(getPageLayout('layout-pages'))
@@ -490,12 +493,12 @@ async function importConfig() {
     }
     if (parsed.type === 'layout-page-config') {
       const page = parsed.page
-      const validation = await validateLayoutConfig({ config: page.config, layout })
+      const validation = await validateLayoutConfig({ config: page.config, layout }, pageErrorRequest)
       if (!validation.valid) {
         ElMessage.error(validation.errors[0] || '导入配置非法')
         return
       }
-      await saveLayoutPageConfig(pageKey, { presetKey: null, config: page.config, layout })
+      await saveLayoutPageConfig(pageKey, { presetKey: null, config: page.config, layout }, pageErrorRequest)
       ElMessage.success('页面配置导入完成')
       if (pageKey === selectedPageKey.value) await loadPageConfig()
       exportText.value = ''
@@ -503,7 +506,7 @@ async function importConfig() {
     }
     if (parsed.type === 'layout-user-config') {
       const user = parsed.user
-      const validation = await validateLayoutConfig({ config: user.config, layout })
+      const validation = await validateLayoutConfig({ config: user.config, layout }, pageErrorRequest)
       if (!validation.valid) {
         ElMessage.error(validation.errors[0] || '导入配置非法')
         return

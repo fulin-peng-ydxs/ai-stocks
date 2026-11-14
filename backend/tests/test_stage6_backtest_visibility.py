@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
 import json
 import uuid
+from datetime import date, datetime
 
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
+
+from backend.common.timeutil import SHANGHAI
 
 _SECRET = "test-secret-backtest-visibility-0123456789abcdef"
 
@@ -93,7 +95,7 @@ def _insert_run(
         "top_n": 5,
         "initial_capital": 1000000,
     }
-    now = datetime(2024, 2, 1, 9, 30)
+    now = datetime(2024, 2, 1, 9, 30, tzinfo=SHANGHAI).replace(tzinfo=None)
     pg.execute(
         "INSERT INTO backtest_run ("
         "id, tenant_id, owner_user_id, kind, profile_id, score_profile_id, trade_profile_id, "
@@ -333,7 +335,7 @@ def test_viewer_reuses_public_backtest_params_into_own_run(pg, market, monkeypat
             },
         ])
 
-        def fake_run(self, params):  # noqa: ARG001
+        def fake_run(self, params):
             assert params["profile_id"] == shared_profile["profile_ref"]
             return {
                 "equity": eq,
@@ -342,7 +344,7 @@ def test_viewer_reuses_public_backtest_params_into_own_run(pg, market, monkeypat
                 "initial_capital": 1000000,
             }
 
-        def fake_layers(self, *args, **kwargs):  # noqa: ARG001
+        def fake_layers(self, *args, **kwargs):
             return {
                 "horizons": [10],
                 "thresholds": [0.1],
@@ -412,7 +414,7 @@ def test_viewer_reuses_public_score_check_params_records_audit(pg, market, monke
         ).set_run_visibility(source_run_id, "tenant", published_by=owner)
         assert source is not None
 
-        def fake_analyze(self, *args, **kwargs):  # noqa: ARG001
+        def fake_analyze(self, *args, **kwargs):
             return {
                 "date_start": "2024-01-01",
                 "date_end": "2024-01-02",
@@ -621,7 +623,11 @@ def test_backtest_publish_requires_reusable_legacy_dependencies(pg, market):
 
 def test_list_runs_batches_opaque_ref_profile_labels(pg, market, monkeypatch):
     from backend.scoring.score_profile import ScoreProfileRepo
-    from backend.services.asset_visibility import ASSET_SCREEN_PROFILE, ASSET_TRADE_PROFILE, make_asset_ref
+    from backend.services.asset_visibility import (
+        ASSET_SCREEN_PROFILE,
+        ASSET_TRADE_PROFILE,
+        make_asset_ref,
+    )
     from backend.services.backtest_service import BacktestService
 
     tenant = "bt_label_tenant_" + uuid.uuid4().hex[:8]
@@ -644,7 +650,7 @@ def test_list_runs_batches_opaque_ref_profile_labels(pg, market, monkeypatch):
         "initial_capital": 1000000,
     }
     try:
-        now = datetime(2024, 2, 1, 9, 30)
+        now = datetime(2024, 2, 1, 9, 30, tzinfo=SHANGHAI).replace(tzinfo=None)
         pg.execute(
             "INSERT INTO screen_profile "
             "(id,tenant_id,owner_user_id,name,version,expression,is_preset,visibility,created_at,updated_at) "
@@ -690,7 +696,7 @@ def test_list_runs_batches_opaque_ref_profile_labels(pg, market, monkeypatch):
             [tenant, owner, run_id],
         )
 
-        def fail_n_plus_one(*args, **kwargs):  # noqa: ARG001
+        def fail_n_plus_one(*args, **kwargs):
             raise AssertionError("list_runs must not resolve opaque profile labels row by row")
 
         svc = BacktestService(client=market, tenant_id=tenant, owner_user_id=viewer)

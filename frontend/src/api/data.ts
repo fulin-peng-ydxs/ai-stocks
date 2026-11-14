@@ -399,8 +399,8 @@ export function listSchedules(query: ScheduleListQuery): Promise<{
 }> {
   return http.get('/data/schedules', { params: query })
 }
-export function listScheduleOptions(q = '', limit = 50): Promise<{ list: ScheduledJobOption[] }> {
-  return http.get('/data/schedules/options', { params: { q, limit } })
+export function listScheduleOptions(q = '', limit = 50, config?: AppRequestConfig): Promise<{ list: ScheduledJobOption[] }> {
+  return http.get('/data/schedules/options', { ...config, params: { q, limit } })
 }
 export interface ScheduleDownstream {
   jobs: ScheduledJob[]

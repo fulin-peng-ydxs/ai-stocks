@@ -649,11 +649,139 @@ export function auditButtonKinds(sources) {
   return violations
 }
 
+/** 消息时序归根级 Provider；与 ElMessageBox 等确认对话框的关闭策略分开。 */
+export function auditMessagePolicy(sources) {
+  const violations = []
+  for (const { file, source } of sources) {
+    const { template, scripts } = sourceParts(file, source)
+    const elements = [], bindings = [], handlers = []
+    if (template) walkTemplate(template, node => {
+      elements.push(node)
+      for (const prop of node.props) {
+        if (prop.type !== 7 || !prop.exp?.content) continue
+        if (prop.name === 'bind' && (!prop.arg || prop.arg.content === 'message')) bindings.push(prop)
+        if (prop.name === 'on') handlers.push(prop.exp.content)
+      }
+    })
+    const bindingNames = new Map(bindings.map((prop, index) => [prop, `__message_binding_${index}`]))
+    const script = [...scripts,
+      ...bindings.map(prop => `const ${bindingNames.get(prop)} = (${prop.exp.content});`),
+      ...handlers.map((value, index) => `function __message_handler_${index}($event) { ${value}\n }`),
+    ].join('\n')
+    if (!script && !elements.length) continue
+    const name = resolve(frontendRoot, 'src', `${file}.message-policy.ts`)
+    const ast = scriptAst(name, script)
+    // 只绑定本文件，不读依赖、不做类型诊断；复用 TS 的词法作用域，避免手写变量表
+    // 将不同函数的同名 options 或被参数遮蔽的 ElMessage 混为一谈。
+    const options = { noLib: true, noResolve: true }
+    const host = ts.createCompilerHost(options)
+    host.getSourceFile = path => path === name ? ast : undefined
+    const checker = ts.createProgram([name], options, host).getTypeChecker()
+    const values = new Map()
+    const syntheticNames = new Set(bindingNames.values())
+    walkScript(ast, node => {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && syntheticNames.has(node.name.text)) {
+        values.set(node.name.text, node.initializer)
+      }
+    })
+    const valueOf = (node, seen = new Set()) => {
+      if (!node || seen.has(node)) return node
+      seen.add(node)
+      if (ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isParenthesizedExpression(node)) {
+        return valueOf(node.expression, seen)
+      }
+      if (ts.isIdentifier(node)) {
+        const declaration = checker.getSymbolAtLocation(node)?.declarations?.[0]
+        return declaration && ts.isVariableDeclaration(declaration) && declaration.initializer
+          ? valueOf(declaration.initializer, seen) : declaration ?? node
+      }
+      return node
+    }
+    const importOf = declaration => {
+      let parent = declaration
+      while (parent && !ts.isImportDeclaration(parent)) parent = parent.parent
+      return parent && !parent.importClause?.isTypeOnly ? parent.moduleSpecifier.text : ''
+    }
+    const keyOf = node => {
+      const key = node && (ts.isComputedPropertyName(node) ? valueOf(node.expression) : node)
+      return key?.text
+    }
+    const originOf = (node, seen = new Set()) => {
+      node = valueOf(node)
+      if (!node || seen.has(node)) return ''
+      seen.add(node)
+      if (ts.isImportSpecifier(node) && !node.isTypeOnly) {
+        const imported = (node.propertyName ?? node.name).text
+        if (importOf(node) === 'element-plus') return imported
+        if (importOf(node) === '@/utils/messagePolicy' && imported === 'APP_MESSAGE_POLICY') return 'policy'
+      }
+      if (ts.isNamespaceImport(node) && importOf(node) === 'element-plus') return 'namespace'
+      if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+        const base = originOf(node.expression, seen)
+        const key = ts.isPropertyAccessExpression(node) ? node.name.text : keyOf(node.argumentExpression)
+        return base === 'namespace' ? key : base === 'ElMessage' ? 'ElMessage' : ''
+      }
+      if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
+        const base = originOf(node.parent.parent.initializer, seen)
+        return base === 'namespace' ? keyOf(node.propertyName ?? node.name)
+          : base === 'ElMessage' ? 'ElMessage' : ''
+      }
+      return ''
+    }
+    const propertiesOf = (node, seen = new Set()) => {
+      node = valueOf(node)
+      if (!node || seen.has(node)) return []
+      seen.add(node)
+      if (!ts.isObjectLiteralExpression(node)) return [{ key: null, node }]
+      return node.properties.flatMap(prop => ts.isSpreadAssignment(prop)
+        ? propertiesOf(prop.expression, seen)
+        : [{ key: keyOf(prop.name), node: prop, value: prop.initializer ?? prop.name }])
+    }
+    const providerTags = new Set(['el-config-provider', 'ElConfigProvider'])
+    walkScript(ast, node => {
+      if ((ts.isVariableDeclaration(node) || ts.isImportSpecifier(node))
+        && ts.isIdentifier(node.name) && originOf(node.name) === 'ElConfigProvider') providerTags.add(node.name.text)
+      if ((ts.isNamespaceImport(node) || ts.isVariableDeclaration(node))
+        && ts.isIdentifier(node.name) && originOf(node.name) === 'namespace') providerTags.add(`${node.name.text}.ElConfigProvider`)
+      if (!ts.isCallExpression(node) || originOf(node.expression) !== 'ElMessage') return
+      for (const prop of propertiesOf(node.arguments[0])) {
+        if (!['duration', 'showClose'].includes(prop.key)) continue
+        const line = ast.getLineAndCharacterOfPosition(prop.node.getStart()).line + 1
+        violations.push(`${file}:${line} ElMessage 的 ${prop.key} 必须由全局消息策略统一控制`)
+      }
+    })
+    let rootPolicies = 0
+    for (const node of elements) {
+      if (!providerTags.has(node.tag)) continue
+      for (const prop of node.props) {
+        if (prop.type === 6 && prop.name === 'message') {
+          violations.push(`${file}:${node.loc.start.line} 消息策略必须绑定全局策略对象`)
+          continue
+        }
+        if (!bindingNames.has(prop)) continue
+        const expression = values.get(bindingNames.get(prop))
+        const properties = prop.arg ? [{ key: 'message', value: expression }]: propertiesOf(expression)
+        for (const entry of properties) {
+          if (entry.key === null) {
+            violations.push(`${file}:${node.loc.start.line} Provider 批量绑定必须可静态确认，不得隐式覆盖消息策略`)
+          } else if (entry.key === 'message') {
+            if (file === 'App.vue' && originOf(entry.value) === 'policy') rootPolicies++
+            else violations.push(`${file}:${node.loc.start.line} 消息策略只能由 App.vue 的 APP_MESSAGE_POLICY 提供`)
+          }
+        }
+      }
+    }
+    if (file === 'App.vue' && rootPolicies !== 1) violations.push('App.vue: 必须唯一绑定全局 APP_MESSAGE_POLICY')
+  }
+  return [...new Set(violations)]
+}
+
 export function auditDesignContracts(sources = designSources(), design = readFileSync(join(frontendRoot, '../DESIGN.md'), 'utf8')) {
   return [
     ...auditComponentEntries(sources), ...auditStyleComponents(sources, undefined, undefined, { verifyRegistry: true }),
     ...auditSharedStyles(sources, designContracts.styleRoles, { verifyOwners: true }), ...auditRuntimeStyles(sources, undefined, { verifyOwners: true }), ...auditColorSources(sources),
     ...auditButtonKinds(sources),
+    ...auditMessagePolicy(sources),
     ...auditButtonStates(sources.find(item => item.file === 'styles/buttonStates.css')?.source ?? ''),
     ...auditDesignStateContract(sources.find(item => item.file === 'styles/global.css')?.source ?? '', design),
   ]

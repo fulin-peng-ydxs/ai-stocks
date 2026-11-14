@@ -17,6 +17,7 @@ from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_context
 from backend.auth.deps import require_system_perm
 from backend.common.request import trusted_client_ip
+from backend.common.timeutil import shanghai_now_naive
 from backend.config import get_effective_settings
 from backend.storage.duckdb_client import get_client, get_read_client
 from backend.storage.task_runtime import get_task_runtime_client
@@ -125,7 +126,6 @@ def overview() -> ApiResponse:
 @router.get("/hub", response_model=ApiResponse, dependencies=_OVERVIEW)
 def hub() -> ApiResponse:
     """数据总览：闭环各环节实时统计 + 风险摘要（服务端算好风险列表，前端直接渲染）。"""
-    from datetime import date
 
     import pandas as pd
 
@@ -145,7 +145,7 @@ def hub() -> ApiResponse:
         "SELECT max(detected_at) AS t FROM data_quality_issue").iloc[0]["t"]
     days_since_scan = None
     if last_scan is not None and str(last_scan) != "NaT":
-        days_since_scan = (date.today() - pd.Timestamp(last_scan).date()).days
+        days_since_scan = (shanghai_now_naive().date() - pd.Timestamp(last_scan).date()).days
     sched = sched_status()
     srcs = source_status(do_ping=False)
     sources = srcs.get("sources", []) if isinstance(srcs, dict) else srcs
@@ -622,7 +622,6 @@ def quality_ignore_batch(body: dict) -> ApiResponse:
     scope = str(body.get("scope") or "occurrence")
     if scope not in ("occurrence", "object"):
         return err(400, "scope 仅支持 occurrence 或 object")
-    from datetime import datetime
 
     c = get_client()
     with c.transaction():
@@ -633,7 +632,7 @@ def quality_ignore_batch(body: dict) -> ApiResponse:
             "UPDATE data_quality_issue SET status='ignored', resolved_at=?, fix_task_id=NULL, "
             "ignore_scope=?, ignore_active=true "
             f"WHERE status='open' AND id IN ({','.join('?' * len(ids))})",
-            [datetime.now(), scope, *ids],
+            [shanghai_now_naive(), scope, *ids],
         )
     return ok({"count": len(ids), "status": "ignored", "ignore_scope": scope})
 
@@ -742,7 +741,6 @@ class QualityIgnoreIn(BaseModel):
 def quality_ignore(issue_id: int, body: QualityIgnoreIn | None = None) -> ApiResponse:
     """标记正常并选择范围；body 为空兼容旧调用，默认仅忽略本次。"""
     c = get_client()
-    from datetime import datetime
     scope = body.scope if body else "occurrence"
     row = c.query_df(
         "SELECT status, fix_task_id, ignore_scope, ignore_active "
@@ -764,7 +762,7 @@ def quality_ignore(issue_id: int, body: QualityIgnoreIn | None = None) -> ApiRes
     c.execute(
         "UPDATE data_quality_issue SET status='ignored', resolved_at=?, fix_task_id=NULL, "
         "ignore_scope=?, ignore_active=true WHERE id=?",
-        [datetime.now(), scope, issue_id],
+        [shanghai_now_naive(), scope, issue_id],
     )
     return ok({"id": issue_id, "status": "ignored", "ignore_scope": scope})
 
@@ -908,7 +906,7 @@ def schedules_create(body: ScheduledJobIn) -> ApiResponse:
             dependency_condition=body.dependency_condition,
             dependency_delay=body.dependency_delay, retry_config=body.retry_config,
             trading_day_only=body.trading_day_only, enabled=body.enabled)
-    except ValueError as e:
+    except (TypeError, ValueError) as e:
         return err(400, str(e))
     return ok(job, msg="调度任务已创建")
 
@@ -925,7 +923,7 @@ def schedules_update(job_id: str, body: ScheduledJobIn) -> ApiResponse:
             dependency_condition=body.dependency_condition,
             dependency_delay=body.dependency_delay, retry_config=body.retry_config,
             trading_day_only=body.trading_day_only, enabled=body.enabled)
-    except ValueError as e:
+    except (TypeError, ValueError) as e:
         return err(400, str(e))
     return ok(job, msg="调度任务已更新")
 
@@ -967,7 +965,7 @@ def schedules_run_now(job_id: str) -> ApiResponse:
     from backend.services.async_task import ConcurrentTaskError
     try:
         tid = ScheduledJobService().run_now(job_id)
-    except ValueError as e:
+    except (TypeError, ValueError) as e:
         return err(404, str(e))
     except ConcurrentTaskError as e:
         return err(409, e.user_message,

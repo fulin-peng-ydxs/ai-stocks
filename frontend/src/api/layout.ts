@@ -88,8 +88,8 @@ export function listLayoutPresets(includeDisabled = false): Promise<{ schemaVers
   return http.get('/layout/presets', { params: { include_disabled: includeDisabled } })
 }
 
-export function saveLayoutPreset(payload: SavePresetPayload): Promise<LayoutPresetRecord> {
-  return http.post('/layout/presets', payload)
+export function saveLayoutPreset(payload: SavePresetPayload, config?: AppRequestConfig): Promise<LayoutPresetRecord> {
+  return http.post('/layout/presets', payload, config)
 }
 
 export function deleteLayoutPreset(key: string): Promise<{ key: string }> {
@@ -100,8 +100,8 @@ export function getLayoutPageConfig(pageKey: string): Promise<LayoutPageConfig> 
   return http.get(`/layout/pages/${encodeURIComponent(pageKey)}`)
 }
 
-export function saveLayoutPageConfig(pageKey: string, payload: SavePageConfigPayload): Promise<LayoutPageConfig> {
-  return http.post(`/layout/pages/${encodeURIComponent(pageKey)}`, payload)
+export function saveLayoutPageConfig(pageKey: string, payload: SavePageConfigPayload, config?: AppRequestConfig): Promise<LayoutPageConfig> {
+  return http.post(`/layout/pages/${encodeURIComponent(pageKey)}`, payload, config)
 }
 
 export function getLayoutUserConfig(pageKey: string, userId = 'local'): Promise<LayoutUserConfig> {
@@ -127,8 +127,8 @@ export function syncLayoutUserDensity(payload: {
   return http.post('/layout/user-density', payload, { skipGlobalError: true } as AppRequestConfig)
 }
 
-export function validateLayoutConfig(payload: ValidateLayoutPayload): Promise<LayoutValidateResult> {
-  return http.post('/layout/validate', payload)
+export function validateLayoutConfig(payload: ValidateLayoutPayload, config?: AppRequestConfig): Promise<LayoutValidateResult> {
+  return http.post('/layout/validate', payload, config)
 }
 
 export function resetLayoutConfig(payload: {
@@ -167,6 +167,6 @@ export function saveFieldPolicy(payload: {
   componentKind: string
   field: string
   allowedLayers: ComponentConfigLayer[]
-}): Promise<FieldPolicyRecord> {
-  return http.post('/layout/field-policies', payload)
+}, config?: AppRequestConfig): Promise<FieldPolicyRecord> {
+  return http.post('/layout/field-policies', payload, config)
 }

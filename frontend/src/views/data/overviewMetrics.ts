@@ -2,6 +2,7 @@ import { formatPercent } from '@/utils/marketValue'
 import { formatNumber } from '@/utils/numberFormat'
 import type { IntradayCoverage, Overview } from '@/api/data'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
+import { businessMessage } from '@/utils/displayText'
 import type { DataMetricInfo } from '@/components/data/DataMetricCard.vue'
 
 export type OverviewAction = 'stocks' | 'intraday-ingest' | 'intraday-quality' | 'st-refresh' | 'board' | 'quality' | 'gaps'
@@ -31,6 +32,11 @@ export function intradayCoverageText(coverage: IntradayCoverage): string {
 export function overviewMetrics(overview: Overview | null): OverviewMetric[] {
   const intraday = overview?.intraday
   const st = overview?.st_status
+  // 覆盖率与发布门是独立条件；事实齐全也可能因刷新失败而禁止业务读取。
+  const stSummary = !st ? '尚无统计'
+    : st.refresh_state?.status === 'failed' ? '刷新失败，尚未发布'
+      : st.refresh_state?.status === 'refreshing' ? '刷新中，尚未发布'
+        : st.ready ? '权威覆盖就绪' : '权威覆盖待补齐'
   const board = overview?.board
   const quality = overview?.quality
   const gaps = overview?.gaps
@@ -83,7 +89,7 @@ export function overviewMetrics(overview: Overview | null): OverviewMetric[] {
     },
     {
       key: 'stStatus', label: 'ST 点时事实', value: formatPercent(st?.expected && st.accurate != null ? st.accurate / st.expected : null, { input: 'ratio', completion: true }),
-      summary: st ? st.ready ? '权威覆盖就绪' : '权威覆盖待补齐' : '尚无统计',
+      summary: stSummary,
       tone: st?.ready === false ? 'danger' : undefined,
       info: { kind: 'details',
         rows: [
@@ -91,9 +97,13 @@ export function overviewMetrics(overview: Overview | null): OverviewMetric[] {
           { label: '事实缺失', value: count(st?.missing) },
           { label: '非权威记录', value: count(st?.approximate) },
           { label: '发布状态', value: ({ refreshing: '刷新中', ready: '就绪', failed: '失败' } as Record<string, string>)[st?.refresh_state?.status || ''] || '未执行' },
+          ...(st?.refresh_state?.last_error ? [{
+            label: '刷新失败原因',
+            value: businessMessage(st.refresh_state.last_error, '刷新失败，请查看任务日志中的详细原因'),
+          }] : []),
           { label: '事实最新日期', value: date(st?.latest_date) },
         ],
-        notes: ['权威 ST 逐日事实对日线的覆盖比例。缺失或非权威事实会阻断相关筛选、评分、回测和涨跌停计算。刷新入口进入采集参数页，不直接执行任务。'],
+        notes: ['权威 ST 逐日事实对应有股票日期的覆盖比例。覆盖率 100% 仍须刷新批次成功发布才可使用；刷新中或失败会阻断相关业务读取。缺失或非权威事实也会阻断相关筛选、评分、回测和涨跌停计算。刷新入口进入采集参数页，不直接执行任务。'],
       },
       actionLabel: '刷新 ST 事实', action: 'st-refresh', testId: 'overview-st-status-card',
     },

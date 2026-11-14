@@ -37,9 +37,12 @@ import {
   type StyleTokenConfig,
   type ThemeMode,
 } from '@/layout'
+import type { AppRequestConfig } from '@/api/client'
 import { getErrorMessage } from '@/utils/error'
 import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
 import type { AppRowAction } from '@/components/rowActions'
+
+const pageErrorRequest: AppRequestConfig = { skipGlobalError: true }
 
 // 可编辑 token 清单（颜色按白天/夜间各一套；圆角明暗共用）。
 const COLOR_KEYS: { key: keyof StyleTokenConfig; label: string }[] = [
@@ -306,7 +309,7 @@ async function importPresets() {
         enabled: preset.enabled,
         is_builtin: false,
         config: { schemaVersion: preset.config?.schemaVersion, values },
-      })
+      }, pageErrorRequest)
     }
     ElMessage.success('预设导入完成')
     await reloadPresets()

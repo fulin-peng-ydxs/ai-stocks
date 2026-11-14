@@ -130,7 +130,7 @@ def test_backtest_q_page_decorates_visible_rows_only_once(pg, market, monkeypatc
     svc = BacktestService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
     screen = ProfileRepo(pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
     calls = 0
-    original = svc._query_runs_decorated  # noqa: SLF001
+    original = svc._query_runs_decorated
 
     def counted(*args, **kwargs):
         nonlocal calls

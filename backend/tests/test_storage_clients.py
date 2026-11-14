@@ -13,7 +13,6 @@ from backend.config import get_settings
 from backend.storage.pg_client import PostgresClient
 from backend.storage.redis_client import RedisClient
 
-
 # ── 连接配置组装（不连接，始终运行）──
 
 
@@ -91,11 +90,9 @@ def test_pg_execute_query_roundtrip(pg):
 def test_pg_transaction_rollback(pg):
     pg.execute("CREATE TABLE IF NOT EXISTS _t_stage1_tx (id INT)")
     pg.execute("DELETE FROM _t_stage1_tx")
-    with pytest.raises(StorageError):
-        with pg.transaction() as conn:
-            with conn.cursor() as cur:
-                cur.execute("INSERT INTO _t_stage1_tx VALUES (1)")
-                cur.execute("INSERT INTO _t_stage1_tx VALUES ('x')")  # 类型错→回滚
+    with pytest.raises(StorageError), pg.transaction() as conn, conn.cursor() as cur:
+        cur.execute("INSERT INTO _t_stage1_tx VALUES (1)")
+        cur.execute("INSERT INTO _t_stage1_tx VALUES ('x')")  # 类型错→回滚
     df = pg.query_df("SELECT count(*) AS n FROM _t_stage1_tx")
     assert int(df.iloc[0]["n"]) == 0
     pg.execute("DROP TABLE _t_stage1_tx")

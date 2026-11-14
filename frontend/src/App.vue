@@ -2,6 +2,7 @@
 import { formatNumber as formatNumeric } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import { enumText } from '@/utils/displayText'
+import { APP_MESSAGE_POLICY } from '@/utils/messagePolicy'
 import {
   APP_BOTTOM_END_FLOATING_PLACEMENT,
   APP_BOTTOM_FLOATING_FALLBACKS,
@@ -409,6 +410,7 @@ async function onLogout() {
 </script>
 
 <template>
+  <el-config-provider :message="APP_MESSAGE_POLICY">
   <router-view v-if="isFullscreen" :key="route.path" />
   <el-container v-else class="app" :class="`is-${navigationMode}`" role="region" aria-label="研究工作台">
     <el-aside
@@ -830,6 +832,7 @@ async function onLogout() {
     </PageDrawer>
   </el-container>
   <AppOverflowTooltipHost />
+  </el-config-provider>
 </template>
 
 <style scoped>

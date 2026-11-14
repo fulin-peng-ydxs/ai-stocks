@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from backend.auth.context import AuthContext
@@ -162,7 +162,7 @@ class AuditService:
             log.warning("审计日志清理跳过：保留期配置非法 retention_days=%s", retention_days)
             return result
 
-        base = now or datetime.now(timezone.utc)
+        base = now or datetime.now(UTC)
         cutoff = base - timedelta(days=retention_days)
         result = {
             "ok": True,
@@ -437,7 +437,7 @@ class AuditService:
         out["end_time"] = self._parse_time(out.get("end_time"))
         if out["start_time"] is None and out["end_time"] is None:
             retention_days = get_effective_settings().audit.retention_days
-            out["end_time"] = datetime.now(timezone.utc)
+            out["end_time"] = datetime.now(UTC)
             out["start_time"] = out["end_time"] - timedelta(days=retention_days)
         if not ctx.is_system:
             out["tenant_id"] = ctx.tenant_id
@@ -550,8 +550,8 @@ class AuditService:
         try:
             if left == right:
                 return True
-        except Exception:  # noqa: BLE001
-            pass
+        except (TypeError, ValueError) as exc:
+            log.debug("审计值无法直接比较，继续核对缺失值：%s", type(exc).__name__)
         try:
             if left != left and right != right:  # noqa: PLR0124
                 return True

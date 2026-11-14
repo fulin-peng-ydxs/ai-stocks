@@ -11,12 +11,13 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 
 import numpy as np
 import pandas as pd
 
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.market_rules import price_limit_pct_for, round_price_to_cent
 from backend.price_adjustment import adjust_price_columns
 from backend.storage.duckdb_client import DuckDBClient, get_client
@@ -285,7 +286,7 @@ class QualityChecker:
             return 0
         df = pd.DataFrame(issues)
         df.insert(0, "id", [self._next_id() for _ in range(len(df))])
-        df["detected_at"] = datetime.now()
+        df["detected_at"] = shanghai_now_naive()
         df["severity"] = df["issue_type"].map(severity_for)
         df["status"] = "open"
         with self.c.temp_view(df, prefix="issue") as tmp:

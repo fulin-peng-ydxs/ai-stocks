@@ -57,11 +57,15 @@ import {
   placeTrade, cancelIntent, settleRound, saveReview, deleteSession,
   type RunningView, type DetailView, type SessionRow, type GrowthPoint, type DetailRound,
 } from '@/api/training'
+import type { AppRequestConfig } from '@/api/client'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import { getErrorMessage } from '@/utils/error'
 import { formatDateTimeMinutes } from '@/utils/dateTime'
 import { formatMoney, formatMoneyInput, parseMoneyInput } from '@/utils/money'
 import type { AppRowAction } from '@/components/rowActions'
+
+// 页面已有开局/交易失败反馈，这些请求关闭拦截器的重复消息。
+const pageErrorRequest: AppRequestConfig = { skipGlobalError: true }
 
 const boardOptions = [
   { label: '主板', value: '主板' },
@@ -294,9 +298,9 @@ async function start() {
       mode: sessionConfig.mode, range_start: sessionConfig.range_start, range_end: sessionConfig.range_end,
       n_rounds: settings.n_rounds, window_days: settings.window_days,
       initial_capital: settings.initial_capital, fee_enabled: settings.fee_enabled, filters,
-    })
+    }, pageErrorRequest)
   } catch (e) {
-    ElMessage.error((e as Error).message || '开局失败')
+    ElMessage.error(getErrorMessage(e, '开局失败'))
   } finally {
     loading.value = false
   }
@@ -308,7 +312,7 @@ async function runTrainingAction(action: () => Promise<void>) {
     || !hasPermission(auth.role, auth.permissions, 'training:trade')) return
   actionPending.value = true
   try { await action() }
-  catch (error) { ElMessage.error((error as Error).message || '训练操作失败') }
+  catch (error) { ElMessage.error(getErrorMessage(error, '训练操作失败')) }
   finally { actionPending.value = false }
 }
 
@@ -316,7 +320,7 @@ async function placeBuy(hands: number) {
   const h = Math.min(Math.floor(hands), maxBuyHands.value)
   if (h < 1) { ElMessage.warning('可用资金不足以买入 1 手'); return }
   await runTrainingAction(async () => {
-    view.value = await placeTrade(view.value!.id, 'buy', h, order.reason)
+    view.value = await placeTrade(view.value!.id, 'buy', h, order.reason, pageErrorRequest)
     order.reason = ''
   })
 }
@@ -324,7 +328,7 @@ async function placeSell(hands: number) {
   const h = Math.min(Math.floor(hands), posHands.value)
   if (h < 1) { ElMessage.warning('当前无持仓可卖'); return }
   await runTrainingAction(async () => {
-    view.value = await placeTrade(view.value!.id, 'sell', h, order.reason)
+    view.value = await placeTrade(view.value!.id, 'sell', h, order.reason, pageErrorRequest)
     order.reason = ''
   })
 }
@@ -340,18 +344,18 @@ const sellAll = () => placeSell(posHands.value)
 const sellHalf = () => placeSell(halfPosHands.value)
 const sellPreset = (p: number) => placeSell(presetHands(p))
 async function doCancel() {
-  await runTrainingAction(async () => { view.value = await cancelIntent(view.value!.id) })
+  await runTrainingAction(async () => { view.value = await cancelIntent(view.value!.id, pageErrorRequest) })
 }
 async function nextDay() {
   await runTrainingAction(async () => {
-    const r = await revealNext(view.value!.id, round.value?.cursor_idx ?? null)
+    const r = await revealNext(view.value!.id, round.value?.cursor_idx ?? null, pageErrorRequest)
     view.value = r
     if (r.fill_msg) ElMessage.warning(r.fill_msg)
   })
 }
 async function finishRound() {
   await runTrainingAction(async () => {
-    view.value = await settleRound(view.value!.id) as RunningView & DetailView
+    view.value = await settleRound(view.value!.id, pageErrorRequest) as RunningView & DetailView
     if (view.value.status === 'completed') await Promise.all([loadHistory(), loadGrowth()])
   })
 }
@@ -469,7 +473,7 @@ usePageShortcuts([
 ], {
   enabled: () => phase.value === 'running' && !loading.value && !actionPending.value
     && hasPermission(auth.role, auth.permissions, 'training:trade'),
-  onError: error => ElMessage.error((error as Error).message || '训练操作失败'),
+  onError: error => ElMessage.error(getErrorMessage(error, '训练操作失败')),
 })
 
 onMounted(async () => {
@@ -482,8 +486,8 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 
 <template>
   <!-- ══════════ 阶段一：未开局（配置 + 历史主表 + 成长）══════════ -->
-  <LayoutHost v-if="phase === 'config'" :layout="mainLayout">
-    <template #action>
+  <LayoutHost :layout="mainLayout">
+    <template v-if="phase === 'config'" #action>
     <div class="page-head">
         <div>
           <h2 class="app-page-title page-title-row">
@@ -512,7 +516,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
       </div>
     </template>
 
-    <template #main>
+    <template v-if="phase === 'config'" #main>
     <AppScrollArea class="cfg-body">
         <el-card shadow="never" class="cfg-card">
           <AppForm label-position="top" class="cfg-form">
@@ -647,11 +651,9 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
         </AppTableCard>
     </AppScrollArea>
     </template>
-  </LayoutHost>
 
   <!-- ══════════ 阶段二：训练中（混合成长区）══════════ -->
-  <LayoutHost v-else-if="phase === 'running' && round" :layout="mainLayout">
-    <template #action>
+    <template v-if="phase === 'running' && round" #action>
     <div class="page-head">
         <div>
           <h2 class="app-page-title title-row">
@@ -684,7 +686,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
       </div>
     </template>
 
-    <template #main>
+    <template v-if="phase === 'running' && round" #main>
     <AppScrollArea class="run-body">
         <div class="chart-block">
           <StockChartRegion
@@ -799,11 +801,9 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
         </AppTableCard>
     </AppScrollArea>
     </template>
-  </LayoutHost>
 
   <!-- ══════════ 阶段三：结算回看 ══════════ -->
-  <LayoutHost v-else-if="phase === 'result' && detail" :layout="mainLayout">
-    <template #action>
+    <template v-if="phase === 'result' && detail" #action>
     <div class="page-head">
         <div>
           <h2 class="app-page-title title-row">
@@ -823,7 +823,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
       </div>
     </template>
 
-    <template #main>
+    <template v-if="phase === 'result' && detail" #main>
     <AppScrollArea class="result-body">
         <div class="kpi-row">
           <div class="kpi"><label>平均收益</label><b :class="marketValueClass(detail.total_return, { input: 'ratio' })">{{ pct(detail.total_return) }}</b></div>
@@ -926,10 +926,10 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
         </el-card>
     </AppScrollArea>
     </template>
-  </LayoutHost>
 
   <!-- 设置抽屉：开局默认/选股范围/快捷下单三阶段共享；图表与 K 线属性仅在训练台/回看（有图）时展示。
        组件设置（图表区域高度等）通过 component-slot-ids 按阶段放行，config 阶段只留训练历史排序。 -->
+  <template #overlays>
   <PageSettingsDrawer
     v-model="settingsOpen"
     title="盘感训练"
@@ -1009,6 +1009,8 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
       </PageSettingSection>
       </template>
     </PageSettingsDrawer>
+  </template>
+  </LayoutHost>
 </template>
 
 <style scoped>

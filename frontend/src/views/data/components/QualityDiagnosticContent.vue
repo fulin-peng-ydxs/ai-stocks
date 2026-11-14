@@ -46,7 +46,8 @@ watch(() => props.issue, () => { rawOpen.value = false })
     </AppDetailSection>
     <AppDetailSection v-if="diagnostic.repairFields.length" title="最近修复">
       <AppDetailFields>
-        <AppDetailField v-for="field in diagnostic.repairFields" :key="field.label" :label="field.label" :value="field.value" />
+        <AppDetailField v-for="field in diagnostic.repairFields" :key="field.label" :label="field.label" :value="field.value"
+          :span="field.label === '失败原因' ? 'full' : 'normal'" />
       </AppDetailFields>
     </AppDetailSection>
     <AppSummaryDisclosureCard :panel-id="`quality-diagnostic-raw-${issue.id}`" title="技术详情"

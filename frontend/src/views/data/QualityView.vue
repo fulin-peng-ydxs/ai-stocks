@@ -256,8 +256,9 @@ async function fixOne(row: QualityIssue) {
     const t = await waitTask(task_id)
     // 执行终态与实际解决分开；等待来源的修复提示原因，不能弹出“恢复成功”。
     const succeeded = t.status === 'done' && (t.result?.ok ?? false)
-    if (succeeded) ElMessage.success(businessMessage(t.message, '恢复完成'))
-    else ElMessage.warning(taskOutcomeDisplay(t).message)
+    const outcome = taskOutcomeDisplay(t)
+    ElMessage({ message: outcome.message,
+      type: succeeded ? 'success' : outcome.tone === 'danger' ? 'error' : 'warning' })
     await load()
   } catch { row.status = 'open' } finally { busyId.value = null }
 }

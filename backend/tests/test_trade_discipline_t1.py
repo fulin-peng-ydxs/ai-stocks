@@ -12,7 +12,6 @@ import pytest
 from backend.cli import cmd_trade_discipline_rbac
 from backend.common.exceptions import StorageError
 from backend.storage import pg_ddl
-from backend.tests.conftest import insert_test_role
 from backend.storage.pg_ddl import (
     ASSET_PK,
     TRADE_DISCIPLINE_RBAC_MARKER,
@@ -21,6 +20,7 @@ from backend.storage.pg_ddl import (
     _trade_discipline_marker_state,
     seed_rbac,
 )
+from backend.tests.conftest import insert_test_role
 
 TD_TABLES = {
     "trade_discipline_rule",
@@ -383,3 +383,15 @@ def test_trade_discipline_cli_requires_exact_marker(monkeypatch):
     result = cmd_trade_discipline_rbac(argparse.Namespace(confirm_marker="wrong"))
     assert result == 2
     assert called is False
+
+
+@pytest.mark.parametrize("error_type", [RuntimeError, ValueError, StorageError])
+def test_trade_discipline_cli_failure_keeps_nonzero_exit_and_reason(monkeypatch, capsys, error_type):
+    """CLI 最终边界保持原有失败退出码，不把运行时拒绝遗漏为未处理异常。"""
+    def fail_rollback():
+        raise error_type("拒绝回滚测试")
+
+    monkeypatch.setattr(pg_ddl, "_rollback_trade_discipline_rbac", fail_rollback)
+    result = cmd_trade_discipline_rbac(argparse.Namespace(confirm_marker=TRADE_DISCIPLINE_RBAC_MARKER))
+    assert result == 1
+    assert "拒绝回滚测试" in capsys.readouterr().err

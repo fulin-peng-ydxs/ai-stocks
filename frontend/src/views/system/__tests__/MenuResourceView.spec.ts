@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { ref } from 'vue'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessage } from 'element-plus'
 import MenuResourceView from '@/views/system/MenuResourceView.vue'
 import AppReorderTree from '@/components/AppReorderTree.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -84,9 +84,26 @@ describe('菜单排序保存闭环', () => {
       { id: 'b', sort: 10, parentId: 'group' }, { id: 'a', sort: 20, parentId: 'group' },
     ])
     expect(refresh).toHaveBeenCalledOnce()
-    expect(refresh).toHaveBeenCalledWith({ background: true })
+    expect(refresh).toHaveBeenCalledWith({ background: true }, { skipGlobalError: true })
     expect(tree.props('busy')).toBe(false)
   })
+  it('菜单已保存但权限刷新失败时由页面提示一次，并释放保存状态', async () => {
+    const { wrapper, refresh } = await setup()
+    refresh.mockRejectedValueOnce(new Error('refresh failed'))
+    api.list.mockResolvedValue(reordered())
+    const warning = vi.spyOn(ElMessage, 'warning')
+    const success = vi.spyOn(ElMessage, 'success')
+    const tree = wrapper.getComponent({ name: 'AppReorderTree' })
+    tree.vm.$emit('reorder', reordered())
+    await flushPromises()
+    expect(refresh).toHaveBeenCalledWith({ background: true }, { skipGlobalError: true })
+    expect(warning).toHaveBeenCalledTimes(1)
+    expect(success).not.toHaveBeenCalled()
+    expect(warning).toHaveBeenCalledWith('菜单顺序已保存，导航刷新失败，请刷新页面')
+    expect(tree.props('busy')).toBe(false)
+    expect(tree.props('items')[0].children.map((node: MenuNode) => node.id)).toEqual(['b', 'a'])
+  })
+
   it('保存中锁定菜单操作，拒绝重入，失败回滚服务端顺序并保留选中项', async () => {
     let reject!: (error: Error) => void
     api.reorder.mockReturnValue(new Promise((_resolve, fail) => { reject = fail }))

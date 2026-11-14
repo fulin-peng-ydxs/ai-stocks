@@ -25,7 +25,7 @@ def _resource_codes(route) -> set[str]:
     codes: set[str] = set()
     for call in _route_dep_calls(route):
         if hasattr(call, "resource_code"):
-            codes.add(getattr(call, "resource_code"))
+            codes.add(call.resource_code)
         codes |= set(getattr(call, "resource_codes", set()))
     return codes
 

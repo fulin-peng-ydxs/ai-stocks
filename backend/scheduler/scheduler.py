@@ -19,6 +19,7 @@ from decimal import Decimal, InvalidOperation
 
 from backend.common.exceptions import ConflictError, NotFoundError, ValidationError
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.storage.duckdb_client import get_client
 from backend.storage.task_runtime import (
     get_task_runtime_client,
@@ -239,8 +240,8 @@ def _fire_job(job_id: str) -> None:
     if not job or not job["enabled"]:
         return
     name = job["name"]
-    if job["trading_day_only"] and not _is_trading_day(date.today()):
-        log.info("[scheduler] 定时任务「%s」%s 非交易日，跳过", name, date.today())
+    if job["trading_day_only"] and not _is_trading_day(shanghai_now_naive().date()):
+        log.info("[scheduler] 定时任务「%s」%s 非交易日，跳过", name, shanghai_now_naive().date())
         AuditService().record_scheduler_event(
             action="skip",
             result="denied",
@@ -658,7 +659,7 @@ class ScheduledJobService:
             if len(job_ids) != len(set(job_ids)) or set(job_ids) != actual:
                 raise ValidationError("请提交全部直接下游且每个任务只出现一次")
             if job_ids:
-                now = datetime.now()  # noqa: DTZ005 - 兼容运行态的上海本地 naive 时间
+                now = shanghai_now_naive()
                 with self.c.transaction():
                     self.c.executemany(
                         "UPDATE scheduled_job_dependency SET dependency_order=? "
@@ -836,12 +837,12 @@ class ScheduledJobService:
         with _EVENT_DISPATCH_LOCK:
             if not (name or "").strip():
                 raise ValueError("任务名称不能为空")
-            jid = f"job_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+            jid = f"job_{shanghai_now_naive().strftime('%Y%m%d%H%M%S%f')}"
             parent_ids = self._dependency_ids(trigger_mode, dependency_job_id, dependency_job_ids)
             params, dependency_delay, retry_config = self._validate(
                 jid, task_type, params, freq_type, freq_config, trigger_mode,
                 parent_ids, dependency_condition, dependency_delay, retry_config)
-            now = datetime.now()
+            now = shanghai_now_naive()
             with self.c.transaction():
                 self.c.execute(
                     "INSERT INTO scheduled_job (id, name, task_type, params, "
@@ -894,7 +895,7 @@ class ScheduledJobService:
                      dependency_condition if trigger_mode == "dependency" else None,
                      runtime_json_param(self.c, dependency_delay),
                      runtime_json_param(self.c, retry_config),
-                     bool(trading_day_only), bool(enabled), datetime.now(), jid])
+                     bool(trading_day_only), bool(enabled), shanghai_now_naive(), jid])
                 self._save_dependencies(jid, parent_ids)
             job = self.get(jid)
             unregister_job(jid)            # 先注销旧触发器
@@ -905,7 +906,7 @@ class ScheduledJobService:
                     "UPDATE scheduled_trigger_event SET status='cancelled', "
                     "message='目标任务已停用', updated_at=? WHERE target_job_id=? "
                     "AND status IN ('waiting','dispatching')",
-                    [datetime.now(), jid])
+                    [shanghai_now_naive(), jid])
             return self.get(jid)       # 重读：拿到重注册后的 next_run_time
 
     def set_enabled(self, jid: str, enabled: bool) -> dict:
@@ -913,7 +914,7 @@ class ScheduledJobService:
             if not self.get(jid):
                 raise ValueError("定时任务不存在")
             self.c.execute("UPDATE scheduled_job SET enabled=?, updated_at=? WHERE id=?",
-                           [bool(enabled), datetime.now(), jid])
+                           [bool(enabled), shanghai_now_naive(), jid])
             job = self.get(jid)
             unregister_job(jid)
             if enabled and job["trigger_mode"] == "time":
@@ -923,7 +924,7 @@ class ScheduledJobService:
                     "UPDATE scheduled_trigger_event SET status='cancelled', "
                     "message='目标任务已停用', updated_at=? WHERE target_job_id=? "
                     "AND status IN ('waiting','dispatching')",
-                    [datetime.now(), jid])
+                    [shanghai_now_naive(), jid])
             return self.get(jid)       # 重读：拿到（取消）注册后的 next_run_time
 
     def delete(self, jid: str) -> None:
@@ -942,11 +943,11 @@ class ScheduledJobService:
                 self.c.execute(
                     "UPDATE scheduled_trigger_event SET status='cancelled', message='目标任务已删除', "
                     "updated_at=? WHERE target_job_id=? AND status IN ('waiting','dispatching')",
-                    [datetime.now(), jid])
+                    [shanghai_now_naive(), jid])
                 self.c.execute("DELETE FROM scheduled_job WHERE id=?", [jid])
 
     def set_last_run(self, jid: str, task_id: str | None) -> None:
-        now = datetime.now()
+        now = shanghai_now_naive()
         self.c.execute(
             "UPDATE scheduled_job SET last_run_at=?, last_task_id=?, updated_at=? WHERE id=?",
             [now, task_id, now, jid])
@@ -974,13 +975,13 @@ class ScheduledJobService:
             if task.empty:
                 self.c.execute(
                     "UPDATE scheduled_trigger_event SET status='waiting', message='服务重启后恢复等待', "
-                    "updated_at=? WHERE id=?", [datetime.now(), event_id])
+                    "updated_at=? WHERE id=?", [shanghai_now_naive(), event_id])
             else:
                 self.c.execute(
                     "UPDATE scheduled_trigger_event SET status='dispatched', task_id=?, "
                     "dispatched_at=COALESCE(dispatched_at, ?), "
                     "message='已恢复下游任务关联', updated_at=? WHERE id=?",
-                    [str(task.iloc[0]["id"]), task.iloc[0]["created_at"], datetime.now(), event_id])
+                    [str(task.iloc[0]["id"]), task.iloc[0]["created_at"], shanghai_now_naive(), event_id])
         return len(rows)
 
     def list_events(self, jid: str, limit: int = 100) -> list[dict]:
@@ -1076,7 +1077,7 @@ def _insert_trigger_event(
     attempt = int(source.get("execution_attempt") or 1)
     raw = f"{source['id']}|{attempt}|{target['id']}|{trigger_kind}|{retry_count}"
     event_id = "evt_" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
-    now = batch_time or datetime.now()
+    now = batch_time or shanghai_now_naive()
     due_at = now + timedelta(seconds=_delay_seconds(delay))
     if not_before:
         try:
@@ -1113,7 +1114,7 @@ def enqueue_terminal_events(task_id: str, *, client=None) -> int:
 
     created = 0
     # 同次终态共享基准时间，使相同延迟产生完全相同的 due_at。
-    batch_time = datetime.now()  # noqa: DTZ005 - 兼容 DuckDB 与 PG 运行态时间适配
+    batch_time = shanghai_now_naive()
     dependents = client.query_df(
         "SELECT j.* FROM scheduled_job j JOIN scheduled_job_dependency d "
         "ON d.downstream_job_id=j.id WHERE j.enabled=true AND j.trigger_mode='dependency' "
@@ -1179,11 +1180,11 @@ def dispatch_due_events() -> int:
 
     svc = ScheduledJobService(_runtime_client(), initialize=False)
     if is_postgres_task_runtime(svc.c):
-        events = svc.c.claim_due_events(now=datetime.now(), limit=50)
+        events = svc.c.claim_due_events(now=shanghai_now_naive(), limit=50)
     else:
         events = svc.c.query_df(
             "SELECT * FROM scheduled_trigger_event WHERE status='waiting' AND due_at<=? "
-            "ORDER BY due_at, created_at, dispatch_order, id LIMIT 50", [datetime.now()])
+            "ORDER BY due_at, created_at, dispatch_order, id LIMIT 50", [shanghai_now_naive()])
     if not events.empty:
         events = events.sort_values(["due_at", "created_at", "dispatch_order", "id"], kind="stable")
     dispatched = 0
@@ -1204,13 +1205,13 @@ def dispatch_due_events() -> int:
                 svc.c.execute(
                     "UPDATE scheduled_trigger_event SET status='cancelled', message=?, updated_at=? "
                     "WHERE id=? AND status=?",
-                    ["目标任务不存在或已停用", datetime.now(), event_id, expected_status])
+                    ["目标任务不存在或已停用", shanghai_now_naive(), event_id, expected_status])
                 continue
             if not is_postgres_task_runtime(svc.c):
                 svc.c.execute(
                     "UPDATE scheduled_trigger_event SET status='dispatching', "
                     "message='正在创建下游任务', updated_at=? WHERE id=? AND status='waiting'",
-                    [datetime.now(), event_id])
+                    [shanghai_now_naive(), event_id])
             snapshot = _json_value(event.get("job_snapshot"), {})
             try:
                 tid = AsyncTaskService(svc.c).create(
@@ -1224,7 +1225,7 @@ def dispatch_due_events() -> int:
                     trigger_event_id=event_id,
                     retry_count=int(event.get("retry_count") or 0),
                 )
-                now = datetime.now()
+                now = shanghai_now_naive()
                 svc.c.execute(
                     "UPDATE scheduled_trigger_event SET status='dispatched', task_id=?, "
                     "dispatched_at=?, message='已触发', updated_at=? "
@@ -1237,11 +1238,11 @@ def dispatch_due_events() -> int:
                     "UPDATE scheduled_trigger_event SET status='waiting', message=?, updated_at=? "
                     "WHERE id=? AND status='dispatching'",
                     [f"等待写任务执行槽位：{exc.task_type}（{exc.running_id}）",
-                     datetime.now(), event_id])
+                     shanghai_now_naive(), event_id])
             except Exception as exc:
                 log.exception("[scheduler] 依赖事件分发失败 %s", event_id)
                 svc.c.execute(
                     "UPDATE scheduled_trigger_event SET status='failed', message=?, updated_at=? "
                     "WHERE id=? AND status='dispatching'",
-                    [str(exc), datetime.now(), event_id])
+                    [str(exc), shanghai_now_naive(), event_id])
     return dispatched

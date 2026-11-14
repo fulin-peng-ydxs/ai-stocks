@@ -240,8 +240,9 @@ export function getBars(
   code: string,
   params?: { adjust?: string; lookback?: number; end?: string; include_market_values?: boolean; capital_basis?: 'point_in_time' | 'historical' },
   signal?: AbortSignal,
+  config?: AppRequestConfig,
 ): Promise<Bars> {
-  return http.get(`/stocks/${code}/bars`, { params, signal })
+  return http.get(`/stocks/${code}/bars`, { ...config, params, signal })
 }
 
 export function getIntraday(

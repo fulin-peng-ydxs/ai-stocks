@@ -6,8 +6,36 @@ import { describe, expect, it } from 'vitest'
 import AppForm from '../AppForm.vue'
 import PageSegmented from '../PageSegmented.vue'
 import AppFilterSelect from '../AppFilterSelect.vue'
+import AppFormHelp from '../AppFormHelp.vue'
 
 describe('一级编辑表单尺寸', () => {
+  it('默认复用原生标签左对齐，保留显式位置、标签宽度及两类说明的结构', async () => {
+    const wrapper = mount(defineComponent({
+      components: { AppForm, ElFormItem, ElInput, AppFormHelp },
+      props: ['position', 'width'],
+      setup() { return { draft: reactive({ name: '原有参数' }) } },
+      template: `<AppForm :label-position="position" :label-width="width">
+        <ElFormItem label="名称" required><ElInput v-model="draft.name" />
+          <AppFormHelp>字段说明</AppFormHelp>
+        </ElFormItem><AppFormHelp>整表说明</AppFormHelp></AppForm>`,
+    }), { props: { width: '92px' } })
+    const form = wrapper.getComponent(ElForm)
+    const field = wrapper.getComponent(ElFormItem)
+    expect(form.props('labelPosition')).toBe('left')
+    expect(field.classes()).toContain('el-form-item--label-left')
+    expect(field.get('.el-form-item__content .app-form-help').text()).toContain('字段说明')
+    expect(wrapper.get('form > .app-form-help').text()).toContain('整表说明')
+    expect(wrapper.findAll('.app-form-help').every(help => help.attributes('style') === undefined)).toBe(true)
+    for (const position of ['top', 'right', 'left']) {
+      await wrapper.setProps({ position, width: '120px' })
+      expect(form.props('labelPosition')).toBe(position)
+      expect(form.props('labelWidth')).toBe('120px')
+      expect(field.classes()).toContain(`el-form-item--label-${position}`)
+      expect(wrapper.get('input').element.value).toBe('原有参数')
+    }
+    wrapper.unmount()
+  })
+
   it.each([false, true])('复合选择器（multiple=%s）的最终控件继承表单尺寸，显式覆盖仍有效', async (multiple) => {
     const wrapper = mount(defineComponent({
       components: { AppForm, ElFormItem, AppFilterSelect },

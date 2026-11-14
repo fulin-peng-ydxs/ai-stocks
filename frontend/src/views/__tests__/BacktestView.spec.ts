@@ -86,6 +86,7 @@ import * as screeningApi from '@/api/screening'
 import * as scoreApi from '@/api/scoreProfile'
 import * as tradeApi from '@/api/tradeProfile'
 import * as boardApi from '@/api/board'
+import * as stocksApi from '@/api/stocks'
 import * as benchApi from '@/utils/benchmarkEquity'
 import BacktestView from '@/views/BacktestView.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
@@ -354,7 +355,7 @@ describe('BacktestView 三方案选择器（T5）', () => {
 
   it('顶部历史只加载我的记录，不再渲染与公开浏览重复的来源下拉', async () => {
     const wrapper = await mountView()
-    expect(backtestApi.listRuns).toHaveBeenCalledWith('strategy', 'mine')
+    expect(backtestApi.listRuns).toHaveBeenCalledWith('strategy', 'mine', undefined, { skipGlobalError: true })
     expect(wrapper.find('.history-source-select').exists()).toBe(false)
     expect(wrapper.text()).toContain('回测记录')
     expect(wrapper.find('[data-testid="backtest-browse-open"]').exists()).toBe(true)
@@ -429,7 +430,7 @@ describe('BacktestView 三方案选择器（T5）', () => {
     expect((wrapper.vm as any).selectedRun).toBe('')
     expect(wrapper.find('[data-testid="backtest-external-run"]').text()).toContain('公开评分-公开选股-公开买卖')
     expect(wrapper.find('[data-testid="backtest-external-run"] .asset-source-stub').text()).toBe('public')
-    expect(backtestApi.getRun).toHaveBeenCalledWith('run_ref_public')
+    expect(backtestApi.getRun).toHaveBeenCalledWith('run_ref_public', { skipGlobalError: true })
     wrapper.unmount()
   })
 
@@ -492,6 +493,50 @@ describe('BacktestView 三方案选择器（T5）', () => {
     expect((wrapper.vm as any).buildBody().trade_profile_id).toBe('avr_trade_pub')
     expect(wrapper.find('.sell-row').exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('稳健性测试和榜单弹窗失败过滤技术文本并释放加载状态', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    const failure = new Error('请求失败 https://source.invalid/api SQL: SELECT secret FROM bars')
+    const error = vi.spyOn(ElMessage, 'error')
+    vi.mocked(backtestApi.runRobust).mockRejectedValueOnce(failure)
+    const vm = wrapper.vm as any
+    vm.scoreProfileId = 'avr_score_1'
+    vm.tradeProfileId = 'avr_trade_1'
+    await vm.runRobustTest()
+    expect(backtestApi.runRobust).toHaveBeenCalledTimes(1)
+    expect(error).toHaveBeenLastCalledWith('稳健性测试失败')
+    expect(vm.robustLoading).toBe(false)
+    vi.mocked(boardApi.computeBoard).mockRejectedValueOnce(failure)
+    await vm.openDayBoard('2024-12-31', '000001.SZ')
+    expect(boardApi.computeBoard).toHaveBeenCalledWith(expect.any(String), 50, undefined, { skipGlobalError: true })
+    expect(error).toHaveBeenLastCalledWith('榜单计算失败')
+    expect(vm.boardLoading).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('交易回放 K 线失败由页面接管，只提示一次并释放加载状态', async () => {
+    const bars = vi.spyOn(stocksApi, 'getBars').mockRejectedValueOnce({ uiMessage: '行情源维护中，请稍后重试' })
+    const indicators = vi.spyOn(stocksApi, 'getIndicators').mockResolvedValue({ code: '000001.SZ', indicators: [] })
+    const wrapper = await mountView()
+    try {
+      const vm = wrapper.vm as any
+      const trade = { code: '000001.SZ', entry_date: '2024-01-01', exit_date: '2024-01-02',
+        entry_price: 10, exit_price: 11, shares: 100, return_pct: 0.1, pnl: 100, exit_reason: 'end', grade: 'A' }
+      vm.strat = { run_id: 'replay-run', metrics: {}, layers: validLayers(), equity: [], trades: [trade] }
+      const error = vi.spyOn(ElMessage, 'error')
+      error.mockClear()
+      await vm.openTradeChart(trade)
+      expect(bars).toHaveBeenCalledWith('000001.SZ', { adjust: 'qfq', lookback: 6000 }, undefined, { skipGlobalError: true })
+      expect(error).toHaveBeenCalledTimes(1)
+      expect(error).toHaveBeenCalledWith('行情源维护中，请稍后重试')
+      expect(vm.dlgLoading).toBe(false)
+    } finally {
+      wrapper.unmount()
+      bars.mockRestore()
+      indicators.mockRestore()
+    }
   })
 
   it('普通回测与稳健性测试共用同一临时快照 ref，不出现展示/运行口径分叉', async () => {
@@ -767,7 +812,7 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     const drawer = runDrawer(wrapper)!
     drawer.vm.$emit('load', { id: 'r1', run_ref: 'run_ref_1', kind: 'strategy', readonly: true, source: 'public' })
     await flushPromises()
-    expect(backtestApi.getRun).toHaveBeenCalledWith('run_ref_1')
+    expect(backtestApi.getRun).toHaveBeenCalledWith('run_ref_1', { skipGlobalError: true })
     expect(backtestApi.runBacktest).not.toHaveBeenCalled()
     // 公开只读行 → 删除按钮不可见（readonly fail-closed，非默认可写）
     expect(wrapper.findAll('button').some((b) => b.text() === '删除')).toBe(false)
@@ -804,6 +849,34 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     wrapper.unmount()
   })
 
+  it.each([
+    [new Error('查询失败 SQL: SELECT secret FROM runs'), null],
+    [{ uiMessage: '记录已被其他操作更新，请刷新后重试' }, '记录已被其他操作更新，请刷新后重试'],
+  ])('历史回测操作共用业务错误转换，失败保留当前记录：%s', async (failure, businessReason) => {
+    const wrapper = await mountView()
+    const vm = wrapper.vm as any
+    vm.runHistory = [{ id: 'mine-1', run_ref: 'run_ref_1', kind: 'strategy', readonly: false, visibility: 'tenant' }]
+    vm.selectedRun = 'run_ref_1'
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
+    const error = vi.spyOn(ElMessage, 'error')
+    vi.mocked(backtestApi.deleteRun).mockRejectedValueOnce(failure)
+    await vm.removeCurrentRun()
+    expect(error).toHaveBeenLastCalledWith(businessReason ?? '删除失败')
+    expect(vm.selectedRun).toBe('run_ref_1')
+    expect(backtestApi.deleteRun).toHaveBeenCalledWith('run_ref_1', { skipGlobalError: true })
+    vi.mocked(backtestApi.setRunVisibility).mockRejectedValueOnce(failure)
+    await vm.publishRunVisibility('private')
+    expect(error).toHaveBeenLastCalledWith(businessReason ?? '公开设置失败')
+    expect(vm.runVisibilitySaving).toBe(false)
+    expect(backtestApi.setRunVisibility).toHaveBeenCalledWith('run_ref_1', 'private', { skipGlobalError: true })
+    vi.mocked(backtestApi.getRun).mockRejectedValueOnce(failure)
+    await vm.reuseCurrentRunParams()
+    expect(error).toHaveBeenLastCalledWith(businessReason ?? '复用参数失败')
+    expect(vm.loading).toBe(false)
+    expect(vm.selectedRun).toBe('run_ref_1')
+    wrapper.unmount()
+  })
+
   it('删除历史记录后保留参数并回到未选择态，不自动载入下一条', async () => {
     const wrapper = await mountView()
     const summary = {
@@ -827,7 +900,7 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     await (wrapper.vm as any).removeCurrentRun()
     await flushPromises()
 
-    expect(backtestApi.deleteRun).toHaveBeenCalledWith('run_ref_last')
+    expect(backtestApi.deleteRun).toHaveBeenCalledWith('run_ref_last', { skipGlobalError: true })
     expect((wrapper.vm as any).dateStart).toBe('2024-02-01')
     expect((wrapper.vm as any).selectedRun).toBe('')
     expect((wrapper.vm as any).strat).toBeNull()
@@ -916,6 +989,7 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     expect(backtestApi.runBacktest).toHaveBeenCalledTimes(1)
     const body = vi.mocked(backtestApi.runBacktest).mock.calls[0][0] as any
     expect(body.source_run_ref).toBe('run_ref_9')
+    expect(vi.mocked(backtestApi.runBacktest).mock.calls[0]).toHaveLength(1)
     expect(body.kind).toBe('strategy')
     // 基础字段
     expect(body.score_profile_id).toBe('avr_score_1')
@@ -950,9 +1024,9 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     // 真实组件会 emit('rerunDone', result, item)；此处直接驱动父级回调验证按 run_id 选中
     drawer.vm.$emit('rerunDone', { run_id: 'new_run' }, { id: 'r9', run_ref: 'run_ref_9', kind: 'strategy' })
     await flushPromises()
-    expect(backtestApi.listRuns).toHaveBeenLastCalledWith('strategy', 'mine')
+    expect(backtestApi.listRuns).toHaveBeenLastCalledWith('strategy', 'mine', undefined, { skipGlobalError: true })
     // 选中的必须是返回值指定的新 run（new_run 不在列表首行，证明非盲选 [0]）
-    expect(backtestApi.getRun).toHaveBeenCalledWith('run_ref_new')
+    expect(backtestApi.getRun).toHaveBeenCalledWith('run_ref_new', { skipGlobalError: true })
     wrapper.unmount()
   })
 
@@ -1058,7 +1132,7 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     await retry!.trigger('click')
     await flushPromises()
 
-    expect(backtestApi.getRun).toHaveBeenLastCalledWith('run_ref_public_a')
+    expect(backtestApi.getRun).toHaveBeenLastCalledWith('run_ref_public_a', { skipGlobalError: true })
     expect(backtestApi.getRun).toHaveBeenCalledTimes(2)
     expect(backtestApi.runBacktest).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -1138,7 +1212,7 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     await retry!.trigger('click')
     await flushPromises()
 
-    expect(backtestApi.getRun).toHaveBeenLastCalledWith('run_ref_mine')
+    expect(backtestApi.getRun).toHaveBeenLastCalledWith('run_ref_mine', { skipGlobalError: true })
     expect((wrapper.vm as any).externalRunSummary).toBeNull()
     expect((wrapper.vm as any).selectedRun).toBe('run_ref_mine')
     wrapper.unmount()

@@ -98,8 +98,9 @@ def test_stage5_config_validation_and_effective_settings(app_cfg):
     assert public_cfg["login_captcha_enabled"] is True
     assert public_cfg["captcha_after_fails"] == 2
 
-    from backend.config.settings import AuditConfig
     from pydantic import ValidationError
+
+    from backend.config.settings import AuditConfig
     with pytest.raises(ValidationError):
         AuditConfig(retention_days=0)
 

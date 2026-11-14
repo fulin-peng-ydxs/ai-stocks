@@ -504,9 +504,11 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
               </article>
             </TradeDisciplineSectionPanel>
             <TradeDisciplineSectionPanel title="可用资金" description="开始记账前，证券账户里还没用于买股票的资金。">
-              <el-form-item label="金额（元，选填）"><FixedDecimalInput v-model="openingCash" class="app-control-width-long" grouped clearable /></el-form-item>
-              <AppFormHelp>填写后，余额会随买卖、手续费、入金出金和分红自动更新。</AppFormHelp>
-              <p class="app-caption-text ledger-opening-note">不填也能进行交易纪律打卡，只是不计算现金余额；未填写不代表余额为零。</p>
+              <el-form-item label="金额（元，选填）">
+                <FixedDecimalInput v-model="openingCash" class="app-control-width-long" grouped clearable />
+                <AppFormHelp>填写后，余额会随买卖、手续费、入金出金和分红自动更新。</AppFormHelp>
+                <AppFormHelp>不填也能进行交易纪律打卡，只是不计算现金余额；未填写不代表余额为零。</AppFormHelp>
+              </el-form-item>
             </TradeDisciplineSectionPanel>
           </div>
           <AppControlRow justify="between" class="ledger-opening-confirm">
@@ -720,7 +722,6 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
 .ledger-opening-position + .ledger-opening-position { border-top: 1px solid var(--el-border-color-lighter); margin-top: var(--app-space-3); padding-top: var(--app-space-3); }
 .ledger-opening-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--app-space-4); }
 .ledger-opening-fields :deep(.el-form-item) { min-width: 0; }
-.ledger-opening-note { margin: var(--app-space-4) 0 0; }
 .ledger-opening-confirm { margin-top: var(--app-space-5); padding-top: var(--app-space-4); border-top: 1px solid var(--el-border-color-lighter); }
 .ledger-opening-confirm :deep(.el-checkbox__label) { white-space: normal; }
 @container app-viewport (min-width: 1600px) {

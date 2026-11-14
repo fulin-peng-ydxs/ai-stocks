@@ -1,9 +1,10 @@
 """统一配置、来源分组、HTTP发送与会话互斥的低层回归。"""
 
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import nullcontext, contextmanager
+import itertools
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, nullcontext
 
 import pandas as pd
 import pytest
@@ -162,7 +163,7 @@ def test_shared_limiter_allows_overlap_but_keeps_aggregate_start_interval():
     with ThreadPoolExecutor(max_workers=4) as pool:
         list(pool.map(worker, range(12)))
     assert len(starts) == 12
-    assert all(b - a >= 0.018 for a, b in zip(starts, starts[1:]))
+    assert all(b - a >= 0.018 for a, b in itertools.pairwise(starts))
     assert starts[-1] - starts[0] < 0.45  # HTTP等待没有串行叠加
 
 
@@ -268,7 +269,7 @@ def test_nested_retry_does_not_multiply_configured_attempts(monkeypatch):
 
 
 def test_legacy_override_is_nullable_but_common_timeout_is_not():
-    from backend.storage.app_config import _coerce, get_field_meta, ConfigValidationError
+    from backend.storage.app_config import ConfigValidationError, _coerce, get_field_meta
 
     assert _coerce(get_field_meta("ths_board.timeout_sec"), None) is None
     with pytest.raises(ConfigValidationError):
@@ -277,6 +278,6 @@ def test_legacy_override_is_nullable_but_common_timeout_is_not():
 
 @pytest.mark.parametrize("value", [2.5, float("inf"), float("nan"), True])
 def test_integer_config_rejects_fractional_or_nonfinite_values(value):
-    from backend.storage.app_config import _coerce, get_field_meta, ConfigValidationError
+    from backend.storage.app_config import ConfigValidationError, _coerce, get_field_meta
     with pytest.raises(ConfigValidationError):
         _coerce(get_field_meta("datasource.update_concurrency"), value)

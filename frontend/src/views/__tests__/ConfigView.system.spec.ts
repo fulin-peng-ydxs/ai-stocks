@@ -13,6 +13,7 @@ import AppTabToolbar from '@/components/AppTabToolbar.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import HelpHint from '@/components/HelpHint.vue'
+import AppHoverInfo from '@/components/AppHoverInfo'
 import PageSegmented from '@/components/PageSegmented.vue'
 import type { MailStatus, SettingGroup } from '@/api/data'
 
@@ -434,6 +435,25 @@ describe('ConfigView tech tab', () => {
 })
 
 describe('ConfigView system tab', () => {
+  it.each([
+    ['请求失败 TimeoutError https://source.invalid/api', '来源测试失败，请查看服务日志中的详细原因'],
+    ['来源维护中，请稍后重试', '来源维护中，请稍后重试'],
+    [null, '验证最近一个交易日行情'],
+  ])('来源测试悬浮说明过滤技术错误，保留业务原因和测试范围：%s', async (failure_reason, expected) => {
+    const source = { source: 'akshare', label: '新浪行情', role: 'primary', scope: '日线',
+      up: false, last_test_at: null, last_success_at: null, failure_reason,
+      probe_scope: '验证最近一个交易日行情', timeout_sec: 12, rate_limit_per_sec: 2,
+      serial_required: false, max_attempts: 3, retry_backoff_sec: 1, policy_origin: '继承通用配置' } as any
+    vi.mocked(dataApi.getSources).mockResolvedValue({ sources: [source] })
+    const wrapper = await mountView()
+    await wrapper.findAll('[role="tab"]').find(node => node.text() === '数据治理')!.trigger('click')
+    await flushPromises()
+    await wrapper.get('.source-health [role="button"]').trigger('click')
+    expect(wrapper.findAllComponents(AppHoverInfo).some(item => item.vm.$attrs.content === expected)).toBe(true)
+    expect(source.failure_reason).toBe(failure_reason)
+    wrapper.unmount()
+  })
+
   it('数据治理承载真实来源清单，查看不联网，单项测试后更新状态', async () => {
     const source = { source: 'ths_board', label: '同花顺板块', role: 'board' as const, scope: '字典、成分、指数和资金流',
       up: null, last_test_at: null, last_success_at: null, failure_reason: null,

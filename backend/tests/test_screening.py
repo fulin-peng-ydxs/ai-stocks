@@ -150,7 +150,6 @@ def test_prune_disabled_ast_preserves_or_and_not_semantics():
 
 def test_screen_engine_hybrid_col_and_expr():
     """混合执行集成测试：col 截面 + expr 逐股，AND 合并。"""
-    from datetime import date
 
     from backend.screening.engine import ScreenEngine
     from backend.storage.ddl import init_db

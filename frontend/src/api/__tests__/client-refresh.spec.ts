@@ -3,8 +3,19 @@ import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ElMessage } from 'element-plus'
 
-import http from '../client'
+import http, { type AppRequestConfig } from '../client'
 import { readAuth, writeAuth } from '../authToken'
+import { startSession, revealNext, placeTrade, cancelIntent, settleRound } from '../training'
+import { deleteRun, getRun, setRunVisibility, runBacktest, prepareBacktest, runRobust, listRuns } from '../backtest'
+import { computeBoard, runBoardProfile } from '../board'
+import { getBars } from '../stocks'
+import { runScreen, rankScreen } from '../screening'
+import { runScoreProfile } from '../scoreProfile'
+import { previewConditions } from '../tradeProfile'
+import { listSectorWatchlist, addSectorWatchlist, removeSectorWatchlist } from '../sectors'
+import { listScheduleOptions } from '../data'
+import { saveFieldPolicy, validateLayoutConfig, saveLayoutPageConfig, saveLayoutPreset } from '../layout'
+import { getMe } from '../auth'
 
 vi.mock('element-plus', () => ({
   ElMessage: { error: vi.fn() },
@@ -45,6 +56,72 @@ describe('api client silent refresh', () => {
       tenant: null,
       role: '',
     })
+  })
+
+  it.each([
+    ['查询失败 SQL: SELECT secret FROM users', '账号或密码错误'],
+    ['认证失败 https://upstream.invalid/login', '账号或密码错误'],
+    ['账号或密码不正确', '账号或密码不正确'],
+  ])('登录 401 复用业务消息转换且保留原始响应：%s', async (msg, expected) => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    http.defaults.adapter = async config => Promise.reject({
+      config, response: { status: 401, data: { msg } },
+    })
+    await expect(http.post('/auth/login', {})).rejects.toMatchObject({
+      uiMessage: expected, response: { status: 401, data: { msg } },
+    })
+    expect(ElMessage.error).toHaveBeenCalledWith(expected)
+    vi.mocked(ElMessage.error).mockClear()
+    const silent: AppRequestConfig = { skipGlobalError: true }
+    await expect(http.post('/auth/login', {}, silent)).rejects.toMatchObject({ uiMessage: expected })
+    expect(ElMessage.error).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(readAuth().accessToken).toBe('old-access')
+  })
+
+  it.each([
+    { name: '筛选运行', call: (config?: AppRequestConfig) => runScreen({ score_profile_id: 'score' }, config), timeout: 30000 },
+    { name: '筛选重排', call: (config?: AppRequestConfig) => rankScreen({ run_date: '2026-11-13', score_profile_id: 'score', codes: [] }, config), timeout: 30000 },
+    { name: '评分试算', call: (config?: AppRequestConfig) => runScoreProfile({ items: [] }, config), timeout: 30000 },
+    { name: '买卖试算', call: (config?: AppRequestConfig) => previewConditions({ tree: { op: 'AND', children: [] } }, config), timeout: 30000 },
+    { name: '板块自选读取', call: (config?: AppRequestConfig) => listSectorWatchlist(config), timeout: 30000 },
+    { name: '板块加入自选', call: (config?: AppRequestConfig) => addSectorWatchlist('board', config), timeout: 30000 },
+    { name: '板块移出自选', call: (config?: AppRequestConfig) => removeSectorWatchlist('board', config), timeout: 30000 },
+    { name: '上游候选', call: (config?: AppRequestConfig) => listScheduleOptions('任务', undefined, config), timeout: 30000 },
+    { name: '布局字段策略', call: (config?: AppRequestConfig) => saveFieldPolicy({ componentKind: 'table', field: 'border', allowedLayers: ['user'] }, config), timeout: 30000 },
+    { name: '布局校验', call: (config?: AppRequestConfig) => validateLayoutConfig({ config: { values: {} } }, config), timeout: 30000 },
+    { name: '页面布局导入', call: (config?: AppRequestConfig) => saveLayoutPageConfig('board', { config: { values: {} } }, config), timeout: 30000 },
+    { name: '视觉预设导入', call: (config?: AppRequestConfig) => saveLayoutPreset({ key: 'test', name: '测试' }, config), timeout: 30000 },
+    { name: '回测历史刷新', call: (config?: AppRequestConfig) => listRuns('strategy', 'mine', undefined, config), timeout: 30000 },
+    { name: '菜单权限刷新', call: (config?: AppRequestConfig) => getMe(config), timeout: 30000 },
+    { name: '训练开局', call: (config?: AppRequestConfig) => startSession({ mode: 'single' }, config), timeout: 30000 },
+    { name: '下一交易日', call: (config?: AppRequestConfig) => revealNext('session', 0, config), timeout: 30000 },
+    { name: '训练下单', call: (config?: AppRequestConfig) => placeTrade('session', 'buy', 1, '', config), timeout: 30000 },
+    { name: '撤销意向', call: (config?: AppRequestConfig) => cancelIntent('session', config), timeout: 30000 },
+    { name: '训练结算', call: (config?: AppRequestConfig) => settleRound('session', config), timeout: 30000 },
+    { name: '删除回测', call: (config?: AppRequestConfig) => deleteRun('run', config), timeout: 30000 },
+    { name: '加载回测', call: (config?: AppRequestConfig) => getRun('run', config), timeout: 30000 },
+    { name: '公开设置', call: (config?: AppRequestConfig) => setRunVisibility('run', 'private', config), timeout: 30000 },
+    { name: '运行回测', call: (config?: AppRequestConfig) => runBacktest({ kind: 'strategy', date_start: '2026-01-01', date_end: '2026-01-02' }, config), timeout: 300000 },
+    { name: '回测查重', call: (config?: AppRequestConfig) => prepareBacktest({ kind: 'strategy', date_start: '2026-01-01', date_end: '2026-01-02' }, config), timeout: 30000 },
+    { name: '稳健性测试', call: (config?: AppRequestConfig) => runRobust({ mode: 'param_sweep', params: {} }, config), timeout: 600000 },
+    { name: '榜单导出', call: (config?: AppRequestConfig) => runBoardProfile({ export_all: true }, config), timeout: 30000 },
+    { name: '回测 K 线', call: (config?: AppRequestConfig) => getBars('000001.SZ', { lookback: 6000 }, undefined, config), timeout: 30000 },
+    { name: '回测榜单', call: (config?: AppRequestConfig) => computeBoard('2026-01-01', 50, undefined, config), timeout: 30000 },
+  ])('$name：页面接管时无全局重复提示，默认调用仍由拦截器提示且保留超时', async ({ call, timeout }) => {
+    const seen: InternalAxiosRequestConfig[] = []
+    http.defaults.adapter = async config => {
+      seen.push(config)
+      return { ...ok(config, null), data: { code: 400, msg: '来源维护中，请稍后重试', data: null } }
+    }
+    await expect(call({ skipGlobalError: true })).rejects.toMatchObject({ uiMessage: '来源维护中，请稍后重试' })
+    expect(ElMessage.error).not.toHaveBeenCalled()
+    await expect(call()).rejects.toMatchObject({ uiMessage: '来源维护中，请稍后重试' })
+    expect(ElMessage.error).toHaveBeenCalledTimes(1)
+    expect(ElMessage.error).toHaveBeenCalledWith('来源维护中，请稍后重试')
+    expect(seen.map(config => config.timeout)).toEqual([timeout, timeout])
+    expect(seen[0].data).toEqual(seen[1].data)
   })
 
   it('single-flights concurrent 401 refresh and replays original requests', async () => {

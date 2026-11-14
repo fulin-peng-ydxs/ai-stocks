@@ -7,11 +7,13 @@ from typing import Any
 
 from backend.auth.context import get_current_context
 from backend.common.exceptions import NotFoundError, ValidationError
+from backend.common.logging import get_logger
 from backend.services.audit_service import AuditService
 from backend.storage.dict_repository import DictRepository
 from backend.storage.pg_ddl import _SEED_DICT_ITEMS
 
 _CODE_RE = re.compile(r"^[a-z][a-z0-9_:-]{0,63}$")
+log = get_logger("services.dict")
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 _FALLBACK_ITEMS: dict[str, list[dict]] = {}
@@ -285,5 +287,5 @@ class DictService:
                 context={"action": action, "affected_count": 1},
                 changes=changes,
             )
-        except Exception:
-            pass
+        except Exception as exc:  # 审计失败不回滚已提交的字典变更
+            log.warning("字典变更审计写入失败：%s", exc, exc_info=True)

@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 import redis
@@ -57,11 +59,111 @@ from backend.config import PROJECT_ROOT, get_settings
 log = get_logger("api.main")
 
 
+# ── 启动：混合持久层连通性自检（stage1 R1）──
+# 行情 DuckDB + 资产 PostgreSQL + 短状态 Redis 三类存储任一不通即明确启动失败，
+# 避免运行期才暴露连接问题（密码不进异常信息，见各 client）。
+def _check_storages() -> None:
+    """启动前核验依赖和密钥，再由统一数据库入口初始化或只读验收。"""
+    from backend.storage import get_client, get_pg_client, get_redis_client
+
+    # 在任何初始化写入前核对外部依赖及密钥，缺失时不留下半初始化的 PG。
+    if not get_pg_client().ping():
+        raise RuntimeError("PostgreSQL 连通性自检失败：ping 未返回预期结果")
+    if not get_redis_client().ping():
+        raise RuntimeError("Redis 连通性自检失败：ping 未返回 PONG")
+    get_settings().jwt_secret()
+    # 双库结构、平台基础数据和预设统一验收；只读 DuckDB 启动不执行初始化写入。
+    try:
+        market = get_client()
+        market.query_df("SELECT 1 AS ok")
+        from backend.storage.database_lifecycle import initialize_database, verify_database
+
+        pg = get_pg_client()
+        if market.read_only:
+            report = verify_database(market, pg)
+            if not report["ok"]:
+                raise RuntimeError(f"只读数据库验收未通过：{report}")
+        else:
+            initialize_database(market, pg)
+        builtin_count = len(market.query_df("SELECT key FROM indicator_def WHERE is_builtin"))
+        from backend.services.trade_calendar_readiness import (
+            calendar_readiness_detail,
+            inspect_trade_calendar,
+        )
+
+        calendar_readiness = inspect_trade_calendar(market)
+    except Exception as e:
+        raise RuntimeError(f"数据库初始化或验收失败：{e}") from e
+    if (
+        not calendar_readiness["lifecycle_ready"]
+        or not calendar_readiness["cross_year_ready"]
+    ):
+        log.warning(
+            "交易日历前瞻覆盖不足：%s；请执行日常数据更新，"
+            "数据源未发布前规则生命周期保持 fail-closed",
+            calendar_readiness_detail(calendar_readiness),
+        )
+    log.info(
+        "混合持久层自检通过：DuckDB + PostgreSQL + Redis 均连通，"
+        "builtin 指标 %d 个、PG 资产表与 JWT 密钥已就绪",
+        builtin_count,
+    )
+
+
+# ── 启动：任务 reconcile（FR-DM-10）+ 定时调度（按 scheduler.enabled）──
+def _reconcile_tasks() -> None:
+    """先恢复任务再协调天梯账本；失败沿用告警降级语义。"""
+    try:
+        from backend.services.async_task import AsyncTaskService
+        from backend.services.limit_ladder_task_coordinator import (
+            LimitLadderTaskCoordinator,
+        )
+
+        # 运行态残留任务先转 interrupted，再由 PG 天梯账本对账终态。
+        task_service = AsyncTaskService()
+        task_service.reconcile()
+        LimitLadderTaskCoordinator(task_service=task_service).reconcile(
+            startup_at=datetime.now(UTC)
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning("启动期任务 reconcile 异常: %s", e)
+
+
+def _start_scheduler() -> None:
+    """通过现有调度入口装载持久化任务。"""
+    from backend.scheduler.scheduler import start_scheduler
+    start_scheduler()
+
+
+def _stop_scheduler() -> None:
+    """先停止调度，再按原顺序释放行情、资产及短状态连接。"""
+    from backend.scheduler.scheduler import shutdown_scheduler
+    from backend.storage import close_duckdb_clients, get_pg_client, get_redis_client
+
+    shutdown_scheduler()
+    close_duckdb_clients()
+    get_pg_client().close()
+    get_redis_client().close()
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """统一生命周期入口；启动检查通过后才服务请求，退出复用原关闭顺序。"""
+    _check_storages()
+    _reconcile_tasks()
+    _start_scheduler()
+    try:
+        yield
+    finally:
+        _stop_scheduler()
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="A股趋势龙头选股、打分与回测系统",
         description="本地 EOD 选股 + 打分 + 回测（FastAPI + Vue + DuckDB）",
         version="0.1.0",
+        lifespan=_lifespan,
     )
 
     # 中间件顺序（add 越晚越外层）：Auth(内) → Security(中) → CORS(外)。
@@ -205,89 +307,6 @@ def create_app() -> FastAPI:
                 return FileResponse(str(target))  # favicon、vite.svg 等真实文件
             return FileResponse(str(index_file))  # 其余一律回退到 SPA 入口
         log.info("前端静态资源已挂载（含 SPA 回退）: %s", dist)
-
-    # ── 启动：混合持久层连通性自检（stage1 R1）──
-    # 行情 DuckDB + 资产 PostgreSQL + 短状态 Redis 三类存储任一不通即明确启动失败，
-    # 避免运行期才暴露连接问题（密码不进异常信息，见各 client）。
-    @app.on_event("startup")
-    def _check_storages() -> None:
-        from backend.storage import get_client, get_pg_client, get_redis_client
-
-        # 在任何初始化写入前核对外部依赖及密钥，缺失时不留下半初始化的 PG。
-        if not get_pg_client().ping():
-            raise RuntimeError("PostgreSQL 连通性自检失败：ping 未返回预期结果")
-        if not get_redis_client().ping():
-            raise RuntimeError("Redis 连通性自检失败：ping 未返回 PONG")
-        get_settings().jwt_secret()
-        # 双库结构、平台基础数据和预设统一验收；只读 DuckDB 启动不执行初始化写入。
-        try:
-            market = get_client()
-            market.query_df("SELECT 1 AS ok")
-            from backend.storage.database_lifecycle import initialize_database, verify_database
-
-            pg = get_pg_client()
-            if market.read_only:
-                report = verify_database(market, pg)
-                if not report["ok"]:
-                    raise RuntimeError(f"只读数据库验收未通过：{report}")
-            else:
-                initialize_database(market, pg)
-            builtin_count = len(market.query_df("SELECT key FROM indicator_def WHERE is_builtin"))
-            from backend.services.trade_calendar_readiness import (
-                calendar_readiness_detail,
-                inspect_trade_calendar,
-            )
-
-            calendar_readiness = inspect_trade_calendar(market)
-        except Exception as e:
-            raise RuntimeError(f"数据库初始化或验收失败：{e}") from e
-        if (
-            not calendar_readiness["lifecycle_ready"]
-            or not calendar_readiness["cross_year_ready"]
-        ):
-            log.warning(
-                "交易日历前瞻覆盖不足：%s；请执行日常数据更新，"
-                "数据源未发布前规则生命周期保持 fail-closed",
-                calendar_readiness_detail(calendar_readiness),
-            )
-        log.info(
-            "混合持久层自检通过：DuckDB + PostgreSQL + Redis 均连通，"
-            "builtin 指标 %d 个、PG 资产表与 JWT 密钥已就绪",
-            builtin_count,
-        )
-
-    # ── 启动：任务 reconcile（FR-DM-10）+ 定时调度（按 scheduler.enabled）──
-    @app.on_event("startup")
-    def _reconcile_tasks() -> None:
-        try:
-            from backend.services.async_task import AsyncTaskService
-            from backend.services.limit_ladder_task_coordinator import (
-                LimitLadderTaskCoordinator,
-            )
-
-            # 运行态残留任务先转 interrupted，再由 PG 天梯账本对账终态。
-            task_service = AsyncTaskService()
-            task_service.reconcile()
-            LimitLadderTaskCoordinator(task_service=task_service).reconcile(
-                startup_at=datetime.now(UTC)
-            )
-        except Exception as e:  # noqa: BLE001
-            log.warning("启动期任务 reconcile 异常: %s", e)
-
-    @app.on_event("startup")
-    def _start_scheduler() -> None:
-        from backend.scheduler.scheduler import start_scheduler
-        start_scheduler()
-
-    @app.on_event("shutdown")
-    def _stop_scheduler() -> None:
-        from backend.scheduler.scheduler import shutdown_scheduler
-        from backend.storage import close_duckdb_clients, get_pg_client, get_redis_client
-
-        shutdown_scheduler()
-        close_duckdb_clients()
-        get_pg_client().close()
-        get_redis_client().close()
 
     return app
 

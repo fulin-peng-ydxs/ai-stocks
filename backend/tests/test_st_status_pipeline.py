@@ -127,7 +127,7 @@ def test_baostock_hung_query_is_broken_by_watchdog(monkeypatch):
         raise OSError("Bad file descriptor")
 
     started = time.monotonic()
-    with pytest.raises(Exception):
+    with pytest.raises(OSError, match="Bad file descriptor"):
         source._query_frame(stalled_query)
 
     assert closed.is_set()

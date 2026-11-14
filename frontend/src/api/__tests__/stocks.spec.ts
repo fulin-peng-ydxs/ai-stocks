@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
 import {
+  getBars,
   getIndicators,
   getIntraday,
   getStockBenchmarkBars,
@@ -153,6 +154,22 @@ describe('stock membership filters', () => {
     listStocks({ membership_board_code: '301001', page: 2 })
     expect(http.get).toHaveBeenLastCalledWith('/stocks', {
       params: { membership_board_code: '301001', page: 2 },
+    })
+  })
+})
+
+describe('getBars 请求选项', () => {
+  it('保留行情参数与取消信号，只在消费方接管时关闭全局提示', async () => {
+    vi.mocked(http.get).mockClear()
+    const controller = new AbortController()
+    const params = { adjust: 'qfq', lookback: 6000 }
+    await getBars('000001.SZ', params, controller.signal, { skipGlobalError: true })
+    expect(http.get).toHaveBeenLastCalledWith('/stocks/000001.SZ/bars', {
+      params, signal: controller.signal, skipGlobalError: true,
+    })
+    await getBars('000001.SZ', params, controller.signal)
+    expect(http.get).toHaveBeenLastCalledWith('/stocks/000001.SZ/bars', {
+      params, signal: controller.signal,
     })
   })
 })

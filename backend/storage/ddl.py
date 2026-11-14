@@ -1271,24 +1271,24 @@ _DIMENSION_SEED: list[tuple] = [
 # 轻量迁移：给已存在的旧表补列（CREATE TABLE IF NOT EXISTS 不会改既有表结构）
 _MIGRATIONS: list[str] = [
     # 只追加分时证据资产，不覆盖管理员维护的维度属性。
-    "UPDATE data_dimension_registry SET tables=CAST(to_json(list_append("
+    ("UPDATE data_dimension_registry SET tables=CAST(to_json(list_append("
     "json_extract_string(tables,'$[*]'),'stock_intraday_source_state')) AS VARCHAR) "
     "WHERE dimension='intraday' AND NOT list_contains("
-    "json_extract_string(tables,'$[*]'),'stock_intraday_source_state')",
+    "json_extract_string(tables,'$[*]'),'stock_intraday_source_state')"),
 
     # 旧归档只补监控起点，不覆盖已固定的日期，也不根据当前源窗口前移。
-    "INSERT INTO stock_intraday_monitor(code,monitoring_start) "
+    ("INSERT INTO stock_intraday_monitor(code,monitoring_start) "
     "SELECT code,min(trade_date) FROM stock_intraday_coverage GROUP BY code "
-    "ON CONFLICT DO NOTHING",
+    "ON CONFLICT DO NOTHING"),
     # 已有归档统一为最早真实分钟/历史边界；只前移，不按当前来源窗口改写。
-    "UPDATE stock_intraday_monitor SET monitoring_start=least(monitoring_start,"
+    ("UPDATE stock_intraday_monitor SET monitoring_start=least(monitoring_start,"
     "(SELECT min(d) FROM (SELECT min(trade_date) d FROM stock_intraday_bar "
-    "UNION ALL SELECT min(monitoring_start) FROM stock_intraday_monitor)))",
+    "UNION ALL SELECT min(monitoring_start) FROM stock_intraday_monitor)))"),
     # 已登记分钟维度只追加新事实表，不覆盖标题、状态或其他人工维护属性。
-    "UPDATE data_dimension_registry SET tables=CAST(to_json(list_append("
+    ("UPDATE data_dimension_registry SET tables=CAST(to_json(list_append("
     "json_extract_string(tables,'$[*]'),'stock_intraday_monitor')) AS VARCHAR) "
     "WHERE dimension='intraday' AND NOT list_contains("
-    "json_extract_string(tables,'$[*]'),'stock_intraday_monitor')",
+    "json_extract_string(tables,'$[*]'),'stock_intraday_monitor')"),
 
     "ALTER TABLE indicator_def ADD COLUMN IF NOT EXISTS layer VARCHAR",
     "ALTER TABLE indicator_def ADD COLUMN IF NOT EXISTS parent_key VARCHAR",
@@ -1403,8 +1403,8 @@ _MIGRATIONS: list[str] = [
     "UPDATE stock_group SET color='#909399' WHERE color IS NULL",
     "UPDATE stock_group SET is_default=false WHERE is_default IS NULL",
     # 股本维度关联表补齐；只迁移旧版系统表清单，不覆盖管理员自定义值。
-    "UPDATE data_dimension_registry SET tables='[\"stock_share_capital_daily\",\"stock_share_capital_event\",\"stock_share_capital_history\"]' "
-    "WHERE dimension='share_capital' AND tables='[\"stock_share_capital_daily\"]'",
+    ("UPDATE data_dimension_registry SET tables='[\"stock_share_capital_daily\",\"stock_share_capital_event\",\"stock_share_capital_history\"]' "
+    "WHERE dimension='share_capital' AND tables='[\"stock_share_capital_daily\"]'"),
     # 调度系统重构：async_task 加来源标记（任务中心区分 手动/定时·任务名），存量行回填为手动
     "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS trigger_source VARCHAR",
     "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS job_id VARCHAR",

@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest'
 import type { Overview } from '@/api/data'
 import { overviewMetrics, intradayCoverageText } from '../overviewMetrics'
 
+const completeStStatus = {
+  expected: 10, present: 10, accurate: 10, approximate: 0, missing: 0,
+  coverage_rate: 100, ready: false, first_date: '2026-10-19', latest_date: '2026-10-19',
+  updated_at: null, refresh_state: {
+    status: 'failed', task_id: 'task-st', target_count: 1, date_start: null, date_end: null,
+    last_error: null, updated_at: null,
+  },
+} satisfies Overview['st_status']
+
 function fixture(overrides: Partial<Overview> = {}): Overview {
   return {
     latest_trade_date: '2026-10-19', codes: { active: 2, delisted: 0 }, bar_rows: 4,
@@ -13,6 +22,49 @@ function fixture(overrides: Partial<Overview> = {}): Overview {
 }
 
 describe('概览信息层级', () => {
+  it.each([
+    ['failed', false, '刷新失败，尚未发布'],
+    ['refreshing', false, '刷新中，尚未发布'],
+    ['ready', true, '权威覆盖就绪'],
+  ] as const)('ST 覆盖 100%% 时仍独立展示 %s 发布状态', (status, ready, summary) => {
+    const lastError = status === 'failed' ? '1 个刷新步骤失败' : null
+    const metric = overviewMetrics(fixture({ st_status: {
+      ...completeStStatus, ready,
+      refresh_state: { ...completeStStatus.refresh_state, status, last_error: lastError },
+    } })).find(item => item.key === 'stStatus')!
+    expect(metric).toMatchObject({ value: '100.00%', summary, tone: ready ? undefined : 'danger' })
+    if (metric.info.kind !== 'details') throw new Error('ST 应提供事实明细')
+    expect(metric.info.rows.filter(row => row.label === '刷新失败原因'))
+      .toEqual(lastError ? [{ label: '刷新失败原因', value: lastError }] : [])
+  })
+
+  it.each([
+    ['SQL: SELECT secret FROM private_table', '刷新失败，请查看任务日志中的详细原因'],
+    ['查询失败: select secret FROM private_table', '刷新失败，请查看任务日志中的详细原因'],
+    ['数据库异常 SQL: SELECT secret FROM private_table', '刷新失败，请查看任务日志中的详细原因'],
+    ['HTTPError: 503 for https://secret.test/token', '刷新失败，请查看任务日志中的详细原因'],
+    ['来源请求失败 https://secret.test/token', '刷新失败，请查看任务日志中的详细原因'],
+    ['Traceback: 数据读取失败', '刷新失败，请查看任务日志中的详细原因'],
+    ['读取失败 /Users/private/secret', '刷新失败，请查看任务日志中的详细原因'],
+    ['{"error":"来源异常"}', '刷新失败，请查看任务日志中的详细原因'],
+    ['Connection reset by peer', '刷新失败，请查看任务日志中的详细原因'],
+    ['  数据源尚未提供目标日的逐日 ST 事实  ', '数据源尚未提供目标日的逐日 ST 事实'],
+    ['', null],
+    [null, null],
+  ])('ST 失败原因遵循业务展示边界：%s', (lastError, expected) => {
+    const overview = fixture({ st_status: {
+      ...completeStStatus,
+      refresh_state: { ...completeStStatus.refresh_state, last_error: lastError },
+    } })
+    const metric = overviewMetrics(overview).find(item => item.key === 'stStatus')!
+    if (metric.info.kind !== 'details') throw new Error('ST 应提供事实明细')
+    expect(metric.info.rows.filter(row => row.label === '刷新失败原因'))
+      .toEqual(expected ? [{ label: '刷新失败原因', value: expected }] : [])
+    expect(metric).toMatchObject({ value: '100.00%', summary: '刷新失败，尚未发布', tone: 'danger' })
+    // 仅转换展示；来源错误仍保留给日志及技术诊断，不反写或清空接口记录。
+    expect(overview.st_status?.refresh_state?.last_error).toBe(lastError)
+  })
+
   it('单纯定义使用问号帮助，有额外事实分项的指标使用信息详情', () => {
     const metrics = overviewMetrics(fixture())
     expect(metrics.filter((item) => item.info.kind === 'help').map((item) => item.key))
@@ -79,4 +131,6 @@ it('完成性覆盖从原始分子分母展示，不能被后端预舍入的100�
     ready: false, missing: 1, approximate: 0, latest_date: '2026-10-30', first_date: null,
   } })).find(item => item.key === 'stStatus')!
   expect(metric.value).toBe('>99.99%')
+  expect(metric.summary).toBe('权威覆盖待补齐')
+  expect(metric.tone).toBe('danger')
 })

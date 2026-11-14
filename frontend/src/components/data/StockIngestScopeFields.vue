@@ -137,12 +137,7 @@ function changeRecipe(recipe: StockIngestRecipe) {
     @update:model-value="patch({ force_current_day: $event })"
   />
 
-  <el-alert
-    v-if="isHeavy"
-    type="warning"
-    :closable="false"
-    title="该方案可能运行较久；可离开页面，之后从任务中心查看进度或继续任务。"
-  />
+  <AppFormHelp v-if="isHeavy">采集可能耗时较长，提交后可离开页面，在任务中心查看进度。</AppFormHelp>
 </template>
 
 <style scoped>

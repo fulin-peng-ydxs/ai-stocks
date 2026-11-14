@@ -6,10 +6,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 import pytest
 
+from backend.common.timeutil import shanghai_now_naive
 from backend.storage.app_config import (
     WHITELIST,
     AppConfigRepo,
@@ -19,7 +18,6 @@ from backend.storage.app_config import (
 from backend.storage.catalog import build_catalog
 from backend.storage.ddl import init_db, seed_dimension_registry
 from backend.storage.duckdb_client import DuckDBClient
-
 
 # ── 配置覆盖层 ──────────────────────────────────────────────
 
@@ -108,7 +106,7 @@ def test_catalog_open_issue_count():
     with DuckDBClient(db_path=":memory:") as c:
         init_db(c)
         c.execute("INSERT INTO data_quality_issue (id, code, issue_type, status, detected_at) "
-                  "VALUES (1, '600000.SH', 'adj_jump', 'open', ?)", [datetime.now()])
+                  "VALUES (1, '600000.SH', 'adj_jump', 'open', ?)", [shanghai_now_naive()])
         cat = {x["table"]: x for x in build_catalog(c)}
         assert cat["data_quality_issue"]["open_issues"] == 1
 
@@ -133,7 +131,7 @@ def test_catalog_board_fresh_and_issue_ownership():
                   "('881121','半导体','industry',TRUE,TRUE,FALSE)")
         c.execute("INSERT INTO data_quality_issue (id, code, issue_type, status, detected_at) "
                   "VALUES (1, '309121', 'board_fund_missing', 'open', ?), "
-                  "(2, '881121', 'board_fund_missing', 'open', ?)", [datetime.now(), datetime.now()])
+                  "(2, '881121', 'board_fund_missing', 'open', ?)", [shanghai_now_naive(), shanghai_now_naive()])
         cat = {x["table"]: x for x in build_catalog(c)}
         assert cat["board_bar"]["fresh"] is True       # 领先个股行情 → 不滞后
         assert cat["board_fund_flow"]["fresh"] is True  # 领先个股行情 → 不滞后
@@ -166,7 +164,7 @@ def test_quality_issue_migration_columns_and_severity():
         # 插入各类型，验证迁移 UPDATE 的严重度映射逻辑（手动按 DM-D10 核对）
         c.execute("INSERT INTO data_quality_issue (id, code, issue_type, detected_at) VALUES "
                   "(1,'A','adj_jump',?),(2,'B','ohl_repaired',?),(3,'C','abnormal_change',?)",
-                  [datetime.now(), datetime.now(), datetime.now()])
+                  [shanghai_now_naive(), shanghai_now_naive(), shanghai_now_naive()])
         # 应用与迁移同口径的回填
         c.execute("UPDATE data_quality_issue SET status='open' WHERE status IS NULL")
         c.execute("UPDATE data_quality_issue SET severity = CASE "

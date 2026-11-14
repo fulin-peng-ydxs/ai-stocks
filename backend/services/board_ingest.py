@@ -28,6 +28,7 @@ import pandas as pd
 
 from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.config import get_effective_settings
 from backend.dataquality.checker import severity_for
 from backend.datasource.akshare_source import classify_board, to_full_code
@@ -71,7 +72,7 @@ def normalize_board_force_current_day(mode: str, value) -> bool:
     if value is None:
         return False
     if not isinstance(value, bool):
-        raise ValueError("板块强制采集当日必须是布尔值")
+        raise TypeError("板块强制采集当日必须是布尔值")
     if mode != "update" and value:
         raise ValueError("只有板块增量采集支持强制采集当日")
     return value
@@ -207,12 +208,11 @@ class BoardIngestService:
     def _log_update(self, table_name: str, date_start: date | None, date_end: date | None,
                     row_count: int, status: str, detail: str = "") -> None:
         """写 data_update_log（对齐现有采集的更新留痕，供数据概览/运维查看板块采集进度）。"""
-        from datetime import datetime
         self.c.execute(
             "INSERT INTO data_update_log "
             "(id, table_name, source, date_start, date_end, row_count, status, detail, updated_at) "
             "VALUES (nextval('seq_update_log'), ?, 'ths_board', ?, ?, ?, ?, ?, ?)",
-            [table_name, date_start, date_end, row_count, status, detail, datetime.now()])
+            [table_name, date_start, date_end, row_count, status, detail, shanghai_now_naive()])
 
     # ── 1. 板块字典 ───────────────────────────────────────────
 
@@ -917,11 +917,11 @@ class BoardIngestService:
                               fund_snapshot_date=sdate.isoformat())
 
         report(None)
-        for board_type in ("concept", "industry"):
-            if board_type not in target_types:
+        for current_type in ("concept", "industry"):
+            if current_type not in target_types:
                 continue
             for period in periods:
-                display_key = f"{board_type}:{period}"
+                display_key = f"{current_type}:{period}"
                 group_key = f"{scope_tag}:{display_key}"
                 if group_key in done_keys:
                     continue
@@ -933,14 +933,14 @@ class BoardIngestService:
                                   fund_snapshot_date=sdate.isoformat())
                 processed_groups += 1
                 try:
-                    df = self.src.get_board_fund_flow(board_type, period)
+                    df = self.src.get_board_fund_flow(current_type, period)
                 except Exception as e:  # noqa: BLE001
-                    log.warning("资金流 %s/%s 取数失败: %s", board_type, period, e)
+                    log.warning("资金流 %s/%s 取数失败: %s", current_type, period, e)
                     failed.append(f"{display_key}: {e}")
                     self._log_update("board_fund_flow", sdate, sdate, 0, "failed",
                                      f"{display_key} {e}")
                     if ctx:
-                        ctx.log(f"资金流 {board_type}/{period}：失败 {e}", "error")
+                        ctx.log(f"资金流 {current_type}/{period}：失败 {e}", "error")
                     report(display_key)
                     continue
                 if live_snapshot:
@@ -951,7 +951,7 @@ class BoardIngestService:
                     self._log_update("board_fund_flow", sdate, sdate, 0, "failed",
                                      f"{display_key} 资金流为空")
                     if ctx:
-                        ctx.log(f"资金流 {board_type}/{period}：无数据，记失败", "error")
+                        ctx.log(f"资金流 {current_type}/{period}：无数据，记失败", "error")
                     report(display_key)
                     continue
                 # 优先用资金流链接里抓到的路径 code 匹配；其次名称匹配。
@@ -961,7 +961,7 @@ class BoardIngestService:
                     name = str(r["name"])
                     raw_code = str(r.get("board_code") or "").strip()
                     code = ""
-                    bt = board_type
+                    bt = current_type
                     if raw_code:
                         meta = code_to_meta.get(raw_code)
                         if meta:
@@ -972,13 +972,13 @@ class BoardIngestService:
                     if not code:
                         # 无链接 code 回落名称匹配（行业资金流可能无链接）
                         for existing_code, (ebt, ename) in code_to_meta.items():
-                            if ebt == board_type and ename == name:
+                            if ebt == current_type and ename == name:
                                 code = existing_code
                                 bt = ebt
                                 break
                     if not code:
                         if target_codes is None:
-                            unmatched.append({"name": name, "board_type": board_type})
+                            unmatched.append({"name": name, "board_type": current_type})
                         continue
                     if target_codes is not None and code not in target_codes:
                         continue
@@ -1003,7 +1003,7 @@ class BoardIngestService:
                     self._upsert_board_fund_flow(matched)
                     rows += len(matched)
                 if ctx:
-                    ctx.log(f"资金流 {board_type}/{period}：匹配 {len(matched)} 行"
+                    ctx.log(f"资金流 {current_type}/{period}：匹配 {len(matched)} 行"
                             f"（未匹配 {len(unmatched)}）")
                 if not any(x.startswith(display_key + ":") for x in failed):
                     done_keys.add(group_key)

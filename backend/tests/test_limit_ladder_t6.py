@@ -537,7 +537,7 @@ def test_timeout_stays_terminal_until_eligible_user_explicitly_requeues(market, 
         assert data["queue_retry_allowed"] is (source != "admin_recompute")
     assert not coordinator.calls
     # 显式普通重试不能扩张 system-only 管理员重算权限。
-    result = service.query(trade_date, LimitLadderFilters(), retry_queue=True)
+    service.query(trade_date, LimitLadderFilters(), retry_queue=True)
     assert len(coordinator.calls) == (0 if source == "admin_recompute" else 1)
 
 

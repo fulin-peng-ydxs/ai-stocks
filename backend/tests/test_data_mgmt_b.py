@@ -14,14 +14,18 @@ import pandas as pd
 import pytest
 
 import backend.storage.duckdb_client as dc
+from backend.common.exceptions import StorageError
 from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
 from backend.services.data_report import DataIntegrityReport
+from backend.services.eod_dates import SHANGHAI
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
 
 
 def _offline_ingestion_initializer(client):
     """分派测试保留因子收尾所需仓库，只替换联网构造部分。"""
+    from types import SimpleNamespace
+
     from backend.config.settings import Settings
     from backend.storage.repository import MarketRepository
 
@@ -29,6 +33,8 @@ def _offline_ingestion_initializer(client):
         self.c = client
         self.repo = MarketRepository(client)
         self.s = Settings()
+        self.src = source or SimpleNamespace(name="offline")
+        self._bao = None
 
     return initialize
 
@@ -65,6 +71,55 @@ def _wait(svc, tid, timeout=8.0):
             return t
         time.sleep(0.05)
     raise AssertionError("任务超时")
+
+
+@pytest.mark.parametrize("host_tz", [UTC, SHANGHAI], ids=["utc-host", "shanghai-host"])
+def test_task_timestamps_keep_shanghai_wall_time_on_any_host(client, monkeypatch, host_tz):
+    """模拟不同主机时区，任务、日志和取消时间仍沿用北京时间 naive 契约。"""
+    from backend.common import timeutil
+    from backend.services import async_task
+
+    instant = datetime(2026, 11, 14, 4, 5, 6, tzinfo=UTC)
+    expected = instant.astimezone(SHANGHAI).replace(tzinfo=None)
+
+    class HostClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return (instant.astimezone(tz) if tz is not None
+                    else instant.astimezone(host_tz).replace(tzinfo=None))
+
+    monkeypatch.setattr(timeutil, "datetime", HostClock)
+    monkeypatch.setattr(async_task, "_CANCELLED", set())
+    svc = AsyncTaskService(client)
+    monkeypatch.setattr(svc, "_run", lambda *args: None)
+    tid = svc.create("update")
+    ctx = async_task.TaskContext(svc, tid)
+    ctx.log("时区契约验证")
+    ctx.flush()
+    assert svc.cancel(tid) is True
+
+    row = client.query_df("SELECT * FROM async_task WHERE id=?", [tid]).iloc[0]
+    for field in ("created_at", "updated_at", "cancel_requested_at"):
+        assert row[field].to_pydatetime() == expected
+        assert row[field].tzinfo is None
+    assert client.query_df("SELECT ts FROM task_log WHERE task_id=?", [tid]).iloc[0, 0] == expected
+    assert tid == "task_update_20261114120506000000"
+
+
+def test_fix_planning_failure_returns_readable_reason_and_retains_raw_log(client, monkeypatch):
+    """逐条恢复之前的失败同样提供中文原因，不能只留下技术 message。"""
+    from backend.services import async_task
+
+    def fail(*args):
+        raise TimeoutError("ReadTimeout: https://secret.test/private")
+
+    monkeypatch.setitem(async_task._HANDLERS, "fix", fail)
+    svc = AsyncTaskService(client)
+    task = _wait(svc, svc.create("fix", {"issue_id": 1}))
+    assert task["status"] == "failed"
+    assert "请求超时" in task["result"]["failure_reason"]
+    assert "secret" not in task["result"]["failure_reason"]
+    assert "secret.test" in task["message"]
 
 
 class _CaptureTaskContext:
@@ -154,7 +209,7 @@ def test_quality_scan_and_repair_share_write_mutex(client, monkeypatch):
 # ── reconcile + 续跑（FR-DM-10）──
 def test_reconcile_marks_interrupted(client):
     svc = AsyncTaskService(client)
-    now = datetime.now()
+    now = datetime.now(SHANGHAI).replace(tzinfo=None)
     client.execute(
         "INSERT INTO async_task (id, task_type, params, status, progress, message, result, created_at, updated_at) "
         "VALUES ('task_x','update','{}','running',0.5,'半路',?, ?, ?)",
@@ -171,7 +226,7 @@ def test_resume_interrupted(client, monkeypatch):
     monkeypatch.setattr(ingest.IngestionService, "update",
                         lambda self, codes=None, concurrency=None, ctx=None: {"ok": 1}, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
-    now = datetime.now()
+    now = datetime.now(SHANGHAI).replace(tzinfo=None)
     client.execute(
         "INSERT INTO async_task (id, task_type, params, status, progress, message, result, created_at, updated_at) "
         "VALUES ('task_r','update','{}','interrupted',0.5,'中断',?, ?, ?)",
@@ -232,7 +287,7 @@ def test_ingest_codes_skipped_does_not_invalidate_snapshots(monkeypatch):
 def test_task_logs_increment(client):
     svc = AsyncTaskService(client)
     from backend.services.async_task import TaskContext
-    now = datetime.now()
+    now = datetime.now(SHANGHAI).replace(tzinfo=None)
     client.execute(
         "INSERT INTO async_task (id, task_type, params, status, progress, message, result, created_at, updated_at) "
         "VALUES ('t_log','verify','{}','running',0.1,'x',NULL,?,?)", [now, now])
@@ -249,13 +304,14 @@ def test_task_logs_increment(client):
 def test_fix_resolves_issue(client, monkeypatch):
     svc = AsyncTaskService(client)
     from backend.services import ingest
-    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _offline_ingestion_initializer(client), raising=True)
     monkeypatch.setattr(ingest.IngestionService, "ingest_one_daily",
                         lambda self, code, s, e, *a, **k: 1, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     client.execute(
         "INSERT INTO data_quality_issue (id, code, trade_date, issue_type, severity, status, detail, detected_at) "
-        "VALUES (1,'600000.SH', DATE '2024-01-03','adj_jump','high','open','x',?)", [datetime.now()])
+        "VALUES (1,'600000.SH', DATE '2024-01-03','adj_jump','high','open','x',?)",
+        [datetime.now(SHANGHAI).replace(tzinfo=None)])
     tid = svc.create("fix", {"issue_id": 1})
     _wait(svc, tid)
     row = client.query_df("SELECT status, resolved_at FROM data_quality_issue WHERE id=1").iloc[0]
@@ -279,7 +335,7 @@ def test_scheduled_fix_resolves_current_open_issues_by_type(client, monkeypatch)
 
     monkeypatch.setattr(ingest.IngestionService, "ingest_one_daily", restore_daily, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
-    now = datetime.now()
+    now = datetime.now(SHANGHAI).replace(tzinfo=None)
     client.execute(
         "INSERT INTO data_quality_issue "
         "(id, code, trade_date, issue_type, severity, status, detail, detected_at) VALUES "
@@ -321,7 +377,7 @@ def test_ohl_repaired_fix_reingests_before_resolve(client, monkeypatch):
         "INSERT INTO data_quality_issue "
         "(id, code, trade_date, issue_type, severity, status, detail, detected_at) "
         "VALUES (1, 'A.SH', DATE '2024-01-03', 'ohl_repaired', 'low', 'open', 'x', ?)",
-        [datetime.now()],
+        [datetime.now(SHANGHAI).replace(tzinfo=None)],
     )
 
     task = _wait(svc, svc.create("fix", {"issue_type": "ohl_repaired"}))
@@ -350,7 +406,7 @@ def test_ohl_repaired_fix_stays_open_without_duplicate_when_source_is_still_bad(
         "INSERT INTO data_quality_issue "
         "(id, code, trade_date, issue_type, severity, status, detail, detected_at) "
         "VALUES (1, 'A.SH', DATE '2024-01-03', 'ohl_repaired', 'low', 'open', 'x', ?)",
-        [datetime.now()],
+        [datetime.now(SHANGHAI).replace(tzinfo=None)],
     )
 
     task = _wait(svc, svc.create("fix", {"issue_type": "ohl_repaired"}))
@@ -564,7 +620,11 @@ def test_ths_login_cookie_save_without_key_is_rejected_before_other_writes(
 def test_board_task_registered():
     """board 任务类型四要素：TASK_TYPES/WRITE_TASK_TYPES/TASK_CAPABILITIES/_HANDLERS。"""
     from backend.services.async_task import (
-        TASK_TYPES, WRITE_TASK_TYPES, TASK_CAPABILITIES, _HANDLERS)
+        _HANDLERS,
+        TASK_CAPABILITIES,
+        TASK_TYPES,
+        WRITE_TASK_TYPES,
+    )
     assert "board" in TASK_TYPES
     assert "board" in WRITE_TASK_TYPES          # 写任务：与其他写任务互斥
     assert TASK_CAPABILITIES["board"]["can_cancel"] is True
@@ -682,6 +742,7 @@ def test_board_task_date_range_passthrough(client, monkeypatch):
 def test_board_task_write_mutex(client, monkeypatch):
     """board 是写任务：运行中禁止并发创建其他写任务。"""
     import time
+
     from backend.services import ingest as ingest_mod
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
 
@@ -701,9 +762,10 @@ def test_board_task_write_mutex(client, monkeypatch):
 
 def test_board_task_resume_preserves_phase_checkpoint(client, monkeypatch):
     """续跑把逐阶段 checkpoint 原样交给采集服务，由成员/指数循环跳过已完成板块。"""
+    from datetime import datetime
+
     from backend.services import ingest as ingest_mod
     from backend.services.async_task import AsyncTaskService
-    from datetime import datetime
 
     received = {}
 
@@ -721,7 +783,7 @@ def test_board_task_resume_preserves_phase_checkpoint(client, monkeypatch):
     client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
                    "VALUES ('881121','半导体','industry',TRUE)")
     svc = AsyncTaskService(client)
-    now = datetime.now()
+    now = datetime.now(SHANGHAI).replace(tzinfo=None)
     client.execute(
         "INSERT INTO async_task (id, task_type, params, status, progress, message, result, created_at, updated_at) "
         "VALUES ('board_x','board','{}','interrupted',0.5,'中断',?, ?, ?)",
@@ -893,7 +955,7 @@ def test_quality_actions_reject_conflicting_status_transitions(client, monkeypat
     from backend.api import data_admin
     from backend.api.data_admin import quality_fix, quality_ignore, quality_reset
 
-    now = datetime.now()
+    now = datetime.now(SHANGHAI).replace(tzinfo=None)
     runtime = DuckDBClient(db_path=":memory:")
     init_db(runtime)
     runtime.execute(
@@ -1083,7 +1145,7 @@ def test_scan_board_quality_keeps_open_ids(client, monkeypatch):
         "SELECT id FROM data_quality_issue "
         "WHERE issue_type='board_index_gap_daily' AND status='open' AND code='881121'")
     assert len(daily_kept) == 1 and int(daily_kept.iloc[0]["id"]) == 902   # 同键复用，id 不换
-    r2 = rep.scan_board_quality()
+    rep.scan_board_quality()
     second = client.query_df(
         "SELECT id FROM data_quality_issue "
         "WHERE issue_type='board_index_gap' AND status='open'").iloc[0]
@@ -1285,6 +1347,7 @@ def test_scan_board_quality_fund_missing(client, monkeypatch):
 def test_fix_board_fund_missing_targets_periods(client, monkeypatch):
     """资金流缺失 fix：按 issue detail 里的周期列表定向重采，不拉全周期。"""
     import json
+
     from backend.services.async_task import TaskContext
     from backend.services.board_ingest import BoardIngestService
     from backend.services.data_report import DataIntegrityReport
@@ -1314,7 +1377,7 @@ def test_fix_board_fund_missing_targets_periods(client, monkeypatch):
         "VALUES (500, '309121', DATE '2026-08-07', 'board_fund_missing', 'mid', 'open', ?, now())",
         [json.dumps({"periods": ["3日"], "message": "板块 AI PC（309121）资金流缺周期3日"})])
     from backend.services.async_task import _recover_one
-    clean, affected, note = _recover_one(client, rep, None, TaskContext(
+    clean, _affected, note = _recover_one(client, rep, None, TaskContext(
         AsyncTaskService(client), "t_fix", {}), 500)
     # 定向重采只传缺失周期与指定板块
     assert captured["snapshot_date"] == date(2026, 8, 7)
@@ -1413,6 +1476,7 @@ def test_board_fund_missing_future_snapshot_does_not_replace_trade_date(client):
 def test_scan_board_quality_fund_stale(client, monkeypatch):
     """资金流滞后扫描：有快照但滞后的周期记单条源级 issue（detail 结构化列滞后周期）。"""
     import json
+
     from backend.services.data_report import DataIntegrityReport
     _seed_board_scan(client)
     client.execute("INSERT INTO trade_calendar VALUES ('2026-08-06',TRUE),('2026-08-07',TRUE)")
@@ -1506,6 +1570,7 @@ def test_fix_board_fund_stale_targets_trade_date_and_periods(client, monkeypatch
 def test_board_recheck_fund_stale(client, monkeypatch):
     """资金流滞后复检：无 detail 旧格式检查所有有快照的周期；带 periods 只查报出的滞后周期。"""
     import json
+
     from backend.services.data_report import DataIntegrityReport
     _seed_board_scan(client)
     rep = DataIntegrityReport(client)
@@ -1534,8 +1599,9 @@ def test_board_scan_failure_keeps_previous_open_issue(client, monkeypatch):
                    "VALUES (999, 'old-board', 'board_index_gap', 'mid', 'open', now())")
     rep = DataIntegrityReport(client)
     monkeypatch.setattr(rep, "_insert_issues", lambda issues: (_ for _ in ()).throw(RuntimeError("boom")))
-    with pytest.raises(Exception):
+    with pytest.raises(StorageError, match="boom") as raised:
         rep.scan_board_quality()
+    assert isinstance(raised.value.__cause__, RuntimeError)
     old = client.query_df("SELECT status FROM data_quality_issue WHERE id=999")
     assert not old.empty and old.iloc[0]["status"] == "open"
 
@@ -1742,8 +1808,8 @@ def test_ingest_board_only_selects_tables(client, monkeypatch, eod_session):
     """only 分表：only=["bar"] 时只跑指数，不跑字典/成分/资金流。"""
     eod_session(client, date(2026, 8, 7))
     from backend.services import ingest as ingest_mod
-    from backend.services.ingest import IngestionService
     from backend.services.board_ingest import BoardIngestService
+    from backend.services.ingest import IngestionService
 
     called = {"dict": 0, "members": 0, "bar": 0, "fund": 0}
 
@@ -2006,7 +2072,7 @@ def test_board_index_batch_fix_survives_rescan_of_siblings(client, monkeypatch):
     # 手动指定 id 前先推进序列，避免重扫 _insert_issues 复用 nextval 产生 id 冲突
     client.execute("SELECT nextval('seq_quality_issue')")
     client.execute("SELECT nextval('seq_quality_issue')")
-    # 两个板块各一条 gap open；第一条(1)修完重扫时，第二条(2)必须仍在批量循环内可修复
+    # 两个板块各一条 gap open；先完成者触发重扫时，另一条原 id 必须仍可修复
     client.execute("INSERT INTO data_quality_issue "
                    "(id, code, issue_type, trade_date, severity, status, detected_at) "
                    "VALUES (1, '309121', 'board_index_gap', DATE '2026-08-07', 'mid', 'open', now())")
@@ -2020,7 +2086,8 @@ def test_board_index_batch_fix_survives_rescan_of_siblings(client, monkeypatch):
     rows = client.query_df("SELECT id, status FROM data_quality_issue WHERE id IN (1,2)")
     statuses = {int(r["id"]): str(r["status"]) for _, r in rows.iterrows()}
     assert statuses == {1: "resolved", 2: "resolved"}
-    assert scopes == [["309121"], ["309131"]]
+    # 并发完成顺序不固定；仍须逐项、恰好一次地复检原范围，不得扩大到全源。
+    assert sorted(scopes) == [["309121"], ["309131"]]
 
 
 def test_board_index_gap_daily_fix_retries_on_empty_rows(client, monkeypatch):

@@ -74,8 +74,8 @@ export function logout(refreshToken?: string): Promise<null> {
   return http.post('/auth/logout', { refresh_token: refreshToken })
 }
 
-export function getMe(): Promise<MeResult> {
-  return http.get('/auth/me')
+export function getMe(config?: AppRequestConfig): Promise<MeResult> {
+  return http.get('/auth/me', config)
 }
 
 export function getPublicConfig(): Promise<PublicAuthConfig> {

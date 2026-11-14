@@ -3,6 +3,7 @@
 // 阶段三（T15）：menus/permissions 由 /me 填充——SideMenu 消费 menus（后端数据化，fail-closed，
 // 加载失败显错误态而非回退静态全量菜单，故原 components/menuConfig.ts 已删除）；
 // v-permission/路由守卫消费 permissions/menus。
+import type { AppRequestConfig } from '@/api/client'
 import { defineStore } from 'pinia'
 import {
   clearAuth,
@@ -101,11 +102,11 @@ export const useAuthStore = defineStore('auth', {
       return data
     },
 
-    async fetchMe(options: { background?: boolean } = {}) {
+    async fetchMe(options: { background?: boolean } = {}, config?: AppRequestConfig) {
       // 已就绪的菜单展示更新无需拆卸工作区；失败仍进入 error 并关闭受控页面。
       if (!options.background || this.menusStatus !== 'ready') this.menusStatus = 'loading'
       try {
-        const me = await authApi.getMe()
+        const me = await authApi.getMe(config)
         this.user = me.user
         this.tenant = me.tenant
         this.role = me.role

@@ -9,19 +9,24 @@ from __future__ import annotations
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
 import backend.storage.duckdb_client as dc
+from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.dataquality.checker import sanitize_bars
 from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
 from backend.services.data_report import DataIntegrityReport
 from backend.storage.catalog import build_catalog
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
+from backend.tests.test_data_mgmt_b import _offline_ingestion_initializer
+
+log = get_logger("tests.data_mgmt_c")
 
 
 @pytest.fixture(autouse=True)
@@ -176,7 +181,7 @@ def test_quality_model_l1l3_from_issues(client):
     _seed(client)
     # 给 A 注入一条未解决 L3（复权跳变）→ A 的 L3 不达标，全绿数降为 0
     client.execute("INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
-                   "VALUES (1,'A.SH','adj_jump','high','open',?)", [datetime.now()])
+                   "VALUES (1,'A.SH','adj_jump','high','open',?)", [shanghai_now_naive()])
     qm = DataIntegrityReport(client).quality_model()
     by = {l["layer"]: l for l in qm["by_layer"]}
     assert by["L3"]["pass_stocks"] == 1 and by["L3"]["issues"] == 1
@@ -190,7 +195,7 @@ def test_quality_model_l3_includes_price_volume_mismatch(client):
         "INSERT INTO data_quality_issue "
         "(id,code,issue_type,severity,status,detected_at) "
         "VALUES (2,'A.SH','price_volume_mismatch','high','open',?)",
-        [datetime.now()],
+        [shanghai_now_naive()],
     )
 
     qm = DataIntegrityReport(client).quality_model()
@@ -213,7 +218,7 @@ def test_stock_quality_cache_invalidates_when_issue_type_changes(client):
         "INSERT INTO data_quality_issue "
         "(id,code,issue_type,severity,status,detected_at) "
         "VALUES (3,'A.SH','adj_jump','high','open',?)",
-        [datetime.now()],
+        [shanghai_now_naive()],
     )
     rep = DataIntegrityReport(client)
     before = rep.stock_quality()["list"][0]["layers"]["L3"]["breakdown"]
@@ -337,7 +342,8 @@ def test_scan_quality_calculation_does_not_hold_connection_lock(client, monkeypa
     def run_scan():
         try:
             rep.scan_quality_issues()
-        except BaseException as exc:  # pragma: no cover - 失败由主线程断言转发
+        except Exception as exc:  # pragma: no cover - 失败由主线程断言转发
+            log.exception("质检工作线程失败")
             errors.append(exc)
 
     def read_status():
@@ -366,7 +372,7 @@ def test_scan_quality_calculation_failure_keeps_previous_open_issues(client, mon
         "INSERT INTO data_quality_issue "
         "(id, code, issue_type, severity, status, detected_at) "
         "VALUES (99, 'OLD.SH', 'stale', 'high', 'open', ?)",
-        [datetime.now(timezone.utc)],
+        [datetime.now(UTC)],
     )
     rep = DataIntegrityReport(client)
     def fail_scan(*_args, **_kwargs):
@@ -393,7 +399,7 @@ def test_scan_quality_keeps_ignore_added_during_calculation(client, monkeypatch)
             "INSERT INTO data_quality_issue "
             "(id, code, issue_type, severity, status, detected_at) "
             "VALUES (99, 'B.SH', 'data_gap', 'mid', 'ignored', ?)",
-            [datetime.now(timezone.utc)],
+            [datetime.now(UTC)],
         )
         return result
 
@@ -410,7 +416,7 @@ def test_scan_quality_keeps_ignore_added_during_calculation(client, monkeypatch)
 def test_scan_quality_keeps_resolved(client):
     """已解决的自动扫描问题不被重扫清除（只清 open 的）。"""
     client.execute("INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
-                   "VALUES (99,'X.SH','abnormal_change','mid','resolved',?)", [datetime.now()])
+                   "VALUES (99,'X.SH','abnormal_change','mid','resolved',?)", [shanghai_now_naive()])
     DataIntegrityReport(client).scan_quality_issues()
     kept = client.query_df("SELECT status FROM data_quality_issue WHERE id=99")
     assert len(kept) == 1 and kept.iloc[0]["status"] == "resolved"
@@ -672,7 +678,7 @@ def test_reverse_confirm_suspension(client, monkeypatch):
     rep.scan_quality_issues()
     iid = _gap_issue_id(client)
     from backend.services import ingest
-    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _offline_ingestion_initializer(client), raising=True)
     monkeypatch.setattr(ingest.IngestionService, "ingest_one_daily",
                         lambda self, code, start, end, *a, **k: 0, raising=True)   # 源端无数据
     monkeypatch.setattr(ingest.IngestionService, "_fetch_st_status_rows",
@@ -696,19 +702,35 @@ def test_reverse_fills_gap(client, monkeypatch):
     rep.scan_quality_issues()
     iid = _gap_issue_id(client)
     from backend.services import ingest
+    from backend.tests.test_daily_collection_performance import bars
 
-    def _fill(self, code, start, end, *a, **k):
-        client.execute("INSERT INTO daily_bar (code, trade_date, close, is_suspended) "
-                       "VALUES (?, DATE '2024-01-04', 20.0, false)", [code])
-        return 1
-    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    # 当前恢复入口先取材料再统一提交；替换取源，保留真实日线落库和原口径复检。
+    def fetch(self, code, start, end, *args, **kwargs):
+        frame = pd.concat([
+            bars(code).assign(trade_date=day.date(),
+                              open=20., high=20., low=20., close=20., pre_close=20.)
+            for day in pd.date_range(start, end)
+        ], ignore_index=True)
+        return frame, "offline"
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _offline_ingestion_initializer(client), raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "_thread_source", lambda self, *args: self.src)
+    monkeypatch.setattr(ingest.IngestionService, "_source_for", lambda self, *args: self.src)
+    monkeypatch.setattr(ingest.IngestionService, "_bao_source", lambda self: SimpleNamespace(
+        name="offline", get_daily_bar=lambda code, *args: fetch(self, code, *args)[0],
+    ))
     monkeypatch.setattr(ingest.IngestionService, "_recompute_clean", lambda *a, **kw: {"fail": 0})
-    monkeypatch.setattr(ingest.IngestionService, "ingest_one_daily", _fill, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "_fetch_daily_with_fallback", fetch)
+    monkeypatch.setattr(ingest.IngestionService, "_fetch_capital_material", lambda *args: (pd.DataFrame(), None))
+    monkeypatch.setattr(ingest.IngestionService, "_collect_capital_one", lambda *args, **kwargs: 0)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     monkeypatch.setattr(ingest.IngestionService, "_fetch_st_status_rows",
-                        lambda *a, **kw: ("baostock", pd.DataFrame()))
+                        lambda self, *a, **kw: (self.src, pd.DataFrame([{
+                            "trade_date": date(2024, 1, 4), "trade_status": 1, "is_st": False,
+                        }])))
     svc = AsyncTaskService(client)
-    _wait(svc, svc.create("fix", {"issue_id": iid}))
+    task = _wait(svc, svc.create("fix", {"issue_id": iid}))
+    assert task["status"] == "done", task["message"]
     assert len(client.query_df("SELECT 1 FROM stock_suspension WHERE code='B.SH'")) == 0
     assert client.query_df("SELECT status FROM data_quality_issue WHERE id=?", [iid]).iloc[0]["status"] == "resolved"
 
@@ -1127,7 +1149,7 @@ def test_resume_pins_target_end_and_skips_prep(client, monkeypatch):
     monkeypatch.setattr(ingest.IngestionService, "ingest_indices",
                         lambda self, *a, **k: calls.__setitem__("idx", calls["idx"] + 1), raising=True)
     monkeypatch.setattr(ingest.IngestionService, "_resolve_update_end",
-                        lambda self, *a, **k: calls.__setitem__("resolve", calls["resolve"] + 1) or date.today(),
+                        lambda self, *a, **k: calls.__setitem__("resolve", calls["resolve"] + 1) or shanghai_now_naive().date(),
                         raising=True)
     monkeypatch.setattr(ingest.IngestionService, "ingest_valuation_latest", lambda self, *a, **k: {}, raising=True)
     monkeypatch.setattr(ingest.IngestionService, "ingest_valuation",
@@ -1527,7 +1549,7 @@ def test_backfill_refetches_partially_covered_code(client, monkeypatch, eod_sess
     from backend.storage.repository import MarketRepository
 
     s = get_effective_settings()
-    today = date.today()
+    today = shanghai_now_naive().date()
     eod_session(client, today)
     start = date(today.year - s.datasource.history_years, today.month, today.day)
     client.execute('INSERT INTO trade_calendar VALUES (?,TRUE)', [start])
@@ -1605,6 +1627,7 @@ def test_daily_fallback_to_baostock_and_provenance(client, monkeypatch):
 
 def test_task_cancel_marks_interrupted(client, monkeypatch):
     import time as _t
+
     from backend.services import ingest
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
 
@@ -1791,11 +1814,11 @@ def test_rate_limited_start_to_start_keeps_configured_rate():
     source = _Source()
     started = time.monotonic()
     source.serial()
-    assert abs(getattr(source, "_last_call_serial") - started) < interval / 2
+    assert abs(source._last_call_serial - started) < interval / 2
 
     started = time.monotonic()
     source.spaced_from_end()
-    assert getattr(source, "_last_call_spaced_from_end") - started >= interval
+    assert source._last_call_spaced_from_end - started >= interval
 
     serial_source = _Source()
     started = time.monotonic()

@@ -9,10 +9,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from backend.auth.constants import EXPLICIT_SYSTEM_ONLY_RESOURCE_CODES, SHARED_RESOURCE_CODES
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
 log = get_logger("storage.resource_repository")
@@ -83,7 +83,7 @@ class ResourceRepository:
             "(id, menu_id, code, name, type, api_method, api_path, sort, is_builtin, created_at) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, FALSE, %s)",
             [resource_id, menu_id, code, name, type, api_method, api_path,
-             sort if sort is not None else self._next_sort(menu_id), datetime.now()])
+             sort if sort is not None else self._next_sort(menu_id), shanghai_now_naive()])
         return resource_id
 
     def update(self, resource_id: str, *, menu_id: str, code: str, name: str, type: str,
@@ -93,7 +93,7 @@ class ResourceRepository:
             cur.execute(
                 "UPDATE sys_resource SET menu_id=%s, code=%s, name=%s, type=%s, "
                 "api_method=%s, api_path=%s, updated_at=%s WHERE id=%s",
-                [menu_id, code, name, type, api_method, api_path, datetime.now(), resource_id])
+                [menu_id, code, name, type, api_method, api_path, shanghai_now_naive(), resource_id])
 
     def delete(self, resource_id: str, *, conn=None) -> None:
         """删功能点（sys_role_resource 经 FK CASCADE 自动清授权）。conn 非空则并入调用方事务。"""

@@ -51,7 +51,9 @@ def test_late_probe_result_keeps_newest_status_and_earlier_success():
     """只写随机测试来源，验证真实PG UPSERT，不初始化或改写平台配置。"""
     from datetime import timedelta
     from uuid import uuid4
+
     import pytest
+
     from backend.storage.pg_client import PostgresClient
 
     pg = PostgresClient()

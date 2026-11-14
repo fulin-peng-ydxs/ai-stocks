@@ -17,13 +17,13 @@ from datetime import date
 import pytest
 
 from backend.common.exceptions import StorageError
+from backend.common.timeutil import shanghai_now_naive
 from backend.scoring import score_profile as score_profile_module
-from backend.screening.presets import PRESET_PROFILES
-from backend.screening import profile as screen_profile_module
-from backend.screening.profile import ProfileRepo
 from backend.scoring.score_profile import ScoreProfileRepo
-from backend.services.asset_visibility import make_asset_ref
-from backend.services.asset_visibility import ASSET_SCREEN_PROFILE
+from backend.screening import profile as screen_profile_module
+from backend.screening.presets import PRESET_PROFILES
+from backend.screening.profile import ProfileRepo
+from backend.services.asset_visibility import ASSET_SCREEN_PROFILE, make_asset_ref
 from backend.services.backtest_service import BacktestService
 from backend.signals import trade_profile as trade_profile_module
 from backend.signals.trade_profile import TradeProfileRepo
@@ -322,7 +322,6 @@ def test_trade_insert_copy_does_not_clobber(market, pg):
 def test_insert_copy_orphan_version_conflict_rolls_back_main(pg):
     """预置孤儿 version=1（无主表行）后复制到同 id：版本表冲突 → 抛错 → 主表回滚；孤儿不被覆盖。"""
     A = ProfileRepo(pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
-    from datetime import datetime
     try:
         # 孤儿版本行（主表无对应 id）
         pg.execute(
@@ -330,7 +329,7 @@ def test_insert_copy_orphan_version_conflict_rolls_back_main(pg):
             "(id,tenant_id,owner_user_id,version,name,expression,saved_at) "
             "VALUES (%s,%s,%s,1,%s,%s,%s)",
             ["orphan_v", TEST_TENANT, TEST_OWNER, "stale-version",
-             __import__("json").dumps(_EXPR, ensure_ascii=False), datetime.now()],
+             __import__("json").dumps(_EXPR, ensure_ascii=False), shanghai_now_naive()],
         )
         with pytest.raises(StorageError):
             A._insert_copy("orphan_v", "fresh-main", _EXPR, {})

@@ -27,4 +27,5 @@ export function auditDesignStateContract(css: string, design: string): string[]
 export function auditButtonKinds(sources: Source[]): string[]
 export function auditButtonStates(css: string): string[]
 export function auditDesignContracts(sources?: Source[], design?: string): string[]
+export function auditMessagePolicy(sources: Source[]): string[]
 export function renderDesignContract(): string

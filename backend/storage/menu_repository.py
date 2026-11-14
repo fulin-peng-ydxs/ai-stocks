@@ -7,10 +7,9 @@ icon 存 Element Plus 图标名；visible=login（登录可见）/ system（仅�
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from backend.common.ids import uuid_hex_id
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
 log = get_logger("storage.menu_repository")
@@ -109,7 +108,7 @@ class MenuRepository:
             "(id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin, created_at) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE, %s)",
             [menu_id, parent_id, code, title, type, route_path, icon,
-             sort if sort is not None else self._next_sort(parent_id), visible, datetime.now()])
+             sort if sort is not None else self._next_sort(parent_id), visible, shanghai_now_naive()])
         return menu_id
 
     def update(self, menu_id: str, *, title: str, type: str, route_path: str | None,
@@ -119,7 +118,7 @@ class MenuRepository:
             cur.execute(
                 "UPDATE sys_menu SET title=%s, type=%s, route_path=%s, icon=%s, visible=%s, "
                 "parent_id=%s, updated_at=%s WHERE id=%s",
-                [title, type, route_path, icon, visible, parent_id, datetime.now(), menu_id])
+                [title, type, route_path, icon, visible, parent_id, shanghai_now_naive(), menu_id])
 
     def delete(self, menu_id: str, *, conn=None) -> None:
         """删菜单（sys_role_menu 经 FK CASCADE 自动清；有子节点时 DB RESTRICT，service 先查 child_count）。"""
@@ -133,8 +132,8 @@ class MenuRepository:
                 if "parentId" in it:
                     cur.execute(
                         "UPDATE sys_menu SET sort=%s, parent_id=%s, updated_at=%s WHERE id=%s",
-                        [int(it["sort"]), it.get("parentId"), datetime.now(), it["id"]])
+                        [int(it["sort"]), it.get("parentId"), shanghai_now_naive(), it["id"]])
                 else:
                     cur.execute(
                         "UPDATE sys_menu SET sort=%s, updated_at=%s WHERE id=%s",
-                        [int(it["sort"]), datetime.now(), it["id"]])
+                        [int(it["sort"]), shanghai_now_naive(), it["id"]])

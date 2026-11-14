@@ -16,7 +16,7 @@ import pytest
 import redis
 
 from backend.auth import perm_resolver, session_store
-from backend.common.exceptions import ServiceUnavailableError
+from backend.common.exceptions import ServiceUnavailableError, StorageError
 
 
 def _perm_ver(pg, uid: str) -> int:
@@ -217,10 +217,9 @@ def test_bump_perm_ver_atomic_rolls_back_with_business(pg, redis_cli, sandbox):
     client = get_pg_client()
 
     # 事务内 bump 后抛错 → 整体回滚
-    with pytest.raises(Exception):
-        with client.transaction() as conn:
-            perm_resolver.bump_perm_ver([uid], conn)
-            conn.execute("SELECT 1/0")          # 模拟业务写入失败
+    with pytest.raises(StorageError, match="division by zero"), client.transaction() as conn:
+        perm_resolver.bump_perm_ver([uid], conn)
+        conn.execute("SELECT 1/0")          # 模拟业务写入失败
     assert _perm_ver(pg, uid) == 0              # 回滚：perm_ver 未前进
 
     # 正常提交 → 前进

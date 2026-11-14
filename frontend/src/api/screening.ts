@@ -1,5 +1,5 @@
 // 筛选方案 + 运行筛选 API（对应 backend/api/profiles.py）
-import http from './client'
+import http, { type AppRequestConfig } from './client'
 import type { StockRelatedBoards } from '@/types/relatedBoards'
 import type { ScoreRunRow } from './scoreProfile'
 
@@ -79,8 +79,8 @@ export function runScreen(body: {
   run_date?: string
   exclude_st?: boolean
   score_profile_id: string
-}): Promise<ScreenResult> {
-  return http.post('/screen/run', body)
+}, config?: AppRequestConfig): Promise<ScreenResult> {
+  return http.post('/screen/run', body, config)
 }
 
 export function rankScreen(body: {
@@ -88,8 +88,8 @@ export function rankScreen(body: {
   score_profile_id: string
   codes: string[]
   exclude_st?: boolean
-}): Promise<ScreenResult> {
-  return http.post('/screen/rank', body)
+}, config?: AppRequestConfig): Promise<ScreenResult> {
+  return http.post('/screen/rank', body, config)
 }
 
 // 保存/更新筛选方案（实质变更才 版本+1）；id 为空则后端自动生成（新建）

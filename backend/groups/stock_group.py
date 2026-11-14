@@ -16,12 +16,13 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 
 import pandas as pd
 
 from backend.auth.context import get_current_owner
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.price_adjustment import hfq_price_sql
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
@@ -53,7 +54,7 @@ class StockGroupRepo:
 
     # ── 元信息 CRUD ──
     def _new_id(self) -> str:
-        return "grp_" + datetime.now().strftime("%Y%m%d%H%M%S%f")
+        return "grp_" + shanghai_now_naive().strftime("%Y%m%d%H%M%S%f")
 
     def _default_group_id(self) -> str:
         # 每个归属者一个默认分组（多租户下 id 须随归属者唯一）
@@ -62,11 +63,11 @@ class StockGroupRepo:
     def _latest_trade_date(self) -> date:
         d = self.mkt.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]
         if d is None or pd.isna(d):
-            return date.today()
+            return shanghai_now_naive().date()
         return pd.Timestamp(d).date()
 
     def ensure_default_group(self) -> str:
-        now = datetime.now()
+        now = shanghai_now_naive()
         found = self.pg.query_df(
             f"SELECT id FROM stock_group WHERE is_default=true AND {self._own_where} LIMIT 1",
             self._own_params,
@@ -99,7 +100,7 @@ class StockGroupRepo:
             raise ValueError("分组名不能为空")
         gid = self._new_id()
         gd = group_date or self._latest_trade_date()
-        now = datetime.now()
+        now = shanghai_now_naive()
         self.pg.execute(
             "INSERT INTO stock_group "
             "(id,tenant_id,owner_user_id,name,group_date,description,color,is_default,created_at,updated_at) "
@@ -125,7 +126,7 @@ class StockGroupRepo:
             sets.append("color=%s"); params.append(color)
         if not sets:
             return
-        sets.append("updated_at=%s"); params.append(datetime.now())
+        sets.append("updated_at=%s"); params.append(shanghai_now_naive())
         params.extend([gid, *self._own_params])
         self.pg.execute(
             f"UPDATE stock_group SET {', '.join(sets)} WHERE id=%s AND {self._own_where}", params)
@@ -161,7 +162,7 @@ class StockGroupRepo:
             n += 1
         self.pg.execute(
             f"UPDATE stock_group SET updated_at=%s WHERE id=%s AND {self._own_where}",
-            [datetime.now(), gid, *self._own_params])
+            [shanghai_now_naive(), gid, *self._own_params])
         return n
 
     def set_member_date(self, gid: str, code: str, add_date: date) -> None:
@@ -180,7 +181,7 @@ class StockGroupRepo:
             [gid, *self._own_params, *codes])
         self.pg.execute(
             f"UPDATE stock_group SET updated_at=%s WHERE id=%s AND {self._own_where}",
-            [datetime.now(), gid, *self._own_params])
+            [shanghai_now_naive(), gid, *self._own_params])
 
     # ── 查询 ──
     def list(self) -> list[dict]:

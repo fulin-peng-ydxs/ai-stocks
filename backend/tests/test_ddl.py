@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from backend.common.exceptions import StorageError
 from backend.datasource.base import DataSource, with_retry
 from backend.storage.ddl import (
     _DIMENSION_SEED,
@@ -15,8 +16,8 @@ from backend.storage.ddl import (
     M6_TABLES,
     M28_TABLES,
     M_BOARD_TABLES,
-    M_STOCK_BOARD_CORRELATION_TABLES,
     M_LIMIT_LADDER_TABLES,
+    M_STOCK_BOARD_CORRELATION_TABLES,
     M_TRAINING_TABLES,
     init_db,
     list_tables,
@@ -213,7 +214,7 @@ def test_board_fund_flow_pk_and_board_member_pk():
             "INSERT INTO board_fund_flow (board_code, snapshot_date, period, net_inflow) "
             "VALUES ('309121', DATE '2026-01-05', '即时', 10.0)")
         # PK 冲突（此连接随后被重建为空库，不再复用）
-        with pytest.raises(Exception):
+        with pytest.raises(StorageError):
             client.execute(
                 "INSERT INTO board_fund_flow (board_code, snapshot_date, period, net_inflow) "
                 "VALUES ('309121', DATE '2026-01-05', '即时', 20.0)")
@@ -223,7 +224,7 @@ def test_board_fund_flow_pk_and_board_member_pk():
         client2.execute(
             "INSERT INTO board_member (board_code, code) "
             "VALUES ('309121', '300476.SZ')")
-        with pytest.raises(Exception):
+        with pytest.raises(StorageError):
             client2.execute(
                 "INSERT INTO board_member (board_code, code) "
                 "VALUES ('309121', '300476.SZ')")

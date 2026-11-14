@@ -48,10 +48,10 @@ log = get_logger("datasource.akshare")
 _AK_NO_DATA_SIGNS = ("no value to decode", "expected object or value", "no columns to parse")
 
 
-def _ak_or_empty(fetch, who: str) -> "pd.DataFrame":
+def _ak_or_empty(fetch, who: str) -> pd.DataFrame:
     try:
         return fetch()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         if any(s in str(e).lower() for s in _AK_NO_DATA_SIGNS):
             log.info("%s 无数据(%s)，当空处理（跳过无谓重试，立即降级/转兜底）", who, type(e).__name__)
             return pd.DataFrame()
@@ -192,7 +192,7 @@ def dejitter_adj_factor(adj_factor: pd.Series, close: pd.Series | None = None,
         cur = f[i]
         if not (prev > 0):
             continue
-        if cur != cur:
+        if pd.isna(cur):
             out[i] = prev
             continue
         if c is None:
@@ -214,7 +214,7 @@ def dejitter_adj_factor(adj_factor: pd.Series, close: pd.Series | None = None,
         # 换码前因子被来源填成 1 时，也能按真实参考价恢复分红而非制造跨代码跳变。
         if refs is not None and refs[i] > 0:
             implied_ref = refs[i]
-        if implied_ref == implied_ref and abs(implied_ref - prev_close) < _MIN_REF_PRICE_DIFF:
+        if pd.notna(implied_ref) and abs(implied_ref - prev_close) < _MIN_REF_PRICE_DIFF:
             out[i] = prev  # 非除权日：沿用前值，消除四舍五入噪声
         else:
             ref_price = round(float(implied_ref), 2)

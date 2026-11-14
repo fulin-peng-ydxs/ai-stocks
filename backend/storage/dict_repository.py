@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from typing import Any
 
 import pandas as pd
 
+from backend.common.timeutil import shanghai_now_naive
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
 _DICT_ITEM_SORT_COLS = {
@@ -75,7 +75,7 @@ class DictRepository:
         sort: int,
         remark: str | None,
     ) -> dict:
-        now = datetime.now()
+        now = shanghai_now_naive()
         self.pg.execute(
             "INSERT INTO dict_type (id, code, name, enabled, sort, remark, created_at, updated_at) "
             "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
@@ -95,7 +95,7 @@ class DictRepository:
         self.pg.execute(
             "UPDATE dict_type SET name=%s, enabled=%s, sort=%s, remark=%s, updated_at=%s "
             "WHERE code=%s",
-            [name, enabled, sort, remark, datetime.now(), code],
+            [name, enabled, sort, remark, shanghai_now_naive(), code],
         )
         return self.get_type(code)  # type: ignore[return-value]
 
@@ -175,7 +175,7 @@ class DictRepository:
         sort: int,
         remark: str | None,
     ) -> dict:
-        now = datetime.now()
+        now = shanghai_now_naive()
         self.pg.execute(
             "INSERT INTO dict_item "
             "(id, type_code, code, label, color, enabled, sort, remark, created_at, updated_at) "
@@ -198,7 +198,7 @@ class DictRepository:
         self.pg.execute(
             "UPDATE dict_item SET label=%s, color=%s, enabled=%s, sort=%s, remark=%s, updated_at=%s "
             "WHERE type_code=%s AND code=%s",
-            [label, color, enabled, sort, remark, datetime.now(), type_code, code],
+            [label, color, enabled, sort, remark, shanghai_now_naive(), type_code, code],
         )
         return self.get_item(type_code, code)  # type: ignore[return-value]
 

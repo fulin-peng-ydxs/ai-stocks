@@ -14,8 +14,8 @@ const layoutMockState = vi.hoisted(() => ({
 }))
 
 vi.mock('@/composables/useRemoteLayoutConfig', () => ({
-  useRemoteLayoutConfig: () => ({
-    effective: {},
+  useRemoteLayoutConfig: (layout: unknown) => ({
+    effective: ref(layout),
     knobs: [],
     setKnob: vi.fn(),
     valueOf: vi.fn(),
@@ -60,8 +60,10 @@ vi.mock('@/composables/useTradeDates', () => ({
 vi.mock('@/composables/useKlinePrefs', () => ({
   ALL_DAYS: 99999,
   useKlinePrefs: () => {
-    const prefs = reactive({ defaultPeriod: 120 })
-    return { validDefault: computed(() => prefs.defaultPeriod), prefs }
+    const prefs = reactive({ defaultPeriod: 120, periods: [60, 120], includeAll: true })
+    return { validDefault: computed(() => prefs.defaultPeriod), prefs,
+      options: computed(() => prefs.periods.map(value => ({ value, label: `近 ${value} 日` }))),
+      isDirty: ref(false), setPeriods: vi.fn(), reset: vi.fn() }
   },
 }))
 
@@ -198,6 +200,8 @@ import ScreenView from '@/views/ScreenView.vue'
 import AppForm from '@/components/AppForm.vue'
 import BacktestView from '@/views/BacktestView.vue'
 import TrainingView from '@/views/TrainingView.vue'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
+import PageDrawer from '@/components/PageDrawer.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AssetSearchDrawer from '@/components/asset-search/AssetSearchDrawer.vue'
 import RankedStockWorkbench from '@/components/ranked-stock/RankedStockWorkbench.vue'
@@ -314,6 +318,17 @@ async function mountView(
   return wrapper
 }
 
+function runningTrainingSession(): trainingApi.RunningView {
+  return {
+    id: 'keyboard-test', status: 'running', mode: 'single', n_rounds: 1,
+    window_days: 20, initial_capital: 100000, fee_enabled: false, cur_round: 0,
+    round: { seq: 0, cursor_idx: 0, window_days: 20, status: 'running', is_last_day: false,
+      cash: 100000, pos_shares: 100, pos_hands: 1, pos_avg_price: 10, cur_close: 10,
+      pos_value: 1000, equity: 101000, unrealized_pnl: 0, realized_pnl: 0,
+      pending: null, bars: [], markers: [], trades: [], lot_size: 100, board: null },
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   layoutMockState.hiddenColumnsBySlot = {}
@@ -407,12 +422,12 @@ describe('代表性页面四态回归', () => {
     await flushPromises()
     expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
       page: 1, listed_boards: ['gem'], keyword: '科技', related_board_keyword: '人工智能',
-    }))
+    }), { skipGlobalError: true })
     vm.changePage(2)
     await flushPromises()
     expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
       page: 2, keyword: '科技', related_board_keyword: '人工智能',
-    }))
+    }), { skipGlobalError: true })
     const calls = vi.mocked(boardApi.runBoardProfile).mock.calls.length
     await advanced.get('[data-search-toggle]').trigger('click')
     expect(advanced.get('.app-advanced-search__summary').text()).toContain('人工智能')
@@ -430,13 +445,13 @@ describe('代表性页面四态回归', () => {
     await flushPromises()
     expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
       page: 1, listed_boards: ['gem'], keyword: '科技', related_board_keyword: undefined,
-    }))
+    }), { skipGlobalError: true })
     await wrapper.get('[data-testid="board-reset-filters"]').trigger('click')
     await flushPromises()
     expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
       page: 1, keyword: undefined, related_board_keyword: undefined,
       listed_boards: ['main', 'star', 'gem'],
-    }))
+    }), { skipGlobalError: true })
     expect((search.element as HTMLInputElement).value).toBe('')
     expect((related.element as HTMLInputElement).value).toBe('')
     wrapper.unmount()
@@ -482,7 +497,7 @@ describe('代表性页面四态回归', () => {
       keyword: '科技',
       related_board_keyword: '人工智能',
       export_all: true,
-    }))
+    }), { skipGlobalError: true })
     expect(csvUtils.downloadCsv).toHaveBeenCalledWith(
       '每日榜单_榜单方案_2024-12-31.csv',
       expect.any(Array),
@@ -528,7 +543,7 @@ describe('代表性页面四态回归', () => {
       page: 1,
       page_size: 50,
       listed_boards: ['main', 'star', 'gem'],
-    }))
+    }), { skipGlobalError: true })
     expect(boardApi.runBoardProfile).toHaveBeenCalledTimes(1)
 
     // 分析区展开时行点击只切换走势，不改变路由。
@@ -578,7 +593,7 @@ describe('代表性页面四态回归', () => {
     expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
       profile_ref: 'ref_public_score',
       run_date: '2024-12-31',
-    }))
+    }), { skipGlobalError: true })
   })
 
   it('本人评分方案可按所选日期重算当日榜单', async () => {
@@ -605,7 +620,7 @@ describe('代表性页面四态回归', () => {
       profile_id: 'board1',
       run_date: '2024-12-31',
       force: true,
-    }))
+    }), { skipGlobalError: true })
   })
 
   it('他人公开评分方案和无计算权限的本人方案都不显示重算入口', async () => {
@@ -646,6 +661,21 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).not.toContain('board failed')
   })
 
+  it.each(['查询失败 SQL: SELECT secret FROM st_status', '刷新失败 https://source.invalid/st'])('榜单 ST 拦截和导出不回显技术错误：%s', async st_status_error => {
+    vi.mocked(boardApi.runBoardProfile).mockResolvedValue({ run_date: '2024-12-31', top: 50, count: 0,
+      business_code: 'ST_STATUS_NOT_READY', st_status_error, list: [] } as any)
+    const wrapper = await mountView(BoardView)
+    expect(wrapper.text()).toContain('ST 状态刷新尚未完整发布，请等待完成后重试')
+    expect(wrapper.text()).not.toContain(st_status_error)
+    const error = vi.spyOn(ElMessage, 'error')
+    // 已有榜单结果时，导出请求也可能遇到 ST 批次重新发布。
+    ;(wrapper.vm as any).total = 1
+    await (wrapper.vm as any).exportCsv()
+    expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({ export_all: true }), { skipGlobalError: true })
+    expect(error).toHaveBeenCalledWith('ST 状态刷新尚未完整发布，请等待完成后重试')
+    wrapper.unmount()
+  })
+
   it('ST 批次未发布时榜单显示明确错误态而不是空榜', async () => {
     ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
       run_date: '2024-12-31',
@@ -682,7 +712,7 @@ describe('代表性页面四态回归', () => {
 
     expect(boardApi.runBoardProfile).toHaveBeenCalledWith(expect.objectContaining({
       profile_ref: 'ref_default_score',
-    }))
+    }), { skipGlobalError: true })
     expect((wrapper.vm as unknown as { profileRef: string }).profileRef).toBe('ref_default_score')
     expect(wrapper.text()).toContain('服务暂时不可用，请稍后重试')
     expect(JSON.parse(localStorage.getItem('ai-stocks-default-score-profile') || '{}'))
@@ -701,6 +731,8 @@ describe('代表性页面四态回归', () => {
   })
 
   it('默认榜单被删除或取消可见时才清除默认偏好', async () => {
+    const warning = vi.spyOn(ElMessage, 'warning')
+    const error = vi.spyOn(ElMessage, 'error')
     localStorage.setItem('ai-stocks-board-default-profile', JSON.stringify({
       profile_ref: 'ref_missing_score',
       id: 'missing-score',
@@ -720,6 +752,11 @@ describe('代表性页面四态回归', () => {
     const wrapper = await mountView(BoardView)
     await flushPromises()
 
+    expect(boardApi.runBoardProfile).toHaveBeenCalledWith(expect.objectContaining({
+      profile_ref: 'ref_missing_score',
+    }), { skipGlobalError: true })
+    expect(warning).toHaveBeenCalledTimes(1)
+    expect(error).not.toHaveBeenCalled()
     expect((wrapper.vm as unknown as { profileRef: string }).profileRef).toBe('')
     expect(JSON.parse(localStorage.getItem('ai-stocks-default-score-profile') || '{}'))
       .toMatchObject({ profile_ref: '', id: '' })
@@ -739,7 +776,7 @@ describe('代表性页面四态回归', () => {
 
     await wrapper.findComponent(AssetProfileSelect).vm.reload()
     await flushPromises()
-    expect(boardApi.runBoardProfile).toHaveBeenCalledWith(expect.objectContaining({ profile_id: 'board1' }))
+    expect(boardApi.runBoardProfile).toHaveBeenCalledWith(expect.objectContaining({ profile_id: 'board1' }), { skipGlobalError: true })
     expect(wrapper.text()).not.toContain('profiles failed')
   })
 
@@ -843,7 +880,8 @@ describe('代表性页面四态回归', () => {
     vi.mocked(dataApi.listScheduleTriggerEvents).mockResolvedValueOnce({ events: [
       { id: 'manual', trigger_kind: 'manual', status: 'dispatched', task_id: 'manual-task', task_status: 'failed' },
       { id: 'scheduled', trigger_kind: 'scheduled', status: 'dispatched', task_id: 'scheduled-task', task_status: 'running' },
-      { id: 'dependency', trigger_kind: 'dependency', status: 'waiting', source_task_id: 'upstream', source_status: 'done' },
+      { id: 'dependency', trigger_kind: 'dependency', status: 'waiting', source_task_id: 'upstream',
+        source_job_name: 'A-每日-更新-基础资料', source_status: 'done' },
       { id: 'retry', trigger_kind: 'retry', retry_count: 2, status: 'exhausted', source_status: 'failed' },
     ] } as any)
     const wrapper = await mountView(ScheduleView, {}, {
@@ -856,6 +894,14 @@ describe('代表性页面四态回归', () => {
       expect(table.text()).toContain(label)
     }
     const rows = table.findAll('tbody tr')
+    // 任务名称消费共享 name 角色；结果和规则仍按状态列呈现。
+    const headers = table.findAll('thead th')
+    expect(headers[0].text()).toBe('上游任务')
+    expect(headers[0].classes()).toContain('is-left')
+    for (const header of [headers[1], headers[3]]) expect(header.classes()).toContain('is-center')
+    expect(rows[2].findAll('td')[0].classes()).toContain('is-left')
+    expect(rows[2].findAll('td')[0].text()).toBe('A-每日-更新-基础资料')
+    expect(rows[0].findAll('td')[0].text()).toBe('—')
     expect(rows[0].text()).toContain('已触发')
     expect(rows[0].text()).toContain('失败')
     expect(rows[0].text()).not.toContain('任务依赖')
@@ -1431,8 +1477,6 @@ describe('代表性页面四态回归', () => {
     { status: 'available', can_repair: true, label: '补采复检', recheck: false },
     { status: 'deferred', can_repair: false, label: '重新核验', recheck: true },
   ])('分时台账在同一修复入口显示 $label 并透传复查策略', async (availability) => {
-    const warning = vi.spyOn(ElMessage, 'warning')
-    const success = vi.spyOn(ElMessage, 'success')
     const row = { id: 89, code: '603758.SH', issue_type: 'intraday_partial', status: 'open',
       detail: '{}', severity: 'mid', intraday: { ...availability, reason: '来源暂待更新' } }
     ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -1449,10 +1493,16 @@ describe('代表性页面四态回归', () => {
     const recovery = actions.filter((action: any) => action.key === 'recover')
     expect(recovery).toHaveLength(1)
     expect(recovery[0].label).toBe(availability.label)
+    const existingMessages = new Set(document.querySelectorAll('.el-message'))
     await recovery[0].onClick()
     expect(dataApi.fixQualityIssue).toHaveBeenCalledWith(89, availability.recheck)
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining('等待源更新或复查 1 条'))
-    expect(success).not.toHaveBeenCalled()
+    const messages = [...document.querySelectorAll('.el-message')].filter(node => !existingMessages.has(node))
+    expect(messages).toHaveLength(2)
+    expect(messages[0].classList.contains('el-message--info')).toBe(true)
+    expect(messages[0].textContent).toContain(`正在${availability.label}`)
+    expect(messages[1].classList.contains('el-message--warning')).toBe(true)
+    expect(messages[1].textContent).toContain('等待源更新或复查 1 条')
+    ElMessage.closeAll()
     wrapper.unmount()
   })
 
@@ -1727,6 +1777,19 @@ describe('代表性页面四态回归', () => {
     }
   })
 
+  it('任务终止等待提示复用任务结果展示，技术原文仍保留在数据中', async () => {
+    const wrapper = await mountView(IngestView)
+    const row = { id: 'cancelling', task_type: 'board', status: 'running', params: {},
+      cancel_requested_at: '2026-11-14T10:00:00', message: '查询失败 SQL: SELECT secret FROM source' }
+    const action = (wrapper.vm as any).taskRowActions(row).find((item: any) => item.key === 'waiting')
+    expect(action.visible).toBe(true)
+    expect(action.disabled).toBe(true)
+    expect(action.tooltip).not.toContain('SELECT')
+    expect(action.tooltip).toBeTruthy()
+    expect(row.message).toContain('SELECT')
+    wrapper.unmount()
+  })
+
   it('任务中心按失败和中断状态使用不同恢复动作', async () => {
     const wrapper = await mountView(IngestView)
     const failedActions = (wrapper.vm as any).taskRowActions({
@@ -1898,10 +1961,10 @@ describe('代表性页面四态回归', () => {
     await run!.trigger('click')
     await flushPromises()
     expect(screeningApi.runScreen).toHaveBeenCalledWith(
-      expect.objectContaining({ profile_id: 'ref_pub1' }),
+      expect.objectContaining({ profile_id: 'ref_pub1' }), { skipGlobalError: true },
     )
     expect(screeningApi.runScreen).not.toHaveBeenCalledWith(
-      expect.objectContaining({ expression: expect.anything() }),
+      expect.objectContaining({ expression: expect.anything() }), { skipGlobalError: true },
     )
   })
 
@@ -1930,7 +1993,7 @@ describe('代表性页面四态回归', () => {
     await run!.trigger('click')
     await flushPromises()
     expect(screeningApi.runScreen).toHaveBeenCalledWith(
-      expect.objectContaining({ profile_id: 'ref_pub2' }),
+      expect.objectContaining({ profile_id: 'ref_pub2' }), { skipGlobalError: true },
     )
   })
 
@@ -2076,6 +2139,22 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).toContain('运行回测')
   })
 
+  it.each([
+    [new Error('查询失败 SQL: SELECT secret FROM training'), '开局失败'],
+    [{ uiMessage: '训练样本不足，请调整范围' }, '训练样本不足，请调整范围'],
+  ])('训练开局错误过滤技术文本并释放忙碌状态：%s', async (failure, expected) => {
+    vi.mocked(trainingApi.startSession).mockRejectedValueOnce(failure)
+    const error = vi.spyOn(ElMessage, 'error')
+    const wrapper = await mountView(TrainingView)
+    const button = wrapper.findAll('button').find(item => item.text() === '开始训练')!
+    await button.trigger('click')
+    await flushPromises()
+    expect(trainingApi.startSession).toHaveBeenCalledWith(expect.any(Object), { skipGlobalError: true })
+    expect(error).toHaveBeenCalledWith(expected)
+    expect(button.attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('训练开局摘要跟随本次模式和默认参数，调整入口共用设置抽屉且提交口径一致', async () => {
     const wrapper = await mountView(TrainingView, {}, {
       PageSettingsDrawer: { template: '<div><slot name="business"/></div>' },
@@ -2116,7 +2195,7 @@ describe('代表性页面四态回归', () => {
       mode: 'multi', range_start: '2024-01-01', range_end: '2024-12-31',
       n_rounds: 7, window_days: 15, initial_capital: 250000.5,
       filters: { exclude_st: true, boards: ['主板', '创业板'] },
-    }))
+    }), { skipGlobalError: true })
     expect(summary.text()).toContain('7 回合')
     expect(vm.sessionConfig.range_start).toBe('2024-01-01')
     vm.sessionConfig.mode = 'single'
@@ -2127,15 +2206,40 @@ describe('代表性页面四态回归', () => {
     wrapper.unmount()
   })
 
-  it('训练键盘与按钮共享权限、输入边界和异步互斥', async () => {
-    const running = {
-      id: 'keyboard-test', status: 'running', mode: 'single', n_rounds: 1,
-      window_days: 20, initial_capital: 100000, fee_enabled: false, cur_round: 1,
-      round: { seq: 1, cursor_idx: 0, window_days: 20, status: 'running', is_last_day: false,
-        cash: 100000, pos_shares: 100, pos_hands: 1, pos_avg_price: 10, cur_close: 10,
-        pos_value: 1000, equity: 101000, unrealized_pnl: 0, realized_pnl: 0,
-        pending: null, bars: [], markers: [], trades: [], lot_size: 100, board: null },
+  it('训练三阶段共用宿主，设置抽屉解析到页面追加目标', async () => {
+    const warning = vi.spyOn(console, 'warn')
+    // jsdom 核对真实宿主提供的追加目标；遮罩、开关和焦点由浏览器用例验证。
+    const wrapper = await mountView(TrainingView, {}, {
+      LayoutHost: false, PageSettingsDrawer: false,
+      ElDrawer: { name: 'ElDrawer', props: ['appendTo', 'modelValue'], template: '<section v-if="modelValue"><slot /></section>' },
+    })
+    try {
+      const host = wrapper.findComponent(LayoutHost).element
+      const drawer = wrapper.findComponent(PageDrawer).vm.$
+      const vm = wrapper.vm as any
+      const completed = { id: 'completed-layout', status: 'completed', mode: 'single', n_rounds: 1,
+        initial_capital: 100000, fee_enabled: false, total_return: 0, score: 80, grade: 'A', win_rate: 0,
+        max_drawdown: 0, n_trades: 0, review_note: '', created_at: '', completed_at: '', rounds: [] }
+      for (const view of [null, runningTrainingSession(), completed]) {
+        vm.view = view
+        vm.settingsOpen = true
+        await flushPromises()
+        expect(wrapper.findAllComponents(LayoutHost)).toHaveLength(1)
+        expect(wrapper.findComponent(LayoutHost).element).toBe(host)
+        expect(wrapper.findComponent(PageDrawer).vm.$).toBe(drawer)
+        expect(wrapper.findComponent({ name: 'ElDrawer' }).props('appendTo')).toBe(host)
+        vm.settingsOpen = false
+        await flushPromises()
+      }
+      expect(warning.mock.calls.flat().join('\n')).not.toContain('[PageDrawer] 未找到 LayoutHost')
+    } finally {
+      wrapper.unmount()
+      warning.mockRestore()
     }
+  })
+
+  it('训练键盘与按钮共享权限、输入边界和异步互斥', async () => {
+    const running = runningTrainingSession()
     vi.mocked(trainingApi.startSession).mockResolvedValue(running as trainingApi.RunningView)
     let resolve!: (value: trainingApi.RunningView) => void
     vi.mocked(trainingApi.revealNext).mockImplementation(() => new Promise(done => { resolve = done }))
@@ -2153,6 +2257,7 @@ describe('代表性页面四态回归', () => {
     press(document.body)
     await wrapper.findAll('button').find(button => button.text().includes('下一交易日'))!.trigger('click')
     expect(trainingApi.revealNext).toHaveBeenCalledTimes(1)
+    expect(trainingApi.revealNext).toHaveBeenCalledWith('keyboard-test', 0, { skipGlobalError: true })
     expect(wrapper.findAll('button').find(button => button.text() === '退出训练')!.attributes('disabled')).toBeDefined()
     resolve(running as trainingApi.RunningView)
     await flushPromises()

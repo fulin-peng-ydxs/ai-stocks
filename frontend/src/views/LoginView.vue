@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import { getErrorMessage } from '@/utils/error'
 import { submitOnEnter } from '@/utils/keyboard'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppHoverInfo from '@/components/AppHoverInfo'
@@ -74,11 +75,6 @@ function clearErrors() {
   errors.emailCode = ''
   errors.captcha = ''
   errors.form = ''
-}
-// 从被拦截器跳过全局 toast 的错误里取可读文案（interceptor 已挂 uiMessage）。
-function pickMessage(e: unknown): string {
-  const err = e as { uiMessage?: string; response?: { data?: { msg?: string } }; message?: string }
-  return err?.uiMessage || err?.response?.data?.msg || ''
 }
 // 把后端错误文案按关键字落到对应字段；无法归属的进 form 整体错误。
 function mapAuthError(msg: string, fallbackField: 'password' | 'form') {
@@ -191,7 +187,7 @@ async function onLogin() {
     await router.replace(redirect)
   } catch (error) {
     // 登录失败：就地内联报错（不弹全局 toast）；累计失败达阈值且后端启用才显示图形码
-    const msg = pickMessage(error)
+    const msg = getErrorMessage(error, '')
     form.captchaCode = ''
     if (msg.includes('图形验证码')) {
       errors.captcha = msg
@@ -231,7 +227,7 @@ async function onRegister() {
     await router.replace('/') // 注册后已自动登录
   } catch (error) {
     // 注册失败：把后端文案映射到对应字段（账号已存在/邮箱已被注册/验证码错/密码强度等）
-    mapAuthError(pickMessage(error), 'form')
+    mapAuthError(getErrorMessage(error, ''), 'form')
   } finally {
     loading.value = false
   }
@@ -252,7 +248,7 @@ async function onSendEmailCode() {
     startEmailCountdown()
   } catch (error) {
     // 发送失败（限流/发信异常等）就地展示在验证码框下方
-    errors.emailCode = pickMessage(error) || '验证码发送失败，请稍后重试'
+    errors.emailCode = getErrorMessage(error, '验证码发送失败，请稍后重试')
   } finally {
     emailSending.value = false
   }

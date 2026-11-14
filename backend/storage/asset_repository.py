@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import pandas as pd
 
+from backend.auth.context import get_current_owner
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
-from backend.auth.context import get_current_owner
 from backend.storage.pg_ddl import ASSET_PK
 
 log = get_logger("storage.asset_repository")
@@ -60,7 +60,6 @@ class AssetRepository:
             tuple(None if (not isinstance(v, (list, dict)) and pd.isna(v)) else v for v in r)
             for r in df2[cols].itertuples(index=False, name=None)
         ]
-        with self.pg.transaction() as conn:
-            with conn.cursor() as cur:
-                cur.executemany(sql, rows)
+        with self.pg.transaction() as conn, conn.cursor() as cur:
+            cur.executemany(sql, rows)
         return len(df2)

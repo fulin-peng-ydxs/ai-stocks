@@ -4,12 +4,64 @@ import { describe, expect, it } from 'vitest'
 import { auditComponentEntries, auditStyleComponents, designContracts, designSources } from '../../../scripts/design-source.mjs'
 import {
   auditButtonKinds, auditButtonStates, auditColorSources, auditDesignContracts, auditDesignStateContract, auditSharedStyles,
-  auditRuntimeStyles, renderDesignContract,
+  auditRuntimeStyles, auditMessagePolicy, renderDesignContract,
 } from '../../../scripts/check-design-contracts.mjs'
 
 const sample = (source: string, file = 'views/GateProbe.vue') => [{ file, source }]
 const template = '<template><ul class="list"><li class="row app-interaction-list-item--outlined"><span class="name app-list-item-trigger">方案</span></li><li class="other" /></ul></template>'
 const globalCss = readFileSync(resolve('src/styles/global.css'), 'utf8')
+
+describe('全局消息时序归属', () => {
+  it.each([
+    "import { ElMessage } from 'element-plus'; ElMessage({ message: '失败', duration: 0 })",
+    "import { ElMessage as notify } from 'element-plus'; notify.error({ message: '失败', showClose: true })",
+    "import * as EP from 'element-plus'; EP.ElMessage.warning({ message: '失败', ['duration']: 8000 })",
+    "import { ElMessage } from 'element-plus'; const options = { showClose: true }; ElMessage({ ...options, message: '失败' })",
+    "import { ElMessage } from 'element-plus'; const options = { duration: 0 } as const; ElMessage.error(options)",
+    "import { ElMessage } from 'element-plus'; const notify = ElMessage; const warn = notify.warning; warn({ message: '失败', duration: 0 })",
+    "import { ElMessage } from 'element-plus'; const { error: notify } = ElMessage; notify({ message: '失败', showClose: true })",
+    "import { ElMessage } from 'element-plus'; function first() { const options = { duration: 0 }; ElMessage(options) } function second() { const options = { message: '正常' }; ElMessage(options) }",
+  ])('拒绝页面自定消息时长和关闭方式：%s', script => {
+    expect(auditMessagePolicy(sample(`<script setup>${script}</script>`))).not.toEqual([])
+  })
+
+  it('允许内容和级别，确认框的关闭策略独立；Provider 只归应用根所有', () => {
+    const script = "import { ElMessage, ElMessageBox } from 'element-plus'; "
+      + "ElMessage({ type: 'error', message: '来源数据未补齐' }); ElMessage.success('成功'); "
+      + "ElMessageBox.confirm('确认操作', { showClose: false })"
+    expect(auditMessagePolicy(sample(`<script setup>${script}</script>`))).toEqual([])
+    const provider = '<script setup>import { APP_MESSAGE_POLICY } from "@/utils/messagePolicy"</script>'
+      + '<template><el-config-provider :message="APP_MESSAGE_POLICY"><div /></el-config-provider></template>'
+    expect(auditMessagePolicy(sample(provider))).not.toEqual([])
+    expect(auditMessagePolicy(sample(provider, 'App.vue'))).toEqual([])
+    expect(auditMessagePolicy(designSources())).toEqual([])
+  })
+
+  it.each([
+    '<template><el-config-provider v-bind="{ message: { duration: 0 } }" /></template>',
+    '<script setup>const props = { message: { showClose: true } }</script><template><ElConfigProvider v-bind="props" /></template>',
+    '<script setup>import { ElConfigProvider as Provider } from "element-plus"; const props = { message: { duration: 0 } }</script><template><Provider v-bind="{...props}" /></template>',
+    '<script setup>import * as EP from "element-plus"; const props = { message: { duration: 0 } }</script><template><EP.ElConfigProvider v-bind="props" /></template>',
+    '<script setup>import { ElMessage as notify } from "element-plus"</script><template><button @click="notify({message: \'失败\', duration: 0})" /></template>',
+  ])('拒绝批量绑定和模板调用绕过消息策略：%s', source => {
+    expect(auditMessagePolicy(sample(source))).not.toEqual([])
+  })
+
+  it('变量和消息入口按词法作用域解析，不受别的函数或参数同名影响', () => {
+    const source = `import { ElMessage } from 'element-plus';
+      function first() { const options = { message: '正常' }; ElMessage(options) }
+      function second() { const options = { duration: 0 }; return options }
+      function third(ElMessage: Function) { ElMessage({ duration: 0 }) }`
+    expect(auditMessagePolicy(sample(`<script setup>${source}</script>`))).toEqual([])
+    expect(auditMessagePolicy(sample('<template><ElConfigProvider v-bind="{size: \'small\'}" /></template>'))).toEqual([])
+  })
+
+  it('应用根必须消费真实全局策略，不能删掉 Provider 或用同名局部对象代替', () => {
+    expect(auditMessagePolicy(sample('<template><div /></template>', 'App.vue'))).not.toEqual([])
+    expect(auditMessagePolicy(sample('<script setup>const APP_MESSAGE_POLICY = { duration: 0 }</script>'
+      + '<template><ElConfigProvider :message="APP_MESSAGE_POLICY" /></template>', 'App.vue'))).not.toEqual([])
+  })
+})
 
 describe('重置、运行时写入及新增控件的闭环门禁', () => {
   it.each([

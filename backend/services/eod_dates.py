@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 
 from backend.common.exceptions import DataSourceError
+from backend.common.timeutil import SHANGHAI
 
-SHANGHAI = ZoneInfo("Asia/Shanghai")
 EOD_READY_TIME = time(15, 30)
 
 

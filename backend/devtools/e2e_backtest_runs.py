@@ -18,9 +18,10 @@ import argparse
 import json
 import secrets
 import uuid
-from datetime import date, timedelta
+from datetime import timedelta
 
 from backend.auth.context import AuthContext, reset_context, set_context
+from backend.common.timeutil import shanghai_now_naive
 from backend.devtools.environment_guard import require_e2e_write_enabled
 from backend.services.backtest_service import BacktestService
 from backend.storage.duckdb_client import DuckDBClient
@@ -40,7 +41,7 @@ def _assert_pg_target(pg: PostgresClient, expected_pg_fingerprint: str) -> None:
 
 def _default_window() -> tuple[str, str]:
     """默认短窗口：覆盖近月若干交易日，足以让策略撮合产出完成态 run。"""
-    end = date.today()
+    end = shanghai_now_naive().date()
     start = end - timedelta(days=45)
     return start.isoformat(), end.isoformat()
 
@@ -97,7 +98,7 @@ def seed_public_run(
     # 只读客户端跳过 init_db 的 CREATE SEQUENCE/DDL（只读模式本就无法执行）。
     duck = DuckDBClient(read_only=True)
     svc = BacktestService(client=duck, tenant_id=tenant_id, owner_user_id=owner_user_id)
-    svc._new_id = lambda kind: run_id  # noqa: SLF001
+    svc._new_id = lambda kind: run_id
 
     # 显式归属：run 与审计都落在调试账号名下（资产归属取上下文，禁止信任前端）。
     token = set_context(AuthContext(

@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
 from typing import Any
 
 from backend.auth.context import get_current_owner
+from backend.common.timeutil import shanghai_now_naive
 from backend.storage.pg_client import PostgresClient, get_pg_client
 from backend.storage.pg_ddl import DDL_USER_PREFERENCE
 
@@ -119,7 +119,7 @@ class UserPreferenceRepo:
         pref_key = _validate_key("pref_key", pref_key)
         version = self._validate_schema_version(schema_version)
         dumped = _normalize_value(value)
-        now = datetime.now()
+        now = shanghai_now_naive()
         self.pg.execute(
             "INSERT INTO user_preference "
             "(tenant_id, owner_user_id, scope, page_key, pref_key, value, schema_version, updated_at) "

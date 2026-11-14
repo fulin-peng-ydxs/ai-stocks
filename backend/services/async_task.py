@@ -11,6 +11,8 @@ M2.8-B 增强：
 - **数据修复**（FR-DM-4）：fix 任务定向重拉单条质检问题对应股票/日期，回写 issue 状态。
 
 采集与数据变化任务只维护原始数据；走势、天梯和榜单结果由显式结果维护任务处理。
+任务与质检沿用无时区的北京时间 TIMESTAMP；显式取北京时间再去除时区，
+保持 DuckDB 历史数据及 PG 运行态适配器的解释一致，不依赖主机时区。
 """
 
 from __future__ import annotations
@@ -19,10 +21,17 @@ import json
 import threading
 from contextlib import nullcontext
 from datetime import datetime, timedelta
+from typing import ClassVar
 
 from backend.common.exceptions import ConflictError
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.services.collection_quality import collection_summary
+from backend.services.quality_repair_feedback import (
+    ensure_repair_collection,
+    readable_repair_reason,
+    repair_failure_reason,
+)
 from backend.services.quality_repair_sources import repair_source_scope
 from backend.services.task_progress import TaskProgressScope
 from backend.storage.duckdb_client import get_client
@@ -215,7 +224,7 @@ def _resume_message(task_type: str, checkpoint: dict) -> str:
 class TaskContext:
     """处理器运行上下文：进度 / 实时日志 / checkpoint。"""
 
-    def __init__(self, svc: "AsyncTaskService", tid: str, checkpoint: dict | None = None):
+    def __init__(self, svc: AsyncTaskService, tid: str, checkpoint: dict | None = None):
         from backend.datasource.observability import RequestTracker
 
         self.request_tracker = RequestTracker()
@@ -232,7 +241,7 @@ class TaskContext:
 
     def log(self, message: str, level: str = "info") -> None:
         self._seq += 1
-        self._buf.append((self._seq, datetime.now(), level, message))
+        self._buf.append((self._seq, shanghai_now_naive(), level, message))
         if len(self._buf) >= _LOG_FLUSH_EVERY:
             self.flush()
 
@@ -276,7 +285,7 @@ class AsyncTaskService:
 
     # ── id / 写入辅助 ──
     def _new_id(self, t: str) -> str:
-        return f"task_{t}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+        return f"task_{t}_{shanghai_now_naive().strftime('%Y%m%d%H%M%S%f')}"
 
     def _set(self, tid: str, **fields) -> None:
         if "result" in fields:
@@ -284,7 +293,7 @@ class AsyncTaskService:
             if isinstance(result, str):
                 result = json.loads(result)
             fields["result"] = runtime_json_param(self.c, result)
-        fields["updated_at"] = datetime.now()
+        fields["updated_at"] = shanghai_now_naive()
         cols = ", ".join(f"{k}=?" for k in fields)
         self.c.execute(f"UPDATE async_task SET {cols} WHERE id=?", [*fields.values(), tid])
 
@@ -448,7 +457,7 @@ class AsyncTaskService:
                 self._check_writer_admission(task_type, params, trigger_event_id)
             tid = self._new_id(task_type)
             chain_id = chain_id or tid
-            now = datetime.now()
+            now = shanghai_now_naive()
             self.c.execute(
                 "INSERT INTO async_task (id, task_type, params, status, progress, message, result, "
                 "trigger_source, job_id, job_name, chain_id, parent_task_id, trigger_event_id, "
@@ -501,7 +510,7 @@ class AsyncTaskService:
                 "UPDATE async_task SET status='pending', progress=0.0, message=?, "
                 "execution_attempt=COALESCE(execution_attempt,1)+1, cancel_requested_at=NULL, "
                 "updated_at=? WHERE id=?",
-                [pending_message, datetime.now(), tid])
+                [pending_message, shanghai_now_naive(), tid])
         self._audit_task(
             action="resume",
             result="success",
@@ -616,9 +625,13 @@ class AsyncTaskService:
             ctx.flush()
             if ctx.request_tracker.meta or ctx.request_tracker.counts:
                 ctx.checkpoint["request_runtime"] = ctx.request_tracker.snapshot(ctx.checkpoint)
+            failure_result = {"checkpoint": ctx.checkpoint} if ctx.checkpoint else {}
+            if task_type == "fix":
+                # 规划、取源或收尾可在逐条恢复之前/之外失败，也必须带可读原因。
+                failure_result["failure_reason"] = repair_failure_reason(e)
             self._finish_terminal(tid, status="failed", message=str(e),
-                                  result=json.dumps({"checkpoint": ctx.checkpoint}, ensure_ascii=False,
-                                                    default=str) if ctx.checkpoint else None)
+                                  result=json.dumps(failure_result, ensure_ascii=False,
+                                                    default=str) if failure_result else None)
             self._audit_task(
                 action="finish",
                 result="failed",
@@ -681,7 +694,8 @@ class AsyncTaskService:
             "UPDATE async_task SET status='interrupted', message=CASE "
             f"WHEN task_type IN ({resume_placeholders}) THEN '服务重启中断，可续跑' "
             "ELSE '服务重启中断，不支持续跑，请重新执行' END, updated_at=? "
-            "WHERE status IN ('pending','running')", [*resumable_types, datetime.now()])
+            "WHERE status IN ('pending','running')",
+            [*resumable_types, shanghai_now_naive()])
         snapshot_states = LimitLadderSnapshotService(
             self.market
         ).recover_processing_after_restart()
@@ -691,7 +705,7 @@ class AsyncTaskService:
         if fixing:
             self.market.execute(
                 "UPDATE data_quality_issue SET status='open', fix_task_id=NULL WHERE status='fixing'")
-        cutoff = datetime.now() - timedelta(days=LOG_RETENTION_DAYS)
+        cutoff = shanghai_now_naive() - timedelta(days=LOG_RETENTION_DAYS)
         self.c.execute("DELETE FROM task_log WHERE ts < ?", [cutoff])
         n = int(stuck)
         if n or fixing or snapshot_states:
@@ -734,7 +748,7 @@ class AsyncTaskService:
         self._set(
             tid,
             message=f"终止中…（{cap.get('cancel_message') or '到下一个检查点停下'}）",
-            cancel_requested_at=datetime.now(),
+            cancel_requested_at=shanghai_now_naive(),
         )
         return True
 
@@ -766,7 +780,9 @@ class AsyncTaskService:
         except Exception as e:  # noqa: BLE001
             log.warning("任务审计写入失败，已降级忽略: %s", e)
 
-    _SORT_COLS = {"time": "created_at", "type": "task_type", "status": "status"}
+    _SORT_COLS: ClassVar[dict[str, str]] = {
+        "time": "created_at", "type": "task_type", "status": "status",
+    }
 
     def list(self, limit: int = 20, status: str | None = None, task_type: str | None = None,
              page: int | None = None, size: int | None = None,
@@ -1374,8 +1390,7 @@ def _reingest_board_bar_with_retry(
         res = _call_with_ctx(
             bsvc.ingest_board_bar, start, end=end, board_codes=[code], ctx=ctx)
         ctx.check_cancel()
-    if res.get("failed"):
-        raise RuntimeError(f"板块指数重采失败：{res['failed']}")
+    ensure_repair_collection(res, "板块指数重采失败", ctx.log)
     return res
 
 
@@ -1511,10 +1526,17 @@ def _repair_intraday_stock(c, ctx, code, day):
                    "deferred" if availability.get("status") == "deferred" else
                    "unavailable" if availability.get("can_repair") is False else "unchanged")
         detail["last_repair"] = {
-            "task_id": ctx.tid, "checked_at": datetime.now().isoformat(), "outcome": outcome,
+            "task_id": ctx.tid,
+            "checked_at": shanghai_now_naive().isoformat(),
+            "outcome": outcome,
             "before_points": before_counts.get(str(issue["trade_date"]), 0), "after_points": after,
             "technical_failure": bool(result.get("failed")),
         }
+        if result.get("failed"):
+            raw_error = getattr(ctx, "_intraday_batch_failed", {}).get(code)
+            detail["last_repair"]["failure_reason"] = repair_failure_reason(
+                RuntimeError(str(raw_error or "分时来源请求失败，未能补齐目标日期数据")),
+            )
         c.execute(
             "UPDATE data_quality_issue SET detail=? WHERE code=? AND trade_date=? AND issue_type=?",
             [json.dumps(detail, ensure_ascii=False), code, issue["trade_date"], issue["issue_type"]],
@@ -1525,7 +1547,9 @@ def _repair_intraday_stock(c, ctx, code, day):
         if (row.issue_type, target) not in lookup:
             detail = json.loads(row.detail or "{}")
             detail["last_repair"] = {
-                "task_id": ctx.tid, "checked_at": datetime.now().isoformat(), "outcome": "resolved",
+                "task_id": ctx.tid,
+                "checked_at": shanghai_now_naive().isoformat(),
+                "outcome": "resolved",
                 "before_points": before_counts.get(target, 0), "after_points": after_counts.get(target, 0),
             }
             c.execute("UPDATE data_quality_issue SET detail=? WHERE id=?",
@@ -1667,7 +1691,13 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
                     related = getattr(ctx, "related_stage_errors", {})
                     related[code] = r["stage_errors"]
                     ctx.related_stage_errors = related
-                    note += f"；关联阶段失败（已保留数据并同步股本台账）：{r['stage_errors']}"
+                    labels = {"suspension": "停牌核验", "capital": "股本市值核验"}
+                    reasons = "；".join(
+                        f"{labels.get(stage, '关联数据处理')}：{repair_failure_reason(RuntimeError(str(error)))}"
+                        for stage, error in r["stage_errors"].items()
+                    )
+                    ctx.log(f"关联阶段失败：{r['stage_errors']}", "error")
+                    note += f"；关联阶段失败（已保留数据并同步股本台账）：{reasons}"
                 ctx.log(f"重采写入 {r['rows']} 行；{note}"
                         f"（仅有明确停牌证据者确认停牌，其余保留缺口）")
         elif issue_type in (
@@ -1734,10 +1764,15 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
             if res is None:
                 res = ing.refresh_st_status(codes=[str(code)], ctx=ctx)
             failures = res.get("failures") or []
-            if int(res.get("fail") or 0) and (
-                not failures or any(str(item.get("code")) == str(code) for item in failures)
-            ):
-                raise RuntimeError(f"ST 状态刷新失败：{res.get('failures')}")
+            stock_failures = [item for item in failures if str(item.get("code")) == str(code)]
+            if int(res.get("fail") or 0) and (not failures or stock_failures):
+                # 只展示本股原因，先统一转换原始错误，再加业务前缀；否则中文前缀
+                # 会使英文技术错误被误判为可读说明。来源入口仍保留原始失败日志。
+                reason = "；".join(
+                    repair_failure_reason(RuntimeError(str(item["error"])))
+                    for item in stock_failures if item.get("error")
+                )
+                raise RuntimeError(f"ST 状态刷新失败：{reason or '未取得完整的逐日 ST 事实'}")
             affected = [
                 pd.Timestamp(value).date()
                 for value in res.get("changed_date_values", [])
@@ -1835,8 +1870,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
             res = _call_with_ctx(
                 bsvc.ingest_board_fund_flow,
                 board_type=repair_board_type, ctx=ctx)
-            if res.get("failed"):
-                raise RuntimeError(f"板块资金流重采失败：{res['failed']}")
+            ensure_repair_collection(res, "板块资金流重采失败", ctx.log)
             note = f"重采资金流 {res.get('rows', 0)} 行（未匹配 {res.get('unmatched', 0)}）"
             ctx.log(note)
         elif issue_type == "board_fund_missing":
@@ -1860,8 +1894,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
             res = _call_with_ctx(
                 bsvc.ingest_board_fund_flow, snapshot_date=td, periods=tuple(periods_list),
                 board_codes=[code], ctx=ctx)
-            if res.get("failed"):
-                raise RuntimeError(f"板块资金流重采失败：{res['failed']}")
+            ensure_repair_collection(res, "板块资金流重采失败", ctx.log)
             note = f"重采资金流 {res.get('rows', 0)} 行"
             ctx.log(note)
         elif issue_type == "board_fund_stale":
@@ -1889,8 +1922,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
             res = _call_with_ctx(
                 bsvc.ingest_board_fund_flow,
                 snapshot_date=td, periods=periods_arg, ctx=ctx)
-            if res.get("failed"):
-                raise RuntimeError(f"板块资金流重采失败：{res['failed']}")
+            ensure_repair_collection(res, "板块资金流重采失败", ctx.log)
             note = f"重采资金流 {res.get('rows', 0)} 行"
             ctx.log(note)
         else:
@@ -1911,16 +1943,20 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
         if not isinstance(diagnostic, dict):
             diagnostic = {"message": str(diagnostic)}
         original = diagnostic.get("base_message", diagnostic.get("message", ""))
-        diagnostic.update(base_message=original, message=f"{original}；最近修复未完成：{str(error)[:500]}",
+        reason = repair_failure_reason(error)
+        diagnostic.update(base_message=original, message=f"{original}；最近修复未完成：{reason}",
                           last_repair={"task_id": ctx.tid, "error": str(error)[:1000],
-                                       "checked_at": datetime.now().isoformat()})
+                                       "failure_reason": reason,
+                                       "checked_at": (
+                                           shanghai_now_naive().isoformat()
+                                       )})
         c.execute("UPDATE data_quality_issue SET status='open', fix_task_id=NULL,detail=? WHERE id=?",
                   [json.dumps(diagnostic, ensure_ascii=False), issue_id])
         raise
 
     if clean:
         c.execute("UPDATE data_quality_issue SET status='resolved', resolved_at=?, fix_task_id=NULL WHERE id=?",
-                  [datetime.now(), issue_id])
+                  [shanghai_now_naive(), issue_id])
         # 扫描型板块问题可能共享同一底层缺口：例如最新日缺失同时产生 index_gap 与
         # index_gap_daily。当前问题解决后立即重扫，收敛兄弟问题并发现全源资金流恢复后的
         # 逐板块缺失；扫描失败不回滚已真实修好的当前问题，但在任务日志中明确告警。
@@ -2031,7 +2067,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
     # 冻结选择范围；按类型调度的续跑也不能把后来新检出的问题混进原任务。
     ids = ctx.checkpoint.get("fix_scope_ids", ids)
     ctx.set_checkpoint(fix_scope_ids=ids)
-    done_ids = set(int(x) for x in (ctx.checkpoint.get("issue_done_ids") or []))
+    done_ids = {int(x) for x in (ctx.checkpoint.get("issue_done_ids") or [])}
     selected = c.query_df(
         "SELECT id,code,trade_date,issue_type FROM data_quality_issue "
         "WHERE id IN (SELECT unnest(?::BIGINT[])) AND status='open' "
@@ -2073,6 +2109,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
     failed = 0
     last_msg = ""
     last_err = ""
+    failure_reason = ""
     phase_total = len(done_ids) + n
     ctx.set_phase("fix_issue", done=len(done_ids), total=phase_total,
                   phase_total=phase_total, phase_done=len(done_ids),
@@ -2081,7 +2118,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
     initial_processed = len(done_ids)
 
     def recover_issue(iid):
-        nonlocal resolved, scope_completed, failed, last_msg, last_err
+        nonlocal resolved, scope_completed, failed, last_msg, last_err, failure_reason
         if iid in processed_ids:
             return
         i = len(processed_ids) + 1
@@ -2113,6 +2150,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
         except Exception as e:  # noqa: BLE001
             failed += 1
             last_err = str(e)
+            failure_reason = repair_failure_reason(e)
             ctx.set_phase("fix_issue", done=len(done_ids), total=phase_total,
                           phase_total=phase_total, phase_done=initial_processed + i,
                           current_item=iid, issue_done_ids=sorted(done_ids))
@@ -2216,10 +2254,14 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
         msg = f"批量恢复完成：{resolved}/{n} 条已解决"
         if failed:
             msg += f"，{failed} 条恢复失败（已退回待处理，详见日志）"
-    # ok：单条=是否解决；批量=有解决且无失败时视为成功（部分失败由 ok=false 让前端给警告）
+    # ok 仅在本次冻结范围全部完成时为真；部分完成或复检未通过仍保留失败结果。
     if repair_type and n > 1:
         msg += f"，原调度范围完成 {scope_completed}/{n} 条"
     ok = (scope_completed == n)
+    if n == 1 and not ok and not failure_reason:
+        failure_reason = readable_repair_reason(
+            last_msg, "采集后复检仍未通过，目标数据尚未补齐或仍不符合质量要求，问题保持待处理",
+        )
     outcomes = {"improved": 0, "unchanged": 0, "deferred": 0,
                 "unavailable": 0, "technical_failure": failed}
     retryable = bool(failed)
@@ -2233,6 +2275,10 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
             retryable = True
             continue
         detail = json.loads(row.detail or "{}")
+        if n == 1 and detail.get("last_repair", {}).get("failure_reason"):
+            failure_reason = readable_repair_reason(
+                detail["last_repair"]["failure_reason"], failure_reason,
+            )
         outcome = detail.get("last_repair", {}).get("outcome", "unchanged")
         outcomes[outcome] = outcomes.get(outcome, 0) + 1
         if outcome != "technical_failure" and detail.get("last_repair", {}).get("technical_failure"):
@@ -2245,7 +2291,8 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
         msg += (f"；改善未完整 {outcomes['improved']}、未改善 {outcomes['unchanged']}、"
                 f"等待源更新或复查 {outcomes['deferred']}、"
                 f"当前来源无法覆盖 {outcomes['unavailable']}、技术失败 {outcomes['technical_failure']}")
-    return {"message": msg, "ok": ok, "resolved": resolved, "failed": max(failed, outcomes["technical_failure"]), "total": n,
+    return {"message": msg, "failure_reason": failure_reason if n == 1 and not ok else None,
+            "ok": ok, "resolved": resolved, "failed": max(failed, outcomes["technical_failure"]), "total": n,
             **outcomes, "retryable": bool(retryable or unresolved.empty or not ctx._intraday_groups),
             # 混有立即可重试问题时不延后整批；全部剩余问题都在等待时才提示调度延后。
             "next_retry_at": (min(deferred_until) if len(deferred_until) == len(unresolved)

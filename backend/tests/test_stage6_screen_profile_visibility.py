@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import date
 import uuid
+from datetime import date
 
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.backtest.engine import BacktestEngine
 from backend.screening.presets import PRESET_PROFILES
 from backend.screening.profile import ProfileRepo
-from backend.services.screen_score import ScreenScoreService
-from backend.backtest.engine import BacktestEngine
 from backend.services.backtest_service import BacktestService
+from backend.services.screen_score import ScreenScoreService
 from backend.tests.conftest import insert_test_role
 
 _SECRET = "test-secret-screen-profile-visibility-0123456789abcdef"
@@ -256,7 +256,7 @@ def test_backtest_resolves_visible_screen_profile_ref(pg, market, monkeypatch):
         versions = svc._resolve_versions({"profile_id": shared["profile_ref"]})
         assert versions["profile_version"] == 1
 
-        def fake_precompute(self, expression, d0, d1):  # noqa: ARG001
+        def fake_precompute(self, expression, d0, d1):
             assert expression == _EXPR
             return {}
 

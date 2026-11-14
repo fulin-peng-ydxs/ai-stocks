@@ -23,6 +23,11 @@ describe('体检摘要业务文案', () => {
   ])('无法识别的历史统计提示重新检查，不显示内部对象：%s', detail => {
     expect(summary(detail)).toBe('历史统计格式无法识别，请重新运行结构体检')
   })
+  it.each(['异常 Binder Error: 查询失败', '来源失败 https://upstream.invalid/api', 'Traceback: /Users/service/secret.py'])('普通检查摘要不回显技术错误：%s', detail => {
+    expect(summary(detail, 'ST 状态就绪')).toBe('检查详情请查看关联任务日志')
+    expect(summary(detail)).toBe('检查详情请查看关联任务日志')
+    expect(summary('', 'ST 状态就绪')).toBe('')
+  })
   it('保留业务文案及其他检查说明，不把普通说明误判为字典', () => {
     expect(summary('监控范围暂无分时质量问题')).toBe('监控范围暂无分时质量问题')
     expect(summary('异常股票交易日 1 项', '分钟结构与价格量额')).toBe('异常股票交易日 1 项')
@@ -152,4 +157,13 @@ it('分时恢复动作消费后端可修复性，其他质量类型保持原入�
   expect(intradayRecoveryAction(issue)?.tooltip).toContain('16:15后可复查')
   expect(intradayRecoveryAction(issue)?.tooltip).toContain('立即请求')
   expect(intradayRecoveryAction({ issue_type: 'capital_gap' } as any)).toBeNull()
+})
+
+it.each(['异常 SQL: SELECT secret FROM source', 'TimeoutError: 请求失败'])('分时恢复动作不回显来源技术错误：%s', reason => {
+  for (const status of ['available', 'deferred']) {
+    const issue = { issue_type: 'intraday_partial', intraday: { status, can_repair: true, reason } } as any
+    expect(intradayRecoveryAction(issue)?.tooltip).toContain('核验来源并补采')
+    expect(intradayRecoveryAction(issue)?.tooltip).not.toContain(reason)
+    expect(issue.intraday.reason).toBe(reason)
+  }
 })

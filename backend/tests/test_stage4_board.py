@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime
+from datetime import date
 from threading import Barrier, Lock
 
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.common.timeutil import shanghai_now_naive
 from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 
 _SECRET = "test-secret-stage4-board-0123456789abcdef"   # ≥32B 免 HMAC 长度告警
@@ -250,7 +251,7 @@ def test_board_run_reads_fresh_public_snapshot_only(
             "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,"
             "n_codes,param_hash,st_input_version) "
             "VALUES (%s,%s,1,%s,%s,%s,FALSE,1,%s,%s)",
-            [_PUB_DATE, preset_id, ptid, pown, datetime.now(), ph, st_version])
+            [_PUB_DATE, preset_id, ptid, pown, shanghai_now_naive(), ph, st_version])
         pg.execute(
             "INSERT INTO score_snapshot "
             "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,code,total_score,grade,rank,sub_scores) "
@@ -395,7 +396,7 @@ def test_board_run_without_date_uses_latest_market_date_and_materializes(
             "INSERT INTO score_snapshot_meta "
             "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
             "VALUES (%s,%s,1,%s,%s,%s,FALSE,1)",
-            [fresh_date, preset_id, ptid, pown, datetime.now()])
+            [fresh_date, preset_id, ptid, pown, shanghai_now_naive()])
 
         r = client.post("/api/board/run",
                         json={"profile_id": preset_id, "top": 10},
@@ -434,7 +435,7 @@ def test_board_run_materializes_stale_snapshot_with_view(
             "INSERT INTO score_snapshot_meta "
             "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
             "VALUES (%s,%s,1,%s,%s,%s,TRUE,1)",
-            [_PUB_DATE, preset_id, ptid, pown, datetime.now()])
+            [_PUB_DATE, preset_id, ptid, pown, shanghai_now_naive()])
         pg.execute(
             "INSERT INTO score_snapshot "
             "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,code,total_score,grade,rank,sub_scores) "
@@ -479,7 +480,7 @@ def test_board_run_force_rejects_non_owner_without_mutating_snapshot(
         "INSERT INTO score_snapshot_meta "
         "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes,param_hash) "
         "VALUES (%s,%s,1,%s,%s,%s,FALSE,1,%s)",
-        [_PUB_DATE, preset_id, ptid, pown, datetime.now(), param_hash(build_params())],
+        [_PUB_DATE, preset_id, ptid, pown, shanghai_now_naive(), param_hash(build_params())],
     )
     pg.execute(
         "INSERT INTO score_snapshot "
@@ -545,7 +546,7 @@ def test_board_run_force_recomputes_owner_snapshot(
         "INSERT INTO score_snapshot_meta "
         "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes,param_hash) "
         "VALUES (%s,%s,1,%s,%s,%s,FALSE,1,%s)",
-        [_PUB_DATE, profile_id, tid, uid, datetime.now(), param_hash(build_params())],
+        [_PUB_DATE, profile_id, tid, uid, shanghai_now_naive(), param_hash(build_params())],
     )
     pg.execute(
         "INSERT INTO score_snapshot "
@@ -714,7 +715,7 @@ def test_result_maintenance_only_invalidates_board_snapshot(
         "INSERT INTO score_snapshot_meta "
         "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
         "VALUES (%s,%s,1,%s,%s,%s,FALSE,1)",
-        [target, preset_id, ptid, pown, datetime.now()])
+        [target, preset_id, ptid, pown, shanghai_now_naive()])
     pg.execute(
         "INSERT INTO score_snapshot "
         "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,code,total_score,grade,rank,sub_scores) "
@@ -744,10 +745,10 @@ def test_data_admin_latest_board_date_reads_pg_public_preset(
 ):
     """数据总览只报告 PG 公共预设中与当前 ST 版本一致的最新榜单日。"""
     from backend.api.data_admin import _latest_board_date
+    from backend.limit_ladder.rules import PointInTimeSTStatus, STStatusQuality
     from backend.scoring.score_profile import ScoreProfileRepo
     from backend.scoring.snapshot import _current_param_hash
     from backend.services.stock_st_status import StockSTStatusFact, StockSTStatusService
-    from backend.limit_ladder.rules import PointInTimeSTStatus, STStatusQuality
 
     preset_id, priv_id = public_preset
     ptid, pown = PUBLIC_BOARD_OWNER
@@ -778,7 +779,7 @@ def test_data_admin_latest_board_date_reads_pg_public_preset(
             preset_id,
             ptid,
             pown,
-            datetime.now(),
+            shanghai_now_naive(),
             _current_param_hash(
                 market,
                 ScoreProfileRepo(
@@ -791,6 +792,6 @@ def test_data_admin_latest_board_date_reads_pg_public_preset(
         "INSERT INTO score_snapshot_meta "
         "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
         "VALUES (%s,%s,1,%s,%s,%s,FALSE,1)",
-        ["2099-01-05", priv_id, ptid, pown, datetime.now()])
+        ["2099-01-05", priv_id, ptid, pown, shanghai_now_naive()])
 
     assert _latest_board_date(market=market, pg=pg) == "2099-01-04"

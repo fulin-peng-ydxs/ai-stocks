@@ -89,6 +89,13 @@ def test_stage6_asset_ref_roundtrip_and_type_mismatch_rejected():
         parse_asset_ref(ref, expected_type=ASSET_TRADE_PROFILE)
 
 
+def test_asset_reference_rejects_wrong_python_type_separately_from_invalid_value():
+    with pytest.raises(TypeError, match="不是有效的资产引用"):
+        parse_asset_ref(None)
+    with pytest.raises(ValueError, match="不是有效的资产引用"):
+        parse_asset_ref("invalid-ref")
+
+
 def test_stage6_asset_ref_legacy_id_resolves_to_current_owner_only():
     parsed = resolve_asset_ref_or_legacy_id(
         "legacy_profile_id",

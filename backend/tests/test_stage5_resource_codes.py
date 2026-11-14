@@ -82,7 +82,7 @@ def _route_dep_calls(route) -> list:
 
 def _resource_codes(route) -> set[str]:
     return {
-        getattr(call, "resource_code")
+        call.resource_code
         for call in _route_dep_calls(route)
         if hasattr(call, "resource_code")
     }

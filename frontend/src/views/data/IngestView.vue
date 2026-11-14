@@ -694,7 +694,7 @@ function taskRowActions(row: AsyncTask): AppRowAction[] {
       type: 'warning',
       visible: isCancellingTask(row),
       disabled: true,
-      tooltip: taskPhaseText(row) || row.message || undefined,
+      tooltip: taskPhaseText(row) || taskOutcomeDisplay(row).message || undefined,
     },
     {
       key: 'cancel',

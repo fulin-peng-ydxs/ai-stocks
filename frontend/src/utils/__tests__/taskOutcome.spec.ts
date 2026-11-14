@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { taskOutcomeDisplay } from '@/utils/taskOutcome'
 import type { AsyncTask } from '@/api/data'
+import { ISSUE_TYPE_LABEL } from '@/api/data'
 
 const repair: Pick<AsyncTask, 'task_type' | 'status' | 'result' | 'message' | 'params'> = {
   task_type: 'fix', status: 'failed', message: '原始修复说明',
@@ -9,6 +10,61 @@ const repair: Pick<AsyncTask, 'task_type' | 'status' | 'result' | 'message' | 'p
 }
 
 describe('任务业务结果展示', () => {
+  it.each(Object.keys(ISSUE_TYPE_LABEL))('%s 单项修复优先显示明确原因，兼容缺失统计的规划失败', (issueType) => {
+    const failure_reason = '数据源请求超时，未能完成取数，请稍后重试'
+    const task = { ...repair, params: { issue_id: 1, issue_type: issueType },
+      message: 'HTTPError: https://secret.test/private', result: { failure_reason } }
+    expect(taskOutcomeDisplay(task)).toMatchObject({ message: failure_reason, tone: 'danger' })
+    const complete = taskOutcomeDisplay({ ...task, result: {
+      failure_reason, total: 1, scope_completed: 0, failed: 1,
+    } })
+    expect(complete.message).toContain(failure_reason)
+    expect(complete.message).not.toContain('secret')
+    expect(complete.message).not.toContain('查看日志')
+  })
+
+  it('分时单项等待来源保留具体缺失日期和原因，批量不冒用单项原因', () => {
+    const failure_reason = '2026-11-13 缺失 60 分钟，来源响应尚未覆盖下午时段'
+    expect(taskOutcomeDisplay({ ...repair, result: { ...repair.result, failure_reason } }).message)
+      .toContain(failure_reason)
+    expect(taskOutcomeDisplay({ ...repair, result: {
+      ...repair.result, total: 2, failure_reason,
+    } }).message).not.toContain(failure_reason)
+  })
+
+  it('失败原因仍经过安全展示检查，成功和运行中的任务不消费残留失败原因', () => {
+    const task = { ...repair, params: { issue_type: 'capital_gap' }, message: '来源尚未提供完整股本数据',
+      result: { failure_reason: '数据库异常 SQL: SELECT secret FROM private_table' } }
+    expect(taskOutcomeDisplay(task).message).toBe(task.message)
+    for (const status of ['pending', 'running', 'interrupted', 'done'] as const) {
+      expect(taskOutcomeDisplay({ ...task, status, message: '当前任务状态说明',
+        result: { ok: true, failure_reason: '不应显示的旧失败原因' },
+      }).message).toBe('当前任务状态说明')
+    }
+  })
+  it('单项 ST 修复直接保留事实缺失原因，技术原文兜底也保留质量处置入口', () => {
+    const message = '恢复失败，已退回待处理：ST 状态刷新失败：002731.SZ ST 点时事实缺 1 个行情日，示例: 2026-11-13'
+    const task = { ...repair, params: { issue_type: 'st_status_missing' },
+      message, result: { ok: false, total: 1, scope_completed: 0, failed: 1 } }
+    expect(taskOutcomeDisplay(task)).toMatchObject({ message, tone: 'danger' })
+    const legacy = taskOutcomeDisplay({ ...task,
+      message: "恢复失败，已退回待处理：ST 状态刷新失败：[{'code': '002731.SZ', 'error': '事实缺失'}]" })
+    expect(legacy.message).toContain('问题仍待处理')
+    expect(legacy.message).toContain('诊断详情')
+    expect(legacy.message).not.toContain('查看日志')
+    expect(legacy.message).not.toContain('error')
+  })
+
+  it('修复的安全兜底区分成功、失败和中断，不泄露技术细节', () => {
+    const task = { ...repair, params: { issue_type: 'stale' }, message: 'HTTPError https://example.test/private' }
+    expect(taskOutcomeDisplay({ ...task, status: 'done', result: { ok: true } }).message)
+      .toBe('恢复完成，复检通过')
+    expect(taskOutcomeDisplay({ ...task, status: 'done', result: { ok: false } }).message)
+      .toContain('恢复未完成')
+    expect(taskOutcomeDisplay({ ...task, status: 'interrupted' }).message).toContain('恢复已中断')
+    expect(taskOutcomeDisplay({ ...task, task_type: 'verify' }).message).toBe('任务执行结果请查看日志')
+  })
+
   it('真实修复的等待来源结果显示警告，保留执行状态及复查时间', () => {
     const task = { ...repair, result: { ...repair.result, next_retry_at: '2026-10-28T02:05:34.707+08:00' } }
     const display = taskOutcomeDisplay(task)

@@ -7,13 +7,12 @@ perm_ver 自增、注册建租户事务。完整用户/租户管理页留阶段�
 
 from __future__ import annotations
 
-from datetime import datetime
-
 import pandas as pd
 
 from backend.auth.constants import ROLE_TENANT_ADMIN
 from backend.common.ids import uuid_hex_id
 from backend.common.logging import get_logger
+from backend.common.timeutil import shanghai_now_naive
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
 log = get_logger("storage.user_repository")
@@ -46,7 +45,7 @@ class UserRepository:
 
     def update_last_login(self, user_id: str) -> None:
         self.pg.execute(
-            "UPDATE sys_user SET last_login_at=%s WHERE id=%s", [datetime.now(), user_id])
+            "UPDATE sys_user SET last_login_at=%s WHERE id=%s", [shanghai_now_naive(), user_id])
 
     # 注：perm_ver 自增统一走 perm_resolver.bump_perm_ver(user_ids, conn)——与业务写入同一 PG 事务原子
     # 提交（多租户 RBAC 铁律，Codex 五轮 P1）。此处不再提供独立 autocommit 的自增方法，避免绕开该事务契约。
@@ -61,24 +60,23 @@ class UserRepository:
         """
         tenant_id = uuid_hex_id()
         user_id = uuid_hex_id()
-        now = datetime.now()
-        with self.pg.transaction() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO sys_tenant (id, name, status, created_at) "
-                    "VALUES (%s, %s, 'active', %s)",
-                    [tenant_id, f"{account} 的租户", now])
-                cur.execute(
-                    "INSERT INTO sys_user "
-                    "(id, tenant_id, account, email, password_hash, role_code, status, created_at) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, 'active', %s)",
-                    [user_id, tenant_id, account, email, password_hash, ROLE_TENANT_ADMIN, now])
-                cur.execute(
-                    "UPDATE sys_tenant SET admin_user_id=%s WHERE id=%s", [user_id, tenant_id])
-                # 内置 tenant_admin 角色 id=code；绑关联表使 perm_resolver 解析到租管权限
-                cur.execute(
-                    "INSERT INTO sys_user_role (user_id, role_id) VALUES (%s, %s) "
-                    "ON CONFLICT DO NOTHING", [user_id, ROLE_TENANT_ADMIN])
+        now = shanghai_now_naive()
+        with self.pg.transaction() as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO sys_tenant (id, name, status, created_at) "
+                "VALUES (%s, %s, 'active', %s)",
+                [tenant_id, f"{account} 的租户", now])
+            cur.execute(
+                "INSERT INTO sys_user "
+                "(id, tenant_id, account, email, password_hash, role_code, status, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, 'active', %s)",
+                [user_id, tenant_id, account, email, password_hash, ROLE_TENANT_ADMIN, now])
+            cur.execute(
+                "UPDATE sys_tenant SET admin_user_id=%s WHERE id=%s", [user_id, tenant_id])
+            # 内置 tenant_admin 角色 id=code；绑关联表使 perm_resolver 解析到租管权限
+            cur.execute(
+                "INSERT INTO sys_user_role (user_id, role_id) VALUES (%s, %s) "
+                "ON CONFLICT DO NOTHING", [user_id, ROLE_TENANT_ADMIN])
         log.info("自助注册：新租户 %s + 租户管理员 %s(%s)", tenant_id, user_id, account)
         return self.get_by_id(user_id)  # type: ignore[return-value]
 
@@ -172,7 +170,7 @@ class UserRepository:
                     status: str = "active") -> str:
         """建用户 + 绑多角色（单事务）。唯一性由 DB 约束兜底。返回 user_id。"""
         user_id = uuid_hex_id()
-        now = datetime.now()
+        now = shanghai_now_naive()
         with self.pg.transaction() as conn, conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO sys_user "
@@ -187,7 +185,7 @@ class UserRepository:
     def update_user(self, user_id: str, *, email: str | None, status: str,
                     role_ids: list[str], role_code: str, conn=None) -> None:
         """更新用户资料 + 重建角色关联（全删后重插，避免残留）。conn 非空则并入调用方事务（与 bump 原子）。"""
-        now = datetime.now()
+        now = shanghai_now_naive()
         with self.pg.cursor_in(conn) as cur:
             cur.execute(
                 "UPDATE sys_user SET email=%s, status=%s, role_code=%s, updated_at=%s WHERE id=%s",
@@ -200,19 +198,19 @@ class UserRepository:
     def set_status(self, user_id: str, status: str, *, conn=None) -> None:
         with self.pg.cursor_in(conn) as cur:
             cur.execute("UPDATE sys_user SET status=%s, updated_at=%s WHERE id=%s",
-                        [status, datetime.now(), user_id])
+                        [status, shanghai_now_naive(), user_id])
 
     def reset_password(self, user_id: str, password_hash: str, *, conn=None) -> None:
         with self.pg.cursor_in(conn) as cur:
             cur.execute("UPDATE sys_user SET password_hash=%s, updated_at=%s WHERE id=%s",
-                        [password_hash, datetime.now(), user_id])
+                        [password_hash, shanghai_now_naive(), user_id])
 
     def delete_user(self, user_id: str, *, conn=None) -> None:
         """逻辑删除:打 deleted_at 标记并清角色关联（软删后不恢复,清关联避免残留计入统计/权限）。
 
         conn 非空则并入调用方事务。CASCADE 只在物理删触发,软删须显式清 sys_user_role。
         """
-        now = datetime.now()
+        now = shanghai_now_naive()
         with self.pg.cursor_in(conn) as cur:
             cur.execute("UPDATE sys_user SET deleted_at=%s, updated_at=%s WHERE id=%s",
                         [now, now, user_id])

@@ -83,10 +83,13 @@ import {
   composeComponentRuntimeValueOf,
   useStockChartComponentConfig,
 } from '@/composables/useStockChartComponentConfig'
+import type { AppRequestConfig } from '@/api/client'
 import { getApiErrorCode, getErrorMessage } from '@/utils/error'
 import { formatDateTimeMinutes } from '@/utils/dateTime'
 import { confirmProfileVisibilityReduction } from '@/utils/assetVisibility'
 import type { AppRowAction } from '@/components/rowActions'
+
+const pageErrorRequest: AppRequestConfig = { skipGlobalError: true }
 
 const route = useRoute()
 const settingsOpen = ref(false)
@@ -510,7 +513,7 @@ async function onScoreProfileSelect(key: string) {
       score_profile_id: key,
       codes: result.value.candidate_codes,
       exclude_st: excludeSt.value,
-    })
+    }, pageErrorRequest)
     if (sequence !== rankSequence) return
     result.value = { ...reranked, date: reranked.run_date }
   } catch (error) {
@@ -580,7 +583,7 @@ async function runScreenResults(background = false) {
       run_date: runDate.value || undefined,
       exclude_st: excludeSt.value,
       score_profile_id: scoreProfileRef.value,
-    })
+    }, pageErrorRequest)
     if (sequence !== runSequence) return
     if (background && result.value) mergeRelatedBoardResults(result.value.hits, r.hits)
     else result.value = { ...r, date: r.run_date }
