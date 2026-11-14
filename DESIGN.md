@@ -537,11 +537,12 @@ CSS token 和语义类统一在 `frontend/src/styles/global.css`；抽屉层级�
 - 行只设置共同控件高度和最小高度，换行、错误与说明使容器自然增高；关联阈值与操作需要作为整体换行时，内层 `AppControlRow` 声明 `wrap=false`，不逐页复制 nowrap 样式；禁止固定整行高度、拉伸所有后代或在生产测量最高控件反向设高。帮助、关闭、清空、状态标签、普通复选/开关及文字链接保留各自角色尺寸；多行字段、卡片和表格行操作不参与。全局交易纪律快捷卡片的规则动作是紧凑附属操作组，整组显式 `small`，不得把此例外推广为常规工具栏默认值。
 - 新一级 `AppForm`、独立 `AppDialog` / `PageDrawer` / `PageDrawerSurface`、`AppDataTable` 和 `AppRowActions` 同时隔离 Vue 行上下文和 CSS 高度继承；独立浮层不继承调用方旧表单的尺寸，内部新建表单仍正常继承自身档位。普通包装层、插槽不截断行作用域。日期浮层候选与数字加减图形不作为独立行控件拉伸；数字输入的右侧上下按钮按实际外框分半。
 - 按钮式单选、按钮式复选与水平库分段（`el-radio-button / el-checkbox-button / el-segmented`）通过 `global.css` 的选择控件适配共同消费上述尺寸档位，覆盖库内固定纵向内距和最小高度；普通枚举文字与 `PageSegmented` 同用表格正文字阶。不得仅凭 `size` 名称或尺寸变量已配置就判定实际高度一致。多行选项卡片保留自然高度：当前指标创建方式卡片消费 `.app-choice-button-card`，由共享适配器维护 `--app-choice-control-height / --app-choice-padding-block / --app-choice-display / --app-choice-justify`；消费页面不得用这些变量私改尺寸。按钮式单选/复选的边框由 `borders.css` 统一承接：使用实体边线与单一接缝，选中、禁用同步改变真实边线颜色，`outline` 仅用于键盘焦点。相邻项由前项绘制单条分隔线，不用负向补线或负间距抵消边宽；分散排列的选项卡片保留各自完整外框。
-- 控件宽度不按组件类型强制等宽，而按内容容量使用全局语义档位：`compact=96px`（短数值/短状态）、`short=140px`（短枚举）、`medium=180px`（普通日期/选择）、`long=220px`（搜索/较长选择）、`wide=300px`（复杂多选/长输入），需要承接容器剩余空间时使用 `fill=100%`。事实源为 `global.css` 的 `--app-control-width-*` 与 `.app-control-width-*`；普通控件由页面选择能完整承载常态内容的最小档位。`AppFilterSelect` 全选摘要优先复用当前模式的容量档位；标签模式由 `visibleTagCount=1..3` 依次映射到 `medium / long / wide`，未全选时预留对应数量的值和 `+N`；`displayMode=count` 映射到 `short`，未全选时显示“已选 N”。页面不得再叠加宽度档位。窄容器统一由 `max-width: 100%` 收缩。新增或修改控件禁止匿名内联固定宽度；确有独立几何或响应式算法的复合组件使用具名组件 class，并说明不能消费通用档位的理由。
+- 控件宽度不按组件类型强制等宽，而按内容容量使用全局语义档位：`compact=96px`（短数值/短状态）、`short=140px`（短枚举）、`medium=180px`（普通日期/选择）、`long=220px`（搜索/较长选择）、`wide=300px`（复杂多选/长输入），需要承接容器剩余空间时使用 `fill=100%`。事实源为 `global.css` 的 `--app-control-width-*` 与 `.app-control-width-*`；普通控件由页面选择能完整承载常态内容的最小档位。`AppFilterSelect` 全选摘要优先复用当前模式的容量档位；标签模式由 `visibleTagCount=1..3` 依次映射到 `medium / long / wide`，未全选时预留对应数量的值和 `+N`；`displayMode=count` 映射到 `short`，未全选时显示“已选 N”。页面不得再叠加宽度档位。窄容器统一由 `max-width: 100%` 收缩。新增或修改控件禁止匿名内联固定宽度；确有独立几何或响应式算法的复合组件使用具名组件 class，并说明不能消费通用档位的理由。 具名复合布局仍以公共容量 token 计算，不复制固定像素容量；`check:contracts` 的宽度检查覆盖输入、搜索、选择、日期、根包装器及单控件包裹层的模板与 CSS，拒绝匿名固定容量、动态宽度覆盖和多选的第二套宽度。静态通过不证明文案装载和最终层叠，仍按验证规范复核实际消费者。
 - **下拉选型与宽度契约**：普通单选/表单下拉使用 `AppSelect`，列表筛选与紧凑多选编辑使用 `AppFilterSelect`，需要远程搜索或批量校验的业务多选基于 `AppMultiSelect`，已有领域选择器（如 `MarketBenchmarkSelect`、`IndicatorSelect`、`AssetProfileSelect`）继续复用其业务组件；这些组件内部统一使用 `AppSelect`。页面与业务组件禁止直接使用 `el-select` / `ElSelect` 或 HTML `<select>`；`el-option` / `el-option-group` 继续用于声明候选项。不要为视觉统一合并不同领域的选项、空值或搜索逻辑。
 - 通用多选行为由 `AppMultiSelect` 统一维护：`options` 提供本地候选，`loadOptions` 提供远程搜索，`resolveValues` 批量确认有效值，`normalizeValue` 声明值规范化，`pasteSeparator` 声明分隔规则（默认逗号/换行，保留名称内部空格），`contextKey` 隔离业务上下文。默认只接受已有候选，显式 `allowCreate` 才允许新值；基础组件负责粘贴拆分、稳定去重、加载/错误状态和过期响应保护，领域组件只提供来源、校验和文案，禁止再复制这些机制。切换上下文、修改选择、禁用或卸载时，未完成的粘贴不得回填；清空搜索不得抹掉粘贴拒绝提示。
 - `AppSelect` 与 `AppFilterSelect` 默认允许输入搜索；候选较多的页面、指标、方案、用户等选择器保留此能力，少量固定枚举可显式设置 `:filterable="false"`。本地搜索默认按候选 `label` 过滤，不自动匹配编码、说明或拼音；股票等远程搜索继续由领域组件提供 `remote` / `remote-method`。输入搜索只过滤候选，不提交业务值；仅业务明确允许新增值时显式启用 `allow-create`。
 - `AppSelect` 输入宽度由 `width` 声明 `compact / short / medium / long / wide / fill` 语义档位（如 `width="short"`）；复合组件可用具名 class 承接自身布局。输入宽度与展开面板宽度分开管理：默认 `fitInputWidth=false`，面板至少与触发器等宽，按候选内容自然扩展；扩展上限取 `global.css` 的 `--app-select-panel-max-width` 与应用画布安全宽度中的较小值，触发器本身更宽时以触发器宽度为下限。超过上限的选项换行，不用省略号隐藏完整候选名称。
+- `KlineRangeSelect` 的输入容量由共享组件持有，消费页不再传入像素宽度。`AppDatePicker` 的单日期和日期范围默认消费公共长档、宽档；日期时间范围需要同时承载两个完整时间值，按两个普通选择容量加分隔与图标留白计算，几何只由共享日期适配器持有，并受容器最大宽度约束。表单需填满列时使用 `fill`，页面不复制日期控件宽度规则。
 - `fit-input-width` 只用于有明确布局理由的等宽面板，当前登记例外为 `StockIngestScopeFields` 的「采集方案」：名称加长说明按两行结构在触发器宽度内换行。新增例外须在所属组件说明理由；禁止调用方用固定像素面板宽度或私有 CSS 绕过默认策略。默认定位和下方回退由 `AppSelect` 统一消费 `floatingPlacement.ts`，调用方无需重复传参；复合选项仍须声明唯一 `popper-class`。全站逐控件契约测试检查原生入口、宽度与复合选项边界。
 - 主按钮数量限制针对**实色强调层级**：同一页面主工作区原则上最多一个不带 `plain / text / link` 的实色 `primary` 主按钮；弹窗、抽屉等独立操作上下文分别判断。`type="primary"` 表达主操作语义，`plain / text / link` 表达强调程度，不能把所有主色控件计作实色主按钮。
 - 多个独立同级任务的主入口允许并列使用 `primary + plain`，不要求页面没有其它按钮；每个局部操作组仍需清楚区分主次。不得仅因页面出现多个主色轻量入口就统一降为中性，也不把普通次要命令一律升级为主色。行级和列表项的轻量文字操作继续按 `AppRowActions` 的首个高频动作规则处理。
@@ -905,12 +906,11 @@ Tooltip、popover 和说明提示不得溢出到左侧菜单；说明性文字�
 空状态的视觉事实源在 `frontend/src/styles/global.css`，后续新页面必须复用同一套类名和全局表格空态，不允许临时手写不同图标、不同字号或不同位置。
 
 - `el-table` 无数据时默认使用全局表格空态：居中图标 + 当前表格文案。新页面优先使用表格默认空态；需要补充操作时，`<template #empty>` 使用 `app-table-empty` / `app-table-empty__description` 只提供业务文案和按钮，不得嵌套 `el-empty`、自绘图标或另一套布局。该规则由 `table-system.spec.ts` 契约测试拦截。
-- 非表格的大区域空态使用 `<el-empty class="app-empty" description="..." />`。
-- 小面板、抽屉、弹窗内空态使用 `<el-empty class="app-empty app-empty--compact" description="..." />`。
-- 很小的内嵌区域使用 `<el-empty class="app-empty app-empty--tiny" description="..." />`。
+- 页面和业务组件的入口按[四态反馈总则](#四态反馈总则)选择，不直接使用 `el-empty`。底层 `el-empty` 只由 `AppStateBlock` 持有，入口门禁按组件来源守卫；标准表格空态继续由 `AppDataTable` 承接。
+- `app-empty`、`app-empty--compact`、`app-empty--tiny` 是共享状态组件内部的视觉类。调用方通过 `AppStateBlock.size` 或所属异步区域的状态尺寸选择容量；恢复动作放入共享 `extra` 插槽，保留说明文字。
 - 不适合放图标的原生小表格、日志区、选择器下拉空态使用 `class="app-empty-inline"`。
 - 文案按业务场景保留差异，例如“运行后在这里展示筛选结果”“暂无历史版本”“请选择左侧角色”；统一的是图标、字号、颜色、间距和居中方式。
-- 避免同一区域出现两套空态：若表格后面还需要自定义 `el-empty`，必须用 `v-if` 在有数据时才渲染表格，无数据时只渲染一套统一空态。
+- 避免同一区域出现两套空态：需要额外空态动作时优先使用表格空态插槽；确需替换整个表格时以互斥条件渲染共享状态入口，不在表格后并列第二套空态。
 - 空态按“插画（可选）→标题→一句说明→动作区”组成。页面和大面板可使用插画；侧栏、字段、选择器和主状态旁的次级区域使用 `inline` 短文案，不使用插画。说明到动作区统一间隔 `--app-space-3`，动作间隔 `--app-space-2`。
 - 空态最多提供一个实体主动作，且仅用于创建首条数据、完成必要前置选择、清除当前筛选或返回可用上下文；没有可执行恢复路径时不放按钮。次要动作使用 plain、text 或 link。
 

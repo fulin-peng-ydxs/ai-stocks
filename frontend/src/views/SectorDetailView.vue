@@ -477,7 +477,7 @@ onMounted(async () => {
               :loading="detailLoading || chartLoading || memberLoading"
               @click="refreshSectorDetail"
             >刷新</el-button>
-            <TradeDatePicker v-model="tradeDate" default-latest class="detail-date" />
+            <TradeDatePicker v-model="tradeDate" default-latest class="app-control-width-long" />
             <PageSettingsTrigger :dirty="pageDirty" @click="settingsOpen = true" />
           </AppControlRow>
         </div>
@@ -576,7 +576,7 @@ onMounted(async () => {
               data-testid="sector-detail-chart-section"
             >
               <template #actions>
-                <KlineRangeSelect v-model="viewDays" width="112px" test-id="sector-detail-range" />
+                <KlineRangeSelect v-model="viewDays" test-id="sector-detail-range" />
                 <AppIconButton
                   :label="splitCompact ? '查看成分股' : (memberPanelVisible ? '收起成分股，仅看走势' : '显示成分股')"
                   data-testid="sector-detail-toggle-members"
@@ -749,9 +749,6 @@ onMounted(async () => {
 }
 .detail-actions {
   gap: var(--app-space-2);
-}
-.detail-date {
-  width: 164px;
 }
 .sector-detail {
   display: flex;

@@ -120,6 +120,10 @@ npm test -- src/layout/__tests__/pageRegistry.spec.ts
 
 ### 共享控件的专项验证
 
+`check:contracts` 同时执行输入与选择容量检查，覆盖静态/动态宽度、语义档位、私有 CSS、导入别名、根包装器、单控件包裹层及多选容量覆盖；`control-width-contract.spec.ts` 维护合法与违规样例、真实消费者和空态入口。宽度 token 与表内容量估算保持一致，日期时间范围等复合几何在共享组件持有。改动后浏览器复核长内容、受限容器、表内分组换行及日期浮层，不能用静态通过代替实际宽度和内容可达性。
+
+金额数字输入的真实库回归运行 `npx vitest run src/components/__tests__/MoneyInputNumber.spec.ts`：覆盖格式化录入后失焦与加减的显示/模型一致性，以及手数切金额时可访问上下限的同步和移除。Element Plus 的对应兼容修复维护在锁版本补丁中，ESM/CJS 同步；升级时复核用例和补丁安装，不能在各页面分别处理失焦回填。
+
 执行 `npm run check:typography`：解析全部生产 Vue/CSS/TS，检查字体变量定义、角色类型、别名循环、CSS 简写、模板内联样式、脚本字体对象及 HTML tooltip 样式；品牌例外不豁免整个文件。`npm run build` 自动先执行该守卫。
 
 `typography-audit.spec.ts` 以违规夹具证明拦截有效；`typography-spacing-system.spec.ts` 保留语义组件、导航、微字号选择器和间距契约；`chartTypography.spec.ts` 验证图表真实读取 CSS token。

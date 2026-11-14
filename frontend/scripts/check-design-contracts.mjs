@@ -59,7 +59,7 @@ function roleTargets(template, roles = designContracts.styleRoles) {
       if (root && (root === node || role.descendants)) targets.push({ node, role,
         classes: [...classes, ...(root === node ? [role.className] : [])],
         exclusions: [...staticClassesOf(node), ...(root === node ? [role.className] : [])],
-        ancestors: ancestors.flatMap(classesOf) })
+        ancestors: ancestors.flatMap(classesOf), ancestorNodes: ancestors })
     }
   })
   return targets
@@ -121,6 +121,161 @@ function targetsSelector(selector, target) {
   return !!tag && (tag === target.node.tag || tag === target.role.elementTag
     && target.role.tags?.some(name => canonicalTag(name) === canonicalTag(target.node.tag))) && (!cssClasses(selector).length
     || cssClasses(selector).some(name => target.ancestors.includes(name)))
+}
+
+const controlWidthKinds = ['compact', 'short', 'medium', 'long', 'wide', 'fill']
+const controlWidthProperties = /^(?:(?:min-|max-)?(?:width|inline-size)|flex(?:-basis)?|--app-control-inline-width)$/
+const absoluteLength = /(?:^|[^\w-])[\d.]+(?:px|r?em|ch|ex|cm|mm|in|pt|pc)\b/i
+
+function widthClassesOf(node) {
+  const names = [...classesOf(node)]
+  for (const prop of attributes(node, 'class').filter(prop => prop.type === 7)) {
+    walkScript(scriptAst('width-class.ts', `(${attributeText(prop)})`), part => {
+      if (ts.isPropertyAssignment(part) && !ts.isComputedPropertyName(part.name)) {
+        names.push(part.name.getText().replace(/['"]/g, ''))
+      }
+    })
+  }
+  return [...new Set(names)]
+}
+
+/** :is/:where 的每个分支各自判断最终目标，不能把日期清空图标误认成日期外框。 */
+function widthSelectorBranches(selector) {
+  const match = /:(?:is|where)\(/.exec(selector)
+  if (!match) return [selector]
+  const start = match.index + match[0].length
+  let end = start
+  while (end < selector.length && nestingDepth(selector.slice(match.index, end + 1)) > 0) end++
+  if (end >= selector.length) return [selector]
+  return postcss.list.comma(selector.slice(start, end)).flatMap(branch =>
+    widthSelectorBranches(selector.slice(0, match.index) + branch + selector.slice(end + 1)))
+}
+
+/** 容量与高度分别守卫；复用角色推导和选择器匹配，覆盖别名、根包装器及外部 CSS。 */
+export function auditControlWidths(sources) {
+  const baseRoles = designContracts.styleRoles.filter(role =>
+    ['el-input', 'el-input-number', 'el-select', 'el-date-editor'].includes(role.className))
+    .map(role => ({ ...role, tags: [...(role.tags ?? []), ...(role.className === 'el-select'
+      ? ['StockCodeMultiSelect', 'StockOptionSelect', 'AssetProfileSelect'] : role.className === 'el-input'
+        ? ['input', 'textarea'] : [])] }))
+  const roles = inferStyleRoles(sources, baseRoles)
+  const violations = []
+  const prepared = sources.map(item => {
+    const parts = sourceParts(item.file, item.source)
+    // 模板使用 import 别名时仍以真实组件角色判断，不按变量名放行。
+    const localRoles = roles.map(role => ({ ...role, tags: [...(role.tags ?? [])] }))
+    const filterTags = new Set(['appfilterselect'])
+    for (const script of parts.scripts) walkScript(scriptAst(item.file, script), node => {
+      if (!ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)
+        || node.importClause?.isTypeOnly) return
+      const module = node.moduleSpecifier.text
+      const aliases = []
+      if (module.endsWith('.vue') && node.importClause?.name) {
+        aliases.push([module.split('/').at(-1).slice(0, -4), node.importClause.name.text])
+      }
+      const bindings = node.importClause?.namedBindings
+      if (/^element-plus(?:\/|$)/.test(module) && bindings && ts.isNamedImports(bindings)) {
+        for (const entry of bindings.elements) if (!entry.isTypeOnly) {
+          aliases.push([(entry.propertyName ?? entry.name).text, entry.name.text])
+        }
+      }
+      for (const [name, alias] of aliases) {
+        if (canonicalTag(name) === 'appfilterselect') filterTags.add(canonicalTag(alias))
+        for (const role of localRoles) {
+          if (role.tags.some(tag => canonicalTag(tag) === canonicalTag(name))) role.tags.push(alias)
+        }
+      }
+    })
+    const targets = roleTargets(parts.template, localRoles).map(target => ({ ...target,
+      classes: [...target.classes, ...widthClassesOf(target.node)],
+    }))
+    // 只有一个真实控件的透明包裹层不能成为固定宽度的旁路；多字段网格仍归布局所有者。
+    const nodes = new Map()
+    for (const target of targets) target.ancestorNodes.forEach((node, index, ancestors) => {
+      nodes.set(node, ancestors.slice(0, index))
+    })
+    for (const [node, ancestors] of [...nodes].sort((a, b) => b[1].length - a[1].length)) {
+      const elementChildren = node.children.filter(child => child.type === 1)
+      if (elementChildren.length !== 1 || node.tag === 'template') continue
+      const child = targets.find(target => target.node === elementChildren[0])
+      if (child && !targets.some(target => target.node === node)) targets.push({
+        ...child, node, classes: widthClassesOf(node), exclusions: staticClassesOf(node), ancestors: ancestors.flatMap(widthClassesOf),
+      })
+    }
+    return { ...item, ...parts, targets, filterTags }
+  })
+  const externalTargets = prepared.flatMap(item => item.targets)
+  for (const item of prepared) {
+    const report = (where, detail) => violations.push(`${item.file}: ${where} 控件宽度${detail}`)
+    const inspectDeclaration = (where, property, value, inline = false) => {
+      if (!controlWidthProperties.test(property)) return
+      // 百分比填充、零值收缩和 flex 排列属于容器布局；绝对容量必须来自公共 token。
+      const privateVariable = /var\(/.test(value)
+        && !/var\(--app-(?:control-(?:width-[\w-]+|inline-width)|select-panel-max-width)\b/.test(value)
+      if (absoluteLength.test(value) || privateVariable || inline && /^(?:var|calc|min|max|clamp)\(/.test(value)) {
+        report(where, `不得私设 ${property}: ${value}；使用语义档位或具名复合布局的公共容量 token`)
+      }
+    }
+    const targets = item.file.endsWith('.css') ? externalTargets : item.targets
+    const rootTargets = roles.map(role => ({ node: { tag: '' }, role,
+      classes: roleClasses(role), exclusions: [], ancestors: [] }))
+    for (const style of item.styles) postcss.parse(style.content).walkRules(rule => {
+      const declarations = rule.nodes.filter(node => node.type === 'decl' && controlWidthProperties.test(node.prop))
+      if (!declarations.length) return
+      const selectors = rule.selectors.flatMap(widthSelectorBranches)
+      // 无本地实例的 :deep(.el-input) 同样受控，但装饰子元素不作为控件根。
+      if (![...rootTargets, ...targets].some(target => selectors.some(selector => targetsSelector(selector, target)))) {
+        declarations.filter(decl => decl.prop === '--app-control-inline-width')
+          .forEach(decl => inspectDeclaration(rule.selector, decl.prop, decl.value))
+        return
+      }
+      declarations.forEach(decl => inspectDeclaration(rule.selector, decl.prop, decl.value))
+    })
+    for (const target of item.targets) {
+      const node = target.node
+      for (const prop of attributes(node, 'width')) {
+        const value = attributeText(prop)
+        if (prop.type === 6 && !controlWidthKinds.includes(value)) report(`<${node.tag}>`, `属性必须使用语义档位，收到 ${value}`)
+        if (prop.type === 7) {
+          const binding = (target.role.bindings ?? []).some(binding => binding.file === item.file
+            && canonicalTag(binding.tag) === canonicalTag(node.tag) && binding.name === 'width'
+            && binding.expression === value && binding.reason?.trim())
+          if (!binding) report(`<${node.tag}>`, '动态 width 须由共享适配器的精确绑定契约承接')
+        }
+      }
+      const filter = item.filterTags.has(canonicalTag(node.tag))
+      const single = attributes(node, 'multiple').some(prop => prop.type === 7 && attributeText(prop) === 'false')
+      if (filter && !single && (widthClassesOf(node).some(name => /^app-control-width-/.test(name))
+        || attributes(node, 'width').length)) report(`<${node.tag}>`, '多选容量由标签数或数量模式持有，不得叠加宽度档位')
+      for (const prop of attributes(node, 'style')) {
+        const value = attributeText(prop)
+        if (prop.type === 6) postcss.parse(`x{${value}}`).walkDecls(decl =>
+          inspectDeclaration('<inline style>', decl.prop, decl.value, true))
+        else {
+          const binding = (target.role.bindings ?? []).some(binding => binding.file === item.file
+            && canonicalTag(binding.tag) === canonicalTag(node.tag) && binding.name === 'style'
+            && binding.expression === value && binding.reason?.trim())
+          if (binding) continue
+          const ast = scriptAst(item.file, `(${value})`)
+          const expression = ast.statements[0]?.expression
+          const object = expression && ts.isParenthesizedExpression(expression) ? expression.expression : expression
+          if (!object || !ts.isObjectLiteralExpression(object)) {
+            report('<dynamic style>', '不可静态确认，改用语义档位或具名复合布局')
+            continue
+          }
+          for (const part of object.properties) {
+            if (!ts.isPropertyAssignment(part) || ts.isComputedPropertyName(part.name)) {
+              report('<dynamic style>', '不得通过展开或动态属性绕过容量检查')
+              continue
+            }
+            const key = part.name.getText(ast).replace(/['"]/g, '').replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)
+            if (controlWidthProperties.test(key)) report('<dynamic style>', `不得动态覆盖 ${key}；使用语义档位`)
+          }
+        }
+      }
+    }
+  }
+  return [...new Set(violations)]
 }
 
 export function auditSharedStyles(sources, roles = designContracts.styleRoles, { verifyOwners = false } = {}) {
@@ -778,6 +933,7 @@ export function auditMessagePolicy(sources) {
 
 export function auditDesignContracts(sources = designSources(), design = readFileSync(join(frontendRoot, '../DESIGN.md'), 'utf8')) {
   return [
+    ...auditControlWidths(sources),
     ...auditComponentEntries(sources), ...auditStyleComponents(sources, undefined, undefined, { verifyRegistry: true }),
     ...auditSharedStyles(sources, designContracts.styleRoles, { verifyOwners: true }), ...auditRuntimeStyles(sources, undefined, { verifyOwners: true }), ...auditColorSources(sources),
     ...auditButtonKinds(sources),

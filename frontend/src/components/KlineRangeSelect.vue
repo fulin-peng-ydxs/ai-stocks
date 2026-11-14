@@ -3,7 +3,7 @@ import AppSelect from '@/components/AppSelect.vue'
 // K 线快捷范围下拉：选项来自全局偏好 useKlinePrefs，所有看 K 线的页面统一。
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 
-defineProps<{ modelValue: number; width?: string; testId?: string }>()
+defineProps<{ modelValue: number; testId?: string }>()
 defineEmits<{ 'update:modelValue': [value: number] }>()
 const { options } = useKlinePrefs()
 </script>
@@ -11,7 +11,7 @@ const { options } = useKlinePrefs()
 <template>
   <AppSelect
     :model-value="modelValue"
-    :style="{ width: width || '130px' }"
+    width="short"
     :data-testid="testId"
     @update:model-value="$emit('update:modelValue', $event)"
   >

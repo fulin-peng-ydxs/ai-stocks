@@ -139,6 +139,7 @@ watch(
           <p>旧修订为不可变快照，切换查看不会改变当前记录。</p>
         </div>
         <AppFilterSelect
+          class="app-control-width-medium"
           data-testid="revision-selector"
           :model-value="String(selectedRevision)"
           :options="revisionOptions"
@@ -276,7 +277,6 @@ watch(
 .detail-card { padding: var(--app-space-4); }
 .detail-card h4 { margin: 0 0 var(--app-space-3); }
 .revision-switcher h4 { margin-bottom: var(--app-space-1); }
-.revision-switcher :deep(.app-filter-select) { width: 180px; flex: none; }
 .fact-grid { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: var(--app-space-3); margin: 0; }
 .fact-grid > div { padding-bottom: var(--app-space-2); border-bottom: 1px solid var(--el-border-color-lighter); }
 .fact-grid dt { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
@@ -293,7 +293,6 @@ watch(
 @container app-viewport (max-width: 760px) {
   .detail-hero, .revision-switcher { align-items: stretch; flex-direction: column; }
   .hero-facts { justify-content: flex-start; }
-  .revision-switcher :deep(.app-filter-select) { width: 100%; }
   .fact-grid, .rule-grid { grid-template-columns: 1fr; }
 }
 </style>

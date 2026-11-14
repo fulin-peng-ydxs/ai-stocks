@@ -583,7 +583,6 @@ const menuPageTitle = useMenuPageTitle()
                 end-placeholder="结束时间"
                 value-format="YYYY-MM-DDTHH:mm:ss"
                 range-separator="至"
-                class="audit-date"
               />
             </AppControlItem>
           </template>
@@ -625,13 +624,13 @@ const menuPageTitle = useMenuPageTitle()
             />
           </template>
           <template #resource>
-            <AppSearchInput v-model="filters.resource_code" placeholder="资源码" style="width: 160px" @search="search" />
+            <AppSearchInput v-model="filters.resource_code" placeholder="资源码" class="app-control-width-long" @search="search" />
           </template>
           <template #actor>
-            <AppSearchInput v-model="filters.actor_keyword" placeholder="处理人" style="width: 140px" @search="search" />
+            <AppSearchInput v-model="filters.actor_keyword" placeholder="处理人" class="app-control-width-short" @search="search" />
           </template>
           <template #target>
-            <AppSearchInput v-model="filters.target_keyword" placeholder="目标对象" style="width: 160px" @search="search" />
+            <AppSearchInput v-model="filters.target_keyword" placeholder="目标对象" class="app-control-width-long" @search="search" />
           </template>
           <template #commands>
             <el-button data-testid="audit-reset-filters" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
@@ -869,15 +868,6 @@ const menuPageTitle = useMenuPageTitle()
 }
 .metric b.warn { color: var(--el-color-warning); }
 .metric b.danger { color: var(--el-color-danger); }
-.audit-date {
-  width: 300px;
-  max-width: 100%;
-}
-.w110 { width: 110px; }
-.w120 { width: 120px; }
-.w140 { width: 140px; }
-.w160 { width: 160px; }
-.w180 { width: 180px; }
 .mono {
   font-family: var(--app-font-family-mono);
   font-size: var(--app-font-size-caption);

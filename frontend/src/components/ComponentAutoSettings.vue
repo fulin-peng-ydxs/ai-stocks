@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import { formatNumber } from '@/utils/numberFormat'
 import AppSelect from '@/components/AppSelect.vue'
 /**
@@ -1139,7 +1140,7 @@ function setSort(slotId: string, field: string, order: string): void {
 
     </SettingsGroup>
   </div>
-  <el-empty v-else class="app-empty app-empty--compact" description="该页暂无可配置的组件" />
+  <AppStateBlock state="empty" v-else size="compact" description="该页暂无可配置的组件" />
 </template>
 
 <style scoped>

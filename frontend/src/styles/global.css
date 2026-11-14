@@ -1182,7 +1182,7 @@ html.dark {
 /* 复合候选项共用行布局；各选择器仍以独立 popper-class 约束自己的浮层。 */
 .app-select-popper:not(.app-select-popper--fit) .el-select-dropdown {
   /* 原生 min-width 保留触发器下限；超过内容上限或画布可用宽度后换行。 */
-  max-width: min(var(--app-select-panel-max-width), calc(100cqw - 24px));
+  max-width: min(var(--app-select-panel-max-width), calc(100cqw - var(--app-space-5)));
 }
 .app-select-popper .el-select-dropdown__item {
   height: auto;

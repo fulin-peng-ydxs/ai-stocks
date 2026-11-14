@@ -895,7 +895,7 @@ const menuPageTitle = useMenuPageTitle()
               <AppSelect
                 v-model="form.dependency_delay_unit"
                 data-testid="schedule-dependency-delay-unit"
-                class="delay-unit-select"
+                width="compact"
               >
                 <el-option v-for="item in DELAY_UNIT_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
               </AppSelect>
@@ -921,7 +921,7 @@ const menuPageTitle = useMenuPageTitle()
               <AppSelect
                 v-model="form.retry_delay_unit"
                 data-testid="schedule-retry-delay-unit"
-                class="delay-unit-select"
+                width="compact"
               >
                 <el-option v-for="item in DELAY_UNIT_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
               </AppSelect>
@@ -981,7 +981,6 @@ const menuPageTitle = useMenuPageTitle()
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .page-head-actions { display: flex; gap: var(--app-space-2); align-items: center; }
-.delay-unit-select { width: 96px; }
 .blk-head { display: flex; justify-content: space-between; align-items: center; }
 .form-section-divider { margin: var(--app-space-4) 0 14px; }
 </style>

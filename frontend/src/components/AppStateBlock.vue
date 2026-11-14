@@ -89,6 +89,8 @@ const defaultDescription = computed(() => {
       :class="emptyClass"
       :description="$slots.default || (title && description) ? '' : (description || title || defaultTitle)"
     >
+      <!-- el-empty 会将空 description 回退为“暂无数据”；自定义正文需显式占用描述插槽。 -->
+      <template v-if="$slots.default || (title && description)" #description />
       <template v-if="$slots.default || $slots.extra || (title && description)" #default>
         <slot>
           <div v-if="title && description" class="app-state-block__empty-copy">

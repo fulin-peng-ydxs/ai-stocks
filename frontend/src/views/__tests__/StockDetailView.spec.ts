@@ -1358,7 +1358,8 @@ describe('StockDetailView 三图数据协调', () => {
 
     expect(primary.findComponent(KlineRangeSelectStub).exists()).toBe(true)
     expect(pageActions.findComponent(KlineRangeSelectStub).exists()).toBe(false)
-    expect(wrapper.findComponent(KlineRangeSelectStub).props('width')).toBe('112px')
+    // 容量归共享选择器，详情页只安排位置，不再覆盖像素宽度。
+    expect(wrapper.findComponent(KlineRangeSelectStub).props('width')).toBeUndefined()
     expect(chartPanel.get('.app-workspace-pane__header').text()).toContain('行情走势')
     expect(auxiliaryPanel.get('.app-workspace-pane__eyebrow').text()).toBe('分析概览')
     expect(auxiliaryPanel.get('.app-workspace-pane__header h3').text()).toBe('2026-07-23')

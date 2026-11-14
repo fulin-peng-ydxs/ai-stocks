@@ -771,7 +771,7 @@ const menuPageTitle = useMenuPageTitle()
                   <template #category>
                     <AppFilterSelect
                       v-model="assetCategory"
-                      class="asset-category"
+                      class="app-control-width-medium"
                       :options="categoryOptions"
                       :multiple="false"
                       placeholder="业务分类"
@@ -793,7 +793,7 @@ const menuPageTitle = useMenuPageTitle()
                   <template #keyword>
                     <AppSearchInput
                       v-model="assetKeyword"
-                      class="asset-search"
+                      class="app-control-width-wide"
                       placeholder="搜索中文名、表名或用途"
                       :debounce-ms="150"
                       data-testid="overview-asset-search"
@@ -1032,7 +1032,7 @@ const menuPageTitle = useMenuPageTitle()
                 <template #actions>
                   <StockCodeMultiSelect
                     v-model="sqSelected"
-                    class="overview-stock-filter"
+                    class="app-control-width-wide"
                     test-id="overview-stock-codes"
                     aria-label="逐股体检股票范围"
                     @change="onSqSelect"
@@ -1318,8 +1318,6 @@ const menuPageTitle = useMenuPageTitle()
 .expand { padding: 6px 14px; }
 .exp-line { font-size: var(--app-font-size-table); margin-bottom: 6px; color: var(--el-text-color-regular); }
 .fld-tbl { margin-top: 8px; }
-.asset-search { width: 280px; max-width: 100%; }
-.asset-category { width: 190px; max-width: 100%; }
 .asset-legacy-toggle {
   display: inline-flex;
   align-items: center;
@@ -1364,7 +1362,6 @@ const menuPageTitle = useMenuPageTitle()
 .layer-progress .el-progress { flex: 1; min-width: 0; }
 .layer-progress > span { font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-primary); }
 
-.overview-stock-filter { width: min(460px, 100%); }
 .txt-warn { color: var(--app-warning-text); font-weight: var(--app-font-weight-section); }
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 

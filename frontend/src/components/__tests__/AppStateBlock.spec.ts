@@ -2,6 +2,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { defineComponent, h } from 'vue'
+import { ElEmpty } from 'element-plus'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import appStateBlockSource from '@/components/AppStateBlock.vue?raw'
 
@@ -61,6 +62,17 @@ const stubs = {
 }
 
 describe('AppStateBlock', () => {
+  it('真实空态的自定义说明不叠加组件库默认暂无数据文案', () => {
+    const wrapper = mount(AppStateBlock, {
+      props: { state: 'empty', title: '当日无买卖或调整记录', description: '没有需要核对的有效规则。', size: 'tiny' },
+      slots: { extra: '<button>返回记录</button>' },
+      global: { components: { ElEmpty }, stubs: { ...stubs, ElEmpty: false } },
+    })
+    expect(wrapper.get('.el-empty__description').text()).toBe('')
+    expect(wrapper.get('.app-state-block__empty-copy').text()).toContain('当日无买卖或调整记录')
+    expect(wrapper.get('.app-state-block__actions').text()).toBe('返回记录')
+    wrapper.unmount()
+  })
   it('loading 使用骨架屏并显示说明', () => {
     const wrapper = mount(AppStateBlock, {
       props: { state: 'loading', title: '正在加载数据...', skeletonRows: 4 },

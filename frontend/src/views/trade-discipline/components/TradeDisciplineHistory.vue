@@ -177,7 +177,7 @@ defineExpose({ reload: load })
         }"
       >
         <template #date>
-          <AppControlItem class="date-filter">
+          <AppControlItem class="app-control-width-wide">
             <div class="date-range" aria-label="交易日期范围">
               <TradeDatePicker :model-value="query.date_from || null" clearable placeholder="开始交易日" @update:model-value="updateQuery({ date_from: $event || undefined })" />
               <span>至</span>
@@ -186,22 +186,22 @@ defineExpose({ reload: load })
           </AppControlItem>
         </template>
         <template #rule>
-          <AppFilterSelect class="rule-filter" data-testid="history-rule-filter" :model-value="query.rule_id || ''" :options="ruleOptions" :multiple="false" placeholder="全部规则" @change="updateQuery({ rule_id: String($event) || undefined })" />
+          <AppFilterSelect class="app-control-width-medium" data-testid="history-rule-filter" :model-value="query.rule_id || ''" :options="ruleOptions" :multiple="false" placeholder="全部规则" @change="updateQuery({ rule_id: String($event) || undefined })" />
         </template>
         <template #assessment>
-          <AppFilterSelect class="assessment-filter" data-testid="history-assessment-filter" :model-value="query.assessment || ''" :options="checkinAssessmentOptions" :multiple="false" placeholder="全部结果" @change="updateQuery({ assessment: (String($event) || undefined) as CheckinHistoryQuery['assessment'] })" />
+          <AppFilterSelect class="app-control-width-short" data-testid="history-assessment-filter" :model-value="query.assessment || ''" :options="checkinAssessmentOptions" :multiple="false" placeholder="全部结果" @change="updateQuery({ assessment: (String($event) || undefined) as CheckinHistoryQuery['assessment'] })" />
         </template>
         <template #operation>
-          <AppFilterSelect class="operation-filter" data-testid="history-operation-filter" :model-value="noOperationValue" :options="operationOptions" :multiple="false" placeholder="全部操作状态" @change="updateQuery({ no_operation: booleanValue($event) })" />
+          <AppFilterSelect class="app-control-width-medium" data-testid="history-operation-filter" :model-value="noOperationValue" :options="operationOptions" :multiple="false" placeholder="全部操作状态" @change="updateQuery({ no_operation: booleanValue($event) })" />
         </template>
         <template #amended>
-          <AppFilterSelect class="amended-filter" data-testid="history-amended-filter" :model-value="amendedValue" :options="amendedOptions" :multiple="false" placeholder="全部修订状态" @change="updateQuery({ amended: booleanValue($event) })" />
+          <AppFilterSelect class="app-control-width-medium" data-testid="history-amended-filter" :model-value="amendedValue" :options="amendedOptions" :multiple="false" placeholder="全部修订状态" @change="updateQuery({ amended: booleanValue($event) })" />
         </template>
         <template #stock>
-          <StockOptionSelect class="stock-filter" :model-value="selectedStock" clearable @update:model-value="selectStock" />
+          <StockOptionSelect class="app-control-width-long" :model-value="selectedStock" clearable @update:model-value="selectStock" />
         </template>
         <template #reason>
-          <AppSearchInput class="reason-filter" v-model="reasonText" placeholder="违规原因" @search="updateQuery({ reason: reasonText.trim() || undefined })" />
+          <AppSearchInput class="app-control-width-medium" v-model="reasonText" placeholder="违规原因" @search="updateQuery({ reason: reasonText.trim() || undefined })" />
         </template>
         <template #commands>
           <el-button data-testid="history-reset-filters" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
@@ -271,13 +271,6 @@ defineExpose({ reload: load })
 <style scoped>
 .history-workspace { width: 100%; height: 100%; min-height: 0; min-width: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--app-space-3); }
 .history-filter-card { flex: none; }
-.date-filter { width: 300px; max-width: 100%; }
-.rule-filter { width: 180px; }
-.assessment-filter { width: 120px; }
-.operation-filter,
-.amended-filter { width: 150px; }
-.stock-filter { width: 200px; }
-.reason-filter { width: 180px; }
 .date-range { display: grid; grid-template-columns: minmax(110px, 1fr) auto minmax(110px, 1fr); align-items: center; gap: var(--app-space-2); }
 .date-range :deep(.el-date-editor) { width: 100%; }
 </style>

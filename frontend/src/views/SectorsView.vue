@@ -1072,13 +1072,13 @@ const menuPageTitle = useMenuPageTitle()
             <TradeDatePicker
               v-model="tradeDate"
               placeholder="交易日期"
-              class="date-picker"
+              class="app-control-width-long"
               @update:model-value="onDateChange"
             />
             <AppSearchInput
               v-model="keyword"
               placeholder="搜索板块"
-              class="keyword-input"
+              class="app-control-width-long"
               maxlength="50"
               data-testid="sectors-keyword"
               @search="search"
@@ -1361,7 +1361,7 @@ const menuPageTitle = useMenuPageTitle()
                   test-id="sectors-benchmark"
                 />
               </div>
-              <KlineRangeSelect v-if="chartMode === 'kline'" v-model="rangeDays" width="112px" test-id="sectors-range" />
+              <KlineRangeSelect v-if="chartMode === 'kline'" v-model="rangeDays" test-id="sectors-range" />
               <AppSelect
                 v-else-if="chartMode === 'compare' && compareMetric === 'cum'"
                 v-model="compareWindow"
@@ -1525,12 +1525,6 @@ const menuPageTitle = useMenuPageTitle()
 .filter-row {
   flex-wrap: wrap;
 }
-.date-picker {
-  width: 150px;
-}
-.keyword-input {
-  width: 160px;
-}
 .chart-panel {
   min-width: 0;
   min-height: 0;
@@ -1592,9 +1586,6 @@ const menuPageTitle = useMenuPageTitle()
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
   white-space: nowrap;
-}
-.benchmark-control :deep(.app-filter-select) {
-  width: 124px;
 }
 .chart-stage {
   position: relative;

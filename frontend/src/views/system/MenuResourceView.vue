@@ -706,7 +706,7 @@ const menuPageTitle = useMenuPageTitle()
                   aria-label="功能点"
                   :border="tableBorder('resourceTable')"
                 >
-                  <AppTableColumn v-if="resourceColVisible('code')" label="功能码" prop="code" role="key">
+                  <AppTableColumn v-if="resourceColVisible('code')" label="功能码" prop="code" role="key" control-width="long">
                     <template #default="{ row: r }">
                       <el-input
                         v-if="editingId === r.id"
@@ -720,18 +720,19 @@ const menuPageTitle = useMenuPageTitle()
                       </div>
                     </template>
                   </AppTableColumn>
-                  <AppTableColumn v-if="resourceColVisible('name')" label="名称" prop="name">
+                  <AppTableColumn v-if="resourceColVisible('name')" label="名称" prop="name" control-width="medium">
                     <template #default="{ row: r }">
                       <el-input v-if="editingId === r.id" v-model="resDraft.name" size="small" placeholder="名称" />
                       <span v-else>{{ r.name }}</span>
                     </template>
                   </AppTableColumn>
-                  <AppTableColumn v-if="resourceColVisible('type')" label="类型" prop="type" role="status">
+                  <AppTableColumn v-if="resourceColVisible('type')" label="类型" prop="type" role="status" control-width="short">
                     <template #default="{ row: r }">
                       <AppSelect
                         v-if="editingId === r.id"
                         v-model="resDraft.type"
                         size="small"
+                        width="short"
                       >
                         <el-option label="接口" value="api" />
                         <el-option label="按钮" value="button" />
@@ -741,19 +742,18 @@ const menuPageTitle = useMenuPageTitle()
                       </el-tag>
                     </template>
                   </AppTableColumn>
-                  <AppTableColumn v-if="resourceColVisible('apiPath')" label="绑定接口" prop="api_path" role="description">
+                  <AppTableColumn v-if="resourceColVisible('apiPath')" label="绑定接口" prop="api_path" role="description" control-width="wide">
                     <template #default="{ row: r }">
-                      <div v-if="editingId === r.id" class="mr-bind">
+                      <AppControlRow v-if="editingId === r.id" size="small">
                         <AppSelect
                           v-if="resDraft.type === 'api'"
                           v-model="resDraft.apiMethod"
-                          size="small"
-                          class="mr-method-select"
+                          class="app-control-width-short"
                         >
                           <el-option v-for="mth in ['GET','POST','PUT','DELETE']" :key="mth" :label="mth" :value="mth" />
                         </AppSelect>
-                        <el-input v-model="resDraft.apiPath" size="small" class="app-code-input" placeholder="/api/…（按钮可空）" />
-                      </div>
+                        <el-input v-model="resDraft.apiPath" class="app-code-input app-control-width-long" placeholder="/api/…（按钮可空）" />
+                      </AppControlRow>
                       <span v-else class="mono" :class="{ dim: !r.api_path }">{{ bindingText(r) }}</span>
                     </template>
                   </AppTableColumn>
@@ -777,7 +777,7 @@ const menuPageTitle = useMenuPageTitle()
               </AppControlRow>
             </div>
           </template>
-          <el-empty v-else class="app-empty app-empty--compact" description="请选择左侧菜单节点" />
+          <AppStateBlock state="empty" v-else size="compact" description="请选择左侧菜单节点" />
         </div>
       </AppScrollArea>
     </template>
@@ -905,8 +905,6 @@ const menuPageTitle = useMenuPageTitle()
 }
 .resource-table :deep(.mr-edit-row > td) { background: var(--el-fill-color-lighter); }
 .resource-table :deep(.dim) { color: var(--el-text-color-placeholder); }
-.mr-bind { display: flex; gap: var(--app-space-control-gap); }
-.mr-method-select { flex: 0 0 92px; }
 .mr-code-cell { display: flex; align-items: center; gap: var(--app-space-2); white-space: nowrap; }
 .mr-detail-foot { border-top: 1px solid var(--el-border-color-lighter); padding: 12px 16px;
   display: flex; align-items: center; justify-content: space-between; }

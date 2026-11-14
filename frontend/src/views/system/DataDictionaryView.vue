@@ -537,9 +537,11 @@ const menuPageTitle = useMenuPageTitle()
             @retry="loadTypes(true)"
           >
             <template #empty>
-              <el-empty class="app-empty app-empty--compact" description="暂无字典类型">
-                <el-button v-permission="'dict:type-manage'" type="primary" plain @click="openCreateType">新建类型</el-button>
-              </el-empty>
+              <AppStateBlock state="empty" size="compact" description="暂无字典类型">
+                <template #extra>
+                  <el-button v-permission="'dict:type-manage'" type="primary" plain @click="openCreateType">新建类型</el-button>
+                </template>
+              </AppStateBlock>
             </template>
             <template #default>
               <div

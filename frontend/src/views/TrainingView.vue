@@ -742,7 +742,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
                 :formatter="isAmount ? formatMoneyInput : undefined"
                 :parser="isAmount ? parseMoneyInput : undefined"
                 controls-position="right"
-                style="width:160px"
+                class="app-control-width-medium"
               />
               <span class="unit">{{ isAmount ? '元' : '手' }}</span>
               <span class="hint" v-if="!isAmount">
@@ -775,7 +775,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
             </AppControlRow>
 
             <div class="ops">
-              <el-input v-model="order.reason" placeholder="操作理由（选填，记录买卖思路）" size="default" style="width:280px" />
+              <el-input v-model="order.reason" placeholder="操作理由（选填，记录买卖思路）" size="default" class="app-control-width-wide" />
               <el-button type="primary" plain :loading="actionPending" aria-keyshortcuts="ArrowRight" @click="nextDay">
                 下一交易日
                 <el-icon class="el-icon--right"><ArrowRight /></el-icon>
@@ -959,10 +959,10 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
         </PageSettingItem>
         <!-- 本次切到多只时也要能调整回合数，不要求先改长期默认模式。 -->
         <PageSettingItem v-if="settings.mode === 'multi' || (phase === 'config' && sessionConfig.mode === 'multi')" label="回合数（只）" layout="inline">
-          <el-input-number v-model="settings.n_rounds" :min="1" :max="20" style="width:140px" />
+          <el-input-number v-model="settings.n_rounds" :min="1" :max="20" class="app-control-width-short" />
         </PageSettingItem>
         <PageSettingItem label="每回合连续交易日" layout="inline">
-          <el-input-number v-model="settings.window_days" :min="5" :max="60" style="width:140px" />
+          <el-input-number v-model="settings.window_days" :min="5" :max="60" class="app-control-width-short" />
         </PageSettingItem>
         <PageSettingItem label="初始资金（元）" layout="inline">
           <el-input-number
@@ -972,7 +972,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
             :formatter="formatMoneyInput"
             :parser="parseMoneyInput"
 
-            style="width:160px"
+            class="app-control-width-medium"
           />
         </PageSettingItem>
       </PageSettingSection>

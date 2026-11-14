@@ -1296,7 +1296,6 @@ onBeforeUnmount(() => {
             <template #actions>
               <KlineRangeSelect
                 v-model="viewDays"
-                width="112px"
                 test-id="stock-detail-range"
               />
               <AppIconButton
@@ -1465,7 +1464,7 @@ onBeforeUnmount(() => {
               </div>
               <div class="cond-col">
                 <div class="cond-title">卖出条件（{{ tradeEval.sell.op === 'AND' ? '需全部满足' : '满足任一' }}）</div>
-                <el-empty v-if="!tradeEval.sell.conds.length" class="app-empty app-empty--tiny" description="无卖出条件" />
+                <AppStateBlock state="empty" v-if="!tradeEval.sell.conds.length" size="tiny" description="无卖出条件" />
                 <div v-for="(cc, i) in tradeEval.sell.conds" :key="i" class="cond-line">
                   <el-tag :type="cc.met ? 'success' : 'info'" size="small" effect="plain">
                     {{ cc.met ? '✓' : '✗' }}
@@ -1630,7 +1629,7 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
 }
 .stock-context__select {
-  width: min(240px, 30cqw);
+  width: min(var(--app-control-width-long), 30cqw);
 }
 .stock-context__groups {
   min-width: 0;
@@ -1642,7 +1641,7 @@ onBeforeUnmount(() => {
   font-size: var(--app-font-size-caption);
 }
 .stock-context__group-select {
-  width: min(260px, 32cqw);
+  width: min(var(--app-control-width-wide), 32cqw);
 }
 .nav-pos {
   font-weight: var(--app-font-weight-regular);
@@ -1661,7 +1660,7 @@ onBeforeUnmount(() => {
   font-size: var(--app-font-size-caption);
 }
 .trade-profile-select {
-  flex: 1 1 240px;
+  flex: 1 1 var(--app-control-width-long);
   min-width: 0;
 }
 .hint {
@@ -1707,7 +1706,7 @@ onBeforeUnmount(() => {
 
   .stock-context__select,
   .stock-context__group-select {
-    width: min(100%, 320px);
+    width: min(100%, var(--app-control-width-wide));
   }
 }
 </style>

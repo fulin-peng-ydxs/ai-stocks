@@ -629,7 +629,7 @@ const menuPageTitle = useMenuPageTitle()
           <AppControlRow class="page-head-actions">
             <AppSelect
               v-model="selectedPageKey"
-              class="page-select"
+              width="medium"
               aria-label="选择配置页面"
               :disabled="contextLocked"
             >
@@ -952,9 +952,6 @@ const menuPageTitle = useMenuPageTitle()
   display: flex;
   align-items: center;
   gap: var(--app-space-2);
-}
-.page-select {
-  width: 180px;
 }
 .layout-pages-view {
   height: 100%;

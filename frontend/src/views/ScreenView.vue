@@ -851,7 +851,7 @@ const menuPageTitle = useMenuPageTitle()
         <section class="editor editor-screen">
           <AppForm class="screen-profile-form" data-testid="screen-profile-editor">
             <div class="ed-head app-cluster-md">
-              <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
+              <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" class="app-control-width-long" />
               <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
                 <el-button class="app-button-badge" text bg type="primary" data-testid="screen-profile-version" @click="openVersions">v{{ curVersion }}</el-button>
               </AppHoverInfo>
@@ -968,7 +968,7 @@ const menuPageTitle = useMenuPageTitle()
                     v-model="c.expr"
                     :disabled="profileReadonly"
                     placeholder="如：COUNT(C > REF(C,1), 5) == 5"
-                    style="flex: 1; min-width: 260px"
+                    class="app-control-width-wide" style="flex: 1"
                   />
                 </template>
 
@@ -1025,7 +1025,7 @@ const menuPageTitle = useMenuPageTitle()
               @ready="onScoreProfilesReady"
               @set-default="onSetScreenScoreDefault"
             />
-            <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" default-latest style="width: 160px" />
+            <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" default-latest class="app-control-width-long" />
             <el-button v-permission="'screen:run'" type="primary" :loading="loading" :disabled="!scoreProfileRef" @click="run">
               <template #icon><el-icon><VideoPlay /></el-icon></template>
               运行筛选
@@ -1096,7 +1096,7 @@ const menuPageTitle = useMenuPageTitle()
     <template #overlays>
     <!-- 历史版本 -->
     <AppDetailDrawer v-model="verVisible" :title="`历史版本 · ${loadedProfile?.name || ''}`" size="xl">
-      <el-empty v-if="!versions.length" class="app-empty app-empty--compact" description="暂无历史版本" />
+      <AppStateBlock state="empty" v-if="!versions.length" size="compact" description="暂无历史版本" />
       <div v-for="v in versions" :key="v.version" class="ver-item app-surface">
         <div class="ver-head">
           <b>v{{ v.version }}</b>

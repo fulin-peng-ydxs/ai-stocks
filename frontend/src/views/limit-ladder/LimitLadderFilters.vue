@@ -71,7 +71,7 @@ function resetFilters(): void {
       }"
     >
       <template #context>
-        <div class="limit-ladder__date">
+        <div class="app-control-width-long">
           <TradeDatePicker :model-value="tradeDate" placeholder="选择交易日" data-testid="limit-ladder-date" @update:model-value="$emit('update:tradeDate',$event)" />
         </div>
         <PageSegmented class="limit-ladder__window" :model-value="filters.window" :options="windowOptions" tone="primary" test-id="limit-ladder-window" aria-label="统计窗口" @update:model-value="updateFilters({window:Number($event) as LimitLadderFilters['window']})" />
@@ -86,7 +86,7 @@ function resetFilters(): void {
         <AppFilterSwitch :model-value="filters.oneWordOnly" label="仅一字板" test-id="limit-ladder-one-word" @update:model-value="updateFilters({oneWordOnly:$event})" />
       </template>
       <template #keyword>
-        <AppSearchInput v-model="keywordDraft" class="limit-ladder__search" placeholder="代码 / 名称" data-testid="limit-ladder-keyword" @search="searchKeyword" />
+        <AppSearchInput v-model="keywordDraft" class="app-control-width-medium" placeholder="代码 / 名称" data-testid="limit-ladder-keyword" @search="searchKeyword" />
       </template>
       <template #commands>
         <el-button class="limit-ladder__command" data-testid="limit-ladder-reset" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
@@ -105,8 +105,5 @@ function resetFilters(): void {
 </template>
 
 <style scoped>
-.limit-ladder__date { width: 220px; }
-.limit-ladder__date :deep(.el-date-editor) { width: 100%; }
-.limit-ladder__search { width: 180px; }
 .limit-ladder__command { flex: 0 0 auto; }
 </style>

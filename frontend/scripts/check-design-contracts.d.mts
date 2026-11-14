@@ -1,4 +1,5 @@
 export interface Source { file: string; source: string }
+export function auditControlWidths(sources: Source[]): string[]
 export interface RuntimeStyleOwner {
   file: string
   operation: string

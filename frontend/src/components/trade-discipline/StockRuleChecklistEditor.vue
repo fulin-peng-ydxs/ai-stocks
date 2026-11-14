@@ -101,6 +101,6 @@ defineExpose({ reveal })
 .stock-checklist-editor__tools { margin-bottom: var(--app-space-3); }
 .stock-checklist-editor__fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 0 var(--app-space-3); }
 .stock-checklist-editor__row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--app-space-2); }
-.stock-checklist-editor__row > .el-textarea { flex: 1 1 240px; min-width: 0; }
-.stock-checklist-editor__row > :deep(.el-select) { flex: 0 1 140px; min-width: 0; }
+.stock-checklist-editor__row > .el-textarea { flex: 1 1 var(--app-control-width-long); min-width: 0; }
+.stock-checklist-editor__row > :deep(.el-select) { flex: 0 1 var(--app-control-width-short); min-width: 0; }
 </style>

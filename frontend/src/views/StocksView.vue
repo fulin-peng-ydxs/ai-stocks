@@ -1422,7 +1422,7 @@ const menuPageTitle = useMenuPageTitle()
     <AppDialog v-model="editVisible" title="编辑分组" size="medium">
       <AppForm label-width="80px">
         <el-form-item label="分组名" required><el-input v-model="editForm.name" maxlength="30" show-word-limit /></el-form-item>
-        <el-form-item label="建组日期"><TradeDatePicker v-model="editForm.group_date" clearable style="width: 200px" /></el-form-item>
+        <el-form-item label="建组日期"><TradeDatePicker v-model="editForm.group_date" clearable class="app-control-width-long" /></el-form-item>
         <el-form-item label="分组说明"><el-input v-model="editForm.description" type="textarea" :rows="2" /></el-form-item>
         <el-form-item label="颜色">
           <el-color-picker

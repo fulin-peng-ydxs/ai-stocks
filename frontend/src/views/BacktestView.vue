@@ -2175,12 +2175,12 @@ const menuPageTitle = useMenuPageTitle()
                     </AppSelect>
                   </AppControlItem>
                   <AppControlItem label="取值">
-                    <el-input v-model="robustValuesText" style="width: 220px" placeholder="逗号分隔，如 5,10,15,20" />
+                    <el-input v-model="robustValuesText" class="app-control-width-long" placeholder="逗号分隔，如 5,10,15,20" />
                   </AppControlItem>
                 </template>
                 <template v-else>
                   <AppControlItem label="样本切分日">
-                    <TradeDatePicker v-model="robustSplit" placeholder="区间内某交易日" style="width: 160px" />
+                    <TradeDatePicker v-model="robustSplit" placeholder="区间内某交易日" class="app-control-width-long" />
                   </AppControlItem>
                 </template>
                 <el-button v-permission="'backtest:robust'" type="primary" plain :loading="robustLoading" @click="runRobustTest">运行</el-button>
@@ -2217,7 +2217,7 @@ const menuPageTitle = useMenuPageTitle()
                 { seg: '样本内', ...inOutRes.in_sample },
                 { seg: '样本外', ...inOutRes.out_sample },
               ]" size="small" border embedded>
-                <AppTableColumn label="样本">
+                <AppTableColumn label="样本" role="description">
                   <template #default="{ row }"><b>{{ row.seg }}</b><span class="opt-range">{{ row.range[0] }}~{{ row.range[1] }}</span></template>
                 </AppTableColumn>
                 <AppTableColumn label="累计收益" role="number">
@@ -2558,7 +2558,8 @@ const menuPageTitle = useMenuPageTitle()
   max-width: 100%;
 }
 .history-run-select { flex: 1 1 var(--app-control-width-wide); min-width: 0; }
-.opt-range { float: right; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-left: 18px; }
+/* 样本名称与完整日期范围分两层展示，列容量由 description 角色承接。 */
+.opt-range { display: block; white-space: nowrap; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .dlg-legend { display: flex; align-items: center; gap: var(--app-space-4); margin-bottom: 8px; font-size: var(--app-font-size-caption); }
 .dlg-legend .lg.buy { color: var(--el-color-primary); font-weight: var(--app-font-weight-section); }
 .dlg-legend .lg.sell { color: var(--el-color-warning); font-weight: var(--app-font-weight-section); }
@@ -2730,7 +2731,6 @@ const menuPageTitle = useMenuPageTitle()
 .block-title { font-weight: var(--app-font-weight-section); margin-bottom: 10px; display: flex; align-items: baseline; gap: var(--app-density-control-gap, var(--app-space-2)); }
 .block-title .sub { font-weight: var(--app-font-weight-regular); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .bench-choice { margin-left: auto; display: flex; align-items: center; gap: var(--app-space-2); font-weight: var(--app-font-weight-regular); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.bench-choice :deep(.app-filter-select) { width: 120px; }
 .export-btn { margin-left: auto; }
 .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--app-space-3); }
 .metric { background: var(--app-section-bg); border-radius: var(--layout-card-radius); padding: 12px 14px; }

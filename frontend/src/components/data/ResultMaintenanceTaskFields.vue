@@ -49,7 +49,7 @@ function patch(value: Partial<ResultMaintenanceTaskForm>) {
       placeholder="选择交易日"
       :clearable="false"
       :data-testid="`${testIdPrefix}-trade-date`"
-      style="width: 100%"
+      class="app-control-width-fill"
       @update:model-value="patch({ trade_date: String($event || '') })"
     />
     <AppFormHelp v-if="taskType === 'limit_ladder_invalidate'">固定日期表示从该日开始向后失效。</AppFormHelp>

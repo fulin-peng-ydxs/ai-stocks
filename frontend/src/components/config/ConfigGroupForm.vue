@@ -254,7 +254,7 @@ function collapsed(key: string): boolean {
 }
 .field-inherited { display: block; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .field-control {
-  width: min(100%, 280px);
+  width: 100%;
   min-width: 0;
 }
 .field-control.is-bool {
@@ -266,7 +266,6 @@ function collapsed(key: string): boolean {
 .field-control :deep(.el-select),
 .field-control :deep(.el-input-number) {
   width: 100%;
-  max-width: 280px;
 }
 .field-meta {
   display: flex;

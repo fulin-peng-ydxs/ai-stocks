@@ -35,6 +35,10 @@
     "ElDescriptionsItem": {
       "owner": null,
       "replacement": "AppDetailField"
+    },
+    "ElEmpty": {
+      "owner": "components/AppStateBlock.vue",
+      "replacement": "AppAsyncRegion / AppStateBlock"
     }
   },
   "styleRoles": [

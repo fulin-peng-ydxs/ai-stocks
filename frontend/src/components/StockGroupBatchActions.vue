@@ -161,7 +161,7 @@ async function removeFromGroup(): Promise<void> {
         <el-input v-model="createForm.name" placeholder="如：5月观察龙头" maxlength="30" show-word-limit />
       </el-form-item>
       <el-form-item label="建组日期">
-        <TradeDatePicker v-model="createForm.group_date" placeholder="默认最新交易日" clearable style="width: 200px" />
+        <TradeDatePicker v-model="createForm.group_date" placeholder="默认最新交易日" clearable class="app-control-width-long" />
         <AppFormHelp>这批股票加入日期默认 = 建组日期（涨幅基准）</AppFormHelp>
       </el-form-item>
       <el-form-item label="分组说明">
@@ -193,7 +193,7 @@ async function removeFromGroup(): Promise<void> {
         </AppSelect>
       </el-form-item>
       <el-form-item label="加入日期">
-        <TradeDatePicker v-model="addDate" placeholder="默认最新交易日" clearable style="width: 200px" />
+        <TradeDatePicker v-model="addDate" placeholder="默认最新交易日" clearable class="app-control-width-long" />
         <AppFormHelp>作为这批股票的涨幅基准</AppFormHelp>
       </el-form-item>
     </AppForm>

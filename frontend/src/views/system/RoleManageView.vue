@@ -422,7 +422,7 @@ const menuPageTitle = useMenuPageTitle()
                 :node="node" :state-of="stateOf" :toggle="toggle" :readonly="treeReadonly"
               />
             </template>
-            <el-empty v-else class="app-empty app-empty--compact" description="请选择左侧角色" />
+            <AppStateBlock state="empty" v-else size="compact" description="请选择左侧角色" />
           </AppScrollArea>
 
           <div class="rm-detail-foot" v-if="activeRole">

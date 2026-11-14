@@ -463,7 +463,7 @@ onBeforeUnmount(() => {
         <KlineRangeSelect
           v-else-if="mode === 'kline'"
           :model-value="klineRange"
-          width="112px"
+
           test-id="stock-analysis-kline-range"
           @update:model-value="emit('update:klineRange', $event)"
         />

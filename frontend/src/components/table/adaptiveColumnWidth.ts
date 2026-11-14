@@ -98,7 +98,7 @@ const MAX_LEADING_CONTROLS = 4
 const COLUMN_WIDTH_GRID = 8
 const TABLE_CELL_HORIZONTAL_INSET = 24
 // 与 global.css 的 --app-control-width-* 档位一致；统一供编辑列和多选列估算。
-const TABLE_CONTROL_WIDTHS: Record<TableControlWidth, number> = {
+export const TABLE_CONTROL_WIDTHS: Record<TableControlWidth, number> = {
   compact: 96, short: 140, medium: 180, long: 220, wide: 300,
 }
 const FILTER_SELECT_WIDTH_BY_VISIBLE_TAG_COUNT = [

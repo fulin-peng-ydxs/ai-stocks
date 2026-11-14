@@ -1882,7 +1882,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <section class="editor editor-score">
             <AppForm class="score-profile-form" data-testid="score-profile-editor">
               <div class="ed-head app-cluster-md">
-                <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
+                <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" class="app-control-width-long" />
                 <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
                   <el-button class="app-button-badge" text bg type="primary" @click="openScoreVersions">v{{ curVersion }}</el-button>
                 </AppHoverInfo>
@@ -2002,23 +2002,31 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                         <span v-if="row.scoring.type === 'bool'" class="tip">满足=100 / 否=0</span>
                         <!-- linear -->
                         <div v-else-if="row.scoring.type === 'linear'" class="linear-row">
-                          <span>0分→</span>
-                          <el-input-number v-model="row.scoring.min" size="small" :controls="false" :disabled="profileReadonly" style="width: 78px" />
-                          <span>100分→</span>
-                          <el-input-number v-model="row.scoring.max" size="small" :controls="false" :disabled="profileReadonly" style="width: 78px" />
+                          <span class="app-cluster-sm">
+                            <span>0分→</span>
+                            <el-input-number v-model="row.scoring.min" size="small" :controls="false" :disabled="profileReadonly" class="app-control-width-compact" />
+                          </span>
+                          <span class="app-cluster-sm">
+                            <span>100分→</span>
+                            <el-input-number v-model="row.scoring.max" size="small" :controls="false" :disabled="profileReadonly" class="app-control-width-compact" />
+                          </span>
                         </div>
                         <!-- band -->
                         <div v-else class="band-box">
                           <div v-for="(b, bi) in row.scoring.bands" :key="bi" class="band-row">
-                            <el-input-number v-model="b[0]" size="small" :controls="false" :disabled="profileReadonly" style="width: 64px" />
-                            <span>~</span>
-                            <el-input-number v-model="b[1]" size="small" :controls="false" :disabled="profileReadonly" style="width: 64px" />
-                            <span>→</span>
-                            <el-input-number v-model="b[2]" size="small" :controls="false" :disabled="profileReadonly" :min="0" :max="100" style="width: 64px" />
-                            <span>分</span>
-                            <AppIconButton label="删除分段" size="xs" tone="danger" :disabled="profileReadonly" @click="removeBand(row, bi)">
-                              <el-icon><Close /></el-icon>
-                            </AppIconButton>
+                            <span class="app-cluster-sm">
+                              <el-input-number v-model="b[0]" size="small" :controls="false" :disabled="profileReadonly" class="app-control-width-compact" />
+                              <span>~</span>
+                              <el-input-number v-model="b[1]" size="small" :controls="false" :disabled="profileReadonly" class="app-control-width-compact" />
+                            </span>
+                            <span class="app-cluster-sm">
+                              <span>→</span>
+                              <el-input-number v-model="b[2]" size="small" :controls="false" :disabled="profileReadonly" :min="0" :max="100" class="app-control-width-compact" />
+                              <span>分</span>
+                              <AppIconButton label="删除分段" size="xs" tone="danger" :disabled="profileReadonly" @click="removeBand(row, bi)">
+                                <el-icon><Close /></el-icon>
+                              </AppIconButton>
+                            </span>
                           </div>
                           <el-button text type="primary" size="small" :disabled="profileReadonly" @click="addBand(row)">
                             <template #icon><el-icon><Plus /></el-icon></template>
@@ -2310,7 +2318,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 
           <AppForm class="editor">
             <div class="ed-head app-cluster-md">
-              <el-input v-model="tEditName" :disabled="tReadonly" placeholder="方案名称" style="width: 190px" />
+              <el-input v-model="tEditName" :disabled="tReadonly" placeholder="方案名称" class="app-control-width-long" />
               <AppHoverInfo v-if="tCurVersion && !tIsNew" content="点击查看历史版本">
                 <el-button class="app-button-badge" text bg type="primary" @click="openTradeVersions">v{{ tCurVersion }}</el-button>
               </AppHoverInfo>
@@ -2623,7 +2631,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
     <template #overlays>
     <!-- 评分方案历史版本 -->
     <AppDetailDrawer v-model="sVerVisible" :title="`历史版本 · ${editName || ''}`" size="xl">
-      <el-empty v-if="!sVersions.length" class="app-empty app-empty--compact" description="暂无历史版本" />
+      <AppStateBlock state="empty" v-if="!sVersions.length" size="compact" description="暂无历史版本" />
       <div v-for="v in sVersions" :key="v.version" class="ver-item app-surface">
         <div class="ver-head">
           <b>v{{ v.version }}</b>
@@ -2638,7 +2646,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 
     <!-- 买卖方案历史版本 -->
     <AppDetailDrawer v-model="tVerVisible" :title="`历史版本 · ${tEditName || ''}`" size="xl">
-      <el-empty v-if="!tVersions.length" class="app-empty app-empty--compact" description="暂无历史版本" />
+      <AppStateBlock state="empty" v-if="!tVersions.length" size="compact" description="暂无历史版本" />
       <div v-for="v in tVersions" :key="v.version" class="ver-item app-surface">
         <div class="ver-head">
           <b>v{{ v.version }}</b>
@@ -2963,6 +2971,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .linear-row,
 .band-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--app-space-control-gap);
   font-size: var(--app-font-size-caption);

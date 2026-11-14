@@ -486,7 +486,7 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
   gap: var(--app-space-2);
 }
 .asset-search__q {
-  flex: 1 1 200px;
+  flex: 1 1 var(--app-control-width-long);
   min-width: 0;
 }
 .asset-search__body {

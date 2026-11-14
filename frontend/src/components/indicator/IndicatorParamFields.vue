@@ -31,7 +31,7 @@ function setValue(name: string, value: number | undefined): void {
       :max="param.max ?? undefined"
       :step="param.type === 'int' ? 1 : 0.1"
       :size="size"
-      class="indicator-param-field__input"
+      class="app-control-width-compact"
       @update:model-value="(value: number | undefined) => setValue(param.name, value)"
     />
   </span>
@@ -47,5 +47,4 @@ function setValue(name: string, value: number | undefined): void {
 }
 .indicator-param-field label { white-space: nowrap; }
 .indicator-param-field small { color: var(--el-text-color-placeholder); }
-.indicator-param-field__input { width: 76px; }
 </style>
