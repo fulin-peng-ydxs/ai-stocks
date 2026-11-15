@@ -15,6 +15,7 @@ import secrets
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+from backend.devtools.e2e_market_data import cleanup_st_daily, seed_non_st_daily
 from backend.devtools.environment_guard import require_e2e_write_enabled
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient, get_client
@@ -330,7 +331,11 @@ def _seed_runtime(runtime: Any, target_date: date) -> None:
 
 def _cleanup(client: DuckDBClient) -> dict[str, int]:
     dates = fixture_dates()
-    removed: dict[str, int] = {}
+    removed: dict[str, int] = {
+        "stock_st_status_daily": cleanup_st_daily(
+            client, STOCK_CODES, dates[0], dates[-1], source="e2e-correlation",
+        ),
+    }
     statements = (
         (
             "stock_board_correlation",
@@ -455,6 +460,10 @@ def seed_stock_board_correlation(
         )
         daily_rows = []
         metric_rows = []
+        seed_non_st_daily(
+            client, ((code, day) for code in STOCK_CODES for day in dates),
+            source="e2e-correlation",
+        )
         for stock_index, code in enumerate(STOCK_CODES, 1):
             previous = 10.0 + stock_index
             for point, day in enumerate(dates):

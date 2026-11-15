@@ -134,6 +134,10 @@ export async function installAuthSnapshot(
   await page.addInitScript(([key, value]) => {
     window.localStorage.setItem(key, JSON.stringify(value))
   }, [AUTH_STORAGE_KEY, snapshot] as const)
+  await installDisplayScaleBaseline(page)
+}
+
+export async function installDisplayScaleBaseline(page: Page): Promise<void> {
   // 页面布局 E2E 固定 100% 显示比例，避免系统自动比例与视口矩阵叠加后污染 CSS 几何断言。
   // 自动比例策略由独立单测与 display-scale fixture 验证。
   await page.addInitScript((key) => {

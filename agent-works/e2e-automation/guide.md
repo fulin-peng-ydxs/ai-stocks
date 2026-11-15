@@ -6,6 +6,8 @@ Playwright 用于少量、稳定、浏览器独有的关键用户路径回归。
 
 `frontend/playwright.config.ts` 固定测试目录 `frontend/e2e/`、端口 `5181` 和 trace/screenshot/video 策略。登录、数据预置、偏好读写和控制台收集复用 `frontend/e2e/helpers/`；修改流程时核对配置、helper 与相关入口的一致性。
 
+精确 CSS 几何断言统一使用 `helpers/auth.ts::installDisplayScaleBaseline()` 固定 100% 显示比例；登录后的认证快照已调用它，登录前测试须显式调用。自动比例策略仍由对应单测和显示比例专项验证，不能靠放宽像素断言掩盖测试基线差异。
+
 ## Playwright 准入条件
 
 新增 E2E 必须同时满足以下条件；任一不满足时，使用领域/服务/API 测试、Vitest、构建或交互式浏览器复核：
@@ -29,6 +31,16 @@ Playwright 用于少量、稳定、浏览器独有的关键用户路径回归。
 - 禁止每次页面交付默认跑模块整组、全量、多视口或完整设计 E2E。只有发布门禁、共享基础设施变更、全局设计改造或用户明确要求时才执行；一般改动即使需要 E2E，也只跑受影响的单文件、单项目和必要视口。
 
 ## 运行入口与生命周期
+
+### CI 专项入口
+
+已整合的隔离 CI 专项、变更必检清单、文件归属登记和严格报告判据统一见 [CI 编排与持续维护](../architecture/continuous-integration.md#机制隔离浏览器专项与既有-runner-复用)。从仓库根目录执行 `scripts/run-ci.sh assess` 判断影响，`run e2e-shell`、`run e2e-sectors`、`run e2e-correlation`、`run e2e-trade` 或 `run e2e-backtest` 执行登记范围；GitHub 手动运行 `CI` 时填写同名 suite。
+
+这些入口使用可销毁三库并复用下方 runner，无需把业务连接或密码交给 CI；本机会按可信档案暂时停止空闲测试后端并恢复，后端独占 8000，隔离前端优先 5181、被占用时通过既有 `E2E_WEB_PORT` 申请独立端口并记录实际 URL，不接管其它预览。直接执行下方本地 runner 时仍须满足其环境、写开关和 PG 实时指纹前提。新增 E2E 必须按 CI 专题登记物理夹具归属；`manual-e2e` 明确表示尚未整合，不能写成 CI 已通过。
+
+已有套件只覆盖其收集报告中的文件、用例和项目；一般业务修改仍按准入选择最小路径，完整设计验收继续使用既有总入口。源码/条件变化后应重新验证受影响部分，交付分别记录应跑、实跑、通过/失败及未完成原因。
+
+`e2e-trade` 当前仅完成执行接线，旧打卡用例与夹具尚未迁移到流水账页面，不能计为新业务 E2E 已覆盖；迁移范围与完成判据统一见 CI 专题的[交易纪律 E2E 迁移](../architecture/continuous-integration.md#验证入口与已知限制)。
 
 ### 按范围选入口
 
@@ -57,12 +69,14 @@ AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:design
 
 | 场景 / CLI 夹具 | 唯一可写范围 | 运行约束 |
 |---|---|---|
-| 板块 `./start.sh e2e-board-data seed\|cleanup` | `E2E9*` 板块、`9999*.SZ` 股票、2099 年行情 | 后端停服时独占 DuckDB，复用 `scripts/run-sector-e2e.sh` |
-| 关联板块 `./start.sh e2e-stock-board-correlation seed\|cleanup --expected-pg-fingerprint <指纹>` | PG `default/debug_system` 下 `e2e_sbc_*` 方案/快照/任务；DuckDB `9977*.SZ`、`E2ECORR_*`、`E2E相关-*`、2097 年行情/冠军 | PG 目标与在线后端指纹一致，后端停服时 seed/cleanup；runner 校准账号、检查两库零残留 |
-| 交易纪律 `./start.sh e2e-trade-discipline seed\|cleanup --expected-pg-fingerprint <指纹>` | PG `debug_tenant` 下 `debug_normal`、只读、独立提交及租户管理员账号的 `e2e_td_` / `E2E纪律-` / `E2E类型-`；DuckDB `9988*.SZ`、2098 年交易日 | 后端指纹、直连 PG 和调用方环境一致；停服执行，复用 `scripts/run-trade-discipline-e2e.sh` |
+| 板块 `./start.sh e2e-board-data seed\|cleanup` | `E2E9*` 板块、`9999*.SZ` 股票、2099 年行情及其截面日的准确 ST 固定事实 | 后端停服时独占 DuckDB，复用 `scripts/run-sector-e2e.sh`；ST 按专属代码及固定截面日清理 |
+| 关联板块 `./start.sh e2e-stock-board-correlation seed\|cleanup --expected-pg-fingerprint <指纹>` | PG `default/debug_system` 下 `e2e_sbc_*` 方案/快照/任务；DuckDB `9977*.SZ`、`E2ECORR_*`、`E2E相关-*`、2097 年行情/冠军及行情日 ST 固定事实 | PG 目标与在线后端指纹一致，后端停服时 seed/cleanup；runner 校准账号、检查两库零残留 |
+| 交易纪律 `./start.sh e2e-trade-discipline seed\|cleanup --expected-pg-fingerprint <指纹>` | PG `debug_tenant` 下 `debug_normal`、只读、独立提交及租户管理员账号的 `e2e_td_` / `E2E纪律-` / `E2E类型-`；DuckDB `9988*.SZ`、2098 年交易日及行情日 ST 固定事实 | 后端指纹、直连 PG 和调用方环境一致；停服执行，复用 `scripts/run-trade-discipline-e2e.sh` |
 | 公开回测 `./start.sh e2e-backtest-run seed\|cleanup --expected-pg-fingerprint <指纹>` | 固定调试账号归属的 `e2e_bt_` 公开回测、opaque run_ref 及对应复用审计 | 夹具独占 DuckDB 写锁，被测后端须 `AI_STOCKS_DUCKDB_READ_ONLY=1`；由完整验收总入口单独编排 |
 
 以上表格说明物理边界，不是日常手动 seed 的替代流程。PG 写夹具和临时用户须在 DDL/账号写入前比对后端实时 PG 指纹；不得使用空值、未知环境、生产/共享目标或未确认归属进行清理。账号校准沿用 `./start.sh dev-users`，需要保留密码时使用 `--keep-password`；自动写账号须传同一可信指纹。
+
+上述三组固定行情明确声明为非 ST，统一复用 `backend/devtools/e2e_market_data.py` 写入准确逐日事实；清理同时限定夹具来源、专属代码和固定日期。新增夹具按真实消费日期准备所需事实，不能只填 `daily_bar.is_st`，也不能在业务守卫中为 E2E 放行。
 
 - Playwright 固定前端 `5181`，后端由 `./start.sh` 管理。板块、关联板块和交易纪律 runner，以及完整设计总入口，在后端原本运行时先校验空闲并保存可信运行档案；档案缺失或 PID 不匹配时须在停服前拒绝执行。
 - 成功、失败或中断后精确清理本组夹具；原本运行则通过 `restore-runtime` 恢复原模式、变量文件、安全开关及 PG 目标，原本停止则保持停止。清理或恢复失败必须返回失败，不得固定重启为普通 dev；板块 runner 停服或恢复失败时保留原运行档案并报告路径，供后续恢复。

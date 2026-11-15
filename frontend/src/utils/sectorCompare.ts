@@ -5,7 +5,7 @@
 // 指标池与周期选项均为数据驱动（常量数组），便于后续把走势对比抽成可复用组件。
 import type { SectorBar } from '@/api/sectors'
 import type { Bar } from '@/api/stocks'
-import { ALL_DAYS } from '@/composables/useKlinePrefs'
+import { ALL_DAYS, klineRangeQueryStart } from '@/composables/useKlinePrefs'
 import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
 import { formatMoney } from '@/utils/money'
 
@@ -46,6 +46,11 @@ export const COMPARE_RANGE_OPTIONS: CompareRangeOption[] = [
   { label: '250日', value: 250 },
   { label: '全部', value: ALL_DAYS },
 ]
+
+/** 板块全历史使用 ISO 日期下界，不以个股行情的覆盖起点裁剪 board_bar / index_bar。 */
+export function boardRangeQueryStart(end: string, rangeDays: number): string {
+  return klineRangeQueryStart(end, rangeDays, '0001-01-01')
+}
 
 /** 板块原始连续指数转换为共享行情工作区契约；优先消费接口返回的区间外前收。 */
 export function toBoardChartBars(bars: readonly SectorBar[]): Bar[] {

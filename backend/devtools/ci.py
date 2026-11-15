@@ -6,6 +6,7 @@ import argparse
 import fnmatch
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -21,6 +22,7 @@ from backend.devtools.isolated_environment import (
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = ROOT / "config/ci-suites.json"
 DOC = ROOT / "agent-works/architecture/continuous-integration.md"
+E2E_TEST_FILE = re.compile(r".+\.(?:spec|test)\.[cm]?[jt]sx?$")
 
 
 def registry() -> dict:
@@ -28,7 +30,7 @@ def registry() -> dict:
     data = json.loads(REGISTRY.read_text())
     suites = data["suites"]
     for name, suite in suites.items():
-        if not name or suite["kind"] not in {"frontend", "backend", "database", "quality", "secrets", "audit"}:
+        if not name or suite["kind"] not in {"frontend", "backend", "database", "quality", "secrets", "audit", "e2e"}:
             raise ValueError(f"非法 CI 套件：{name}")
         if not isinstance(suite["common"], bool) or not suite["description"]:
             raise ValueError(f"CI 套件信息不完整：{name}")
@@ -36,14 +38,51 @@ def registry() -> dict:
             raise ValueError(f"未知 CI 调用条件：{name}")
         if suite.get("when") and not data.get("dependency_paths"):
             raise ValueError("条件套件缺少依赖路径规则")
+        if "impact_paths" in suite and (
+            not isinstance(suite["impact_paths"], list) or not suite["impact_paths"]
+            or any(not isinstance(path, str) or not path or path.startswith("/")
+                   or ".." in Path(path).parts for path in suite["impact_paths"])
+        ):
+            raise ValueError(f"专项变更路径规则不完整：{name}")
+        if any(not any(source.is_file() for source in ROOT.glob(path)) for path in suite.get("impact_paths", [])):
+            raise ValueError(f"专项变更路径登记失效：{name}")
+        if suite["kind"] == "e2e":
+            from backend.devtools.ci_e2e import RUNNERS
+
+            profile = suite.get("e2e", {})
+            projects = profile.get("projects", [])
+            if profile.get("runner") not in RUNNERS or not projects:
+                raise ValueError(f"E2E 专项缺少已有 runner 或项目：{name}")
+            names = [project.get("name") for project in projects]
+            if len(set(names)) != len(names) or any(
+                project not in {"chromium-standard", "chromium-compact", "chromium-default"}
+                for project in names
+            ):
+                raise ValueError(f"E2E 专项项目重复或失效：{name}")
+            if any(
+                key in project and (not isinstance(project[key], str) or not project[key])
+                for project in projects for key in ("title", "exclude_title")
+            ):
+                raise ValueError(f"E2E 项目用例选择条件不完整：{name}")
     for category in ("special_files", "special_nodes"):
         for path, entry in data[category].items():
             if (
-                entry["suite"] not in {*suites, "manual-market", "not-applicable"}
+                entry["suite"] not in {*suites, "manual-market", "manual-e2e", "not-applicable"}
                 or not entry["reason"]
             ):
                 raise ValueError(f"CI 专项登记不完整：{path}")
             target = entry["suite"]
+            source = (ROOT / path.split("::")[0]).resolve()
+            if source.is_relative_to(ROOT / "frontend/e2e"):
+                if category != "special_files" or not E2E_TEST_FILE.fullmatch(source.name) or (
+                    target != "manual-e2e" and suites.get(target, {}).get("kind") != "e2e"
+                ):
+                    raise ValueError(f"E2E 用例不能分流至此执行器：{path}")
+                if not source.is_file():
+                    raise ValueError(f"CI 专项登记路径失效：{path}")
+                continue
+            if target == "manual-e2e":
+                raise ValueError(f"后端测试不能分流至 E2E：{path}")
             if target in suites:
                 kind = suites[target]["kind"]
                 if kind not in {"backend", "database"} or (
@@ -52,9 +91,20 @@ def registry() -> dict:
                     raise ValueError(f"Python 测试不能分流至此执行器：{path}")
             if category == "special_nodes" and path.split("::")[0] in data["special_files"]:
                 raise ValueError(f"文件与用例专项登记重叠：{path}")
-            source = (ROOT / path.split("::")[0]).resolve()
             if not source.is_file() or not source.is_relative_to(ROOT / "backend/tests"):
                 raise ValueError(f"CI 专项登记路径失效：{path}")
+    # E2E 的物理夹具不能靠目录猜测。新文件必须选择可执行专项或明确登记待接入原因。
+    unregistered = {
+        path.relative_to(ROOT).as_posix() for path in (ROOT / "frontend/e2e").rglob("*")
+        if path.is_file() and E2E_TEST_FILE.fullmatch(path.name)
+    } - data["special_files"].keys()
+    if unregistered:
+        raise ValueError("E2E 文件缺少专项归属登记：" + ", ".join(sorted(unregistered)))
+    for name, suite in suites.items():
+        if suite["kind"] == "e2e" and not any(
+            entry["suite"] == name for entry in data["special_files"].values()
+        ):
+            raise ValueError(f"E2E 专项缺少用例登记：{name}")
     return data
 
 
@@ -96,7 +146,45 @@ def inventory() -> str:
     for category in ("special_files", "special_nodes"):
         for name, entry in data[category].items():
             lines.append(f"| `{name}` | `{entry['suite']}` | {entry['reason']} |")
+    lines += ["", "| 专项 | 变更命中路径 | 执行方式 |", "| --- | --- | --- |"]
+    for name, entry in data["suites"].items():
+        if entry.get("impact_paths"):
+            paths = "、".join(f"`{path}`" for path in entry["impact_paths"])
+            lines.append(f"| `{name}` | {paths} | `run {name}` 显式执行；`assess` 输出必跑范围 |")
     return "\n".join(lines)
+
+
+def assess(base: str | None = None, head: str | None = None) -> dict:
+    """变更命中专项即列为应执行；范围未知不推断无影响，计划不冒充执行结果。"""
+    from backend.devtools.ci_changes import git
+
+    data = registry()
+    selected = commit_range(base, head)
+    if selected is None and base is None and head is None and not os.getenv("GITHUB_EVENT_PATH"):
+        revision = git("rev-parse", "HEAD").strip()
+        selected = commit_range(revision, revision)
+    paths = changed_paths(selected)
+    required = []
+    for name, entry in data["suites"].items():
+        patterns = entry.get("impact_paths", [])
+        matched = sorted(path for path in paths or [] if any(fnmatch.fnmatch(path, p) for p in patterns))
+        if patterns and (paths is None or matched):
+            required.append({
+                "suite": name, "status": "not-executed", "matched_paths": matched,
+                "command": f"scripts/run-ci.sh run {name}",
+                "required_parameters": {"scale_stocks": {"minimum": 100, "maximum": 5000}}
+                if name == "backend-scale" else {},
+            })
+    return {
+        "range": selected, "scope": "known" if paths is not None else "review-required",
+        "changed_paths": sorted(paths) if paths is not None else None,
+        "required_specials": required,
+        "not_integrated_e2e": [
+            {"file": path, "reason": entry["reason"]}
+            for path, entry in data["special_files"].items() if entry["suite"] == "manual-e2e"
+        ],
+        "note": "这是必跑计划，不是通过证据；命中专项须实际执行并核对其报告，未编码语义仍须审查。",
+    }
 
 
 def check_document(*, write: bool = False) -> None:
@@ -155,6 +243,7 @@ def run_backend(suite: str, scale_stocks: int | None = None) -> int:
         isolated_storage_environment(admin, artifact_dir) as env,
     ):
         env["AI_STOCKS_CI_SUITE"] = suite
+        env["AI_STOCKS_CI_TEST_MANIFEST"] = str(artifact_dir / "ci-test-manifest.json")
         if scale_stocks is not None:
             env.update(
                 {
@@ -188,12 +277,20 @@ def run_backend(suite: str, scale_stocks: int | None = None) -> int:
                 "--durations=15",
                 "--tb=short",
                 f"--junitxml={artifact_dir / ('ci-' + suite + '.xml')}",
+                "-o", "junit_logging=all",
                 *coverage,
             ],
             env,
         )
         if code == 0 and coverage:
             validate_report(artifact_dir)
+        if suite == "backend-scale":
+            (artifact_dir / "scale-execution.json").write_text(json.dumps({
+                "suite": suite, "scale_stocks": scale_stocks,
+                "status": "passed" if code == 0 else "failed",
+                "junit": str(artifact_dir / f"ci-{suite}.xml"),
+                "manifest": str(artifact_dir / "ci-test-manifest.json"),
+            }, ensure_ascii=False, indent=2))
         return code
 
 
@@ -224,6 +321,10 @@ def run_suite(suite: str, scale_stocks: int | None = None,
             from backend.devtools.ci_dependencies import run_audit
 
             code = run_audit()
+        elif kind == "e2e":
+            from backend.devtools.ci_e2e import run_e2e
+
+            code = run_e2e(name)
         else:
             env = os.environ.copy()
             env["CI"] = "1"
@@ -241,7 +342,7 @@ def main() -> int:
 
     signal.signal(signal.SIGTERM, terminate)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "plan", "check", "docs", "lock"))
+    parser.add_argument("action", choices=("run", "plan", "assess", "check", "docs", "lock"))
     parser.add_argument("suite", nargs="?", default="common")
     parser.add_argument("--scale-stocks", type=int)
     parser.add_argument("--write", action="store_true")
@@ -253,6 +354,9 @@ def main() -> int:
         if args.action == "plan":
             check_lock()
             print(json.dumps(plan(args.suite, args.base, args.head)))
+        elif args.action == "assess":
+            check_lock()
+            print(json.dumps(assess(args.base, args.head), ensure_ascii=False, indent=2))
         elif args.action in {"check", "docs"}:
             check_document(write=args.action == "docs" and args.write)
             check_lock()

@@ -96,7 +96,7 @@ def test_stale_file_registration_fails(monkeypatch, tmp_path):
         ci.registry()
 
 
-@pytest.mark.parametrize("target", ["frontend", "quality", "secrets", "dependency-audit"])
+@pytest.mark.parametrize("target", ["frontend", "quality", "secrets", "dependency-audit", "e2e-shell", "manual-e2e"])
 def test_python_case_cannot_be_routed_to_non_python_executor(monkeypatch, tmp_path, target):
     data = ci.registry()
     next(iter(data["special_nodes"].values()))["suite"] = target
@@ -149,6 +149,81 @@ def test_new_test_automatically_collected_and_special_routed():
     ci_pytest_plugin.pytest_collection_modifyitems(config, items)
     assert [item.nodeid for item in items] == ["new.py::test_new"]
     assert config._ci_routed == ["test.py::large"]
+
+
+@pytest.mark.parametrize("mode", ["pass", "failure", "skip", "deselect"])
+def test_real_pytest_discovers_new_nested_tests_and_enforces_ci_result(tmp_path, mode):
+    """真实运行新增深层文件；专项在导入前隔离，普通失败/跳过/筛选均不能变绿。"""
+    root = tmp_path / "project"
+    folder = root / "backend/tests/new_domain"
+    folder.mkdir(parents=True)
+    outcome = {
+        "pass": "assert 2 + 2 == 4",
+        "failure": "assert False, 'new business regression'",
+        "skip": "pytest.skip('unregistered skip')",
+        "deselect": "assert 2 + 2 == 4",
+    }[mode]
+    (folder / "test_feature.py").write_text(
+        "import pytest\n"
+        "def test_first(): assert 1 + 1 == 2\n"
+        f"def test_new_behavior(): {outcome}\n"
+        "def test_scale_only(): raise AssertionError('must be routed to scale')\n"
+    )
+    manual = root / "backend/tests/test_manual.py"
+    manual.write_text("raise RuntimeError('manual fixture must not be imported by common CI')\n")
+    data = ci.registry()
+    data["special_files"] = {
+        "backend/tests/test_manual.py": {"suite": "manual-market", "reason": "fixture boundary"}
+    }
+    data["suites"] = {name: entry for name, entry in data["suites"].items() if entry["kind"] != "e2e"}
+    for entry in data["suites"].values():
+        entry.pop("impact_paths", None)
+    data["special_nodes"] = {
+        "backend/tests/new_domain/test_feature.py::test_scale_only": {
+            "suite": "backend-scale", "reason": "explicit scale case"
+        }
+    }
+    registration = root / "registry.json"
+    registration.write_text(json.dumps(data))
+    report = root / "report.xml"
+    env = clean_environment()
+    env["PYTHONPATH"] = str(ci.ROOT)
+    env["AI_STOCKS_CI_SUITE"] = "backend"
+    arguments = [
+        str(root / "backend/tests"), "-p", "backend.devtools.ci_pytest_plugin",
+        "-o", "addopts=", "-v", f"--junitxml={report}",
+    ]
+    if mode == "deselect":
+        arguments += ["-k", "test_first"]
+    runner = (
+        "import sys; from pathlib import Path; import pytest; "
+        "from backend.devtools import ci, ci_pytest_plugin; "
+        "ci.ROOT = ci_pytest_plugin.ROOT = Path(sys.argv[1]); "
+        "ci.REGISTRY = Path(sys.argv[2]); "
+        "raise SystemExit(pytest.main(sys.argv[3:]))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", runner, str(root), str(registration), *arguments],
+        cwd=root, env=env, capture_output=True, text=True, timeout=30, check=False,
+    )
+    assert (result.returncode == 0) is (mode == "pass"), result.stdout + result.stderr
+    assert report.is_file(), result.stdout + result.stderr
+    if mode != "deselect":
+        from xml.etree import ElementTree
+
+        names = {case.attrib["name"] for case in ElementTree.parse(report).iter("testcase")}
+        assert names == {"test_first", "test_new_behavior"}
+    assert "manual fixture must not be imported" not in result.stdout + result.stderr
+
+
+def test_document_drift_blocks_formal_runner_before_starting_any_suite(tmp_path, monkeypatch):
+    """从正式执行入口拒绝未同步清单，不能只在独立 docs 命令中检查。"""
+    doc = tmp_path / "ci.md"
+    doc.write_text("<!-- ci-inventory:start -->\nstale\n<!-- ci-inventory:end -->\n")
+    monkeypatch.setattr(ci, "DOC", doc)
+    monkeypatch.setattr(ci, "run_backend", lambda *_args: pytest.fail("must validate before running"))
+    with pytest.raises(ValueError, match="文档登记已过期"):
+        ci.run_suite("backend")
 
 
 def test_missing_special_node_is_error():

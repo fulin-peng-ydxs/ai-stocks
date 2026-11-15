@@ -21,8 +21,8 @@ async function chooseDialog(page: Page, label: string): Promise<void> {
 }
 
 async function navigateToDailyBoard(page: Page): Promise<void> {
-  await page.getByRole('menuitem', { name: '最新行情', exact: true }).click()
-  await page.getByRole('menuitem', { name: '每日榜单', exact: true }).click()
+  await page.getByRole('menubar', { name: '侧栏导航' })
+    .getByRole('menuitem', { name: '每日榜单', exact: true }).click()
 }
 
 async function navigateToSystemManagement(page: Page): Promise<void> {
@@ -31,7 +31,8 @@ async function navigateToSystemManagement(page: Page): Promise<void> {
     await topEntry.click()
     return
   }
-  await page.getByRole('menuitem', { name: '系统管理', exact: true }).click()
+  const permissionMenu = page.getByRole('menuitem', { name: '权限管理', exact: true })
+  if (await permissionMenu.getAttribute('aria-expanded') !== 'true') await permissionMenu.click()
   await page.getByRole('menuitem', { name: '用户管理', exact: true }).click()
 }
 

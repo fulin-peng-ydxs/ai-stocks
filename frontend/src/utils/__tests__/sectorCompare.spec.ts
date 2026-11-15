@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  boardRangeQueryStart,
   formatSectorInflow,
   formatSectorPercent,
   metricKind,
@@ -9,6 +10,17 @@ import {
   toBoardChartBars,
 } from '@/utils/sectorCompare'
 import type { SectorBar } from '@/api/sectors'
+import { ALL_DAYS } from '@/composables/useKlinePrefs'
+
+describe('boardRangeQueryStart', () => {
+  it('全部覆盖板块自己的历史，不受个股最早日期限制', () => {
+    expect(boardRangeQueryStart('2099-07-17', ALL_DAYS)).toBe('0001-01-01')
+  })
+
+  it('有限周期继续按交易点预取自然日，跨年边界不变', () => {
+    expect(boardRangeQueryStart('2026-01-03', 1)).toBe('2026-01-01')
+  })
+})
 
 function bar(trade_date: string, close: number, pre_close?: number | null): SectorBar {
   return { trade_date, open: close, high: close, low: close, close, pre_close, volume: 1, amount: 1 }

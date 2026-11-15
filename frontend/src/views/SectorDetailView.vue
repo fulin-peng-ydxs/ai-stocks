@@ -40,7 +40,6 @@ import StockQuoteSummary from '@/components/stock-chart/StockQuoteSummary.vue'
 import { useKlineHeaderQuote } from '@/composables/useKlineHeaderQuote'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import {
-  klineRangeQueryStart,
   trimKlineRange,
   useKlinePrefs,
 } from '@/composables/useKlinePrefs'
@@ -77,6 +76,7 @@ import {
   trustedSectorReturnPath,
 } from '@/utils/sectorNavigation'
 import {
+  boardRangeQueryStart,
   formatSectorInflow,
   formatSectorPercent,
   sectorValueClass,
@@ -90,7 +90,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const sectorsSession = useSectorsSessionStore()
 const stockSet = useStockSet()
-const { dataMin, dataMax, ensureLoaded } = useTradeDates()
+const { dataMax, ensureLoaded } = useTradeDates()
 // 工作标签按 path 缓存独立实例；返回列表后全局 route.params 已无 code，详情实例仍须固定自身 code。
 const code = ref(String(route.params.code || ''))
 const sourceReturnPath = ref(trustedSectorReturnPath(route.query.return_to) ?? '')
@@ -270,7 +270,7 @@ async function loadChart(): Promise<void> {
   chartLoading.value = true
   chartError.value = ''
   try {
-    const start = klineRangeQueryStart(end, viewDays.value, dataMin.value || '2024-01-01')
+    const start = boardRangeQueryStart(end, viewDays.value)
     const requestedPeriod = chartPreferences.klinePeriod.value
     const data = await getSectorBars(code.value, start, end, true, requestedPeriod)
     if (version !== requestVersion) return

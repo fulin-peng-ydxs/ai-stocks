@@ -52,6 +52,13 @@ def test_seed_is_deterministic_complete_and_cleanup_is_idempotent(pg, market, mo
     assert result["currentTradeDate"] == "2098-06-10"
     assert result["pendingTradeDate"] == "2098-06-11"
     assert result["stockCodes"] == list(fixture.STOCK_CODES)
+    st_rows = market.query_df(
+        "SELECT code,trade_date,is_st,quality FROM stock_st_status_daily "
+        "WHERE source='e2e-trade-discipline'"
+    )
+    assert len(st_rows) == int(market.query_df("SELECT count(*) n FROM daily_bar").iloc[0]["n"])
+    assert not st_rows["is_st"].any()
+    assert set(st_rows["quality"]) == {"accurate"}
 
     expected_counts = {
         ("trade_discipline_rule", "id"): 1,
@@ -174,6 +181,7 @@ def test_seed_is_deterministic_complete_and_cleanup_is_idempotent(pg, market, mo
     assert first["removedPg"]["rule"] == 2
     assert first["removedPg"]["reason"] == 2
     assert first["removedDuck"]["stock_basic"] == 3
+    assert first["removedDuck"]["stock_st_status_daily"] == len(st_rows)
     assert int(pg.query_df(
         "SELECT count(*) AS n FROM trade_discipline_rule WHERE id='tdr_e2e_abandoned'",
     ).iloc[0]["n"]) == 1

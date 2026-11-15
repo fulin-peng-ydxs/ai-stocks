@@ -64,6 +64,7 @@ import {
   COMPARE_METRIC_META,
   COMPARE_METRIC_ORDER,
   COMPARE_RANGE_OPTIONS,
+  boardRangeQueryStart,
   formatSectorInflow,
   formatSectorPercent,
   metricKind,
@@ -75,7 +76,6 @@ import {
 } from '@/utils/sectorCompare'
 import {
   ALL_DAYS,
-  klineRangeQueryStart,
   trimAlignedKlineRange,
   useKlinePrefs,
 } from '@/composables/useKlinePrefs'
@@ -106,7 +106,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const sectorsSession = useSectorsSessionStore()
-const { dataMin, dataMax, ensureLoaded } = useTradeDates()
+const { dataMax, ensureLoaded } = useTradeDates()
 const settingsOpen = ref(false)
 
 const sectorsDefaults = {
@@ -516,7 +516,7 @@ async function loadChart(): Promise<void> {
     return
   }
   const end = chartEnd()
-  const start = klineRangeQueryStart(end, requestedPointCount.value, dataMin.value || '2024-01-01')
+  const start = boardRangeQueryStart(end, requestedPointCount.value)
   if (!start || !end) {
     retainSelectionChart.value = false
     return

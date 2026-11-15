@@ -13,6 +13,7 @@ import argparse
 import json
 from datetime import date, timedelta
 
+from backend.devtools.e2e_market_data import cleanup_st_daily, seed_non_st_daily
 from backend.devtools.environment_guard import require_e2e_write_enabled
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient, get_client
@@ -44,7 +45,11 @@ def _trade_dates() -> list[date]:
 
 def _cleanup(client: DuckDBClient) -> dict[str, int]:
     dates = _trade_dates()
-    removed: dict[str, int] = {}
+    removed: dict[str, int] = {
+        "stock_st_status_daily": cleanup_st_daily(
+            client, STOCK_CODES, dates[-1], dates[-1], source="e2e-board-data",
+        ),
+    }
     statements = (
         ("board_fund_flow", "DELETE FROM board_fund_flow WHERE board_code LIKE ?", [f"{BOARD_PREFIX}%"]),
         ("board_member", "DELETE FROM board_member WHERE board_code LIKE ?", [f"{BOARD_PREFIX}%"]),
@@ -97,6 +102,10 @@ def seed_board_data(client: DuckDBClient | None = None) -> dict[str, object]:
             "INSERT INTO stock_basic (code, name, exchange, board, list_date) "
             "VALUES (?, ?, 'SZ', '主板', DATE '2090-01-01')",
             [(code, f"E2E成分{i:02d}") for i, code in enumerate(STOCK_CODES, 1)],
+        )
+        # 固定材料明确为非 ST；详情必须消费准确逐日事实，不能从名称/日线推断或绕过守卫。
+        seed_non_st_daily(
+            client, ((code, last_date) for code in STOCK_CODES), source="e2e-board-data",
         )
         client.conn.executemany(
             "INSERT INTO daily_bar "

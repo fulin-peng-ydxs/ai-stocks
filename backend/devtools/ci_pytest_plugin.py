@@ -1,6 +1,8 @@
 """CI 测试默认自动发现，专项按登记分流；必检 skip/xfail/空集合一律失败。"""
 
+import json
 import os
+from pathlib import Path
 
 import pytest
 
@@ -55,6 +57,19 @@ def pytest_collection_modifyitems(config, items):
         else:
             config._ci_routed.append(item.nodeid)
     items[:] = selected
+    config._ci_selected = [item.nodeid for item in selected]
+
+
+def pytest_collection_finish(session):
+    """正式收集结束后落实际清单；单元夹具调用分流函数不能覆盖本轮收集证据。"""
+    config = session.config
+    destination = os.environ.get("AI_STOCKS_CI_TEST_MANIFEST")
+    if destination:
+        Path(destination).write_text(json.dumps({
+            "suite": config._ci_suite, "selected": config._ci_selected,
+            "routed": config._ci_routed,
+            "scale_stocks": os.environ.get("INTRADAY_SCALE_STOCKS"),
+        }, ensure_ascii=False, indent=2))
 
 
 def pytest_terminal_summary(terminalreporter, config):

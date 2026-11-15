@@ -38,7 +38,17 @@ jobs:
           CI_SUITE: ${{ github.event_name == 'schedule' && 'dependency-audit' || inputs.suite || 'common' }}
         run: |
           python3 -m backend.devtools.ci check
+          mkdir -p ".local/tmp/ai-agent/ci-plan-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          python3 -m backend.devtools.ci assess > ".local/tmp/ai-agent/ci-plan-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/ci-impact.json"
           echo "matrix=$(python3 -m backend.devtools.ci plan "$CI_SUITE")" >> "$GITHUB_OUTPUT"
+      - name: Preserve required-specials plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-impact-${{ github.run_attempt }}
+          path: .local/tmp/ai-agent/ci-plan-*/ci-impact.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
   checks:
     needs: plan
     strategy:

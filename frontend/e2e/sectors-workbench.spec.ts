@@ -1,16 +1,36 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { loginAsDebugUser, saveUserPreference } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
 import { DEFAULT_E2E_API_URL } from './helpers/e2e-backend-health.mjs'
 import { openPageAndWaitForHeading } from './helpers/navigation'
 import { requireSeededSectors } from './helpers/sectorData'
+import { expandSettingsSection } from './helpers/settings'
+import { MARKET_WORKSPACE_MIN_HEIGHT } from '../src/layout/marketWorkspaceSizing'
+import { panelMinHeight, stockChartWorkspaceMinHeight } from '../src/components/stock-chart/workspaceOptions'
 
 const API_URL = process.env.E2E_API_URL || DEFAULT_E2E_API_URL
 
+async function expectBoardChartContracts(page: Page, chart: Locator): Promise<void> {
+  await expect(chart.getByRole('button', { name: '日K', exact: true }))
+    .toHaveAttribute('aria-pressed', 'true')
+  // 图表名称与口径说明已分离；真实打开说明，继续核对原始指数及 MACD 参数。
+  for (const [name, description] of [
+    ['K线', '原始连续指数'], ['MACD', '12,26,9·原始连续指数'],
+  ]) {
+    const help = chart.getByRole('button', { name: `${name}口径说明`, exact: true })
+    await help.hover()
+    const tooltip = page.getByRole('tooltip').filter({ hasText: description })
+    await expect(tooltip).toBeVisible()
+    await expect(tooltip).toHaveText(description)
+    await page.mouse.move(0, 0)
+    await expect(tooltip).toBeHidden()
+  }
+}
+
 async function openFilteredSectors(page: Page, keyword = 'E2E板块'): Promise<void> {
   await openPageAndWaitForHeading(page, '/sectors', '板块行情')
-  const input = page.getByTestId('sectors-keyword').getByRole('textbox')
+  const input = page.getByTestId('sectors-keyword')
   await input.fill(keyword)
   await input.press('Enter')
   await expect(page).toHaveURL(/\/sectors$/)
@@ -127,23 +147,24 @@ test.describe('板块行情工作台', () => {
       const listChart = page.getByTestId('sectors-chart')
       await expect(listChart.locator('.stock-chart-panel--volume')).toBeVisible()
       await expect(listChart.locator('.stock-chart-panel--macd')).toBeVisible()
-      await expect(listChart).toContainText('K线（日线·原始连续指数）')
-      await expect(listChart).toContainText('MACD（12,26,9·原始连续指数）')
+      await expectBoardChartContracts(page, listChart)
 
       await page.getByTestId('page-settings-trigger').click()
       const listDrawer = page.getByTestId('page-settings-drawer')
       await expect(listDrawer).toBeVisible()
       const listDefaultMode = listDrawer.getByTestId('sectors-default-chart-mode')
       if (!await listDefaultMode.isVisible()) {
-        await listDrawer.getByRole('button', { name: '组件设置', exact: true }).click()
+        await expandSettingsSection(listDrawer, '组件设置')
       }
       await expect(listDrawer.getByTestId('sectors-default-scope')).toBeVisible()
       await expect(listDefaultMode).toBeVisible()
       await expect(listDrawer.getByTestId('kline-setting-section')).toBeVisible()
-      await expect(listDrawer.getByTestId('sectors-chart-slot2')).toBeVisible()
-      await expect(listDrawer.getByTestId('sectors-chart-slot3')).toBeVisible()
-      await listDrawer.getByTestId('sectors-chart-slot2-macd').click()
-      await listDrawer.getByTestId('sectors-chart-slot3-hidden').click()
+      const listSlot2 = listDrawer.getByRole('group', { name: '图表二类型', exact: true })
+      const listSlot3 = listDrawer.getByRole('group', { name: '图表三类型', exact: true })
+      await expect(listSlot2).toBeVisible()
+      await expect(listSlot3).toBeVisible()
+      await listSlot2.getByRole('button', { name: 'MACD', exact: true }).click()
+      await listSlot3.getByRole('button', { name: '隐藏', exact: true }).click()
       await listDrawer.getByRole('button', { name: '关闭页面设置' }).click()
       await expect(listChart.locator('.stock-chart-panel--macd')).toBeVisible()
       await expect(listChart.locator('.stock-chart-panel--volume')).toHaveCount(0)
@@ -163,20 +184,24 @@ test.describe('板块行情工作台', () => {
       await expect(page.getByText('成员涨 / 跌', { exact: true })).toBeVisible()
       await expect(page.getByText('最近快照返回', { exact: true })).toBeVisible()
       await expect(page.getByText('成员领涨', { exact: true })).toBeVisible()
-      await expect(memberSection.getByRole('heading', { name: '历史成分股' })).toBeVisible()
-      const configuredChartHeight = Number(await chartSection.getAttribute('data-configured-height'))
-      expect(configuredChartHeight).toBeGreaterThanOrEqual(480)
-      expect(configuredChartHeight).toBeLessThanOrEqual(900)
-      expect((await chartSection.boundingBox())?.height).toBeGreaterThanOrEqual(configuredChartHeight)
-      const contentHeight = Number(await chartSection.getAttribute('data-content-height'))
-      expect(contentHeight).toBeGreaterThanOrEqual(518)
+      await expect(memberSection.getByRole('heading', { name: '2099-07-17', exact: true })).toBeVisible()
+      // 详情已迁到填充式双栏，固定 chart.minHeight 不再适用；验证现行共享下限与真实边界。
+      const detailWorkspace = page.getByTestId('sector-detail-workspace')
+      expect((await detailWorkspace.boundingBox())?.height).toBeGreaterThanOrEqual(MARKET_WORKSPACE_MIN_HEIGHT)
+      const chartContent = chartSection.locator('.stock-chart-workspace')
+      const contentMinimum = stockChartWorkspaceMinHeight(['kline', 'volume', 'macd'], true)
+      await expect(chartContent).toHaveAttribute('data-min-height', String(contentMinimum))
+      const contentBounds = await chartContent.boundingBox()
+      expect(contentBounds?.height).toBeGreaterThanOrEqual(contentMinimum)
       expect((await memberSection.boundingBox())?.height).toBeGreaterThanOrEqual(420)
       const volumePanel = chartSection.locator('[data-panel-key="slot2"]')
       await expect(volumePanel).toBeVisible()
       const chartBounds = await chartSection.boundingBox()
       const volumeBounds = await volumePanel.boundingBox()
-      expect(volumeBounds?.height).toBeGreaterThan(120)
+      expect(volumeBounds?.height).toBeGreaterThanOrEqual(panelMinHeight('volume', true))
       expect((volumeBounds?.y ?? 0) + (volumeBounds?.height ?? 0))
+        .toBeLessThanOrEqual((chartBounds?.y ?? 0) + (chartBounds?.height ?? 0))
+      expect((contentBounds?.y ?? 0) + (contentBounds?.height ?? 0))
         .toBeLessThanOrEqual((chartBounds?.y ?? 0) + (chartBounds?.height ?? 0))
 
       // 原生历史返回与显式返回是两条独立契约：后退恢复列表现场，前进仍回到同一详情。
@@ -190,29 +215,30 @@ test.describe('板块行情工作台', () => {
       await page.getByTestId('page-settings-trigger').click()
       const detailDrawer = page.getByTestId('page-settings-drawer')
       await expect(detailDrawer).toBeVisible()
-      const chartHeightControl = detailDrawer.getByTestId('component-chart-minHeight')
-      if (!await chartHeightControl.isVisible()) {
-        await detailDrawer.getByRole('button', { name: '组件设置', exact: true }).click()
-      }
-      await expect(chartHeightControl).toBeVisible()
+      await expandSettingsSection(detailDrawer, '组件设置')
+      await expect(detailDrawer.getByTestId('component-chart-minHeight')).toHaveCount(0)
       const detailKlineSettings = detailDrawer.getByTestId('kline-setting-section')
       if (!await detailKlineSettings.isVisible()) {
-        await detailDrawer.getByRole('button', { name: '业务选项', exact: true }).click()
+        await expandSettingsSection(detailDrawer, '业务选项')
       }
       await expect(detailKlineSettings).toBeVisible()
-      await expect(detailDrawer.getByTestId('sector-detail-chart-slot2')).toBeVisible()
-      await expect(detailDrawer.getByTestId('sector-detail-chart-slot3')).toBeVisible()
-      await detailDrawer.getByTestId('sector-detail-chart-slot2-volume').click()
-      await detailDrawer.getByTestId('sector-detail-chart-slot3-macd').click()
+      const detailSlot2 = detailDrawer.getByRole('group', { name: '图表二类型', exact: true })
+      const detailSlot3 = detailDrawer.getByRole('group', { name: '图表三类型', exact: true })
+      await expect(detailSlot2).toBeVisible()
+      await expect(detailSlot3).toBeVisible()
+      await detailSlot2.getByRole('button', { name: '成交量', exact: true }).click()
+      await detailSlot3.getByRole('button', { name: 'MACD', exact: true }).click()
       await detailDrawer.getByRole('button', { name: '关闭页面设置' }).click()
       await expect(chartSection.locator('.stock-chart-panel--volume')).toBeVisible()
       await expect(chartSection.locator('.stock-chart-panel--macd')).toBeVisible()
-      await expect(chartSection).toContainText('MACD（12,26,9·原始连续指数）')
+      await expectBoardChartContracts(page, chartSection)
 
       await page.locator('.menu').getByRole('menuitem', { name: '每日榜单', exact: true }).click()
       await expect(page).toHaveURL(/\/board$/)
       await page.locator('.menu').getByRole('menuitem', { name: '板块行情', exact: true }).click()
       await expect(page).toHaveURL(/\/sectors(?:\?|$)/)
+      const expandWorkspace = page.getByRole('button', { name: '展开工作区', exact: true })
+      if (await expandWorkspace.isVisible()) await expandWorkspace.click()
       await page.getByRole('tab', {
         name: new RegExp(`板块详情 · ${boards[3]!.board_code}`),
       }).click()
@@ -220,7 +246,7 @@ test.describe('板块行情工作台', () => {
       await expect(page.getByTestId('sector-detail-page')).toBeVisible()
 
       const chartSplitter = page.getByRole('separator', {
-        name: '调整K线（日线·原始连续指数）与下一幅图高度',
+        name: '调整K线（原始连续指数）与下一幅图高度',
       })
       await expect(chartSplitter).toBeVisible()
       const ratioBefore = Number(await chartSplitter.getAttribute('aria-valuenow'))
@@ -234,14 +260,14 @@ test.describe('板块行情工作台', () => {
         : Math.max(ratioMin, ratioBefore - 2)
       await expect(chartSplitter).toHaveAttribute('aria-valuenow', String(expectedRatio))
 
-      const firstMember = page.locator('[data-testid^="sector-member-"]').first()
+      const firstMember = page.getByTestId(/^sector-member-\d{6}\.(?:SH|SZ)$/).first()
       await firstMember.scrollIntoViewIfNeeded()
       await expect(firstMember).toBeVisible()
       const memberCode = (await firstMember.textContent())?.trim()
       expect(memberCode).toBeTruthy()
       await firstMember.click()
       await expect(page).toHaveURL(new RegExp(`/stocks/${memberCode}`))
-      await page.getByRole('button', { name: '返回', exact: true }).click()
+      await page.getByRole('button', { name: '返回板块详情', exact: true }).click()
       await expect(page).toHaveURL(new RegExp(`/sectors/${boards[3]!.board_code}`))
       await expect(page.getByTestId('sector-detail-page')).toBeVisible()
 
@@ -384,21 +410,37 @@ test.describe('板块行情工作台', () => {
     await hideAnalysis.focus()
     await page.keyboard.press('Enter')
     await expect(page.getByTestId('sectors-chart')).toHaveCount(0)
-    await expect(page.getByTestId('sectors-workspace')).toHaveClass(/market-master-detail--list-only/)
+    await expect(page.getByTestId('sectors-workspace')).toHaveClass(/app-split-workspace--primary-only/)
     await page.getByTestId('sectors-show-analysis').click()
     await expect(page.getByTestId('sectors-chart')).toBeVisible()
 
     const nextPage = page.getByRole('button', { name: '下一页' })
     await expect(nextPage).toBeEnabled()
+    const pageTwo = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return url.pathname === '/api/sectors' && url.searchParams.get('page') === '2'
+    })
     await nextPage.click()
-    await expect(page).toHaveURL(/[?&]page=2(?:&|$)/)
+    const pageTwoResponse = await pageTwo
+    expect(pageTwoResponse.ok()).toBe(true)
+    expect((await pageTwoResponse.json()).data.page).toBe(2)
 
+    const sorted = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return url.pathname === '/api/sectors' && url.searchParams.get('sort_by') === 'pct_5d'
+    })
     await page.getByRole('columnheader', { name: /5日/ }).click()
-    await expect(page).toHaveURL(/[?&]sort=pct_5d(?:&|$)/)
+    expect((await sorted).ok()).toBe(true)
+    const searched = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return url.pathname === '/api/sectors' && url.searchParams.get('keyword') === sample.name
+    })
     await page.getByTestId('sectors-keyword').fill(sample.name)
     await page.getByTestId('sectors-keyword').press('Enter')
+    expect((await searched).ok()).toBe(true)
     await expect(page.getByTestId(`sectors-row-${sample.board_code}`)).toBeVisible()
-    await expect(page).toHaveURL(new RegExp(`keyword=${encodeURIComponent(sample.name)}`))
+    // 普通筛选/排序/分页按现行会话契约保存，不写入 URL。
+    await expect(page).toHaveURL(/\/sectors$/)
     await page.getByTestId('sectors-keyword').fill('E2E板块')
     await page.getByTestId('sectors-keyword').press('Enter')
 
@@ -407,7 +449,7 @@ test.describe('板块行情工作台', () => {
       'component-table-hiddenColumns-net_inflow',
     )
     if (!await netInflowVisibility.isVisible()) {
-      await settingsDrawer.getByRole('button', { name: '组件设置', exact: true }).click()
+      await expandSettingsSection(settingsDrawer, '组件设置')
     }
     await settingsDrawer.getByTestId('component-table-hiddenColumns-pct_10d-switch').click()
     await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
@@ -427,11 +469,13 @@ test.describe('板块行情工作台', () => {
     await firstSectorRow.click()
     await page.getByTestId('sectors-open-detail').click()
     await expect(page).toHaveURL(/\/sectors\/[^/?]+/)
-    await expect(page.getByText('当前账号无个股行情查看权限', { exact: true })).toBeVisible()
+    await expect(page.getByText('25 条 · 无个股查看权限', { exact: true })).toBeVisible()
 
-    const firstMember = page.locator('[data-testid^="sector-member-"]').first()
+    const firstMember = page.getByTestId(/^sector-member-\d{6}\.(?:SH|SZ)$/).first()
     await firstMember.scrollIntoViewIfNeeded()
     await expect(firstMember).toHaveClass(/stock-disabled/)
+    await firstMember.hover()
+    await expect(page.getByRole('tooltip', { name: '无个股行情查看权限', exact: true })).toBeVisible()
     const detailUrl = page.url()
     await firstMember.click()
     await expect(page).toHaveURL(detailUrl)

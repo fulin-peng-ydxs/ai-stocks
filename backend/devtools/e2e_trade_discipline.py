@@ -18,6 +18,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from backend.common.exceptions import StorageError
+from backend.devtools.e2e_market_data import cleanup_st_daily, seed_non_st_daily
 from backend.devtools.environment_guard import require_e2e_write_enabled
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient, get_client
@@ -200,7 +201,12 @@ def _cleanup_pg(cur, owners: Iterable[tuple[str, str]]) -> dict[str, int]:
 
 
 def _cleanup_duck(market: DuckDBClient) -> dict[str, int]:
-    removed: dict[str, int] = {}
+    removed: dict[str, int] = {
+        "stock_st_status_daily": cleanup_st_daily(
+            market, STOCK_CODES, FIXTURE_TRADE_DATES[0], FIXTURE_TRADE_DATES[-1],
+            source="e2e-trade-discipline",
+        ),
+    }
     rows = market.execute(
         "DELETE FROM daily_bar WHERE code IN (SELECT unnest(?::VARCHAR[])) RETURNING 1",
         [list(STOCK_CODES)],
@@ -267,6 +273,9 @@ def _seed_duck(market: DuckDBClient) -> dict[str, int]:
         "is_st,is_suspended,limit_status,is_one_word) "
         "VALUES (?,?,?,?,?,?,?,100000,1000000,1.5,FALSE,FALSE,0,FALSE)",
         bars,
+    )
+    seed_non_st_daily(
+        market, ((row[0], row[1]) for row in bars), source="e2e-trade-discipline",
     )
     return {"trade_calendar": len(FIXTURE_TRADE_DATES), "stock_basic": len(STOCK_CODES), "daily_bar": len(bars)}
 

@@ -29,7 +29,7 @@ test.describe('板块数据质量恢复', () => {
 
     await openPageAndWaitForHeading(page, '/data/quality', '数据质量')
     const resetButton = page.getByTestId('quality-reset-filters')
-    const codeInput = page.getByPlaceholder('股票/板块代码或名称')
+    const codeInput = page.getByPlaceholder('个股/指数/板块代码或名称')
     await expect(resetButton).toBeDisabled()
 
     await codeInput.fill('600000')
@@ -251,7 +251,7 @@ test.describe('板块数据质量恢复', () => {
     expect(submittedScope).toBe('object')
     await page.getByTestId('quality-restore-monitoring-93001').click()
     await page.getByRole('button', { name: '确定', exact: true }).click()
-    await expect(page.getByText('整体（已失效）', { exact: true })).toBeVisible()
+    await expect(page.getByText('整体忽略已结束', { exact: true })).toBeVisible()
     expect(issueState).toBe('ignored-inactive')
     expect(consoleIssues).toEqual([])
   })
@@ -265,7 +265,8 @@ test.describe('板块数据质量恢复', () => {
     await loginAsDebugUser(page, request, 'debug_system')
     let fixed = false
 
-    await page.route('**/api/data/quality/91001/fix', async (route) => {
+    await page.route('**/api/data/quality/91001/fix?recheck_source=false', async (route) => {
+      expect(new URL(route.request().url()).searchParams.get('recheck_source')).toBe('false')
       fixed = true
       await route.fulfill({
         status: 200,

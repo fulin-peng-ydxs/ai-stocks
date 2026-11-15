@@ -121,6 +121,8 @@
 | 数据源 | `backend/datasource/ths_board.py` | 反爬、登录态、分页、解析、重试和完整性标记 |
 | 存储与质量 | `backend/storage/`、`backend/services/data_report.py` | 表结构、upsert、质量扫描、修复后复检 |
 
+板块工作台与详情的历史窗口共用 `sectorCompare.ts::boardRangeQueryStart()`，有限周期沿用公共 K 线自然日预取与交易点裁剪；“全部”以 API 支持的 ISO 最小日期 `0001-01-01` 为查询下界，按所选截止日读取板块自身的 `board_bar` 及对比指数 `index_bar`。该值只表示不设置业务历史下界，不是采集起点；不能使用个股 `daily_bar` 的最早日期或固定研究年份裁剪板块历史。
+
 ```mermaid
 flowchart LR
   UI[板块/数据管理页面] --> API[数据任务 API]

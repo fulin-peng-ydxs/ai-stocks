@@ -40,10 +40,17 @@ def test_fixture_seed_is_idempotent_and_cleanup_preserves_unrelated_rows(monkeyp
         assert int(client.query_df(
             "SELECT count(*) n FROM stock_board_correlation"
         ).iloc[0]["n"]) == len(STOCK_CODES) * 2
+        assert int(client.query_df(
+            "SELECT count(*) n FROM stock_st_status_daily WHERE source='e2e-correlation' "
+            "AND quality='accurate' AND is_st=FALSE"
+        ).iloc[0]["n"]) == int(client.query_df("SELECT count(*) n FROM daily_bar").iloc[0]["n"])
 
         result = cleanup_stock_board_correlation(client, runtime_client=client)
 
         assert result["residual"] == {"stocks": 0, "boards": 0, "tasks": 0}
+        assert int(client.query_df(
+            "SELECT count(*) n FROM stock_st_status_daily WHERE source='e2e-correlation'"
+        ).iloc[0]["n"]) == 0
         assert int(client.query_df(
             "SELECT count(*) n FROM stock_basic WHERE code='600000.SH'"
         ).iloc[0]["n"]) == 1

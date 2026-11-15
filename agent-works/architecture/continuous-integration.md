@@ -7,7 +7,7 @@
 
 ## 技术全景与边界
 
-- 输入输出与调用者：push（包含直接推主分支）或 PR 自动选择 `common`，其中依赖审计按变更条件调用；每日北京时间 05:00 选择 `dependency-audit`。GitHub 手动运行与本地脚本可选择同一登记表中的具体套件，输出各项结果和总状态。
+- 输入输出与调用者：push（包含直接推主分支）或 PR 自动选择 `common`，其中依赖审计按变更条件调用；每日北京时间 05:00 选择 `dependency-audit`。GitHub 手动运行与本地脚本可选择同一登记表中的具体套件，输出各项结果和总状态。`assess` 按本次变更生成专项必检清单；规划阶段归档该清单，不把规划记为已执行，也不自动把重型专项混入每轮 common。
 - 组成与关系：登记表是套件分类、常用集合和专项例外的唯一事实源；规划器生成矩阵，可复用 workflow 按矩阵准备环境并调用本地同一执行器；Pytest 插件分流专项并拒绝不完整执行。旧前端、数据库 workflow 保留为手动/可复用薄入口，不重复监听 push/PR。
 - 共用依赖与事实源：Python 3.12，前端 Node.js 22.12+ 与 npm 锁文件；数据库初始化语义由[数据库专题](database-lifecycle.md)维护。Python CI 从带 SHA-256 的 `requirements-ci.lock` 安装，源入口为 `requirements-ci.txt` 及其递归 include；测试工具固定 pytest 9.0.3、httpx 0.28.1，质量 job 单独安装同源固定 Ruff 的 `requirements-quality.txt`。MiniRacer 的发行包为 `mini-racer`，导入名仍为 `py_mini_racer`。下表是登记表的生成块，使用 `scripts/run-ci.sh docs --write` 更新，常用 CI 会校验一致性。
 
@@ -22,18 +22,63 @@
   | `dependency-audit` | audit | 依赖变更时；范围未知时保守执行 | Python CI 锁与 npm 锁的全部依赖漏洞审计；每日及手动可独立调用 |
   | `backend-scale` | backend | 否 | 显式规模参数下的分时、估值与质量修复规模回归 |
   | `secrets-history` | secrets | 否 | 显式扫描全部已获取 Git 历史；首次历史基线及事件调查专项 |
+  | `e2e-shell` | e2e | 否 | 现有登录首帧与工作台外壳浏览器专项；标准视口 |
+  | `e2e-sectors` | e2e | 否 | 复用板块物理夹具 runner 的数据管理、质量反馈与工作台专项 |
+  | `e2e-correlation` | e2e | 否 | 复用走势关联板块 runner 的页面、权限及系统结果专项 |
+  | `e2e-trade` | e2e | 否 | 旧打卡 E2E 的隔离执行入口；当前流水账页面的断言与夹具待迁移，尚未验收 |
+  | `e2e-backtest` | e2e | 否 | 复用公开回测夹具与只读后端，验证浏览、加载和恢复 |
 
   | 专项文件或用例 | 归属 | 原因 |
   | --- | --- | --- |
   | `backend/tests/test_database_lifecycle.py` | `database` | 由数据库门禁提供独立管理连接与严格执行策略 |
   | `backend/tests/test_api.py` | `manual-market` | 遗留真实行情冒烟，要求已采集行情及前端产物；不作为空库代码回归 |
   | `backend/tests/test_intraday_scale.py` | `backend-scale` | 仅在显式规模参数下执行 |
+  | `frontend/e2e/login-initial-render.spec.ts` | `e2e-shell` | 现有登录首帧与工作台外壳浏览器专项；标准视口 |
+  | `frontend/e2e/app-shell-surfaces.spec.ts` | `e2e-shell` | 现有登录首帧与工作台外壳浏览器专项；标准视口 |
+  | `frontend/e2e/board-data-management.spec.ts` | `e2e-sectors` | 复用板块物理夹具 runner 的数据管理、质量反馈与工作台专项 |
+  | `frontend/e2e/sector-quality-recovery.spec.ts` | `e2e-sectors` | 复用板块物理夹具 runner 的数据管理、质量反馈与工作台专项 |
+  | `frontend/e2e/sectors-workbench.spec.ts` | `e2e-sectors` | 复用板块物理夹具 runner 的数据管理、质量反馈与工作台专项 |
+  | `frontend/e2e/stock-board-correlation.spec.ts` | `e2e-correlation` | 复用走势关联板块 runner 的页面、权限及系统结果专项 |
+  | `frontend/e2e/trade-discipline.spec.ts` | `e2e-trade` | 旧打卡/履约历史及未保存协议回归；页面已切换流水账，需迁移用例与夹具；不得计为已覆盖 |
+  | `frontend/e2e/backtest-public-runs.spec.ts` | `e2e-backtest` | 复用公开回测夹具与只读后端，验证浏览、加载和恢复 |
+  | `frontend/e2e/app-row-actions.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/asset-search-drawer.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/component-state-preview.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/data-overview-low-viewport.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/display-scale-navigation.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/display-scale-popper.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/layout-scroll-ownership.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/limit-ladder-analysis.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/limit-ladder-preferences.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/limit-ladder-task-center.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/limit-ladder.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/page-settings-drawer.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/quality-repair-schedule.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/role-permission-tree-accessibility.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/schedule-dependency.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/schedule-frequency-sort.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/stock-board-correlation-t9.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/stock-chart-workspace-preview.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/stock-detail-chart-workspace.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/stock-ingest-management.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/task-center-polling.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/trade-discipline-history.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
+  | `frontend/e2e/trade-discipline-quick-card.spec.ts` | `manual-e2e` | 既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据 |
   | `backend/tests/test_intraday_parallel.py::test_repair_commits_quality_and_progress_before_full_market_finishes[5000]` | `backend-scale` | 全市场规模参数 |
   | `backend/tests/test_intraday_performance.py::test_fixed_response_repair_cost[1000]` | `backend-scale` | 千股规模参数 |
   | `backend/tests/test_valuation_batch.py::test_latest_batch_scale_keeps_every_target_and_reported_evidence` | `backend-scale` | 显式估值补采规模参数 |
   | `backend/tests/test_quality_repair_scale.py::test_full_history_repair_scale[capital_gap]` | `backend-scale` | 显式全历史股本修复规模参数 |
   | `backend/tests/test_quality_repair_scale.py::test_full_history_repair_scale[history_data_gap]` | `backend-scale` | 显式全历史行情缺口修复规模参数 |
   | `backend/tests/test_schedule_downstream.py::test_multi_upstream_runtime_migration_round_trip[duckdb]` | `not-applicable` | 该迁移只支持 PG schema；同一测试的 postgres 参数仍在常用回归执行 |
+
+  | 专项 | 变更命中路径 | 执行方式 |
+  | --- | --- | --- |
+  | `backend-scale` | `backend/services/intraday*`、`backend/services/ingest*`、`backend/services/share_capital.py`、`backend/tests/test_*scale.py`、`backend/tests/test_intraday_parallel.py`、`backend/tests/test_intraday_performance.py`、`backend/tests/test_valuation_batch.py`、`backend/devtools/ci*.py`、`config/ci-suites.json`、`backend/services/quality_repair*`、`backend/services/capital_quality.py`、`backend/services/history_quality.py`、`backend/services/collection_quality.py` | `run backend-scale` 显式执行；`assess` 输出必跑范围 |
+  | `e2e-shell` | `frontend/playwright*.ts`、`frontend/e2e/helpers/*`、`scripts/run-playwright.sh`、`scripts/e2e-backend-lifecycle.sh`、`backend/devtools/ci*.py`、`.github/workflows/*`、`frontend/src/layout/*`、`frontend/src/router/*`、`frontend/src/views/LoginView.vue`、`frontend/src/App.vue`、`frontend/e2e/login-initial-render.spec.ts`、`frontend/e2e/app-shell-surfaces.spec.ts`、`frontend/package*.json`、`frontend/patches/*`、`backend/devtools/environment_guard.py`、`backend/devtools/rbac_test_users.py`、`backend/devtools/e2e_test_users.py`、`backend/devtools/backend_runtime_state.py`、`scripts/load-local-env.sh`、`start.sh`、`config/ci-suites.json`、`frontend/src/stores/auth.ts`、`frontend/src/components/SideMenu*`、`frontend/src/components/WorkspaceTabs.vue` | `run e2e-shell` 显式执行；`assess` 输出必跑范围 |
+  | `e2e-sectors` | `frontend/playwright*.ts`、`frontend/e2e/helpers/*`、`scripts/run-playwright.sh`、`scripts/e2e-backend-lifecycle.sh`、`backend/devtools/ci*.py`、`.github/workflows/*`、`frontend/src/views/Sector*`、`frontend/src/utils/sectorCompare.ts`、`frontend/src/views/data/OverviewView.vue`、`frontend/src/views/data/QualityView.vue`、`frontend/src/views/data/ScheduleView.vue`、`frontend/src/views/ConfigView.vue`、`frontend/src/components/config/*`、`backend/services/board*`、`scripts/run-sector-e2e.sh`、`frontend/e2e/board-data-management.spec.ts`、`frontend/e2e/sector-quality-recovery.spec.ts`、`frontend/e2e/sectors-workbench.spec.ts`、`frontend/package*.json`、`frontend/patches/*`、`backend/devtools/environment_guard.py`、`backend/devtools/rbac_test_users.py`、`backend/devtools/e2e_test_users.py`、`backend/devtools/backend_runtime_state.py`、`scripts/load-local-env.sh`、`start.sh`、`backend/devtools/e2e_board_data.py`、`config/ci-suites.json`、`backend/devtools/e2e_market_data.py`、`frontend/src/views/data/IngestView.vue`、`frontend/src/api/sectors.ts`、`frontend/src/components/SectorCompareChart.vue`、`frontend/src/components/stock-chart/*`、`frontend/src/components/data/BoardTaskScopeFields.vue`、`backend/api/sectors.py` | `run e2e-sectors` 显式执行；`assess` 输出必跑范围 |
+  | `e2e-correlation` | `frontend/playwright*.ts`、`frontend/e2e/helpers/*`、`scripts/run-playwright.sh`、`scripts/e2e-backend-lifecycle.sh`、`backend/devtools/ci*.py`、`.github/workflows/*`、`frontend/src/components/*RelatedBoard*`、`backend/services/stock_board_correlation*`、`scripts/run-stock-board-correlation-e2e.sh`、`frontend/e2e/stock-board-correlation.spec.ts`、`frontend/package*.json`、`frontend/patches/*`、`backend/devtools/environment_guard.py`、`backend/devtools/rbac_test_users.py`、`backend/devtools/e2e_test_users.py`、`backend/devtools/backend_runtime_state.py`、`scripts/load-local-env.sh`、`start.sh`、`backend/devtools/e2e_stock_board_correlation.py`、`config/ci-suites.json`、`backend/devtools/e2e_market_data.py`、`frontend/src/views/StocksView.vue`、`frontend/src/views/BoardView.vue`、`frontend/src/views/ScreenView.vue`、`frontend/src/api/stocks.ts`、`frontend/src/components/MarketBoardTag.vue`、`frontend/src/components/asset-search/*`、`backend/api/stocks.py`、`backend/api/board.py` | `run e2e-correlation` 显式执行；`assess` 输出必跑范围 |
+  | `e2e-trade` | `frontend/playwright*.ts`、`frontend/e2e/helpers/*`、`scripts/run-playwright.sh`、`scripts/e2e-backend-lifecycle.sh`、`backend/devtools/ci*.py`、`.github/workflows/*`、`frontend/src/views/TradeDiscipline*`、`frontend/src/components/trade-discipline/*`、`backend/services/trade_discipline*`、`scripts/run-trade-discipline-e2e.sh`、`frontend/e2e/trade-discipline.spec.ts`、`frontend/package*.json`、`frontend/patches/*`、`backend/devtools/environment_guard.py`、`backend/devtools/rbac_test_users.py`、`backend/devtools/e2e_test_users.py`、`backend/devtools/backend_runtime_state.py`、`scripts/load-local-env.sh`、`start.sh`、`backend/devtools/e2e_trade_discipline.py`、`config/ci-suites.json`、`backend/devtools/e2e_market_data.py`、`frontend/src/views/trade-discipline/**/*`、`frontend/src/api/tradeDiscipline.ts`、`frontend/src/utils/tradeDiscipline*`、`frontend/src/composables/useTradeDiscipline*`、`backend/storage/trade_discipline_repository.py` | `run e2e-trade` 显式执行；`assess` 输出必跑范围 |
+  | `e2e-backtest` | `frontend/playwright*.ts`、`frontend/e2e/helpers/*`、`scripts/run-playwright.sh`、`scripts/e2e-backend-lifecycle.sh`、`backend/devtools/ci*.py`、`.github/workflows/*`、`frontend/src/views/BacktestView.vue`、`backend/services/backtest*`、`backend/devtools/e2e_backtest_runs.py`、`frontend/e2e/backtest-public-runs.spec.ts`、`frontend/package*.json`、`frontend/patches/*`、`backend/devtools/environment_guard.py`、`backend/devtools/rbac_test_users.py`、`backend/devtools/e2e_test_users.py`、`backend/devtools/backend_runtime_state.py`、`scripts/load-local-env.sh`、`start.sh`、`config/ci-suites.json`、`frontend/src/api/backtest.ts`、`frontend/src/components/asset-search/*`、`backend/api/backtest.py`、`backend/devtools/e2e_market_data.py` | `run e2e-backtest` 显式执行；`assess` 输出必跑范围 |
   <!-- ci-inventory:end -->
 
 统一 CI 主入口与本地入口的调用关系如下。实线表示调用或标注的状态汇总，虚线表示登记配置供给；本地执行结果直接作为脚本退出码返回。
@@ -51,7 +96,8 @@ flowchart TD
   Registry -.-> Runner
   Runner --> Security["密钥扫描 / 条件依赖审计<br/>固定工具与精确例外"]
   Runner --> Coverage["前后端常用回归<br/>同步生成覆盖率报告"]
-  Runner -->|后端与数据库执行器使用| Storage["共用隔离环境<br/>临时 PG 数据库 / DuckDB / Redis"]
+  Runner --> E2E["登记的浏览器专项<br/>原 runner / 计划与实际报告"]
+  Runner -->|后端、数据库及 E2E 使用| Storage["共用隔离环境<br/>临时 PG 数据库 / DuckDB / Redis"]
   Plan -->|规划状态| Result["ci.yml：result<br/>规划与所选检查全部成功才通过"]
   Workflow -->|执行状态| Result
 ```
@@ -62,10 +108,10 @@ flowchart TD
 
 - 目标与入口：默认入口为 `scripts/run-ci.sh run`；具体执行 `scripts/run-ci.sh run backend`、`run database` 或 `run frontend`。`PYTHON` 可指定已安装项目依赖的解释器，脚本默认 `python3`，不加载 `.env.local`。
 - 处理与结果：`ci.yml` 在规划阶段执行文档/登记和锁源指纹检查，`plan common` 选择 `common=true` 且满足调用条件的套件，以矩阵并行调用 `ci-suite.yml`。依赖条件详见下文；手动指定套件始终执行。总状态 `result` 用 `always()` 收集结果，规划、任一套件失败/取消均失败。本地常用入口顺序执行相同套件，首个失败停止。
-- 数据、权限与状态：GitHub 只授予仓库读取权限，仅后端/数据库 job 使用 PG/Redis，其他 job 不启动业务存储。同分支旧 CI 可取消。`result` 的常用状态命名为 `CI common result`，手动单套件与每日审计状态为 `CI suite <套件> result`，专项不能替代完整常用状态。直接推主分支后失败不会自动回退代码；分支必过状态须在 GitHub 核对并绑定完整常用状态，代码不自动修改远端设置。
+- 数据、权限与状态：GitHub 只授予仓库读取权限，后端/数据库/E2E job 使用临时 PG/Redis，其他 job 不启动业务存储。同分支旧 CI 可取消。`result` 的常用状态命名为 `CI common result`，手动单套件与每日审计状态为 `CI suite <套件> result`，专项不能替代完整常用状态。直接推主分支后失败不会自动回退代码；分支必过状态须在 GitHub 核对并绑定完整常用状态，代码不自动修改远端设置。
 - 配置与扩展：手动运行 `CI` 时 `suite` 填 `common` 或登记名，不使用容易漏维护的固定选项列表。`backend-scale` 必须显式填写 `scale_stocks=100..5000`；本地示例：`scripts/run-ci.sh run backend-scale --scale-stocks 1000`。规模模式只选择登记的规模用例，不重跑整套常用测试；其中两个既有参数用例仍固定为 1000/5000 股，输入数量只控制读取环境参数的用例。
 - 失败与资源边界：未知套件、失效登记、过期文档/锁直接失败。GitHub 每个检查最多 30 分钟，不用自动重试掩盖断言失败；前端 JSON、Python JUnit、覆盖率、安全报告与隔离存储日志归档 7 天。每次执行的临时诊断统一写入 Git 忽略的 `.local/tmp/ai-agent/ci-{unique}/`，入口输出实际目录；退出后保留供排错或上传，可按临时产物清理，不作为长期依赖。
-- 局部风险与复核：常用 CI 包含全量前端离线测试、生产构建、安全扫描及覆盖率测量；浏览器 E2E、真实来源核验、覆盖率百分比门槛及大规模性能达标判定仍属专项或待接入能力，不能由常用通过推断这些已验收。
+- 局部风险与复核：常用 CI 包含全量前端离线测试、生产构建、安全扫描及覆盖率测量；已登记的五个浏览器 E2E 套件与规模回归显式执行，`manual-e2e` / `manual-market` 仍须按各自指南单独验证。真实来源核验、覆盖率百分比门槛及生产规模达标判定不能由 common 或固定材料专项通过推断为已验收。
 
 ### 机制：前端完整回归与构建
 
@@ -112,6 +158,32 @@ flowchart TD
 - 失败与资源边界：测试失败继续失败；测试通过但报告缺失、损坏或测量集合为空也失败。覆盖率数据文件写入独立目录；前端生产 dist 仍按原机制清理，诊断报告归档。
 - 局部风险与复核：覆盖率百分比不代表断言有效性，也不替代权限、业务、浏览器和真实来源验收。后续模块门槛须依据测量、业务风险和测试补齐情况单独决定，不能通过缩小分母达标。
 
+### 机制：专项必检范围与实际执行证据
+
+- 目标与入口：`scripts/run-ci.sh assess` 调用 `ci.assess()`，复用 `ci_changes.py` 识别已提交、未提交、新增、删除与重命名两侧的路径。push / PR 使用其实际范围；本地不传范围时比较当前 HEAD 与工作区，需要验收多个提交时显式传 `--base <完整SHA> --head <完整SHA>`。范围未知时输出 `review-required` 并保守列出专项，不能推断为无需验证。
+- 处理与结果：`config/ci-suites.json` 的 `impact_paths` 是专项影响路径的唯一登记，生成上表及 `ci-impact.json`。`required_specials` 表示必须核对的专项责任范围，初始状态一律 `not-executed`；维护者按下表和 E2E 准入确定实际最小用例/项目、规模及可复用证据，不能把清单本身或 common 绿色状态当作专项通过。路径匹配不能理解全部业务语义，未命中仍须审查上下游影响。
+- 数据、权限与状态：每次后端/规模收集生成 `ci-test-manifest.json`，列出实际选择及按登记分流的完整 nodeid；规模另生成 `scale-execution.json`，JUnit 保留测量 stdout，包含数据行数、请求数、耗时及内存。`--scale-stocks` 只控制读取环境参数的用例，固定 `[1000]` / `[5000]` 参数仍按其原规模执行；以 nodeid 和各用例实际测量为准，不把输入值当成全部用例规模。
+- 配置与扩展：后端规模条件在既有 `backend-scale` 条目维护；E2E 文件在 `special_files` 选择已实现的 `e2e-*` 或 `manual-e2e` 及原因。登记检查沿用 Playwright 默认的 `.spec/.test` 与 TS/JS 命名范围，新增 E2E 未登记会在规划阶段失败，不能自动落到错误物理夹具；普通 Vitest/Pytest 自动发现协议保持不变。尚未整合的 E2E 文件由 `assess.not_integrated_e2e` 和生成表公开列出。
+- 失败与资源边界：`assess` 只做规划，不执行测试或写业务数据。命中必检项而未运行、运行失败、证据与当前版本/范围不符，都必须在当次交付列为未完成；机器门禁验证登记、实际收集和报告，需求语义及最小范围选择仍由维护者审查。专项不自动修改代码、断言、调度或豁免。
+- 局部风险与复核：变更识别、未知范围、普通文档不追加专项、新增 E2E 漏登记、实际清单和严格报告由 `test_ci.py` / `test_ci_security.py` / `test_ci_e2e.py` 回归。耗时和内存为本轮固定材料的测量，不是外部源吞吐或生产容量承诺。
+
+| 改动影响 | 必须完成的验证 | 范围判定 |
+| --- | --- | --- |
+| Playwright/CI E2E 配置、共享 helper、物理夹具 runner、生命周期或报告判定 | 受影响的已登记 E2E 专项，并验证失败/清理/恢复出口 | 共享执行基础设施变化允许完整受影响组；项目和用例以实际收集清单为准 |
+| 登录、鉴权/路由接线、缓存返回、权限可见命令、跨页状态、真实提交及持久化回读 | 低层回归之外，按 E2E 指南执行受影响的最小浏览器关键路径 | 一般业务修改不因路径命中就默认运行模块整组或多视口；未接入 CI 的既有用例按指南单独执行并保留证据 |
+| 分时、估值、股本/历史质量修复的批量 SQL、分批、并发、进度持久化或数据量复杂度 | `backend-scale` 的代表性真实服务/落表/重跑回归 | 显式选择 100..5000，记录实际股票、日期、行数及固定参数；不能以小夹具替代规模风险 |
+| 纯文档、注释、无浏览器装配影响的纯计算或局部呈现 | 按开发验证规范选择差异、低层测试或临时呈现复核 | 不机械增加 E2E；不适用或复用证据的依据写入当次交付 |
+
+### 机制：隔离浏览器专项与既有 runner 复用
+
+- 目标与入口：`scripts/run-ci.sh run` 后显式填写 `e2e-shell`、`e2e-sectors`、`e2e-correlation`、`e2e-trade` 或 `e2e-backtest`，最终调用 `ci_e2e.run_e2e()`；GitHub 手动运行同一套件，通过 `kind=e2e` 准备 Node、Python CI 锁、PG 16、Redis 和 Chromium。范围只从登记生成，不开放任意 grep/project 参数给 CI 总入口。
+- 处理与结果：沿用现有 `run-playwright.sh`、板块/走势关联/交易纪律 runner 和公开回测 helper，先真实 `--list` 保存 `e2e-planned.json`，再执行并保存 `e2e-actual.json`、HTML、trace/screenshot/video 及 `e2e-execution.json`。`playwright.ci.config.ts` 继承主配置，固定单 worker、零重试、禁止 only、独立产物和不复用前端服务；每个登记文件及项目均须收集到用例，再逐项核对计划/实际 test id 与项目相等，全部 passed 才成功，防止两份报告同时少跑。
+- 数据、权限与状态：复用临时 PG/DuckDB/Redis 上下文与正式初始化，清除继承的业务连接及 E2E 目标。后端固定本机 8000，前端复用既有 `E2E_WEB_PORT`，优先 5181、被占用时申请独立空闲端口并记录 `base_url`，不复用或停止已有预览。调试账号、物理夹具和实时 PG 指纹仍走既有守卫；公开回测独立启用 DuckDB 只读，文件缓存/锁也位于本轮临时目录。本机存在健康空闲且可信的 dev/test/local 服务时先快照、停服，专项成功/失败后恢复原运行方式；未知环境、异常服务或未知后端端口占用拒绝执行，不能接管未知进程。
+- 配置与扩展：文件及归属唯一登记在 `special_files`，runner 与项目选择在对应套件的 `e2e` 字段维护。交易纪律暂保留旧用例的适用项目分配：标准视口主链路、默认视口既有未保存协议；这只表示执行接线，不代表新流水账已覆盖，迁移限制见下表。不删除断言、不把运行时 skip 计为通过。更多页面/视口仍按 E2E 指南准入，不把登记的五个执行入口称为完整设计验收。
+- 公开回测的空库前置：`e2e_backtest_runs.seed_ci_market()` 仅接受 `e2e-backtest` 隔离环境及空行情库，准备专属合成日历、日线、基准和准确 ST 材料；非空库直接拒写。完成后后端切换只读，沿用现有公开回测 CLI，通过正式 `BacktestService.run_strategy()` 撮合并写 PG，不伪造完成态或结果子表。非 CI 本地夹具仍只读已准备的行情。
+- 失败与资源边界：空集合、实际少跑/多跑、skip、预期失败、flaky、重试、报告缺失或汇总不一致均失败。关闭本轮服务及文件锁后才销毁临时存储，再恢复日常服务；清理或恢复失败同样失败，保留必要运行档案。产物与专项结果随 Actions 归档 7 天；通过只证明报告中已实际执行的范围。
+- 局部风险与复核：`test_ci_e2e.py` 覆盖有效与违规报告、项目漂移、重复/缺失用例、端口归属及服务恢复；真实浏览器结果以对应专项产物为准。`manual-e2e` 文件尚未通过该执行器运行，不能由五个专项通过推断这些文件、三视口全量或真实来源闭环已验收。E2E 原生准入、选择器和本地夹具操作细节只维护在 [E2E 指南](../e2e-automation/guide.md)。
+
 ### 机制：后端与数据库的共用隔离环境
 
 - 目标与入口：`run_backend()` 与 `database_gate.run_gate()` 共用 `isolated_environment.isolated_storage_environment()`。`gate_server()` 默认启动独立 PG 集群；显式管理连接 `AI_STOCKS_DB_GATE_ADMIN_DSN` 只供执行器和数据库夹具创建/删除随机测试库，不能作为业务客户端连接。
@@ -132,17 +204,28 @@ flowchart TD
 
 ## 接入、扩展与变更影响
 
+- 开发交付与持续覆盖：每次业务行为或技术契约变化，维护者（含 AI）先按[验证选择与总维护清单](../testing/guide.md#验证选择与完成条件)确定预期结果、影响链路和必要验证，再同步实现、断言、CI 归属及所属领域事实文档。新增业务规则不会自动生成测试；普通测试的自动发现只能保证符合既定命名/目录的已编写用例持续执行，不能证明未编码的需求已经覆盖。缺陷修复须保留原问题回归；复用已有覆盖时核对输入、断言及运行条件，不以“已有测试”或常用绿色状态免除必要专项。
 - 消费与接入方式：首次运行先执行 `python -m pip install --require-hashes -r requirements-ci.lock`、前端执行 `npm ci`，本机准备 `initdb/pg_ctl/redis-server`，Node 使用 22.12+。可用 `scripts/run-ci.sh plan` 查看当次常用集合、`scripts/run-ci.sh check` 检查登记、文档与锁指纹。首次生成锁前可单独安装 `uv==0.13.8`；源码变更后先重建锁再按锁安装。参数不透传给任意 shell 命令，套件名须经登记校验。
 - 扩展与兼容边界：新增普通后端测试自动收集；新增专项例外登记精确文件/nodeid、归属和原因，执行对应专项与常用分流回归。新增套件登记 `kind/common/description`，同类执行器可复用，新增执行器类型须同步 `registry()`、`run_suite()` 与 `ci-suite.yml` 的依赖准备。之后执行 `docs --write`，校验会阻止忘记同步文档；不由 CI 自动提交代码、修改断言、刷新契约或创建新调度。
 - 依赖及消费方影响：套件登记变化同时影响本地默认集合、远端矩阵与生成表；修改触发器/可复用 workflow 时运行工作流语法检查，修改插件必须覆盖失败、跳过、空集合、取消选择及专项分流负例。CI 规则变更只在本文维护机制正文，AGENTS、README、验证规范和系统架构保留导航。
 
 新增测试或调整 CI 时，按以下顺序完成维护：
 
-1. 按改动风险在开发验证规范选择测试；普通后端测试按默认发现接入，数据库生命周期测试按上述夹具选择前置状态，专项例外再登记归属与原因。普通前端测试按主 Vitest 配置自动接入完整 CI；快检范围仍由 `vitest.contracts.config.ts` 管理。扩大或调整采集范围必须通过相应采集正反例证明真实执行，不能只检查文件存在；夹具退出时清理，不连接在线后端或数据库。
+1. 为变化的行为维护正常、适用的边界/失败及共享消费者断言，按改动风险在开发验证规范选择验证层次；普通后端测试按默认发现接入，数据库生命周期测试按上述夹具选择前置状态，新增文件再登记到 `database`。普通前端测试按主 Vitest 配置自动接入完整 CI，无须逐文件登记；快检范围仍由 `vitest.contracts.config.ts` 管理。专项例外须精确登记文件或 nodeid、归属与原因，不能通过改名、移出收集目录或泛化排除绕过常用。扩大或调整收集范围必须通过实际收集/执行的正反例证明生效，不能只检查文件存在；夹具退出时清理，不连接在线后端或数据库。
 2. 修改 `config/ci-suites.json` 后执行 `scripts/run-ci.sh docs --write` 和 `scripts/run-ci.sh check`。生成命令只更新套件/例外表，机制正文由修改者随实现维护；不能用生成表格代替解释新的依赖、隔离或失败行为。
    修改 Python 源清单时同时执行 `lock`、按锁安装并审计；修改 npm 清单或补丁时同步锁文件、验证正式 `npm ci`。密钥扫描例外只能在核实固定材料及调用边界后精确登记，必须给出原因和复核期限；不得让 CI 自动增补或续期。
-3. 执行受影响套件；归属变化同时验证常用分流与专项实际执行，执行器变化复核 `test_ci.py`，数据库语义变化继续完成数据库专题要求的 gate。必要检查不通过时修原因，不改断言或例外来掩盖失败。
-4. 交付实际范围、结果和未验证项。远端状态及分支规则以 GitHub 实际证据为准；本地通过不能代替远端运行。
+3. 执行受影响套件；归属变化同时验证常用分流与专项实际执行，执行器变化复核 `test_ci.py`，数据库语义变化继续完成数据库专题要求的 gate。新增或修改检查器时验证合法输入通过、违规输入被拒绝、失败传播和报告完整性，并从其正式入口执行；必要检查不通过时修原因，不改断言或例外来掩盖失败。
+4. 对照完整 diff 核对“变化的契约 → 对应断言/检查 → 常用或专项入口 → 实际报告 → 必要文档”的关联，交付本次应执行、实际执行及尚未完成的范围和原因。执行记录保留在当次交付或已有验收记录，长期机制只维护本文及各自领域正文；AGENTS 保留跨任务要求，开发验证规范维护风险选择，E2E 指南维护浏览器准入和生命周期。远端状态及分支规则以 GitHub 实际证据为准；本地通过不能代替远端运行。
+
+持续维护中的机器检查和审查边界如下：
+
+| 维护事项 | 自动处理与失败条件 | 维护者仍须完成 |
+| --- | --- | --- |
+| 普通测试接入 | 按后端 Pytest、前端 Vitest 的既定命名/目录发现；未登记 skip、空集合和不完整执行失败 | 为新契约编写有效断言，确认适用输入和消费者，不能只新增空测试 |
+| 数据库或专项归属 | 精确文件/nodeid 分流；路径、用例或执行器失效时失败 | 选择正确夹具与归属，验证常用分流和专项确实执行 |
+| 套件及例外清单 | 登记驱动规划器和文档生成块；生成表或依赖锁漂移失败 | 新执行能力先实现并接入，再登记；机制正文随变更维护 |
+| 检查规则与失败出口 | 已接入的合法/违规样例、严格报告判定在常用回归持续执行 | 新增规则补真实正反例，并明确静态、行为、浏览器或语义审查边界 |
+| 需求覆盖和专项选择 | CI 无法自动理解所有未编码的业务要求 | 交付前对照用户要求和完整 diff，列出必要专项、实际证据及未完成项；不能用文件变化或测试数量充当覆盖证明 |
 
 远端 push / PR 入口验收还须核对：
 
@@ -162,4 +245,6 @@ flowchart TD
 | 安全与锁漂移 | `run secrets`、`run dependency-audit`、`check` | 脱敏扫描/审计报告、`test_ci_security.py` | 新发现、查询失败、过期例外和清单漂移均阻断 | 定向修复后复验；每日重新查询依赖漏洞 |
 | 覆盖率度量 | `run frontend/backend/database` | 本轮 JSON / LCOV / XML | 有效非空报告必须生成，百分比先作基线 | 按关键模块缺口补用例后再决定门槛 |
 | TestClient 兼容性 | Python CI 锁中的 Starlette / httpx | 当前回归可用；Starlette 提示 TestClient 的 httpx 支持弃用 | 警告保持可见，不作为测试失败或跳过处理 | 后续升级测试工具时核实 httpx2 迁移并回归客户端契约 |
-| 本阶段覆盖边界 | E2E、真实行情、覆盖率百分比门槛及重型规模专项 | 本文套件表与专项例外表 | 不能以常用通过推断这些已验收 | 按后续阶段及专项准入接入 |
+| 专项选择与执行证据 | `assess`、`run backend-scale`、`run e2e-*` | 必检计划、nodeid 清单、E2E 计划/实际及测量报告 | 计划、实际通过和待完成分别表达；不由 common 绿色状态替代专项 | 维护 `impact_paths` / 归属并运行受影响专项 |
+| 交易纪律 E2E 迁移 | `run e2e-trade` | 现有 `trade-discipline.spec.ts` 和夹具仍验证旧打卡/履约历史；当前页面消费 `TradeLedgerWorkspace` | 执行入口已接入，当前专项未验收；旧断言失败须保留，不得以 common 通过代替 | 按[交易纪律当前契约](trade-discipline.md)迁移账户初始化、成交、日结/修正/撤回、历史与权限及未保存路径；同步夹具和实际项目清单后完整执行，通过前保持未完成 |
+| 未接入范围 | `manual-e2e`、真实行情、覆盖率百分比门槛及生产规模判定 | 本文生成表、`assess.not_integrated_e2e` | 尚未集成的浏览器用例与真实源均不能推断为已验收 | 按专项准入、实际数据和后续接入逐项验证 |

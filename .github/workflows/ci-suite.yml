@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 30
     services:
       postgres:
-        image: ${{ (inputs.kind == 'backend' || inputs.kind == 'database') && 'postgres:16' || '' }}
+        image: ${{ (inputs.kind == 'backend' || inputs.kind == 'database' || inputs.kind == 'e2e') && 'postgres:16' || '' }}
         env:
           POSTGRES_USER: gate
           POSTGRES_PASSWORD: isolated-ci-gate
@@ -50,19 +50,22 @@ jobs:
             requirements-quality.txt
             requirements-ci.lock
       - uses: actions/setup-node@v7
-        if: inputs.kind == 'frontend' || inputs.kind == 'audit'
+        if: inputs.kind == 'frontend' || inputs.kind == 'audit' || inputs.kind == 'e2e'
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - if: inputs.kind == 'frontend'
+      - if: inputs.kind == 'frontend' || inputs.kind == 'e2e'
         run: npm ci --prefix frontend
-      - if: inputs.kind == 'backend' || inputs.kind == 'database' || inputs.kind == 'audit'
+      - if: inputs.kind == 'backend' || inputs.kind == 'database' || inputs.kind == 'audit' || inputs.kind == 'e2e'
         run: python -m pip install --require-hashes -r requirements-ci.lock
+      - name: Prepare Chromium for registered E2E
+        if: inputs.kind == 'e2e'
+        run: frontend/node_modules/.bin/playwright install --with-deps chromium
       - if: inputs.kind == 'quality'
         run: python -m pip install -r requirements-quality.txt
       - name: Prepare isolated Redis executable
-        if: inputs.kind == 'backend' || inputs.kind == 'database'
+        if: inputs.kind == 'backend' || inputs.kind == 'database' || inputs.kind == 'e2e'
         run: |
           if ! command -v redis-server; then
             sudo apt-get update
@@ -92,6 +95,12 @@ jobs:
             .local/tmp/ai-agent/ci-*/**/coverage*
             .local/tmp/ai-agent/ci-*/audit-*.json
             .local/tmp/ai-agent/ci-*/secrets-*.json
+            .local/tmp/ai-agent/ci-*/ci-test-manifest.json
+            .local/tmp/ai-agent/ci-*/scale-execution.json
+            .local/tmp/ai-agent/ci-*/e2e-*.json
+            .local/tmp/ai-agent/ci-*/e2e-backend.log
+            .local/tmp/ai-agent/ci-*/e2e-results/**
+            .local/tmp/ai-agent/ci-*/e2e-html/**
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7

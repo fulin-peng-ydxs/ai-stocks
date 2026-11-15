@@ -3,6 +3,7 @@ import { loginAsDebugUser } from './helpers/auth'
 import { cleanupPublicBacktestRuns, seedPublicBacktestRun } from './helpers/backtestRuns'
 import { collectConsoleIssues } from './helpers/console'
 import { openPageAndWaitForHeading } from './helpers/navigation'
+import { rowAction } from './helpers/rowActions'
 
 /** 轮询输入值直至连续两次采样一致（hydration 异步写表单完成），返回稳定值。 */
 async function waitForStableValue(input: Locator, timeoutMs = 10_000): Promise<string> {
@@ -50,7 +51,9 @@ test('回测页浏览公开回测：分段脱敏、加载查看不写 mine、关
     // 提供者脱敏为「同租户用户」（同租户他人）
     await expect(drawer).toContainText('同租户用户')
     await expect(row.first().getByTestId('backtest-run-drawer-load')).toBeVisible()
-    await expect(row.first().getByTestId('backtest-run-drawer-rerun')).toBeVisible()
+    const rerun = await rowAction(page, row.first(), '复用参数重跑')
+    await expect(rerun).toBeVisible()
+    if (await rerun.getAttribute('role') === 'menuitem') await page.keyboard.press('Escape')
 
     // 加载查看：关闭抽屉、注入选择器外只读快照，**不写入 mine 候选、不自动运行**。
     // 基线在点「加载查看」前一刻取（与快照同一时机）：此时表单已经 hydration 与抽屉操作稳定，

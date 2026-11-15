@@ -6,8 +6,35 @@ import { collectConsoleIssues } from './helpers/console'
 import { DEFAULT_E2E_API_URL } from './helpers/e2e-backend-health.mjs'
 import { openPageAndWaitForHeading } from './helpers/navigation'
 import { requireSeededCorrelationStocks } from './helpers/stockBoardCorrelation'
+import { expandSettingsSection } from './helpers/settings'
+import { rowAction } from './helpers/rowActions'
 
 const API_URL = process.env.E2E_API_URL || DEFAULT_E2E_API_URL
+
+async function selectFixtureProfile(
+  page: Page, testId: string, name: string, mode: 'select' | 'list' = 'select',
+): Promise<void> {
+  if (mode === 'list') {
+    const item = page.getByTestId(testId).getByRole('button', { name })
+    await item.click()
+    await expect(item).toHaveAttribute('aria-pressed', 'true')
+  } else {
+    await page.getByTestId(`${testId}-select`).click()
+    await page.getByRole('option', { name }).click()
+  }
+  await expect(page.getByTestId(testId)).toContainText(name)
+}
+
+async function openFixtureStocks(page: Page): Promise<void> {
+  await openPageAndWaitForHeading(page, '/stocks', '个股行情')
+  await resetColumns(page)
+  const scope = page.getByRole('group', { name: '个股范围', exact: true })
+  if (await scope.isVisible()) {
+    const all = scope.getByRole('button', { name: '全市场', exact: true })
+    await all.click()
+    await expect(all).toHaveAttribute('aria-pressed', 'true')
+  }
+}
 
 async function resetColumns(page: Page) {
   await page.getByTestId('page-settings-trigger').click()
@@ -23,7 +50,7 @@ async function ensureRelatedColumnsVisible(page: Page, slotId: 'table' | 'result
     `component-${slotId}-hiddenColumns-relatedIndustry-switch`,
   )
   if (!await industrySwitch.isVisible()) {
-    await drawer.getByRole('button', { name: '组件设置', exact: true }).click()
+    await expandSettingsSection(drawer, '组件设置')
   }
   for (const key of ['relatedIndustry', 'relatedConcept']) {
     const columnSwitch = drawer.getByTestId(`component-${slotId}-hiddenColumns-${key}-switch`)
@@ -46,8 +73,7 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     const fixture = await requireSeededCorrelationStocks(request, auth.accessToken)
     const headers = { authorization: `Bearer ${auth.accessToken}` }
 
-    await openPageAndWaitForHeading(page, '/stocks', '个股查询')
-    await resetColumns(page)
+    await openFixtureStocks(page)
     await ensureRelatedColumnsVisible(page, 'table')
     await page.getByPlaceholder('代码 / 名称').fill('E2E相关-股票')
     await page.getByPlaceholder('代码 / 名称').press('Enter')
@@ -55,9 +81,9 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     await expect(page.getByRole('columnheader', { name: '概念走势' })).toBeVisible()
     const industry = page.getByRole('link', { name: 'E2E相关-行业冠军' }).first()
     await expect(industry).toBeVisible()
-    await industry.focus()
+    await industry.hover()
     await expect(page.getByLabel('E2E相关-行业冠军相关性说明').first()).toContainText('20 日')
-    await page.keyboard.press('Escape')
+    await page.mouse.move(0, 0)
 
     await page.getByTestId('page-settings-trigger').click()
     const stockDrawer = page.getByTestId('page-settings-drawer')
@@ -65,7 +91,7 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
       'component-table-hiddenColumns-relatedIndustry-switch',
     )
     if (!await industrySwitch.isVisible()) {
-      await stockDrawer.getByRole('button', { name: '组件设置', exact: true }).click()
+      await expandSettingsSection(stockDrawer, '组件设置')
     }
     await industrySwitch.click()
     await stockDrawer.getByRole('button', { name: '关闭页面设置' }).click()
@@ -98,7 +124,7 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     await openPageAndWaitForHeading(page, '/board', '每日榜单')
     await resetColumns(page)
     await ensureRelatedColumnsVisible(page, 'table')
-    await expect(page.getByTestId('board-profile-select')).toContainText('E2E 关联展示评分方案')
+    await selectFixtureProfile(page, 'board-profile-select', 'E2E 关联展示评分方案')
     await expect(page.getByRole('columnheader', { name: '行业走势' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'E2E相关-概念冠军' }).first()).toBeVisible()
 
@@ -115,7 +141,7 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     await openPageAndWaitForHeading(page, '/screen', '策略筛选')
     await resetColumns(page)
     await ensureRelatedColumnsVisible(page, 'result')
-    await expect(page.getByTestId('screen-profile-select')).toContainText('E2E 关联展示筛选方案')
+    await selectFixtureProfile(page, 'screen-profile-select', 'E2E 关联展示筛选方案', 'list')
     const runButton = page.getByRole('button', { name: '运行筛选', exact: true })
     await expect(runButton).toBeEnabled()
     await runButton.click()
@@ -126,13 +152,12 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     expect(consoleIssues).toEqual([])
   })
 
-  test('历史日期降级且最小权限账号不能跳转板块', async ({ page, request }, testInfo) => {
+  test('未计算历史日显示排队状态且最小权限账号不能跳转板块', async ({ page, request }, testInfo) => {
     test.skip(testInfo.project.name !== 'chromium-standard', '权限和历史态仅在标准视口执行')
     const auth = await loginAsDebugUser(page, request, 'debug_stocks_only')
     const fixture = await requireSeededCorrelationStocks(request, auth.accessToken)
 
-    await openPageAndWaitForHeading(page, '/stocks', '个股查询')
-    await resetColumns(page)
+    await openFixtureStocks(page)
     await page.getByPlaceholder('代码 / 名称').fill('E2E相关-股票')
     await page.getByPlaceholder('代码 / 名称').press('Enter')
     await expect(page.getByText('E2E相关-行业冠军', { exact: true }).first()).toBeVisible()
@@ -149,7 +174,8 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     const historyBody = await historyResponse.json()
     expect(historyBody.data.list).toHaveLength(4)
     expect(historyBody.data.list.every((row: StockBasic) => (
-      row.related_boards?.unavailable_reason === 'as_of_mismatch'
+      row.related_boards?.unavailable_reason === 'first_load_pending'
+      && row.related_boards.industry === null && row.related_boards.concept === null
     ))).toBe(true)
     await page.route(/\/api\/stocks(?:\?|$)/, async (route) => {
       await route.fulfill({
@@ -157,8 +183,8 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
         body: JSON.stringify(historyBody),
       })
     })
-    await page.getByPlaceholder('代码 / 名称').press('Enter')
-    await expect(page.getByLabel('未保留该历史日期的相关性结果').first()).toBeVisible()
+    await page.getByRole('button', { name: '刷新', exact: true }).click()
+    await expect(page.getByLabel('走势相关首次计算中').first()).toBeVisible()
   })
 
   test('管理员读取真实调度和任务结果，立即执行入口不污染任务表', async ({
@@ -180,9 +206,9 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     })
     await openPageAndWaitForHeading(page, '/data/schedule', '任务调度')
     const jobRow = page.getByRole('row').filter({ hasText: 'E2E相关-盘后计算' })
-    await expect(jobRow).toContainText('个股走势关联板块·指定 2 只')
-    await jobRow.getByRole('button', { name: '编辑', exact: true }).click()
-    await expect(page.getByTestId('schedule-correlation-codes')).toContainText('997701.SZ')
+    await expect(jobRow).toContainText('走势相关重算·最新完整交易日·指定 2 只')
+    await (await rowAction(page, jobRow, '编辑')).click()
+    await expect(page.getByTestId('schedule-result-codes')).toContainText('997701.SZ')
     await page.getByTestId('schedule-dialog').getByRole('button', { name: '取消' }).click()
     await jobRow.getByRole('button', { name: '立即执行', exact: true }).click()
     await expect(page.getByText(/立即执行一次「E2E相关-盘后计算」/)).toBeVisible()
@@ -192,6 +218,7 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     await expect(page.getByRole('dialog', { name: '立即执行' })).toBeHidden()
     await page.getByTestId('page-settings-trigger').click()
     const settingsDrawer = page.getByTestId('page-settings-drawer')
+    await expandSettingsSection(settingsDrawer, '业务选项')
     await settingsDrawer.getByTestId('task-status-default-all').click()
     await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
     const taskResponsePromise = page.waitForResponse((response) => (
@@ -208,7 +235,7 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
 
     const taskPanel = page.getByTestId('task-center-panel')
     const taskRow = taskPanel.getByRole('row').filter({ hasText: 'E2E相关-盘后计算' })
-    await expect(taskRow).toContainText('个股走势关联板块')
+    await expect(taskRow).toContainText('走势相关重算')
     await taskRow.getByRole('button', { name: '日志', exact: true }).click()
     await expect(page.getByTestId('correlation-task-result')).toContainText(fixture.targetDate)
     await expect(page.getByTestId('correlation-task-result')).toContainText('候选关系')

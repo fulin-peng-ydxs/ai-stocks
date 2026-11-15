@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { installDisplayScaleBaseline } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
 import { THEME_SURFACE_SPECS, rgbChannelsFromHex } from '../src/layout/themeSurfaces'
 
@@ -23,6 +24,7 @@ declare global {
 
 test('刷新登录页时首帧不挂载工作台壳', async ({ page }) => {
   const consoleIssues = collectConsoleIssues(page)
+  await installDisplayScaleBaseline(page)
   await page.addInitScript(() => {
     window.localStorage.setItem('ai-stocks-theme', 'light')
     const trace = { shellMounted: false, loginMounted: false }
