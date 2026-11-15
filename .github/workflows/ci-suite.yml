@@ -12,6 +12,9 @@ on:
       scale_stocks:
         type: string
         default: ''
+      base_revision:
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -75,11 +78,15 @@ jobs:
         env:
           CI_SUITE: ${{ inputs.suite }}
           CI_SCALE_STOCKS: ${{ inputs.scale_stocks }}
+          CI_BASE_REVISION: ${{ inputs.base_revision }}
           AI_STOCKS_DB_GATE_ADMIN_DSN: postgresql://gate:isolated-ci-gate@127.0.0.1:5432/postgres
         run: |
           args=(run "$CI_SUITE")
           if [[ -n "$CI_SCALE_STOCKS" ]]; then
             args+=(--scale-stocks "$CI_SCALE_STOCKS")
+          fi
+          if [[ -n "$CI_BASE_REVISION" ]]; then
+            args+=(--base "$CI_BASE_REVISION" --head "$GITHUB_SHA")
           fi
           python -m backend.devtools.ci "${args[@]}"
       - name: Preserve diagnostic reports
@@ -88,6 +95,7 @@ jobs:
         with:
           name: ci-${{ inputs.suite }}-${{ github.run_attempt }}
           path: |
+            .local/tmp/ai-agent/ci-results-*/**
             .local/tmp/ai-agent/ci-*/ci-*.xml
             .local/tmp/ai-agent/ci-*/ci-redis-*.log
             .local/tmp/ai-agent/ci-*/database-gate-*.log

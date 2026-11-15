@@ -1,8 +1,18 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator } from '@playwright/test'
 
 import { loginAsDebugUser } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
 import { openPageAndWaitForHeading } from './helpers/navigation'
+
+async function expectDialogCenteredInPage(dialog: Locator): Promise<void> {
+  // AppDialog 默认以页面遮罩为边界；等待入场动画后验证实际边界和居中，不扩大像素容差。
+  await expect.poll(async () => dialog.evaluate((element) => {
+    const box = element.getBoundingClientRect()
+    const boundary = element.closest('.el-overlay-dialog')?.getBoundingClientRect()
+    return Boolean(boundary && box.top >= boundary.top && box.bottom <= boundary.bottom
+      && Math.abs(box.top + box.height / 2 - boundary.top - boundary.height / 2) <= 1)
+  })).toBe(true)
+}
 
 test.describe('个股一体化采集', () => {
   test('手动入口统一配置方案、股票范围并提交 stock_ingest', async ({ page, request }) => {
@@ -61,7 +71,7 @@ test.describe('个股一体化采集', () => {
     const taskToolbar = page.getByTestId('ingest-tasks-toolbar')
     await expect(taskToolbar.getByTestId('task-type-filter')).toBeVisible()
     await expect(taskToolbar.getByTestId('task-status-filter')).toBeVisible()
-    await expect(taskToolbar).toContainText('点击任务行查看运行日志')
+    await expect(taskToolbar).toContainText('点击任务行查看日志')
     await expect(taskToolbar.getByText('任务中心', { exact: true })).toHaveCount(0)
     await page.getByRole('tab', { name: '采集日志' }).click()
     await expect(page.getByTestId('ingest-log-panel')).toBeVisible()
@@ -83,8 +93,7 @@ test.describe('个股一体化采集', () => {
     expect(viewport).not.toBeNull()
     expect(boardDialogBox!.y).toBeGreaterThanOrEqual(0)
     expect(boardDialogBox!.y + boardDialogBox!.height).toBeLessThanOrEqual(viewport!.height)
-    expect(Math.abs(boardDialogBox!.y + boardDialogBox!.height / 2 - viewport!.height / 2))
-      .toBeLessThanOrEqual(16)
+    await expectDialogCenteredInPage(dialog)
     expect(await dialog.evaluate((element) => getComputedStyle(element).backgroundColor))
       .not.toBe('rgba(0, 0, 0, 0)')
     await dialog.getByRole('button', { name: '取消' }).click()
@@ -96,8 +105,7 @@ test.describe('个股一体化采集', () => {
     expect(stockDialogBox).not.toBeNull()
     expect(stockDialogBox!.y).toBeGreaterThanOrEqual(0)
     expect(stockDialogBox!.y + stockDialogBox!.height).toBeLessThanOrEqual(viewport!.height)
-    expect(Math.abs(stockDialogBox!.y + stockDialogBox!.height / 2 - viewport!.height / 2))
-      .toBeLessThanOrEqual(16)
+    await expectDialogCenteredInPage(dialog)
     await dialog.getByTestId('ingest-stock-scope-selected').click()
     const codes = dialog.getByTestId('ingest-stock-codes')
     await codes.click()
@@ -122,7 +130,7 @@ test.describe('个股一体化采集', () => {
     const jobName = `E2E 个股基础资料刷新 ${Date.now()}`
     let submitted: Record<string, any> | null = null
 
-    await page.route('**/api/data/schedules', async (route) => {
+    await page.route(/\/api\/data\/schedules(?:\?.*)?$/, async (route) => {
       if (route.request().method() === 'POST') {
         submitted = route.request().postDataJSON()
         return route.fulfill({
@@ -141,7 +149,8 @@ test.describe('个股一体化采集', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           code: 0, msg: 'ok', data: {
-            jobs, task_types: ['stock_ingest', 'board', 'verify'], quality_issue_types: [],
+            jobs, total: jobs.length, page: 1, size: 30,
+            task_types: ['stock_ingest', 'board', 'verify'], quality_issue_types: [],
           },
         }),
       })

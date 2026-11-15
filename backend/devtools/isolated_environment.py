@@ -7,15 +7,27 @@ import sys
 import tempfile
 import time
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[2]
+ARTIFACT_PARENT: ContextVar[Path | None] = ContextVar("ci_artifact_parent", default=None)
+
+
+@contextmanager
+def artifact_scope(parent: Path):
+    """只重定向本进程执行器的报告；不让派生的门禁自测污染父套件回执。"""
+    token = ARTIFACT_PARENT.set(parent)
+    try:
+        yield
+    finally:
+        ARTIFACT_PARENT.reset(token)
 
 
 def create_ci_artifact_dir() -> Path:
     """每次执行独立保存临时诊断，退出后供排错/CI 上传，不混入服务日志。"""
-    parent = ROOT / ".local/tmp/ai-agent"
+    parent = ARTIFACT_PARENT.get() or ROOT / ".local/tmp/ai-agent"
     parent.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix="ci-", dir=parent))
     print(f"CI 临时产物：{directory}", flush=True)

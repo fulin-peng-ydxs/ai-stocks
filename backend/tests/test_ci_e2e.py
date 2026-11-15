@@ -178,17 +178,20 @@ def test_ci_e2e_refuses_to_stop_production_or_unknown_environment(tmp_path, monk
 @pytest.mark.parametrize("paths,required", [
     ({"README.md"}, set()),
     ({"backend/services/intraday_archive.py"}, {"backend-scale"}),
-    ({"frontend/src/router/index.ts"}, {"e2e-shell"}),
+    ({"frontend/src/router/index.ts"}, "all-e2e"),
     ({"frontend/src/views/data/QualityView.vue"}, {"e2e-sectors"}),
     ({"frontend/src/views/ConfigView.vue"}, {"e2e-sectors"}),
     ({"frontend/src/utils/sectorCompare.ts"}, {"e2e-sectors"}),
-    (None, {"backend-scale", "e2e-shell", "e2e-sectors", "e2e-correlation", "e2e-trade", "e2e-backtest"}),
+    (None, "all-specials"),
 ])
 def test_impact_assessment_lists_required_not_executed_specials(monkeypatch, paths, required):
     monkeypatch.setenv("GITHUB_EVENT_PATH", "unknown-event")
     monkeypatch.setattr(ci, "commit_range", lambda *_args: None)
     monkeypatch.setattr(ci, "changed_paths", lambda _selected: paths)
     result = ci.assess()
+    if required in ("all-e2e", "all-specials"):
+        browser_suites = {name for name, entry in ci.registry()["suites"].items() if entry["kind"] == "e2e"}
+        required = browser_suites | ({"backend-scale"} if required == "all-specials" else set())
     assert {entry["suite"] for entry in result["required_specials"]} == required
     assert all(entry["status"] == "not-executed" for entry in result["required_specials"])
     assert bool(result["not_integrated_e2e"])

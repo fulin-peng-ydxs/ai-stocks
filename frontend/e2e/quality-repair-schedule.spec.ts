@@ -25,19 +25,19 @@ test.describe('质检问题定时恢复', () => {
 
       await expect(page.getByTestId('schedule-issue-type')).toBeVisible()
       await page.getByTestId('schedule-issue-type').click()
-      await page.getByRole('option', { name: '行情·近端缺某日', exact: true }).click()
+      await page.getByRole('option', { name: '行情·日线缺口', exact: true }).click()
       await page.getByTestId('schedule-enabled').click()
       await page.getByTestId('schedule-save').click()
 
       const jobRow = page.getByRole('row').filter({ hasText: jobName })
-      await expect(jobRow).toContainText('质检问题恢复·行情·近端缺某日')
+      await expect(jobRow).toContainText('质检问题恢复·行情·日线缺口')
       await expect(jobRow.getByRole('switch')).not.toBeChecked()
 
       const response = await request.get(`${API_URL}/data/schedules`, { headers })
       expect(response.ok()).toBe(true)
       const body = await response.json()
       const job = body.data.jobs.find((item: { name: string }) => item.name === jobName)
-      expect(job?.params).toEqual({ issue_type: 'data_gap' })
+      expect(job?.params).toEqual({ issue_type: 'history_data_gap' })
       expect(job?.enabled).toBe(false)
       expect(consoleIssues).toEqual([])
     } finally {

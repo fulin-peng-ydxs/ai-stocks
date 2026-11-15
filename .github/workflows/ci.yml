@@ -8,18 +8,21 @@ on:
   workflow_dispatch:
     inputs:
       suite:
-        description: 'common 或 config/ci-suites.json 中的套件名'
+        description: 'change（完整变更验收）、common 或登记套件名'
         default: common
         type: string
       scale_stocks:
         description: '仅 backend-scale 使用，显式填写 100..5000'
+        type: string
+      base_revision:
+        description: '手动 change 必填：本次变更起点的完整提交 SHA'
         type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'schedule' && 'dependency-audit' || inputs.suite || 'common' }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'schedule' && 'dependency-audit' || inputs.suite || 'change' }}
   cancel-in-progress: true
 
 jobs:
@@ -35,17 +38,20 @@ jobs:
       - name: Validate registry and generate matrix
         id: plan
         env:
-          CI_SUITE: ${{ github.event_name == 'schedule' && 'dependency-audit' || inputs.suite || 'common' }}
+          CI_SUITE: ${{ github.event_name == 'schedule' && 'dependency-audit' || inputs.suite || 'change' }}
+          CI_SCALE_STOCKS: ${{ inputs.scale_stocks }}
+          CI_BASE_REVISION: ${{ inputs.base_revision }}
         run: |
           python3 -m backend.devtools.ci check
-          mkdir -p ".local/tmp/ai-agent/ci-plan-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          python3 -m backend.devtools.ci assess > ".local/tmp/ai-agent/ci-plan-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/ci-impact.json"
-          echo "matrix=$(python3 -m backend.devtools.ci plan "$CI_SUITE")" >> "$GITHUB_OUTPUT"
+          args=(prepare "$CI_SUITE")
+          if [[ -n "$CI_SCALE_STOCKS" ]]; then args+=(--scale-stocks "$CI_SCALE_STOCKS"); fi
+          if [[ -n "$CI_BASE_REVISION" ]]; then args+=(--base "$CI_BASE_REVISION" --head "$GITHUB_SHA"); fi
+          echo "matrix=$(python3 -m backend.devtools.ci "${args[@]}")" >> "$GITHUB_OUTPUT"
       - name: Preserve required-specials plan
         uses: actions/upload-artifact@v4
         with:
           name: ci-impact-${{ github.run_attempt }}
-          path: .local/tmp/ai-agent/ci-plan-*/ci-impact.json
+          path: .local/tmp/ai-agent/ci-results-*/ci-plan.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
@@ -58,15 +64,43 @@ jobs:
     with:
       suite: ${{ matrix.suite }}
       kind: ${{ matrix.kind }}
-      scale_stocks: ${{ inputs.scale_stocks || '' }}
+      scale_stocks: ${{ format('{0}', matrix.scale_stocks || inputs.scale_stocks || '') }}
+      base_revision: ${{ inputs.base_revision || '' }}
   result:
-    name: ${{ github.event_name == 'schedule' && 'CI suite dependency-audit result' || inputs.suite && inputs.suite != 'common' && format('CI suite {0} result', inputs.suite) || 'CI common result' }}
+    name: ${{ github.event_name == 'schedule' && 'CI suite dependency-audit result' || inputs.suite && inputs.suite != 'change' && format('CI suite {0} result', inputs.suite) || 'CI common result' }}
     if: always()
     needs: [plan, checks]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Collect plan and actual suite evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ci-*
+          path: .local/tmp/ai-agent/ci-collected
+          merge-multiple: true
+      - name: Reconcile required, executed and incomplete checks
+        if: always()
+        run: |
+          python3 -m backend.devtools.ci result --results-dir ".local/tmp/ai-agent/ci-collected/ci-results-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
       - name: Require every selected check
+        if: always()
         env:
           PLAN_RESULT: ${{ needs.plan.result }}
           CHECK_RESULT: ${{ needs.checks.result }}
         run: test "$PLAN_RESULT" = success && test "$CHECK_RESULT" = success
+      - name: Preserve overall result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-result-${{ github.run_attempt }}
+          path: .local/tmp/ai-agent/ci-collected/**/ci-result.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7

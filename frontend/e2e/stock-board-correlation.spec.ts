@@ -163,8 +163,8 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     await expect(page.getByText('E2E相关-行业冠军', { exact: true }).first()).toBeVisible()
     await expect(page.getByRole('link', { name: 'E2E相关-行业冠军' })).toHaveCount(0)
 
-    const target = new Date(`${fixture.targetDate}T00:00:00`)
-    target.setDate(target.getDate() - 1)
+    const target = new Date(`${fixture.targetDate}T00:00:00Z`)
+    target.setUTCDate(target.getUTCDate() - 1)
     const previousDate = target.toISOString().slice(0, 10)
     const historyResponse = await request.get(`${API_URL}/stocks`, {
       headers: { authorization: `Bearer ${auth.accessToken}` },
@@ -172,6 +172,7 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     })
     expect(historyResponse.ok()).toBe(true)
     const historyBody = await historyResponse.json()
+    expect(historyBody.code).toBe(0)
     expect(historyBody.data.list).toHaveLength(4)
     expect(historyBody.data.list.every((row: StockBasic) => (
       row.related_boards?.unavailable_reason === 'first_load_pending'

@@ -160,6 +160,6 @@ if [[ "$current_fingerprint" != "$pg_fingerprint" ]]; then
 fi
 
 cd "$PROJECT_ROOT/frontend"
-"$PROJECT_ROOT/scripts/run-playwright.sh" \
+run_e2e_playwright 1 \
   e2e/stock-board-correlation.spec.ts \
-  --workers=1 "$@"
+  "$@"

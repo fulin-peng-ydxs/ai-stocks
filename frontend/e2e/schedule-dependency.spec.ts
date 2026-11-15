@@ -58,7 +58,10 @@ test('可配置单上游依赖、延迟触发和有上限自身重试', async ({
     await page.getByTestId('schedule-trigger-mode-dependency').click()
     await page.getByTestId('schedule-dependency-job').click()
     await page.getByRole('option', { name: upstreamName }).click()
+    // 上游已支持多选，选择后下拉保持打开；先正常关闭，再操作结果条件。
+    await page.keyboard.press('Escape')
     await page.getByTestId('schedule-dependency-condition-failure').click()
+    await expect(page.getByTestId('schedule-dependency-condition-failure')).toHaveAttribute('aria-pressed', 'true')
     await page.getByTestId('schedule-dependency-delay').locator('input').fill('2')
     await page.getByTestId('schedule-retry-enabled').click()
     await page.getByTestId('schedule-retry-delay').locator('input').fill('3')
@@ -129,14 +132,14 @@ test('停用等待事件需确认且触发记录展示完整中文语义', async
     next_dependency_run_at: '2026-08-25 16:02:00',
     next_run_time: '2026-08-25 16:02:00',
   }
-  await page.route('**/api/data/schedules', async (route) => {
+  await page.route(/\/api\/data\/schedules(?:\?.*)?$/, async (route) => {
     if (route.request().method() !== 'GET') return route.continue()
     await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
         code: 0,
         msg: 'ok',
-        data: { jobs: [job], task_types: ['checkup'], quality_issue_types: [] },
+        data: { jobs: [job], total: 1, page: 1, size: 30, task_types: ['checkup'], quality_issue_types: [] },
       }),
     })
   })

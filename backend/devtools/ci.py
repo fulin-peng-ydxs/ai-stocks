@@ -25,10 +25,23 @@ DOC = ROOT / "agent-works/architecture/continuous-integration.md"
 E2E_TEST_FILE = re.compile(r".+\.(?:spec|test)\.[cm]?[jt]sx?$")
 
 
+def validate_impact_paths(name: str, paths) -> None:
+    """执行专项和待整合测试共用路径契约，防止改名后登记永不命中。"""
+    if (not isinstance(paths, list) or not paths or any(
+        not isinstance(path, str) or not path or path.startswith("/")
+        or ".." in Path(path).parts for path in paths
+    )):
+        raise ValueError(f"专项变更路径规则不完整：{name}")
+    if any(not any(source.is_file() for source in ROOT.glob(path)) for path in paths):
+        raise ValueError(f"专项变更路径登记失效：{name}")
+
+
 def registry() -> dict:
     """读取并校验执行分类；路径失效、未知执行器及无说明例外直接失败。"""
     data = json.loads(REGISTRY.read_text())
     suites = data["suites"]
+    if any(entry["kind"] == "e2e" for entry in suites.values()):
+        validate_impact_paths("共用浏览器执行基础设施", data.get("e2e_impact_paths"))
     for name, suite in suites.items():
         if not name or suite["kind"] not in {"frontend", "backend", "database", "quality", "secrets", "audit", "e2e"}:
             raise ValueError(f"非法 CI 套件：{name}")
@@ -38,14 +51,12 @@ def registry() -> dict:
             raise ValueError(f"未知 CI 调用条件：{name}")
         if suite.get("when") and not data.get("dependency_paths"):
             raise ValueError("条件套件缺少依赖路径规则")
-        if "impact_paths" in suite and (
-            not isinstance(suite["impact_paths"], list) or not suite["impact_paths"]
-            or any(not isinstance(path, str) or not path or path.startswith("/")
-                   or ".." in Path(path).parts for path in suite["impact_paths"])
+        if name == "backend-scale" and (
+            type(suite.get("scale_stocks")) is not int or not 100 <= suite["scale_stocks"] <= 5000
         ):
-            raise ValueError(f"专项变更路径规则不完整：{name}")
-        if any(not any(source.is_file() for source in ROOT.glob(path)) for path in suite.get("impact_paths", [])):
-            raise ValueError(f"专项变更路径登记失效：{name}")
+            raise ValueError("规模专项缺少有效的代表性参数")
+        if "impact_paths" in suite:
+            validate_impact_paths(name, suite["impact_paths"])
         if suite["kind"] == "e2e":
             from backend.devtools.ci_e2e import RUNNERS
 
@@ -80,6 +91,12 @@ def registry() -> dict:
                     raise ValueError(f"E2E 用例不能分流至此执行器：{path}")
                 if not source.is_file():
                     raise ValueError(f"CI 专项登记路径失效：{path}")
+                if target == "manual-e2e" and entry.get("review_status") not in {
+                    "manual-design", "migration-required",
+                }:
+                    raise ValueError(f"未整合 E2E 缺少具体审查结论：{path}")
+                if "impact_paths" in entry:
+                    validate_impact_paths(path, entry["impact_paths"])
                 continue
             if target == "manual-e2e":
                 raise ValueError(f"后端测试不能分流至 E2E：{path}")
@@ -108,8 +125,18 @@ def registry() -> dict:
     return data
 
 
+def suite_impact_paths(data: dict, entry: dict) -> list[str]:
+    """新增浏览器组自动继承共享装配规则，领域路径只在本组维护。"""
+    shared = data.get("e2e_impact_paths", []) if entry["kind"] == "e2e" else []
+    return list(dict.fromkeys([*shared, *entry.get("impact_paths", [])]))
+
+
 def plan(suite: str = "common", base: str | None = None, head: str | None = None) -> dict:
     """按登记生成 Actions 矩阵；新常用套件无需另改触发器或调用方。"""
+    if suite == "change":
+        from backend.devtools.ci_results import change_matrix
+
+        return change_matrix(base, head)
     data = registry()
     suites = data["suites"]
     if suite != "common" and suite not in suites:
@@ -148,9 +175,10 @@ def inventory() -> str:
             lines.append(f"| `{name}` | `{entry['suite']}` | {entry['reason']} |")
     lines += ["", "| 专项 | 变更命中路径 | 执行方式 |", "| --- | --- | --- |"]
     for name, entry in data["suites"].items():
-        if entry.get("impact_paths"):
-            paths = "、".join(f"`{path}`" for path in entry["impact_paths"])
-            lines.append(f"| `{name}` | {paths} | `run {name}` 显式执行；`assess` 输出必跑范围 |")
+        patterns = suite_impact_paths(data, entry)
+        if patterns:
+            paths = "、".join(f"`{path}`" for path in patterns)
+            lines.append(f"| `{name}` | {paths} | `run change` 按命中调用；`run {name}` 显式执行 |")
     return "\n".join(lines)
 
 
@@ -166,7 +194,7 @@ def assess(base: str | None = None, head: str | None = None) -> dict:
     paths = changed_paths(selected)
     required = []
     for name, entry in data["suites"].items():
-        patterns = entry.get("impact_paths", [])
+        patterns = suite_impact_paths(data, entry)
         matched = sorted(path for path in paths or [] if any(fnmatch.fnmatch(path, p) for p in patterns))
         if patterns and (paths is None or matched):
             required.append({
@@ -180,7 +208,8 @@ def assess(base: str | None = None, head: str | None = None) -> dict:
         "changed_paths": sorted(paths) if paths is not None else None,
         "required_specials": required,
         "not_integrated_e2e": [
-            {"file": path, "reason": entry["reason"]}
+            {"file": path, "reason": entry["reason"], "review_status": entry["review_status"],
+             "impact_paths": entry.get("impact_paths", [])}
             for path, entry in data["special_files"].items() if entry["suite"] == "manual-e2e"
         ],
         "note": "这是必跑计划，不是通过证据；命中专项须实际执行并核对其报告，未编码语义仍须审查。",
@@ -342,16 +371,36 @@ def main() -> int:
 
     signal.signal(signal.SIGTERM, terminate)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "plan", "assess", "check", "docs", "lock"))
+    parser.add_argument("action", choices=("run", "plan", "assess", "check", "docs", "lock", "prepare", "result"))
     parser.add_argument("suite", nargs="?", default="common")
     parser.add_argument("--scale-stocks", type=int)
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--base")
     parser.add_argument("--head")
     parser.add_argument("--upgrade-package", action="append", default=[])
+    parser.add_argument("--results-dir", type=Path)
+    parser.add_argument("--plan-file", type=Path)
     args = parser.parse_args()
     try:
-        if args.action == "plan":
+        if args.action in {"prepare", "result"}:
+            from backend.devtools.ci_results import (
+                execution_plan,
+                reconcile,
+                results_directory,
+                save_json,
+            )
+
+            directory = results_directory(args.results_dir)
+            if args.action == "prepare":
+                check_document()
+                check_lock()
+                value = execution_plan(args.suite, args.base, args.head, args.scale_stocks)
+                save_json(directory / "ci-plan.json", value)
+                print(json.dumps({"include": value["include"]}))
+            else:
+                value = json.loads((args.plan_file or directory / "ci-plan.json").read_text())
+                return 0 if reconcile(value, directory)["status"] == "passed" else 1
+        elif args.action == "plan":
             check_lock()
             print(json.dumps(plan(args.suite, args.base, args.head)))
         elif args.action == "assess":
@@ -365,7 +414,14 @@ def main() -> int:
 
             return lock_requirements(args.upgrade_package)
         else:
-            return run_suite(args.suite, args.scale_stocks, args.base, args.head)
+            from backend.devtools.ci_results import execution_plan, results_directory, run_plan
+
+            check_document()
+            check_lock()
+            directory = results_directory(args.results_dir)
+            print(f"CI 统一结果目录：{directory}", flush=True)
+            value = execution_plan(args.suite, args.base, args.head, args.scale_stocks)
+            return run_plan(value, directory, args.base, args.head)
     except (
         ValueError,
         RuntimeError,

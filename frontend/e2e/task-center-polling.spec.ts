@@ -56,12 +56,18 @@ test.describe('任务中心轮询', () => {
     const geometry = await row.locator('.app-row-actions').evaluate((element) => {
       const group = element.getBoundingClientRect()
       const cell = element.closest('td')?.getBoundingClientRect()
+      const style = element.closest('td') ? getComputedStyle(element.closest('td')!) : null
+      const padding = Number.parseFloat(style?.paddingLeft || '0') + Number.parseFloat(style?.paddingRight || '0')
       return {
         cellWidth: cell?.width ?? 0,
+        requiredWidth: element.scrollWidth + padding,
+        buttonsUnclipped: Array.from(element.querySelectorAll('button')).every((button) => button.scrollWidth <= button.clientWidth),
         fitsCell: Boolean(cell && group.left >= cell.left && group.right <= cell.right),
       }
     })
-    expect(geometry.cellWidth).toBeGreaterThan(144)
+    // 实际密度决定宽度；验证真实内容容量，避免旧的固定像素阈值误判紧凑且完整的按钮。
+    expect(geometry.cellWidth).toBeGreaterThanOrEqual(geometry.requiredWidth)
+    expect(geometry.buttonsUnclipped).toBe(true)
     expect(geometry.fitsCell).toBe(true)
   })
 

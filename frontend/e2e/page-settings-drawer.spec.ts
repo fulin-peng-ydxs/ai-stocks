@@ -74,7 +74,7 @@ test.describe('页面设置抽屉', () => {
     )).toBe(360)
     await expect.poll(async () => (
       await getUserPreference(request, auth, { scope: 'global', prefKey: 'settings-drawer' })
-    )).toEqual({})
+    )).toEqual({ collapsedGroups: { board: [] } })
 
     expect(consoleIssues).toEqual([])
   })

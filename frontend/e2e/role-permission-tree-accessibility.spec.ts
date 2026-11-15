@@ -60,9 +60,9 @@ test('角色权限树支持键盘展开并提供唯一的读屏名称', async ({
 test('菜单系统内置标签后置且功能点不重复展示标签', async ({ page, request }) => {
   const consoleIssues = collectConsoleIssues(page)
   await loginAsDebugUser(page, request, 'debug_system')
-  await openPageAndWaitForHeading(page, '/system/menus', '菜单功能')
+  await openPageAndWaitForHeading(page, '/system/menus', '菜单与功能')
 
-  await page.getByRole('treeitem', { name: '用户管理', exact: true }).click()
+  await page.getByRole('treeitem', { name: /^拖动排序：用户管理 用户管理$/ }).click()
 
   const menuTitle = page.getByRole('heading', {
     level: 2,

@@ -49,7 +49,8 @@
         "backend/services/capital_quality.py",
         "backend/services/history_quality.py",
         "backend/services/collection_quality.py"
-      ]
+      ],
+      "scale_stocks": 1000
     },
     "secrets-history": {
       "kind": "secrets",
@@ -61,31 +62,14 @@
       "common": false,
       "description": "现有登录首帧与工作台外壳浏览器专项；标准视口",
       "impact_paths": [
-        "frontend/playwright*.ts",
-        "frontend/e2e/helpers/*",
-        "scripts/run-playwright.sh",
-        "scripts/e2e-backend-lifecycle.sh",
-        "backend/devtools/ci*.py",
-        ".github/workflows/*",
-        "frontend/src/layout/*",
-        "frontend/src/router/*",
         "frontend/src/views/LoginView.vue",
-        "frontend/src/App.vue",
         "frontend/e2e/login-initial-render.spec.ts",
         "frontend/e2e/app-shell-surfaces.spec.ts",
-        "frontend/package*.json",
-        "frontend/patches/*",
-        "backend/devtools/environment_guard.py",
-        "backend/devtools/rbac_test_users.py",
-        "backend/devtools/e2e_test_users.py",
-        "backend/devtools/backend_runtime_state.py",
-        "scripts/load-local-env.sh",
-        "start.sh",
-        "config/ci-suites.json",
         "frontend/src/stores/auth.ts",
         "frontend/src/components/SideMenu*",
         "frontend/src/components/WorkspaceTabs.vue",
-        "frontend/src/components/PageDrawer.vue"
+        "frontend/src/components/PageDrawer.vue",
+        "backend/api/stocks.py"
       ],
       "e2e": {
         "runner": "shell",
@@ -101,12 +85,6 @@
       "common": false,
       "description": "复用板块物理夹具 runner 的数据管理、质量反馈与工作台专项",
       "impact_paths": [
-        "frontend/playwright*.ts",
-        "frontend/e2e/helpers/*",
-        "scripts/run-playwright.sh",
-        "scripts/e2e-backend-lifecycle.sh",
-        "backend/devtools/ci*.py",
-        ".github/workflows/*",
         "frontend/src/views/Sector*",
         "frontend/src/utils/sectorCompare.ts",
         "frontend/src/views/data/OverviewView.vue",
@@ -119,16 +97,7 @@
         "frontend/e2e/board-data-management.spec.ts",
         "frontend/e2e/sector-quality-recovery.spec.ts",
         "frontend/e2e/sectors-workbench.spec.ts",
-        "frontend/package*.json",
-        "frontend/patches/*",
-        "backend/devtools/environment_guard.py",
-        "backend/devtools/rbac_test_users.py",
-        "backend/devtools/e2e_test_users.py",
-        "backend/devtools/backend_runtime_state.py",
-        "scripts/load-local-env.sh",
-        "start.sh",
         "backend/devtools/e2e_board_data.py",
-        "config/ci-suites.json",
         "backend/devtools/e2e_market_data.py",
         "frontend/src/views/data/IngestView.vue",
         "frontend/src/api/sectors.ts",
@@ -136,7 +105,10 @@
         "frontend/src/components/stock-chart/*",
         "frontend/src/components/data/BoardTaskScopeFields.vue",
         "backend/api/sectors.py",
-        "frontend/src/components/PageDrawer.vue"
+        "frontend/src/components/PageDrawer.vue",
+        "backend/api/data_admin.py",
+        "backend/scheduler/*",
+        "frontend/e2e/helpers/sectorData.ts"
       ],
       "e2e": {
         "runner": "sectors",
@@ -150,28 +122,13 @@
     "e2e-correlation": {
       "kind": "e2e",
       "common": false,
-      "description": "复用走势关联板块 runner 的页面、权限及系统结果专项",
+      "description": "走势关联页面、权限、系统结果及调度表单失败保留专项",
       "impact_paths": [
-        "frontend/playwright*.ts",
-        "frontend/e2e/helpers/*",
-        "scripts/run-playwright.sh",
-        "scripts/e2e-backend-lifecycle.sh",
-        "backend/devtools/ci*.py",
-        ".github/workflows/*",
         "frontend/src/components/*RelatedBoard*",
         "backend/services/stock_board_correlation*",
         "scripts/run-stock-board-correlation-e2e.sh",
         "frontend/e2e/stock-board-correlation.spec.ts",
-        "frontend/package*.json",
-        "frontend/patches/*",
-        "backend/devtools/environment_guard.py",
-        "backend/devtools/rbac_test_users.py",
-        "backend/devtools/e2e_test_users.py",
-        "backend/devtools/backend_runtime_state.py",
-        "scripts/load-local-env.sh",
-        "start.sh",
         "backend/devtools/e2e_stock_board_correlation.py",
-        "config/ci-suites.json",
         "backend/devtools/e2e_market_data.py",
         "frontend/src/views/StocksView.vue",
         "frontend/src/views/BoardView.vue",
@@ -181,7 +138,9 @@
         "frontend/src/components/asset-search/*",
         "backend/api/stocks.py",
         "backend/api/board.py",
-        "frontend/src/components/PageDrawer.vue"
+        "frontend/src/components/PageDrawer.vue",
+        "frontend/e2e/stock-board-correlation-t9.spec.ts",
+        "frontend/e2e/helpers/stockBoardCorrelation.ts"
       ],
       "e2e": {
         "runner": "correlation",
@@ -197,27 +156,12 @@
       "common": false,
       "description": "真实账户、成交流水与日结：初始化、持仓回读、修正撤回、历史、规则、权限与未保存保护",
       "impact_paths": [
-        "frontend/playwright*.ts",
-        "frontend/e2e/helpers/*",
-        "scripts/run-playwright.sh",
-        "scripts/e2e-backend-lifecycle.sh",
-        "backend/devtools/ci*.py",
-        ".github/workflows/*",
         "frontend/src/views/TradeDiscipline*",
         "frontend/src/components/trade-discipline/*",
         "backend/services/trade_discipline*",
         "scripts/run-trade-discipline-e2e.sh",
         "frontend/e2e/trade-discipline.spec.ts",
-        "frontend/package*.json",
-        "frontend/patches/*",
-        "backend/devtools/environment_guard.py",
-        "backend/devtools/rbac_test_users.py",
-        "backend/devtools/e2e_test_users.py",
-        "backend/devtools/backend_runtime_state.py",
-        "scripts/load-local-env.sh",
-        "start.sh",
         "backend/devtools/e2e_trade_discipline.py",
-        "config/ci-suites.json",
         "backend/devtools/e2e_market_data.py",
         "frontend/src/views/trade-discipline/**/*",
         "frontend/src/api/tradeDiscipline.ts",
@@ -229,7 +173,8 @@
         "frontend/src/api/tradeLedger.ts",
         "frontend/src/utils/tradeLedgerRecord.ts",
         "frontend/src/utils/tradeNumeric.ts",
-        "frontend/src/components/PageDrawer.vue"
+        "frontend/src/components/PageDrawer.vue",
+        "frontend/e2e/helpers/tradeDiscipline.ts"
       ],
       "e2e": {
         "runner": "trade",
@@ -250,33 +195,116 @@
       "common": false,
       "description": "复用公开回测夹具与只读后端，验证浏览、加载和恢复",
       "impact_paths": [
-        "frontend/playwright*.ts",
-        "frontend/e2e/helpers/*",
-        "scripts/run-playwright.sh",
-        "scripts/e2e-backend-lifecycle.sh",
-        "backend/devtools/ci*.py",
-        ".github/workflows/*",
         "frontend/src/views/BacktestView.vue",
         "backend/services/backtest*",
         "backend/devtools/e2e_backtest_runs.py",
         "frontend/e2e/backtest-public-runs.spec.ts",
-        "frontend/package*.json",
-        "frontend/patches/*",
-        "backend/devtools/environment_guard.py",
-        "backend/devtools/rbac_test_users.py",
-        "backend/devtools/e2e_test_users.py",
-        "backend/devtools/backend_runtime_state.py",
-        "scripts/load-local-env.sh",
-        "start.sh",
-        "config/ci-suites.json",
         "frontend/src/api/backtest.ts",
         "frontend/src/components/asset-search/*",
         "backend/api/backtest.py",
         "backend/devtools/e2e_market_data.py",
-        "frontend/src/components/PageDrawer.vue"
+        "frontend/src/components/PageDrawer.vue",
+        "frontend/e2e/helpers/backtestRuns.ts"
       ],
       "e2e": {
         "runner": "backtest",
+        "projects": [
+          {
+            "name": "chromium-standard"
+          }
+        ]
+      }
+    },
+    "e2e-assets": {
+      "kind": "e2e",
+      "common": false,
+      "description": "资产搜索跨账号浏览、复制与只读加载",
+      "impact_paths": [
+        "frontend/src/components/asset-search/*",
+        "frontend/src/views/ScreenView.vue",
+        "backend/api/profiles.py",
+        "frontend/e2e/asset-search-drawer.spec.ts"
+      ],
+      "e2e": {
+        "runner": "shell",
+        "projects": [
+          {
+            "name": "chromium-standard"
+          }
+        ]
+      }
+    },
+    "e2e-settings": {
+      "kind": "e2e",
+      "common": false,
+      "description": "页面设置分页接线、偏好持久化与恢复默认",
+      "impact_paths": [
+        "frontend/src/components/PageSettingsDrawer.vue",
+        "frontend/src/composables/useDrawerPreferences.ts",
+        "frontend/e2e/page-settings-drawer.spec.ts"
+      ],
+      "e2e": {
+        "runner": "shell",
+        "projects": [
+          {
+            "name": "chromium-standard"
+          }
+        ]
+      }
+    },
+    "e2e-rbac": {
+      "kind": "e2e",
+      "common": false,
+      "description": "系统角色权限树键盘操作及菜单功能点装配",
+      "impact_paths": [
+        "frontend/src/views/system/RoleManageView.vue",
+        "frontend/src/views/system/MenuResourceView.vue",
+        "backend/auth/*",
+        "frontend/e2e/role-permission-tree-accessibility.spec.ts"
+      ],
+      "e2e": {
+        "runner": "shell",
+        "projects": [
+          {
+            "name": "chromium-standard"
+          }
+        ]
+      }
+    },
+    "e2e-schedule": {
+      "kind": "e2e",
+      "common": false,
+      "description": "调度真实保存、依赖条件、停用确认与服务端排序接线",
+      "impact_paths": [
+        "frontend/src/views/data/ScheduleView.vue",
+        "backend/api/data_admin.py",
+        "backend/scheduler/*",
+        "frontend/e2e/quality-repair-schedule.spec.ts",
+        "frontend/e2e/schedule-dependency.spec.ts",
+        "frontend/e2e/schedule-frequency-sort.spec.ts"
+      ],
+      "e2e": {
+        "runner": "shell",
+        "projects": [
+          {
+            "name": "chromium-standard"
+          }
+        ]
+      }
+    },
+    "e2e-tasks": {
+      "kind": "e2e",
+      "common": false,
+      "description": "统一采集表单、任务轮询及日志抽屉关键路径",
+      "impact_paths": [
+        "frontend/src/views/data/IngestView.vue",
+        "frontend/src/views/data/taskLogs.ts",
+        "backend/api/data_admin.py",
+        "frontend/e2e/stock-ingest-management.spec.ts",
+        "frontend/e2e/task-center-polling.spec.ts"
+      ],
+      "e2e": {
+        "runner": "shell",
         "projects": [
           {
             "name": "chromium-standard"
@@ -342,95 +370,133 @@
     },
     "frontend/e2e/app-row-actions.spec.ts": {
       "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "reason": "手动设计验证：操作列几何、更多菜单关闭；不作为每次业务变更的完整页面回归",
+      "review_status": "manual-design"
     },
     "frontend/e2e/asset-search-drawer.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "suite": "e2e-assets",
+      "reason": "跨账号方案搜索、复制和只读加载；复用外壳隔离账号与正式资产服务"
     },
     "frontend/e2e/component-state-preview.spec.ts": {
       "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "reason": "手动设计验证：组件预览四态和主题token；普通组件行为已有Vitest，保留浏览器呈现验收",
+      "review_status": "manual-design"
     },
     "frontend/e2e/data-overview-low-viewport.spec.ts": {
       "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "reason": "手动响应式验证：紧凑视口与各档表格铺满，需按视口选择适用项目，当前未接入严格CI",
+      "review_status": "manual-design"
     },
     "frontend/e2e/display-scale-navigation.spec.ts": {
       "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "reason": "手动显示比例验证：跨屏坐标与点击命中，专属预览fixture，不代表业务导航闭环",
+      "review_status": "manual-design"
     },
     "frontend/e2e/display-scale-popper.spec.ts": {
       "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "reason": "手动显示比例验证：50%至150%浮层几何，需要专项呈现验收，不纳入普通业务路径",
+      "review_status": "manual-design"
     },
     "frontend/e2e/layout-scroll-ownership.spec.ts": {
       "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "reason": "手动布局验证：主表与主内容区滚动归属，按相关布局变更选择，不代表页面业务闭环",
+      "review_status": "manual-design"
     },
     "frontend/e2e/limit-ladder-analysis.spec.ts": {
       "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "reason": "待整合：天梯分析路由、返回与窄视口抽屉已有固定接口材料，尚需核实夹具和当前页面契约",
+      "review_status": "migration-required",
+      "impact_paths": [
+        "frontend/src/views/LimitLadderView.vue",
+        "frontend/src/views/limit-ladder/*",
+        "frontend/e2e/helpers/limitLadder.ts"
+      ]
     },
     "frontend/e2e/limit-ladder-preferences.spec.ts": {
       "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "reason": "待整合：天梯偏好写入依赖完整天梯行情与页面前置，不能把空行情初始化视为已满足",
+      "review_status": "migration-required",
+      "impact_paths": [
+        "frontend/src/views/LimitLadderView.vue",
+        "frontend/src/views/limit-ladder/*",
+        "frontend/e2e/helpers/limitLadder.ts"
+      ]
     },
     "frontend/e2e/limit-ladder-task-center.spec.ts": {
       "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "reason": "待整合：天梯任务状态与日志展示使用专属Mock材料，尚需核实当前任务字段",
+      "review_status": "migration-required",
+      "impact_paths": [
+        "frontend/src/views/LimitLadderView.vue",
+        "frontend/src/views/limit-ladder/*",
+        "frontend/e2e/helpers/limitLadder.ts"
+      ]
     },
     "frontend/e2e/limit-ladder.spec.ts": {
       "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "reason": "待整合：天梯主链路及状态矩阵依赖专属接口材料与适用项目分配",
+      "review_status": "migration-required",
+      "impact_paths": [
+        "frontend/src/views/LimitLadderView.vue",
+        "frontend/src/views/limit-ladder/*",
+        "frontend/e2e/helpers/limitLadder.ts"
+      ]
     },
     "frontend/e2e/page-settings-drawer.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "suite": "e2e-settings",
+      "reason": "设置抽屉分页接线和真实用户偏好恢复；复用外壳隔离环境"
     },
     "frontend/e2e/quality-repair-schedule.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "suite": "e2e-schedule",
+      "reason": "真实质检恢复调度的创建与回读；复用外壳runner及正式初始化的独立PG"
     },
     "frontend/e2e/role-permission-tree-accessibility.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "suite": "e2e-rbac",
+      "reason": "系统权限树键盘与菜单功能点装配；复用正式RBAC初始化"
     },
     "frontend/e2e/schedule-dependency.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "suite": "e2e-schedule",
+      "reason": "真实调度依赖保存及停用确认；复用外壳runner及正式初始化的独立PG"
     },
     "frontend/e2e/schedule-frequency-sort.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "suite": "e2e-schedule",
+      "reason": "调度触发规则的真实页面排序；固定接口材料只证明前端消费"
     },
     "frontend/e2e/stock-board-correlation-t9.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "suite": "e2e-correlation",
+      "reason": "关联计算调度表单、失败保留和权限入口；复用关联runner，Mock不证明计算落表"
     },
     "frontend/e2e/stock-chart-workspace-preview.spec.ts": {
       "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "reason": "手动图表呈现验证：多图几何、光标与比例命中，使用独立预览fixture，不代替行情与权限业务验证",
+      "review_status": "manual-design"
     },
     "frontend/e2e/stock-detail-chart-workspace.spec.ts": {
       "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "reason": "待整合：个股详情包含真实行情前置、临时账号和偏好隔离，需专属确定性行情夹具，不能依赖空库或在线来源",
+      "review_status": "migration-required",
+      "impact_paths": [
+        "frontend/src/views/StockDetailView.vue",
+        "frontend/src/composables/useStockChartPreferences.ts"
+      ]
     },
     "frontend/e2e/stock-ingest-management.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "suite": "e2e-tasks",
+      "reason": "统一采集入口与新建调度表单；固定接口材料只证明前端装配"
     },
     "frontend/e2e/task-center-polling.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "suite": "e2e-tasks",
+      "reason": "任务轮询、操作和日志抽屉；固定接口材料不冒充真实采集"
     },
     "frontend/e2e/trade-discipline-history.spec.ts": {
       "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "reason": "待迁移：旧逐规则checkins接口及日期模型已过期；当前真实日结历史由trade-discipline.spec.ts验证，本文件不得计为通过",
+      "review_status": "migration-required"
     },
     "frontend/e2e/trade-discipline-quick-card.spec.ts": {
       "suite": "manual-e2e",
-      "reason": "既有专项尚未纳入隔离 CI；按 E2E 指南选择最小路径并单独留实际证据"
+      "reason": "待迁移：旧逐规则快捷打卡模型已过期；当前账户快捷日结已有真实E2E，本文件不得计为通过",
+      "review_status": "migration-required"
     }
   },
   "special_nodes": {
@@ -458,5 +524,30 @@
       "suite": "not-applicable",
       "reason": "该迁移只支持 PG schema；同一测试的 postgres 参数仍在常用回归执行"
     }
-  }
+  },
+  "e2e_impact_paths": [
+    "frontend/playwright*.ts",
+    "frontend/e2e/helpers/auth.ts",
+    "frontend/e2e/helpers/console.ts",
+    "frontend/e2e/helpers/navigation.ts",
+    "frontend/e2e/helpers/rowActions.ts",
+    "frontend/e2e/helpers/settings.ts",
+    "frontend/e2e/helpers/e2e-backend-health.*",
+    "scripts/run-playwright.sh",
+    "scripts/e2e-backend-lifecycle.sh",
+    "backend/devtools/ci*.py",
+    ".github/workflows/*",
+    "frontend/src/layout/*",
+    "frontend/src/router/*",
+    "frontend/src/App.vue",
+    "frontend/package*.json",
+    "frontend/patches/*",
+    "backend/devtools/environment_guard.py",
+    "backend/devtools/rbac_test_users.py",
+    "backend/devtools/e2e_test_users.py",
+    "backend/devtools/backend_runtime_state.py",
+    "scripts/load-local-env.sh",
+    "start.sh",
+    "config/ci-suites.json"
+  ]
 }

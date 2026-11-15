@@ -34,7 +34,7 @@ Playwright 用于少量、稳定、浏览器独有的关键用户路径回归。
 
 ### CI 专项入口
 
-已整合的隔离 CI 专项、变更必检清单、文件归属登记和严格报告判据统一见 [CI 编排与持续维护](../architecture/continuous-integration.md#机制隔离浏览器专项与既有-runner-复用)。从仓库根目录执行 `scripts/run-ci.sh assess` 判断影响，`run e2e-shell`、`run e2e-sectors`、`run e2e-correlation`、`run e2e-trade` 或 `run e2e-backtest` 执行登记范围；GitHub 手动运行 `CI` 时填写同名 suite。
+已整合的隔离 CI 专项、变更必检清单、文件归属登记和严格报告判据统一见 [CI 编排与持续维护](../architecture/continuous-integration.md#机制隔离浏览器专项与既有-runner-复用)。从仓库根目录执行 `scripts/run-ci.sh assess` 判断影响，`run e2e-shell`、`run e2e-sectors`、`run e2e-correlation`、`run e2e-trade` 或 `run e2e-backtest` 执行登记范围；GitHub 手动运行 `CI` 时填写同名 suite。完整变更验收使用 `run change`，总计划、执行回执及缺项判定只维护在 CI 专题。
 
 这些入口使用可销毁三库并复用下方 runner，无需把业务连接或密码交给 CI；本机会按可信档案暂时停止空闲测试后端并恢复，后端独占 8000，隔离前端优先 5181、被占用时通过既有 `E2E_WEB_PORT` 申请独立端口并记录实际 URL，不接管其它预览。直接执行下方本地 runner 时仍须满足其环境、写开关和 PG 实时指纹前提。新增 E2E 必须按 CI 专题登记物理夹具归属；`manual-e2e` 明确表示尚未整合，不能写成 CI 已通过。
 

@@ -596,6 +596,11 @@ def stock_indicators(
 
 # 数据管理页专属读接口：仅平台系统管理员可见（需求 §7 数据管理菜单 system-only；R8 守卫）。
 # 注：/data/trade-dates 是全站日期选择器共享读，普通用户页面依赖，**不在此守卫内**。
+def _optional_date_text(value) -> str | None:
+    """DuckDB 的空 DATE 经 pandas 成为 NaT，不能 stringify 后传入下游日期参数。"""
+    return None if value is None or pd.isna(value) else pd.Timestamp(value).date().isoformat()
+
+
 @router.get("/data/status", response_model=ApiResponse,
             dependencies=[Depends(require_system_perm("data-status:view"))])
 def data_status() -> ApiResponse:
@@ -609,10 +614,10 @@ def data_status() -> ApiResponse:
         "FROM data_update_log ORDER BY id DESC LIMIT 20").to_dict("records")
     for u in last_updates:
         u["updated_at"] = str(u["updated_at"])
-        u["date_start"] = None if u["date_start"] is None else str(u["date_start"])
-        u["date_end"] = None if u["date_end"] is None else str(u["date_end"])
+        u["date_start"] = _optional_date_text(u["date_start"])
+        u["date_end"] = _optional_date_text(u["date_end"])
     return ok({
-        "latest_trade_date": str(span["latest"]),
+        "latest_trade_date": _optional_date_text(span["latest"]),
         "distinct_codes": int(span["codes"]), "bar_rows": int(span["rows"]),
         "quality_issues": issues, "recent_updates": last_updates,
     })

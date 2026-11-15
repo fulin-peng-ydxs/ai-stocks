@@ -3,12 +3,13 @@ import { expect, test } from '@playwright/test'
 import { loginAsDebugUser } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
 import { openPageAndWaitForHeading } from './helpers/navigation'
+import { rowAction } from './helpers/rowActions'
 
 const baseJob = {
   id: 'e2e-correlation-existing',
   name: 'E2E 关联板块存量调度',
   task_type: 'stock_board_correlation',
-  params: { codes: ['000001.SZ', '600000.SH'], force: true },
+  params: { codes: ['997701.SZ', '997702.SZ'], force: true },
   freq_type: 'daily',
   freq_config: { time: '15:30' },
   trigger_mode: 'time',
@@ -73,7 +74,7 @@ test.describe('个股走势关联板块 T9 页面闭环', () => {
           code: 0,
           msg: 'ok',
           data: {
-            jobs,
+            jobs, total: jobs.length, page: 1, size: 30,
             task_types: ['stock_ingest', 'board', 'verify', 'stock_board_correlation'],
             quality_issue_types: [],
           },
@@ -84,17 +85,18 @@ test.describe('个股走势关联板块 T9 页面闭环', () => {
     await openPageAndWaitForHeading(page, '/data/schedule', '任务调度')
 
     const existingRow = page.getByRole('row').filter({ hasText: baseJob.name })
-    await expect(existingRow).toContainText('个股走势关联板块·指定 2 只·强制重算')
-    await existingRow.getByRole('button', { name: '编辑', exact: true }).click()
+    await expect(existingRow).toContainText('走势相关重算·最新完整交易日·指定 2 只')
+    await (await rowAction(page, existingRow, '编辑')).click()
     const editDialog = page.getByTestId('schedule-dialog')
     await expect(editDialog).toContainText('编辑调度任务')
-    await expect(page.getByTestId('schedule-correlation-scope-selected')).toHaveAttribute(
+    await expect(page.getByTestId('schedule-result-stock-scope-selected')).toHaveAttribute(
       'aria-pressed',
       'true',
     )
-    await expect(page.getByTestId('schedule-correlation-codes')).toContainText('000001.SZ')
-    await expect(page.getByTestId('schedule-correlation-codes')).toContainText('+ 1')
-    await expect(page.getByTestId('schedule-correlation-force').getByRole('switch')).toBeChecked()
+    await expect(page.getByTestId('schedule-result-codes')).toContainText('997701.SZ')
+    await expect(page.getByTestId('schedule-result-codes')).toContainText('+ 1')
+    await expect(page.getByTestId('schedule-result-target-mode-latest')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('schedule-dialog')).toContainText('按当前版本强制计算并原子发布')
     await editDialog.getByRole('button', { name: '取消', exact: true }).click()
     await expect(editDialog).toBeHidden()
 
@@ -102,37 +104,41 @@ test.describe('个股走势关联板块 T9 页面闭环', () => {
     const createDialog = page.getByTestId('schedule-dialog')
     await page.getByTestId('schedule-name').fill('E2E 关联板块新建调度')
     await page.getByTestId('schedule-task-type').click()
-    await page.getByRole('option', { name: '个股走势关联板块', exact: true }).click()
-    await page.getByTestId('schedule-correlation-scope-selected').click()
+    await page.getByRole('option', { name: '走势相关重算', exact: true }).click()
+    await page.getByTestId('schedule-result-stock-scope-selected').click()
     await page.getByTestId('schedule-save').click()
     await expect(page.getByText('指定股票范围时请至少选择一只股票')).toBeVisible()
     expect(postAttempts).toBe(0)
 
-    await page.getByTestId('schedule-correlation-codes').evaluate((element) => {
+    await page.getByTestId('schedule-result-codes').evaluate((element) => {
       const clipboard = new DataTransfer()
-      clipboard.setData('text', '000001.sz, 600000.sh\n000001.SZ')
+      clipboard.setData('text', '997701.sz, 997702.sz\n997701.SZ')
       element.dispatchEvent(new ClipboardEvent('paste', {
         bubbles: true,
         cancelable: true,
         clipboardData: clipboard,
       }))
     })
-    await page.getByTestId('schedule-correlation-force').click()
+    // 等待现有多选组件完成正式候选解析，再验证提交失败保留与重试。
+    await expect(page.getByTestId('schedule-result-codes')).toContainText('997701.SZ')
+    await expect(page.getByTestId('schedule-result-codes')).toContainText('+ 1')
+    // 当前结果维护入口始终强制重算，提交后仍精确断言 force:true。
     await page.getByTestId('schedule-save').click()
     await expect(page.getByText('E2E 股票代码不存在')).toBeVisible()
     await expect(createDialog).toBeVisible()
     await expect(page.getByTestId('schedule-name')).toHaveValue('E2E 关联板块新建调度')
-    await expect(page.getByTestId('schedule-correlation-codes')).toContainText('000001.SZ')
-    await expect(page.getByTestId('schedule-correlation-codes')).toContainText('+ 1')
-    await expect(page.getByTestId('schedule-correlation-force').getByRole('switch')).toBeChecked()
+    await expect(page.getByTestId('schedule-result-codes')).toContainText('997701.SZ')
+    await expect(page.getByTestId('schedule-result-codes')).toContainText('+ 1')
+    await expect(page.getByTestId('schedule-result-target-mode-latest')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('schedule-dialog')).toContainText('按当前版本强制计算并原子发布')
 
     await page.getByTestId('schedule-save').click()
     await expect(createDialog).toBeHidden()
     expect(postAttempts).toBe(2)
     expect(submitted?.task_type).toBe('stock_board_correlation')
-    expect(submitted?.params).toEqual({ codes: ['000001.SZ', '600000.SH'], force: true })
+    expect(submitted?.params).toEqual({ codes: ['997701.SZ', '997702.SZ'], force: true })
     const createdRow = page.getByRole('row').filter({ hasText: 'E2E 关联板块新建调度' })
-    await expect(createdRow).toContainText('个股走势关联板块·指定 2 只·强制重算')
+    await expect(createdRow).toContainText('走势相关重算·最新完整交易日·指定 2 只')
     expect(consoleIssues).toEqual([])
   })
 
@@ -145,7 +151,7 @@ test.describe('个股走势关联板块 T9 页面闭环', () => {
       status: 'done',
       progress: 1,
       message: '关联板块计算完成',
-      params: { codes: ['000001.SZ', '600000.SH'], force: true },
+      params: { codes: ['997701.SZ', '997702.SZ'], force: true },
       trigger_source: 'scheduled',
       job_name: '盘后关联板块',
       capability: {
@@ -206,7 +212,7 @@ test.describe('个股走势关联板块 T9 页面闭环', () => {
     await openPageAndWaitForHeading(page, '/data/ingest', '数据采集')
     const taskPanel = page.getByTestId('task-center-panel')
     const row = taskPanel.getByRole('row').filter({ hasText: '盘后关联板块' })
-    await expect(row).toContainText('个股走势关联板块·指定 2 只·强制重算')
+    await expect(row).toContainText('走势相关重算·最新完整交易日·指定 2 只')
     await row.getByRole('button', { name: '日志', exact: true }).click()
 
     await expect(page.getByTestId('task-log-drawer')).toContainText('原子切换 · 正式表')

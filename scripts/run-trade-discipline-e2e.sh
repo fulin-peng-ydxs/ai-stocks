@@ -7,6 +7,8 @@ cd "$PROJECT_ROOT"
 # shellcheck source=scripts/load-local-env.sh
 source "$PROJECT_ROOT/scripts/load-local-env.sh"
 load_project_local_env
+# shellcheck source=scripts/e2e-backend-lifecycle.sh
+source "$PROJECT_ROOT/scripts/e2e-backend-lifecycle.sh"
 
 if [[ "${AI_STOCKS_ENV:-}" != "dev" && "${AI_STOCKS_ENV:-}" != "test" && "${AI_STOCKS_ENV:-}" != "local" ]]; then
   echo "请显式设置 AI_STOCKS_ENV=dev|test|local 后再运行交易纪律 E2E"
@@ -157,6 +159,6 @@ if [[ "$current_fingerprint" != "$pg_fingerprint" ]]; then
 fi
 
 cd "$PROJECT_ROOT/frontend"
-"$PROJECT_ROOT/scripts/run-playwright.sh" \
+run_e2e_playwright 1 \
   e2e/trade-discipline.spec.ts \
-  --workers=1 "$@"
+  "$@"

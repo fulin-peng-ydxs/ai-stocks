@@ -66,7 +66,7 @@ npm test -- src/layout/__tests__/pageRegistry.spec.ts
 
 **构建准入**：只有构建配置、依赖、路由或懒加载、全局资源、生产产物受影响，执行发布门禁，或用户明确要求时才运行 `npm run build`。开发预览使用 HMR；普通局部模板、组件逻辑或样式不因改动文件就默认构建。下方清单所有行共用此条件。
 
-常用/专项 CI 的覆盖、命令、调用与新增测试接入统一见 [CI 编排与持续维护](../architecture/continuous-integration.md)。`scripts/run-ci.sh assess` 提供按变更命中的专项必检范围和未整合 E2E 清单，结合本指南风险选择形成最小实际范围；规划不是执行结果。直接手动运行 pytest 时，PG/Redis 不可用仍可能 skip，真实库 API 冒烟也可能整组跳过；命令退出成功不能把跳过项计为通过，依赖与规模须按待验收场景落实。
+常用/专项 CI 的覆盖、命令、调用与新增测试接入统一见 [CI 编排与持续维护](../architecture/continuous-integration.md)。`scripts/run-ci.sh assess` 提供按变更命中的专项必检范围和未整合 E2E 清单，结合本指南风险选择形成最小实际范围；规划不是执行结果；完整变更验收及结果对账使用该专题的 `run change` / `result`。直接手动运行 pytest 时，PG/Redis 不可用仍可能 skip，真实库 API 冒烟也可能整组跳过；命令退出成功不能把跳过项计为通过，依赖与规模须按待验收场景落实。
 
 ## 总维护清单
 

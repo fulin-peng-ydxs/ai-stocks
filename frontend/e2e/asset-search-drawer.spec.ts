@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext } from '@playwright/test'
 import { authenticateDebugUser, loginAsDebugUser, type E2EAuthSnapshot } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
 import { openPageAndWaitForHeading } from './helpers/navigation'
+import { rowAction } from './helpers/rowActions'
 
 const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000/api'
 const EXPR = {
@@ -47,12 +48,11 @@ test('筛选页资产搜索抽屉：三来源、复制为我的、临时只读�
     const drawer = page.getByTestId('asset-search-drawer')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText('系统内置筛选方案')
-    // 视觉验收：等待抽屉进场动画结束，并锁定 xxl 语义档位的响应式上下限。
+    // DESIGN 的资产浏览契约固定使用 xl=560px；保持列边界和核心操作可达断言。
     const drawerPanel = page.locator('.el-drawer', { has: drawer })
     await expect(drawerPanel).toHaveClass(/open/)
     const drawerWidth = await drawerPanel.evaluate((element) => element.offsetWidth)
-    expect(drawerWidth).toBeGreaterThanOrEqual(640)
-    expect(drawerWidth).toBeLessThanOrEqual(820)
+    expect(drawerWidth).toBe(560)
     await testInfo.attach(`asset-search-drawer-preset-${testInfo.project.name}`, {
       body: await drawerPanel.screenshot(),
       contentType: 'image/png',
@@ -97,7 +97,7 @@ test('筛选页资产搜索抽屉：三来源、复制为我的、临时只读�
     // 复制为我的：单击直接复制，「我的」下拉刷新并选中。
     // §6.8.9 契约：mine-only 选择器选中 mine 项不渲染来源标签（assetDisplaySource 对 mine 返回 null），
     // 只显示「名称+版本」；来源标签仅在 tenant/public/preset 等非 mine 来源时出现。
-    await row.getByTestId('asset-search-drawer-copy').click()
+    await (await rowAction(page, row, '复制为我的')).click()
     const profileList = page.getByTestId('screen-profile-select')
     const copiedRow = profileList.getByRole('listitem').filter({ hasText: `${marker} 副本` })
     await expect(copiedRow).toBeVisible()
