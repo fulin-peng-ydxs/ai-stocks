@@ -93,6 +93,11 @@ describe('复用候选与统一执行', () => {
     expect(auditSharedStyleRecipes([owner, ...sample(`<style>.private{${recipe}}</style>`)])).not.toEqual([])
     expect(auditSharedStyleRecipes([owner, ...sample('<template><b class="app-data-emphasis private" /></template><style>.private{color:var(--el-color-primary)}</style>')])).toEqual([])
   })
+  it.each(['kpi-lg', 'kpi-xl', 'page-title-sm'])('独立 KPI / 行情主值角色保留 %s，不误套普通数字强调配方', role => {
+    const owner = { file: 'styles/global.css', source: '.app-data-emphasis{font-size:var(--app-font-size-data);line-height:var(--app-line-height-data);font-weight:var(--app-font-weight-section);font-variant-numeric:tabular-nums}' }
+    const source = `<template><strong class="hero-value">收益</strong></template><style>.hero-value{font-size:var(--app-font-size-${role});line-height:var(--app-line-height-data);font-weight:var(--app-font-weight-strong);font-variant-numeric:tabular-nums}</style>`
+    expect(auditSharedStyleRecipes([owner, ...sample(source)])).toEqual([])
+  })
   it('统一入口执行全部守卫，生产全树和精确例外保持有效', () => {
     const source = `<template><h3>标题（说明）</h3>${primary}${primary}<span>{{ row.created_at }}</span></template><style>.probe{padding:7px;transition:opacity 333ms linear}</style>`
     const errors = auditDesignConsistency(sample(source)).join('\n')

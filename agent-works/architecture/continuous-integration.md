@@ -32,6 +32,22 @@
   | `backend/tests/test_schedule_downstream.py::test_multi_upstream_runtime_migration_round_trip[duckdb]` | `not-applicable` | 该迁移只支持 PG schema；同一测试的 postgres 参数仍在常用回归执行 |
   <!-- ci-inventory:end -->
 
+统一 CI 主入口与本地入口的调用关系如下。实线表示调用或标注的状态汇总，虚线表示登记配置供给；本地执行结果直接作为脚本退出码返回。
+
+```mermaid
+flowchart TD
+  Push["GitHub push / PR<br/>默认 common"] --> Plan["ci.yml：plan<br/>校验登记与文档，生成矩阵"]
+  Manual["CI 手动运行<br/>common 或登记套件"] --> Plan
+  Registry["config/ci-suites.json<br/>套件、常用集合与专项归属"] -.-> Plan
+  Plan --> Workflow["ci-suite.yml<br/>每个矩阵 job 准备环境"]
+  Workflow --> Runner["ci.py：run_suite<br/>统一执行所选套件"]
+  Local["本地 scripts/run-ci.sh<br/>common 按登记顺序执行"] --> Runner
+  Registry -.-> Runner
+  Runner -->|后端与数据库执行器使用| Storage["共用隔离环境<br/>临时 PG 数据库 / DuckDB / Redis"]
+  Plan -->|规划状态| Result["ci.yml：result<br/>规划与所选检查全部成功才通过"]
+  Workflow -->|执行状态| Result
+```
+
 ## 核心机制
 
 ### 机制：常用与专项的统一调用

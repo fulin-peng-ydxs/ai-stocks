@@ -4,6 +4,7 @@
 
 参考：
 
+- [通用测试与门禁维护](~/ai-agent-config/config/force/testing-standards.md#验证选择与门禁维护)
 - [项目命令与环境识别](../../AGENTS.md) · [环境配置](../architecture/environment-configuration.md#环境身份与运行模式) · [测试账号](../multi-tenant-rbac/test-users.md)
 - [设计规则](../../DESIGN.md) · [页面实施模板](../configurable-layout-system/page-template.md) · [布局运行机制](../architecture/frontend-layout.md) · [显示比例策略](../configurable-layout-system/display-scale-policy.md)
 - [E2E 准入与生命周期](../e2e-automation/guide.md)
@@ -22,14 +23,11 @@
 
 ### 设计规范变更与门禁覆盖
 
-新增或实质更新 DESIGN 规则时，在受影响规则或本指南已有位置关联适用对象、共享实现、验证方式和实际执行入口；相同状态可以分组，不逐句建台账。纯措辞或链接修订不机械新增测试。
+新增或实质更新 DESIGN 规则时，必须同步适用的共享实现与消费者、合法/违规样例、实际 CI 或专项入口，并明确覆盖边界。验证方式按通用测试规范选择；仅编写规划规则时标明待实现、待接入，不自动启动开发。
 
-1. 静态可判定的入口、属性、token 和结构约束扩展共享检查器；状态、异步和键盘行为使用真实组件/消费者测试；裁切、焦点、可读性与响应式使用必要的页面验证。语义判断保留人工审查依据，不用正则冒充覆盖。
-2. 同步共享实现及旧消费方、合法/违规样例；验证合法实现通过、违规实现失败，适用时覆盖别名、包装、条件分支和局部覆盖。影响统一入口的改动须用该入口验证拒绝行为。
-3. 按 [CI 接入要求](../architecture/continuous-integration.md#接入扩展与变更影响) 核对实际收集，不以测试文件存在或单独执行通过代替接入；例外精确限定对象、属性、值和原因，检查失效登记。
-4. 覆盖状态分别说明已自动覆盖、部分覆盖、页面/语义验收与待建设。只编写规划规则时明确待实现及待接入，不越权开发，也不宣称已有门禁。
+本项目新增设计检查器接入 `check:design`，共享行为测试按 [CI 接入要求](../architecture/continuous-integration.md#接入扩展与变更影响)进入实际套件。扩展门禁时覆盖组件别名、包装、条件分支和局部覆盖等适用消费方式；技术例外按所属规则限定对象、条件和原因，并检查失效登记。
 
-以下规则的验证映射如下；其它规则沿用下方总维护清单及对应检查器，不由本表宣称全部自动覆盖。
+下表记录当前已实现的部分门禁及其验证边界，供查找入口；未列入表的新增规则同样执行上述维护要求，按总维护清单中的对应类别补齐验证。表中记录不代表全部设计规则已自动覆盖。
 
 | 设计规则与共享入口 | 自动检查与正反例 | 持续执行及页面边界 |
 | --- | --- | --- |
@@ -105,7 +103,7 @@ npm test -- src/layout/__tests__/pageRegistry.spec.ts
 | 基础密度与一键统一 | `LayoutHost`、`useRemoteLayoutConfig`、`pageDensitySync`、`PageDensitySyncSettings`、registry 与 `layout/user-density` | 配置保留、事务回滚、账号/租户隔离、缓存/在途请求/后续逐页编辑；代表性页面、三档密度和浮层实测 |
 | 全局界面比例 | 显示比例策略、`useDisplayScale`、`displayScaleProfiles`、`sizeProfileMatching`、`useLayoutViewport`、`displayScaleGeometry`、全局偏好、根画布/遮罩及第三方补丁 | 尺寸档案/坐标换算/真实组件交互单测、尺寸断点契约、补丁安装校验；分隔条/图表/滚动恢复与 Teleport 浮层实测 |
 | 共享交互状态 | `global.css`、`borders.css`、`design-contracts.json` 的状态/变量/角色、消费者与 DESIGN 契约 | `check:contracts`、`design-contract-gates.spec.ts`；键盘/选择/嵌套操作/禁用测试及明暗焦点/悬停实测 |
-| 规范规则 / 检查器变更或漏检修复 | 先判断既有检查器能否覆盖；必要时扩展对应机器契约和共享检查器、合法及违规样例，并接入 `check:design` / `check` 或适用的领域门禁；文档只维护该规则的权威定义 | 定向正反例、真实消费者扫描、统一入口及按风险选定的行为/页面验证；既有漏检用最小夹具复现并确认修复后被拒绝 |
+| 规范规则 / 检查器变更或漏检修复 | 设计规则按[设计规范变更与门禁覆盖](#设计规范变更与门禁覆盖)维护实际映射；其他规则接入所属领域门禁 | 既有漏检先用最小夹具复现，再确认修复后被拒绝；真实消费者与统一入口按影响复核 |
 | 共享边框与中性选择 | `themeSurfaces.ts` 的边框/选择变量、`useLayoutPreset.ts`、`borders.css`、`design-contracts.json::segmentedRoles`、消费者与 DESIGN §4/§6 | 按下方「共享交互与边框状态」覆盖配方、层叠、宿主及组合状态 |
 | 品牌字标 / 主题强调色 | `BrandMark.vue`、`useLayoutPreset.ts`、登录页/应用外壳及 DESIGN 品牌规则 | `BrandMark.spec.ts`、`useLayoutPreset.spec.ts`；登录页与工作台同模式同预设实测 |
 | 页面浮层 | `#overlays`、`AppDialog` / `AppDetailDrawer` / 专用 `PageDrawer` / `PageSettingsDrawer`、唯一浮层类；新增公共能力时同步 DESIGN 组件清单 | 统一组件测试、`layout-contract.spec.ts`、页面与顶部栏边界、正文内滚、关闭行为 |
@@ -133,7 +131,7 @@ npm test -- src/layout/__tests__/pageRegistry.spec.ts
 
 新页面和布局改造默认临时复核 `1100×620`、`1366×768`、`1440×900`，涉及宽屏分栏再覆盖 `1920×1080`；局部改动只复核受影响状态和断点。新增断点检查临界两侧，采用不同界面比例时确认仍按布局尺寸触发。覆盖代表性长名称、多条件、大总数以及加载、空、错误态，观察核心操作可达、无整页溢出、展开/恢复不丢筛选与草稿，记录实际视口、界面比例、结果及缺口。CSS 几何由浏览器验证，jsdom 和响应式画像登记不能代替实测。
 
-新增/删除 Vue 文件或改变 CSS 查询时，在 `frontend/` 执行 `npm run docs:responsive` 同步 `responsive-components.md` 自动列，并人工核对降级、恢复及消费者；更新 `responsive-pages.md` 受影响页面的当前验收行，包含日期、视口、已观察状态、结论与缺口。实施和实测完成后，才将源码中的 `responsive-review-pending` 整段替换为具体响应式说明与验证结论；手写页面同样适用。
+新增/删除 Vue 文件或改变 CSS 查询时，在 `frontend/` 执行 `npm run docs:responsive` 同步 `responsive-components.md` 自动列，并人工核对降级、恢复及消费者；更新[页面验收记录](../configurable-layout-system/responsive-pages.md)中受影响页面的摘要行与对应详情，保留日期、视口、实际输入与结果及覆盖缺口。实施和实测完成后，才将源码中的 `responsive-review-pending` 整段替换为具体响应式说明与验证结论；手写页面同样适用。
 
 `check:responsive` 检查源码一致性及待补项，`responsive-inventory.spec.ts` 检查记录与同步器边界；`typography-spacing-system.spec.ts` 扫描全部 Vue/CSS 尺寸媒体查询（含范围语法），`layout-contract.spec.ts` 覆盖主体高度、入口和分页。新增降级行为补触发、恢复及状态保留的最低层边界测试，JS 阈值和业务优先级由定向测试与人工实测确认。复用已有响应式布局与组件，不新增平行配置。
 
