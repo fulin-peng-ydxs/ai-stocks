@@ -825,10 +825,21 @@ def test_known_unavailable_repair_stops_self_retry_but_keeps_failure_dependents(
         assert c.query_df("SELECT trigger_kind FROM scheduled_trigger_event").trigger_kind.tolist() == ["dependency"]
 
 
-def test_deferred_intraday_retry_respects_source_recheck_time():
+@pytest.mark.parametrize("source_timezone", ["UTC", "America/New_York", "Asia/Shanghai", None])
+def test_deferred_intraday_retry_respects_source_recheck_time(monkeypatch, source_timezone):
     """用户已启用的自身重试不能在来源复查时间前空跑，不影响普通失败依赖。"""
     import json
-    from datetime import UTC, datetime, timedelta
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from backend.scheduler import scheduler
+
+    # 业务时点固定为北京时间；不随执行测试的主机时区改变预期。
+    now = datetime(2026, 11, 16, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai")).replace(tzinfo=None)
+    monkeypatch.setattr(scheduler, "shanghai_now_naive", lambda: now)
+    expected = now + timedelta(minutes=15)
+    due = expected if source_timezone is None else expected.replace(
+        tzinfo=ZoneInfo("Asia/Shanghai")).astimezone(ZoneInfo(source_timezone))
 
     with DuckDBClient(db_path=":memory:") as c:
         init_db(c)
@@ -840,10 +851,9 @@ def test_deferred_intraday_retry_respects_source_recheck_time():
                           "delay": {"value": 1, "unit": "second"}}, enabled=False,
         )
         c.execute("UPDATE scheduled_job SET enabled=true WHERE id=?", [job["id"]])
-        due = datetime.now(UTC).astimezone() + timedelta(minutes=15)
         _insert_terminal_task(c, tid="deferred_intraday", job_id=job["id"], status="failed")
         c.execute("UPDATE async_task SET result=? WHERE id='deferred_intraday'",
                   [json.dumps({"retryable": True, "next_retry_at": due.isoformat()})])
         assert enqueue_terminal_events("deferred_intraday", client=c) == 1
         event = c.query_df("SELECT due_at FROM scheduled_trigger_event").iloc[0, 0]
-        assert pd.Timestamp(event) == pd.Timestamp(due.astimezone().replace(tzinfo=None))
+        assert pd.Timestamp(event) == pd.Timestamp(expected)

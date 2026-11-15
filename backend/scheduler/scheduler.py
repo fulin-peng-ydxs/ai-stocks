@@ -19,7 +19,7 @@ from decimal import Decimal, InvalidOperation
 
 from backend.common.exceptions import ConflictError, NotFoundError, ValidationError
 from backend.common.logging import get_logger
-from backend.common.timeutil import shanghai_now_naive
+from backend.common.timeutil import SHANGHAI, shanghai_now_naive
 from backend.storage.duckdb_client import get_client
 from backend.storage.task_runtime import (
     get_task_runtime_client,
@@ -1082,9 +1082,9 @@ def _insert_trigger_event(
     if not_before:
         try:
             earliest = datetime.fromisoformat(not_before)
-            # 运行态沿用本机无时区时间；带时区业务证据先转换到同一本机时间再比较。
+            # 运行态采用无时区的北京时间；不能依赖部署主机的本地时区。
             if earliest.tzinfo is not None:
-                earliest = earliest.astimezone().replace(tzinfo=None)
+                earliest = earliest.astimezone(SHANGHAI).replace(tzinfo=None)
             due_at = max(due_at, earliest)
         except (TypeError, ValueError):
             log.warning("任务返回无效复查时间，沿用调度重试间隔")
