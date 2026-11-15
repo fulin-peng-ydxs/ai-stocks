@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { describe, expect, it } from 'vitest'
 import { auditTableHeaders, auditTableHeaderTree } from '../../../scripts/check-table-headers.mjs'
 import { resolveTableHeader } from '@/components/table/tableHeader'
@@ -18,5 +19,5 @@ describe('表头不使用括号', () => {
     expect(resolveTableHeader('收益(%)', '净额（扣费）')).toEqual({ label: '收益', headerMeta: '% · 净额 扣费' })
     expect(resolveTableHeader('名称（未闭合')).toEqual({ label: '名称 未闭合', headerMeta: '' })
   })
-  it('所有当前 Vue 表头符合约束', () => { expect(auditTableHeaderTree()).toEqual([]) })
+  it('所有当前 Vue 表头符合约束', () => { expect(auditTableHeaderTree()).toEqual([]) }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })

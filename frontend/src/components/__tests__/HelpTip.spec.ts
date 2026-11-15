@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from '../../layout/__tests__/helpers/fullSourceAudit'
 import { readdirSync, readFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -72,5 +73,5 @@ describe('HelpTip 主题样式契约', () => {
     }
 
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })

@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 /**
  * 查询类命令契约守卫：把 DESIGN 中稳定命名、锁定态和显式查询例外变成源码门禁。
  * 这里只检查跨页面不变量；请求竞态与状态提交仍由消费页行为测试覆盖。
@@ -183,7 +184,7 @@ describe('查询、重置与刷新命令契约', () => {
     const { inspected, offenders } = searchOrderAudit()
     expect(inspected, '至少应扫描当前已登记的列表搜索筛选区').toBeGreaterThanOrEqual(8)
     expect(offenders, `以下筛选区的搜索框不是最后一类条件：\n${offenders.join('\n')}`).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('多选 AppFilterSelect 必须声明需要完整显示的标签数', () => {
     const { inspected, offenders } = filterSelectCapacityAudit()
@@ -192,13 +193,13 @@ describe('查询、重置与刷新命令契约', () => {
       offenders,
       `以下多选缺少 display-mode="count" 或 1–3 的 :visible-tag-count 容量声明：\n${offenders.join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('AppSortControl 在所属操作栏中固定放在最后', () => {
     const { inspected, offenders } = sortControlOrderAudit()
     expect(inspected, '至少应扫描当前已接入的统一排序控件').toBeGreaterThanOrEqual(1)
     expect(offenders, `以下操作栏在排序控件后仍有内容：\n${offenders.join('\n')}`).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('表格内多选下拉的列容量必须与可见标签数一致', () => {
     const { inspected, offenders } = tableFilterSelectCapacityAudit()
@@ -207,12 +208,12 @@ describe('查询、重置与刷新命令契约', () => {
       offenders,
       `以下表格列没有为多选下拉预留一致容量：\n${offenders.join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('命令按钮不得使用无对象的含糊重置或还原文案', () => {
     const offenders = commands.filter((command) => FORBIDDEN_AMBIGUOUS_LABELS.has(command.label)).map(at)
     expect(offenders, `以下命令必须改为稳定语义名称：\n${offenders.join('\n')}`).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('重置筛选在 clean 状态禁用，空态入口必须声明条件渲染例外', () => {
     const offenders = commands
@@ -225,7 +226,7 @@ describe('查询、重置与刷新命令契约', () => {
       offenders,
       `以下“重置筛选”缺少 clean 禁用或空态条件声明：\n${offenders.join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('刷新命令必须绑定 loading，不能只靠 disabled 表示进行中', () => {
     const offenders = commands
@@ -233,7 +234,7 @@ describe('查询、重置与刷新命令契约', () => {
       .filter((command) => !/:loading\s*=/.test(command.attrs))
       .map(at)
     expect(offenders, `以下刷新命令缺少 :loading 锁定态：\n${offenders.join('\n')}`).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('显式查询必须声明例外、使用 primary 并绑定 loading', () => {
     const offenders = commands
@@ -248,5 +249,5 @@ describe('查询、重置与刷新命令契约', () => {
       offenders,
       `普通列表不得设置查询按钮；显式高成本查询必须标记 data-explicit-query、primary 和 loading：\n${offenders.join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })

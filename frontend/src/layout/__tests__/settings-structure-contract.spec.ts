@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { describe, expect, it } from 'vitest'
 import { auditSettingsStructure, auditSettingsStructureTree } from '../../../scripts/check-settings-structure.mjs'
 
@@ -26,5 +27,5 @@ describe('设置分组与叶子结构', () => {
         <template><PageSettingItem><FieldsAlias /></PageSettingItem></template>` },
     ])).toHaveLength(1)
   })
-  it('全部生产设置遵守结构约束', () => { expect(auditSettingsStructureTree()).toEqual([]) })
+  it('全部生产设置遵守结构约束', () => { expect(auditSettingsStructureTree()).toEqual([]) }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })

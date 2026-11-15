@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { describe, expect, it } from 'vitest'
 import { parse as parseTemplate } from '@vue/compiler-dom'
 import { parse as parseSfc } from '@vue/compiler-sfc'
@@ -119,7 +120,7 @@ describe('统一自适应表格契约', () => {
       `页面和业务组件不得绕过统一表格组件：\n${directTables.map((item) =>
         `${item.file}:${item.line} <${item.tag}>`).join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('页面不得给自适应列声明 width / min-width', () => {
     const widthProps = new Set(['width', 'min-width', 'minWidth'])
@@ -132,7 +133,7 @@ describe('统一自适应表格契约', () => {
       `列宽必须由语义规则推导：\n${findings.map((item) =>
         `${item.file}:${item.line} ${item.forbiddenProps.join(', ')}`).join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('业务调用方不得手写列对齐，必须使用语义角色', () => {
     const alignmentProps = new Set(['align', 'header-align', 'headerAlign'])
@@ -145,7 +146,7 @@ describe('统一自适应表格契约', () => {
       `列对齐必须由 role 统一推导：\n${findings.map((item) =>
         `${item.file}:${item.line} ${item.forbiddenProps.join(', ')}`).join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('能识别静态和动态的手写列对齐属性', () => {
     const findings = inspectTemplateSource(`
@@ -173,7 +174,7 @@ describe('统一自适应表格契约', () => {
       `表格对齐只能由 AppTableColumn 的语义角色维护：\n${findings.map((item) =>
         `${item.file} ${item.rule}`).join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('页面不得用 fill 布尔值绕过主表/嵌入表语义', () => {
     const findings = tableConsumerFiles()
@@ -184,7 +185,7 @@ describe('统一自适应表格契约', () => {
       `主表默认成长；抽屉、展开行或局部详情表必须显式使用 embedded：\n${findings.map((item) =>
         `${item.file}:${item.line}`).join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('无字段列必须显式声明结构、状态或操作等语义', () => {
     const findings = tableConsumerFiles()
@@ -195,7 +196,7 @@ describe('统一自适应表格契约', () => {
       `无 label/prop/type 的自定义列无法可靠推导宽度，必须声明 role：\n${findings.map((item) =>
         `${item.file}:${item.line}`).join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('操作列必须显式声明动作密度语义', () => {
     const findings = tableConsumerFiles()
@@ -206,7 +207,7 @@ describe('统一自适应表格契约', () => {
       `操作列必须按动作密度声明 action / action-compact：\n${findings.map((item) =>
         `${item.file}:${item.line}`).join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('表格空态插槽不得嵌套第二套 el-empty 图形', () => {
     const findings = tableConsumerFiles()
@@ -217,5 +218,5 @@ describe('统一自适应表格契约', () => {
       `表格已由全局样式提供空态图标，#empty 只能补充文案和操作：\n${findings.map((item) =>
         `${item.file}:${item.line}`).join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })

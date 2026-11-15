@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 /**
  * 布局契约守卫（M6）——把 DESIGN.md §7 的 CSS/DOM 层红线变成机制性测试。
  *
@@ -93,10 +94,10 @@ describe('布局契约守卫（M6）', () => {
       }
     }
     expect(offenders).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
   it('发现页面源码', () => {
     expect(files.length).toBeGreaterThan(0)
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('页面不得出现视口硬编码高度（DESIGN.md §7 红线）', () => {
     const offenders: string[] = []
@@ -106,7 +107,7 @@ describe('布局契约守卫（M6）', () => {
       })
     }
     expect(offenders, `视口硬编码高度违规（应交给布局系统的 flex 链路）：\n${offenders.join('\n')}`).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('应用主内容 flex 链允许低视口收缩，页面一级子项不得被全局固定', () => {
     const mainBlock = APP_SOURCE.match(/\.main\s*\{([\s\S]*?)\}/)?.[1] ?? ''
@@ -134,7 +135,7 @@ describe('布局契约守卫（M6）', () => {
       }
     }
     expect(offenders, `以下页面手写了布局契约类，应改用 <LayoutHost>：\n${offenders.join('\n')}`).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('路由页直接声明的抽屉必须位于 LayoutHost 内，复用页面追加目标', () => {
     const router = readFileSync(resolve(SOURCE_DIR, 'router/index.ts'), 'utf8')
@@ -161,7 +162,7 @@ describe('布局契约守卫（M6）', () => {
       offenders,
       `以下页面仍保留脚手架占位内容，必须接入真实组件和四态后再交付：\n${offenders.join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('新页面必须完成响应式复核，不能只删除业务占位即交付', () => {
     const offenders = files
@@ -171,7 +172,7 @@ describe('布局契约守卫（M6）', () => {
       offenders,
       `以下页面尚未完成响应式设计与关键视口复核，请按 page-template.md 完成后替换标记：\n${offenders.join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('页面设置中的默认查询分区必须统一命名', () => {
     const offenders = files
@@ -181,7 +182,7 @@ describe('布局契约守卫（M6）', () => {
       offenders,
       `以下页面仍使用私有“默认筛选”分区，应统一为“默认查询”：\n${offenders.join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('页面抽屉必须使用 PageDrawer，不得覆盖应用顶栏与导航', () => {
     const offenders = files
@@ -191,7 +192,7 @@ describe('布局契约守卫（M6）', () => {
       offenders,
       `以下页面直接使用了 <el-drawer>，应改用页面边界组件 <PageDrawer>：\n${offenders.join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('所有抽屉统一由 PageDrawer 管理外壳，消费方不得覆盖 Element 抽屉结构', () => {
     const directDrawerOffenders = allVueFiles
@@ -211,7 +212,7 @@ describe('布局契约守卫（M6）', () => {
       shellStyleOffenders,
       `以下组件私自覆盖抽屉外壳：\n${shellStyleOffenders.join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('业务弹窗必须使用 AppDialog，详情字段必须使用统一详情组件', () => {
     const dialogOffenders = vueFiles(SOURCE_DIR)
@@ -223,7 +224,7 @@ describe('布局契约守卫（M6）', () => {
       .map((file) => relative(SOURCE_DIR, file).split('\\').join('/'))
     expect(dialogOffenders, `以下组件绕过了 <AppDialog>：\n${dialogOffenders.join('\n')}`).toEqual([])
     expect(detailOffenders, `以下组件绕过了统一详情字段：\n${detailOffenders.join('\n')}`).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('AppDialog 只允许使用受控语义尺寸档位', () => {
     const offenders: string[] = []
@@ -240,7 +241,7 @@ describe('布局契约守卫（M6）', () => {
       offenders,
       `业务弹窗必须使用 ${DIALOG_SIZE_KEYS.join('/')} 语义档位：\n${offenders.join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('页面级业务详情必须使用 AppDetailDrawer，PageDrawer 只保留专用底层场景', () => {
     const directConsumers = files
@@ -248,7 +249,7 @@ describe('布局契约守卫（M6）', () => {
       .map(rel)
       .sort()
     expect(directConsumers).toEqual(['data/IngestView.vue'])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('分页必须统一使用 AppPagination，不得复制底层分页器和响应式逻辑', () => {
     const offenders = vueFiles(SOURCE_DIR)
@@ -259,7 +260,7 @@ describe('布局契约守卫（M6）', () => {
       offenders,
       `以下组件直接使用了 <el-pagination>，应统一改用 <AppPagination>：\n${offenders.join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('PageDrawer 只允许使用受控语义尺寸档位', () => {
     const offenders: string[] = []
@@ -276,7 +277,7 @@ describe('布局契约守卫（M6）', () => {
       offenders,
       `页面业务抽屉必须使用 ${DRAWER_SIZE_KEYS.join('/')} 语义档位：\n${offenders.join('\n')}`,
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('响应式 wide 抽屉只用于已登记的宽内容场景', () => {
     const consumers = files
@@ -289,5 +290,5 @@ describe('布局契约守卫（M6）', () => {
       'data/IngestView.vue',
       'system/AuditLogView.vue',
     ])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })

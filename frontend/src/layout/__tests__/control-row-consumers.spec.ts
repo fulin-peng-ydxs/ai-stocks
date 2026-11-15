@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { describe, expect, it } from 'vitest'
 import { auditControlRows, auditControlRowsTree } from '../../../scripts/check-control-rows.mjs'
 
@@ -48,7 +49,7 @@ describe('操作行消费门禁', () => {
 
   it('真实消费者无逐控件尺寸补偿或局部高度覆盖', () => {
     expect(auditControlRowsTree()).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
   it('Grid 操作行声明列轨道，避免隐式列按内容收缩；不限制内部普通网格', () => {
     const template = '<template><AppControlRow class="tools"><div class="inner" /></AppControlRow></template>'
     for (const display of ['grid', 'inline-grid']) {

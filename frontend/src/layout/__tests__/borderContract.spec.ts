@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { parse } from '@vue/compiler-sfc'
@@ -66,7 +67,7 @@ describe('表面与分段语义收口', () => {
     }
     scan(root)
     expect(findings).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })
 
 describe('股票画布边界所有权门禁', () => {
@@ -121,5 +122,5 @@ describe('股票画布边界所有权门禁', () => {
     inspectDirectory(root)
     expect(embeddedConsumers).toBeGreaterThan(0)
     expect(findings).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })

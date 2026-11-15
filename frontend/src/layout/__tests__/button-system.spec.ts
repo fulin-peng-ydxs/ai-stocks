@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, extname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -51,7 +52,7 @@ describe('全站按钮与图标操作契约', () => {
       }
     }
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('普通命令与纯图标操作消费共享尺寸和字重契约', () => {
     const design = read(join(PROJECT_DIR, 'DESIGN.md'))
@@ -178,7 +179,7 @@ describe('全站按钮与图标操作契约', () => {
     }
 
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('纯图标 el-button 必须迁移到 AppIconButton', () => {
     const violations: string[] = []
@@ -210,7 +211,7 @@ describe('全站按钮与图标操作契约', () => {
     }
 
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('交互按钮可见文案只允许中英文、数字和常用标点，图标必须走图标组件', () => {
     const violations: string[] = []
@@ -236,7 +237,7 @@ describe('全站按钮与图标操作契约', () => {
     }
 
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('界面源码不使用 Unicode 字符冒充设置或关闭图标', () => {
     const violations = vueFiles(SRC_DIR)
@@ -244,7 +245,7 @@ describe('全站按钮与图标操作契约', () => {
       .map((file) => relative(SRC_DIR, file))
 
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('选择态勾选标记使用图标组件，不保留 Unicode 勾作为交互控件图形', () => {
     const app = read(join(SRC_DIR, 'App.vue'))
