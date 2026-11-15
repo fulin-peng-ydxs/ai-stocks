@@ -1,4 +1,5 @@
 # CI 在全新 Python 环境安装；TestClient 依赖必须显式声明。
 -r requirements.txt
+-r requirements-quality.txt
 pytest==8.4.2
 httpx==0.28.1

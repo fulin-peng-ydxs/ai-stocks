@@ -47,6 +47,7 @@ jobs:
       kind: ${{ matrix.kind }}
       scale_stocks: ${{ inputs.scale_stocks || '' }}
   result:
+    name: ${{ inputs.suite && inputs.suite != 'common' && format('CI suite {0} result', inputs.suite) || 'CI common result' }}
     if: always()
     needs: [plan, checks]
     runs-on: ubuntu-latest

@@ -15,7 +15,12 @@ from backend.devtools.isolated_environment import clean_environment
 
 
 def test_common_plan_and_special_suite():
-    assert {item["suite"] for item in ci.plan()["include"]} == {"frontend", "backend", "database"}
+    assert {item["suite"] for item in ci.plan()["include"]} == {
+        "quality",
+        "frontend",
+        "backend",
+        "database",
+    }
     assert ci.plan("backend-scale")["include"] == [{"suite": "backend-scale", "kind": "backend"}]
     with pytest.raises(ValueError, match="未知"):
         ci.plan("unknown")
@@ -88,9 +93,10 @@ def test_stale_file_registration_fails(monkeypatch, tmp_path):
         ci.registry()
 
 
-def test_python_case_cannot_be_routed_to_frontend(monkeypatch, tmp_path):
+@pytest.mark.parametrize("target", ["frontend", "quality"])
+def test_python_case_cannot_be_routed_to_frontend(monkeypatch, tmp_path, target):
     data = ci.registry()
-    next(iter(data["special_nodes"].values()))["suite"] = "frontend"
+    next(iter(data["special_nodes"].values()))["suite"] = target
     source = tmp_path / "ci.json"
     source.write_text(json.dumps(data))
     monkeypatch.setattr(ci, "REGISTRY", source)
@@ -283,7 +289,8 @@ def test_fresh_database_fixture(installed):
         # 使用执行器真实报告路径，成功和失败都必须保留在独立临时目录。
         reports.extend(
             Path(argument.split("=", 1)[1])
-            for argument in arguments if argument.startswith("--junitxml=")
+            for argument in arguments
+            if argument.startswith("--junitxml=")
         )
         return original_run(arguments, **options)
 

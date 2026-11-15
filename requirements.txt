@@ -23,7 +23,8 @@ numpy>=1.26
 akshare>=1.13
 baostock>=0.8.8
 # 同花顺板块数据（板块概念）：ths_board.py 经 py_mini_racer 执行 akshare 打包的 ths.js 生成 v cookie
-py_mini_racer>=0.8
+# 发行包为 mini-racer；Python 导入名仍是 py_mini_racer，旧同名发行包不提供 0.8+。
+mini-racer>=0.8
 
 # 调度
 APScheduler>=3.10

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 
 // 真实运行 package 脚本与生产配置；独立夹具不污染工作树，也不递归运行本测试。
-it('常用 CI 自动收集共享目录任意深度的新测试，失败能够阻断命令', () => {
+it('本地契约快检收集共享目录任意深度的新测试，失败能够阻断命令', () => {
   const frontend = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
   const temporaryRoot = resolve(frontend, '../.local/tmp/ai-agent')
   mkdirSync(temporaryRoot, {recursive:true})
@@ -30,7 +30,7 @@ it('常用 CI 自动收集共享目录任意深度的新测试，失败能够阻
     ]
     const pass = 'import {it,expect} from "vitest";it("CI collection probe",()=>expect(true).toBe(true))'
     selected.forEach(path => write(path,pass))
-    write('src/views/__tests__/business.spec.ts','throw new Error("business test is outside common contracts")')
+    write('src/views/__tests__/business.spec.ts','throw new Error("business test is outside focused contracts")')
     const report = resolve(fixture,'report.json')
     const args = ['run','test:contracts','--','--reporter=json',`--outputFile=${report}`,'--minWorkers=1','--maxWorkers=1']
     const run = () => execFileSync('npm',args,{cwd:fixture,encoding:'utf8',stdio:'pipe',timeout:30000})

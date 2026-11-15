@@ -25,7 +25,7 @@ def registry() -> dict:
     data = json.loads(REGISTRY.read_text())
     suites = data["suites"]
     for name, suite in suites.items():
-        if not name or suite["kind"] not in {"frontend", "backend", "database"}:
+        if not name or suite["kind"] not in {"frontend", "backend", "database", "quality"}:
             raise ValueError(f"非法 CI 套件：{name}")
         if not isinstance(suite["common"], bool) or not suite["description"]:
             raise ValueError(f"CI 套件信息不完整：{name}")
@@ -39,7 +39,9 @@ def registry() -> dict:
             target = entry["suite"]
             if target in suites:
                 kind = suites[target]["kind"]
-                if kind == "frontend" or (category == "special_nodes" and kind == "database"):
+                if kind not in {"backend", "database"} or (
+                    category == "special_nodes" and kind == "database"
+                ):
                     raise ValueError(f"Python 测试不能分流至此执行器：{path}")
             if category == "special_nodes" and path.split("::")[0] in data["special_files"]:
                 raise ValueError(f"文件与用例专项登记重叠：{path}")
@@ -182,10 +184,15 @@ def run_suite(suite: str, scale_stocks: int | None = None) -> int:
             from backend.devtools.database_gate import run_gate
 
             code = run_gate(suite=name)
+        elif kind == "quality":
+            from backend.devtools.ci_quality import run_quality
+
+            code = run_quality()
         else:
-            code = subprocess.run(
-                ["npm", "run", "check"], cwd=ROOT / "frontend", check=False
-            ).returncode
+            env = os.environ.copy()
+            env["CI"] = "1"
+            env["AI_STOCKS_CI_ARTIFACT_DIR"] = str(create_ci_artifact_dir())
+            code = run_test_process(["npm", "--prefix", "frontend", "run", "ci"], env)
         if code:
             return code
     return 0

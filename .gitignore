@@ -49,5 +49,7 @@ config/secrets.yaml
 logs/
 # 本地临时产物（含隔离 CI 诊断，不作为长期依赖）
 /.local/tmp/
+# 本地 CI 工具与解释器缓存，不进入源码或服务数据。
+/.local/ci-tools/
 # AI 验证截图目录（任意含 screenshot(s) 的目录名，如 screenshots/、page-test-screenshots/）
 **/*screenshot*/

@@ -34,6 +34,8 @@
     "check:responsive": "node scripts/check-responsive-inventory.mjs",
     "check:contracts:docs": "node scripts/check-design-contracts.mjs --docs",
     "test:contracts": "vitest run --config vitest.contracts.config.ts",
+    "test:ci": "node scripts/run-ci.mjs test",
+    "ci": "node scripts/run-ci.mjs run",
     "check": "npm run check:design && npm run test:contracts && vue-tsc -b",
     "pretest": "npm run check:design"
   },

@@ -60,7 +60,7 @@ npm test -- src/layout/__tests__/pageRegistry.spec.ts
 | `python -m backend.cli verify-data`、领域规模测试 | 实际数据质量/完整性及按需跨源核验；专项规模测试验证真实服务链路的加载、计算、落表和重跑 | 外部接口 Mock 的真实性；数据质检不是任意功能的验收替代 |
 | AI 内置浏览器 | 临时复现、点击、控制台、视觉、焦点、滚动和响应式实测 | 长期自动回归、未观察状态和后端业务正确性 |
 | Playwright | 满足专项准入的浏览器独有稳定关键链路 | 已由低层测试负责的计算口径、任务重试、并发和落库；命令与夹具仅按专项指南执行 |
-| `npm run check` / `npm run test:contracts` | `check` 执行设计静态门禁、布局与共享设计行为套件和类型检查；`test:contracts` 仅运行该套件，收集范围由 `vitest.contracts.config.ts` 定义；常用 CI 执行 `check` | 业务页面全量、浏览器原生行为、生产构建和 E2E |
+| `npm run check` / `npm run test:contracts` | 本地快检：`check` 执行设计静态门禁、布局与共享设计行为套件和类型检查；`test:contracts` 仅运行该套件，收集范围由 `vitest.contracts.config.ts` 定义 | 业务页面全量、浏览器原生行为、生产构建和 E2E |
 | `npm run build` | 静态门禁 + `vue-tsc -b` + Vite 生产构建；不运行 Vitest | 行为、权限、数据和视觉验收 |
 | `npm run test:design` | 安全前检 + 全量 Vitest + 构建 + 五组串行 E2E；由专用 runner 管理夹具与恢复 | 后端 pytest、数据目录/质量核验及未覆盖业务链路，不是全栈验收总命令 |
 
