@@ -165,7 +165,7 @@ def gate_test_paths(suite: str = "database") -> list[str]:
     return paths
 
 
-def run_gate(*, refresh_contract: bool = False, suite: str = "database") -> int:
+def run_gate(*, refresh_contract: bool = False, suite: str = "database", coverage: bool = False) -> int:
     """默认客户端和公共夹具统一绑定临时三库；用例另建空库仍走测试管理连接。"""
     paths = gate_test_paths(suite)
     artifact_dir = create_ci_artifact_dir()
@@ -175,6 +175,9 @@ def run_gate(*, refresh_contract: bool = False, suite: str = "database") -> int:
     ):
         if refresh_contract:
             refresh_schema_contract(admin_dsn)
+        from backend.devtools.ci_coverage import pytest_arguments, validate_report
+
+        coverage_args = pytest_arguments(artifact_dir, env) if coverage else []
         result = subprocess.run(
             [
                 sys.executable,
@@ -191,9 +194,12 @@ def run_gate(*, refresh_contract: bool = False, suite: str = "database") -> int:
                 "-x",
                 "--tb=short",
                 f"--junitxml={artifact_dir / 'ci-database.xml'}",
+                *coverage_args,
             ],
             cwd=PROJECT_ROOT,
             env=env,
             check=False,
         )
+        if result.returncode == 0 and coverage:
+            validate_report(artifact_dir)
         return result.returncode

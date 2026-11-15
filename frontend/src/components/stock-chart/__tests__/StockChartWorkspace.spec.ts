@@ -737,7 +737,7 @@ describe('StockChartWorkspace', () => {
     expect(wrapper.emitted('quoteWindowChange')).toHaveLength(count)
     kline.emit('datazoom', { start: 80, end: 100 })
     await nextTick()
-    const changed = wrapper.emitted('quoteWindowChange')!.at(-1)![0] as { bars: Bar[] }
+    const changed = wrapper.emitted('quoteWindowChange')!.at(-1)![0] as { bars: readonly Bar[] }
     expect(changed.bars).toHaveLength(9)
     expect(wrapper.emitted('quoteWindowChange')).toHaveLength(count + 1)
     wrapper.unmount()

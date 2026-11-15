@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.devtools import ci_quality
+from backend.devtools import ci_quality, ci_tools
 
 
 def test_ruff_failure_stops_quality_before_workflow_check(monkeypatch):
@@ -53,9 +53,9 @@ def test_empty_workflow_set_fails(tmp_path, monkeypatch):
 def test_actionlint_installer_checks_archive_and_only_extracts_executable(
     tmp_path, monkeypatch, corrupt
 ):
-    monkeypatch.setattr(ci_quality, "ROOT", tmp_path)
-    monkeypatch.setattr(ci_quality.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(ci_quality.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(ci_tools, "ROOT", tmp_path)
+    monkeypatch.setattr(ci_tools.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(ci_tools.platform, "machine", lambda: "x86_64")
     source = f"#!{sys.executable}\nprint('{ci_quality.ACTIONLINT_VERSION}')\n".encode()
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
@@ -74,7 +74,7 @@ def test_actionlint_installer_checks_archive_and_only_extracts_executable(
         )
         return io.BytesIO(contents)
 
-    monkeypatch.setattr(ci_quality, "urlopen", response)
+    monkeypatch.setattr(ci_tools, "urlopen", response)
     if corrupt:
         with pytest.raises(RuntimeError, match="校验和"):
             ci_quality.actionlint_executable()
@@ -84,6 +84,6 @@ def test_actionlint_installer_checks_archive_and_only_extracts_executable(
         assert executable.is_file()
         assert not (executable.parent.parent / "unexpected").exists()
         monkeypatch.setattr(
-            ci_quality, "urlopen", lambda *_a, **_k: pytest.fail("缓存不应重复下载")
+            ci_tools, "urlopen", lambda *_a, **_k: pytest.fail("缓存不应重复下载")
         )
         assert ci_quality.actionlint_executable() == executable

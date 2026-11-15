@@ -2023,7 +2023,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                               <span>→</span>
                               <el-input-number v-model="b[2]" size="small" :controls="false" :disabled="profileReadonly" :min="0" :max="100" class="app-control-width-compact" />
                               <span>分</span>
-                              <AppIconButton label="删除分段" size="xs" tone="danger" :disabled="profileReadonly" @click="removeBand(row, bi)">
+                              <AppIconButton label="删除分段" size="xs" tone="danger" :disabled="profileReadonly" @click="removeBand(row, Number(bi))">
                                 <el-icon><Close /></el-icon>
                               </AppIconButton>
                             </span>

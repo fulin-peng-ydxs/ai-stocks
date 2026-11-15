@@ -3,6 +3,8 @@ name: CI
 on:
   push:
   pull_request:
+  schedule:
+    - cron: '0 21 * * *' # 每日北京时间 05:00，仅调用依赖审计专项。
   workflow_dispatch:
     inputs:
       suite:
@@ -17,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.suite || 'common' }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'schedule' && 'dependency-audit' || inputs.suite || 'common' }}
   cancel-in-progress: true
 
 jobs:
@@ -29,10 +31,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Validate registry and generate matrix
         id: plan
         env:
-          CI_SUITE: ${{ inputs.suite || 'common' }}
+          CI_SUITE: ${{ github.event_name == 'schedule' && 'dependency-audit' || inputs.suite || 'common' }}
         run: |
           python3 -m backend.devtools.ci check
           echo "matrix=$(python3 -m backend.devtools.ci plan "$CI_SUITE")" >> "$GITHUB_OUTPUT"
@@ -47,7 +50,7 @@ jobs:
       kind: ${{ matrix.kind }}
       scale_stocks: ${{ inputs.scale_stocks || '' }}
   result:
-    name: ${{ inputs.suite && inputs.suite != 'common' && format('CI suite {0} result', inputs.suite) || 'CI common result' }}
+    name: ${{ github.event_name == 'schedule' && 'CI suite dependency-audit result' || inputs.suite && inputs.suite != 'common' && format('CI suite {0} result', inputs.suite) || 'CI common result' }}
     if: always()
     needs: [plan, checks]
     runs-on: ubuntu-latest

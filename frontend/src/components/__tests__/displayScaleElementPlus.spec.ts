@@ -125,12 +125,16 @@ describe('Element Plus 实际交互的缩放兼容', () => {
     await flushPromises()
     const tree = wrapper.element as HTMLElement
     Object.defineProperties(tree, { offsetWidth: { value: 300 }, offsetHeight: { value: 104 } })
-    vi.spyOn(tree, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 300 * scale, 104 * scale))
+    // 原型几何已被本夹具代理；实例必须显式覆盖，不能复用原型上的同一个 spy。
+    Object.defineProperty(tree, 'getBoundingClientRect', { configurable: true,
+      value: () => new DOMRect(100, 100, 300 * scale, 104 * scale) })
     const nodes = wrapper.findAll('.el-tree-node')
     const content = nodes[2].get('.el-tree-node__content').element
     const icon = nodes[2].get('.el-tree-node__expand-icon').element
-    vi.spyOn(content, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100 + 52 * scale, 300 * scale, 26 * scale))
-    vi.spyOn(icon, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100 + 52 * scale, 18 * scale, 26 * scale))
+    Object.defineProperty(content, 'getBoundingClientRect', { configurable: true,
+      value: () => new DOMRect(100, 100 + 52 * scale, 300 * scale, 26 * scale) })
+    Object.defineProperty(icon, 'getBoundingClientRect', { configurable: true,
+      value: () => new DOMRect(100, 100 + 52 * scale, 18 * scale, 26 * scale) })
     const drag = (target: Element, type: string, y: number) => {
       const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientY: y })
       Object.defineProperty(event, 'dataTransfer', { value: { setData: vi.fn(), setDragImage: vi.fn() } })

@@ -89,9 +89,9 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 ## 环境与版本
 
 - Python `>=3.11`，本机常用 3.12；Ruff `line-length = 100`、`target-version = py311`。
-- Node.js 建议 20 LTS；前端锁文件为 npm lockfile v3。
-- 后端关键版本：FastAPI `>=0.110`、DuckDB `>=0.10`、PostgreSQL `>=14`、Redis `>=6`、pandas `>=2.2`、pytest `>=8.0`。
-- 前端关键版本：Vue `^3.4`、Vite `^5.2`、TypeScript `^5.4`、Vitest `^1.6`、Element Plus `2.14.1`。
+- Node.js 使用 22.12+（建议 22 LTS）；前端锁文件为 npm lockfile v3。
+- 后端关键版本：FastAPI `>=0.110`、DuckDB `>=0.10`、PostgreSQL `>=14`、Redis `>=6`、pandas `>=2.2`、pytest `>=9.0.3`。
+- 前端关键版本：Vue `^3.5.45`、Vite `^7.3.8`、TypeScript `^5.4`、Vitest `5.1.0`、ECharts `6.1.0`、Element Plus `2.14.1`。
 - 本地开发需先启动 PostgreSQL 与 Redis；生产/集成必须按 `agent-works/architecture/environment-configuration.md` 完成密钥、管理员初始密码和 PG/Redis 连接配置。
 
 ## 编码与测试

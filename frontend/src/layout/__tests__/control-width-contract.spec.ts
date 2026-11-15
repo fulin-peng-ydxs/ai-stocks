@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { readFileSync } from 'node:fs'
 import postcss from 'postcss'
 import { describe, expect, it } from 'vitest'
@@ -86,11 +87,13 @@ describe('输入与选择控件的容量门禁', () => {
 
   it('真实消费者通过，并且统一设计门禁确实调用宽度检查', () => {
     const sources = designSources()
-    expect(auditControlWidths(sources)).toEqual([])
-    expect(auditDesignContracts([...sources, {
+    // 一次全树检查同时验证真实消费者与违规探针，避免为同一断言重复解析全树。
+    const messages = auditDesignContracts([...sources, {
       file: 'views/WidthProbe.vue', source: '<template><el-input style="width:173px" /></template>',
-    }]).some(message => message.includes('WidthProbe.vue') && message.includes('控件宽度'))).toBe(true)
-  })
+    }])
+    expect(messages.filter(message => !message.includes('WidthProbe.vue'))).toEqual([])
+    expect(messages.some(message => message.includes('WidthProbe.vue') && message.includes('控件宽度'))).toBe(true)
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })
 
 describe('页面空态入口', () => {

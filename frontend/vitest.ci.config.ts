@@ -9,7 +9,12 @@ export default defineConfig({
     allowOnly: false,
     passWithNoTests: false,
     retry: 0,
-    minWorkers: 1,
     maxWorkers: 2,
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,vue}'],
+      exclude: ['src/**/*.{test,spec}.ts', 'src/**/*.d.ts', 'src/**/__tests__/**'],
+      reporter: ['json', 'json-summary', 'lcov', 'text-summary'],
+    },
   },
 })

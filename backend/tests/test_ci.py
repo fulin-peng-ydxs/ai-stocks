@@ -14,12 +14,15 @@ from backend.devtools import ci, ci_pytest_plugin
 from backend.devtools.isolated_environment import clean_environment
 
 
-def test_common_plan_and_special_suite():
+def test_common_plan_and_special_suite(monkeypatch):
+    monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
     assert {item["suite"] for item in ci.plan()["include"]} == {
         "quality",
+        "secrets",
         "frontend",
         "backend",
         "database",
+        "dependency-audit",
     }
     assert ci.plan("backend-scale")["include"] == [{"suite": "backend-scale", "kind": "backend"}]
     with pytest.raises(ValueError, match="未知"):
@@ -93,8 +96,8 @@ def test_stale_file_registration_fails(monkeypatch, tmp_path):
         ci.registry()
 
 
-@pytest.mark.parametrize("target", ["frontend", "quality"])
-def test_python_case_cannot_be_routed_to_frontend(monkeypatch, tmp_path, target):
+@pytest.mark.parametrize("target", ["frontend", "quality", "secrets", "dependency-audit"])
+def test_python_case_cannot_be_routed_to_non_python_executor(monkeypatch, tmp_path, target):
     data = ci.registry()
     next(iter(data["special_nodes"].values()))["suite"] = target
     source = tmp_path / "ci.json"

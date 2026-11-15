@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -35,7 +36,7 @@ describe('全局消息时序归属', () => {
     expect(auditMessagePolicy(sample(provider))).not.toEqual([])
     expect(auditMessagePolicy(sample(provider, 'App.vue'))).toEqual([])
     expect(auditMessagePolicy(designSources())).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it.each([
     '<template><el-config-provider v-bind="{ message: { duration: 0 } }" /></template>',
@@ -197,7 +198,7 @@ describe('重置、运行时写入及新增控件的闭环门禁', () => {
     expect(violations).toContain('禁止使用 all')
     expect(violations).toContain('未授权运行时样式')
     expect(violations).toContain('尚未登记样式归属')
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })
 
 describe('共享交互的覆盖门禁', () => {
@@ -462,7 +463,7 @@ describe('源码与文档消费同一状态契约', () => {
   })
   it('全树真实消费方通过同一构建检查器', () => {
     expect(auditDesignContracts(designSources())).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })
 
 

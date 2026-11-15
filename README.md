@@ -29,7 +29,7 @@
 
 ### 准备依赖和本机配置
 
-后端使用 Python ≥3.11、FastAPI、DuckDB、PostgreSQL ≥14 和 Redis ≥6；前端使用 Vue 3、TypeScript、Element Plus 和 Vite，建议 Node.js 20 LTS。依赖版本以 [Python 清单](requirements.txt)、[项目配置](pyproject.toml) 和 [前端清单](frontend/package.json) 为准。
+后端使用 Python ≥3.11、FastAPI、DuckDB、PostgreSQL ≥14 和 Redis ≥6；前端使用 Vue 3、TypeScript、Element Plus 和 Vite，Node.js 使用 22.12+（建议 22 LTS）。依赖版本以 [Python 清单](requirements.txt)、[项目配置](pyproject.toml) 和 [前端清单](frontend/package.json) 为准。
 
 先启动并准备 PostgreSQL 数据库/角色与 Redis；再在仓库根目录安装依赖并复制变量模板：
 

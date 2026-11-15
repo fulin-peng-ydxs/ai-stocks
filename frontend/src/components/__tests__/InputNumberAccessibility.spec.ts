@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, ref } from 'vue'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElInput } from 'element-plus'
 
 describe('数字输入可访问状态', () => {
+  it('自动伸缩文本框卸载后不再执行已排队的布局读取', async () => {
+    const wrapper = mount(ElInput, { props: { type: 'textarea', autosize: true, modelValue: 'draft' } })
+    wrapper.vm.resizeTextarea()
+    wrapper.unmount()
+    await flushPromises()
+    expect(wrapper.exists()).toBe(false)
+  })
   it('键入并离焦后，显示值与绑定值一致', async () => {
     const value = ref(3)
     const wrapper = mount(defineComponent({

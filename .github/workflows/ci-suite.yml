@@ -39,6 +39,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -47,16 +48,17 @@ jobs:
             requirements.txt
             requirements-ci.txt
             requirements-quality.txt
+            requirements-ci.lock
       - uses: actions/setup-node@v7
-        if: inputs.kind == 'frontend'
+        if: inputs.kind == 'frontend' || inputs.kind == 'audit'
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - if: inputs.kind == 'frontend'
         run: npm ci --prefix frontend
-      - if: inputs.kind == 'backend' || inputs.kind == 'database'
-        run: python -m pip install -r requirements-ci.txt
+      - if: inputs.kind == 'backend' || inputs.kind == 'database' || inputs.kind == 'audit'
+        run: python -m pip install --require-hashes -r requirements-ci.lock
       - if: inputs.kind == 'quality'
         run: python -m pip install -r requirements-quality.txt
       - name: Prepare isolated Redis executable
@@ -87,6 +89,9 @@ jobs:
             .local/tmp/ai-agent/ci-*/ci-redis-*.log
             .local/tmp/ai-agent/ci-*/database-gate-*.log
             .local/tmp/ai-agent/ci-*/**/ci-frontend.json
+            .local/tmp/ai-agent/ci-*/**/coverage*
+            .local/tmp/ai-agent/ci-*/audit-*.json
+            .local/tmp/ai-agent/ci-*/secrets-*.json
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7

@@ -1,0 +1,25 @@
+{
+  "secrets": [
+    {
+      "path": "backend/devtools/isolated_environment.py",
+      "rule": "generic-api-key",
+      "line_sha256": "1374a47725bd9c8c2928593ed41128dd0024ffcea6f1a94fae91484efc4e44a1",
+      "reason": "隔离测试环境专用固定 Fernet 测试材料；只在随机临时数据库和禁发邮件的测试子进程注入，不是业务密钥。",
+      "expires": "2027-02-15"
+    },
+    {
+      "path": "backend/tests/conftest.py",
+      "rule": "generic-api-key",
+      "line_sha256": "85e413fabd0530b3da1da2a93dec8cf29f67b5c1bce482f7a9b1defe241e7f77",
+      "reason": "测试模块导入期的固定 JWT 测试材料；用于签发可重复的测试 token，不用于业务服务。",
+      "expires": "2027-02-15"
+    },
+    {
+      "path": "backend/tests/test_stocks_permissions.py",
+      "rule": "generic-api-key",
+      "line_sha256": "655bb830ef69755c9d133ebabcaeb5b962a5457cb20747f0f5c1152a4b60b946",
+      "reason": "个股资产权限回归的固定 JWT 测试材料；仅由 monkeypatch 注入测试进程。",
+      "expires": "2027-02-15"
+    }
+  ]
+}

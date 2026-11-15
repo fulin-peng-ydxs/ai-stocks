@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import signal
@@ -10,6 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from backend.devtools.ci_changes import changed_paths, commit_range
+from backend.devtools.ci_dependencies import check_installed, check_lock
 from backend.devtools.isolated_environment import (
     create_ci_artifact_dir,
     isolated_storage_environment,
@@ -25,10 +28,14 @@ def registry() -> dict:
     data = json.loads(REGISTRY.read_text())
     suites = data["suites"]
     for name, suite in suites.items():
-        if not name or suite["kind"] not in {"frontend", "backend", "database", "quality"}:
+        if not name or suite["kind"] not in {"frontend", "backend", "database", "quality", "secrets", "audit"}:
             raise ValueError(f"非法 CI 套件：{name}")
         if not isinstance(suite["common"], bool) or not suite["description"]:
             raise ValueError(f"CI 套件信息不完整：{name}")
+        if suite.get("when") not in {None, "dependencies"}:
+            raise ValueError(f"未知 CI 调用条件：{name}")
+        if suite.get("when") and not data.get("dependency_paths"):
+            raise ValueError("条件套件缺少依赖路径规则")
     for category in ("special_files", "special_nodes"):
         for path, entry in data[category].items():
             if (
@@ -51,16 +58,24 @@ def registry() -> dict:
     return data
 
 
-def plan(suite: str = "common") -> dict:
+def plan(suite: str = "common", base: str | None = None, head: str | None = None) -> dict:
     """按登记生成 Actions 矩阵；新常用套件无需另改触发器或调用方。"""
-    suites = registry()["suites"]
+    data = registry()
+    suites = data["suites"]
     if suite != "common" and suite not in suites:
         raise ValueError(f"未知 CI 套件 {suite}；可选 common、" + "、".join(suites))
+    paths = changed_paths(commit_range(base, head)) if suite == "common" else None
     result = {
         "include": [
             {"suite": name, "kind": entry["kind"]}
             for name, entry in suites.items()
-            if (entry["common"] if suite == "common" else name == suite)
+            if (
+                entry["common"] and (
+                    entry.get("when") != "dependencies" or paths is None
+                    or any(fnmatch.fnmatch(path, pattern) for path in paths
+                           for pattern in data["dependency_paths"])
+                ) if suite == "common" else name == suite
+            )
         ]
     }
     if not result["include"]:
@@ -73,7 +88,9 @@ def inventory() -> str:
     data = registry()
     lines = ["| 套件 | 类别 | 常用入口自动调用 | 覆盖 |", "| --- | --- | --- | --- |"]
     for name, entry in data["suites"].items():
-        common = "是" if entry["common"] else "否"
+        common = "依赖变更时；范围未知时保守执行" if entry.get("when") == "dependencies" else (
+            "是" if entry["common"] else "否"
+        )
         lines.append(f"| `{name}` | {entry['kind']} | {common} | {entry['description']} |")
     lines += ["", "| 专项文件或用例 | 归属 | 原因 |", "| --- | --- | --- |"]
     for category in ("special_files", "special_nodes"):
@@ -131,6 +148,7 @@ def run_backend(suite: str, scale_stocks: int | None = None) -> int:
 
     if suite == "backend-scale" and (scale_stocks is None or not 100 <= scale_stocks <= 5000):
         raise ValueError("backend-scale 必须显式传 --scale-stocks 100..5000")
+    check_installed()
     artifact_dir = create_ci_artifact_dir()
     with (
         gate_server(artifact_dir) as admin,
@@ -150,7 +168,10 @@ def run_backend(suite: str, scale_stocks: int | None = None) -> int:
             env=env,
             check=True,
         )
-        return run_test_process(
+        from backend.devtools.ci_coverage import pytest_arguments, validate_report
+
+        coverage = pytest_arguments(artifact_dir, env) if suite == "backend" else []
+        code = run_test_process(
             [
                 sys.executable,
                 "-m",
@@ -167,15 +188,21 @@ def run_backend(suite: str, scale_stocks: int | None = None) -> int:
                 "--durations=15",
                 "--tb=short",
                 f"--junitxml={artifact_dir / ('ci-' + suite + '.xml')}",
+                *coverage,
             ],
             env,
         )
+        if code == 0 and coverage:
+            validate_report(artifact_dir)
+        return code
 
 
-def run_suite(suite: str, scale_stocks: int | None = None) -> int:
+def run_suite(suite: str, scale_stocks: int | None = None,
+              base: str | None = None, head: str | None = None) -> int:
     """常用编排和手动专项最终调用相同执行器，任一失败使总入口失败。"""
     check_document()
-    for item in plan(suite)["include"]:
+    check_lock()
+    for item in plan(suite, base, head)["include"]:
         name, kind = item["suite"], item["kind"]
         print(f"CI 开始：{name}", flush=True)
         if kind == "backend":
@@ -183,11 +210,20 @@ def run_suite(suite: str, scale_stocks: int | None = None) -> int:
         elif kind == "database":
             from backend.devtools.database_gate import run_gate
 
-            code = run_gate(suite=name)
+            check_installed()
+            code = run_gate(suite=name, coverage=True)
         elif kind == "quality":
             from backend.devtools.ci_quality import run_quality
 
             code = run_quality()
+        elif kind == "secrets":
+            from backend.devtools.ci_secrets import run_secrets
+
+            code = run_secrets(commit_range(base, head), history=name == "secrets-history")
+        elif kind == "audit":
+            from backend.devtools.ci_dependencies import run_audit
+
+            code = run_audit()
         else:
             env = os.environ.copy()
             env["CI"] = "1"
@@ -205,18 +241,27 @@ def main() -> int:
 
     signal.signal(signal.SIGTERM, terminate)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "plan", "check", "docs"))
+    parser.add_argument("action", choices=("run", "plan", "check", "docs", "lock"))
     parser.add_argument("suite", nargs="?", default="common")
     parser.add_argument("--scale-stocks", type=int)
     parser.add_argument("--write", action="store_true")
+    parser.add_argument("--base")
+    parser.add_argument("--head")
+    parser.add_argument("--upgrade-package", action="append", default=[])
     args = parser.parse_args()
     try:
         if args.action == "plan":
-            print(json.dumps(plan(args.suite)))
+            check_lock()
+            print(json.dumps(plan(args.suite, args.base, args.head)))
         elif args.action in {"check", "docs"}:
             check_document(write=args.action == "docs" and args.write)
+            check_lock()
+        elif args.action == "lock":
+            from backend.devtools.ci_dependencies import lock_requirements
+
+            return lock_requirements(args.upgrade_package)
         else:
-            return run_suite(args.suite, args.scale_stocks)
+            return run_suite(args.suite, args.scale_stocks, args.base, args.head)
     except (
         ValueError,
         RuntimeError,

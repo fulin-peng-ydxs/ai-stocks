@@ -1,6 +1,6 @@
 import { enumText } from '@/utils/displayText'
 // 数据管理 API（对应 backend/api/data_admin.py + data_tasks.py + stocks.py 的 /data/*）
-import http, { type AppRequestConfig } from './client'
+import http, { type AppRequestConfig, withRequestParams } from './client'
 import { STOCK_INGEST_RECIPE_LABEL } from '@/utils/stockIngest'
 
 // ── 四层质量模型（M2.9 DM-D15）──
@@ -400,7 +400,7 @@ export function listSchedules(query: ScheduleListQuery): Promise<{
   return http.get('/data/schedules', { params: query })
 }
 export function listScheduleOptions(q = '', limit = 50, config?: AppRequestConfig): Promise<{ list: ScheduledJobOption[] }> {
-  return http.get('/data/schedules/options', { ...config, params: { q, limit } })
+  return http.get('/data/schedules/options', withRequestParams(config, { q, limit }))
 }
 export interface ScheduleDownstream {
   jobs: ScheduledJob[]

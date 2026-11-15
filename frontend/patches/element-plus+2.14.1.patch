@@ -10,6 +10,15 @@ diff --git a/node_modules/element-plus/es/components/input/src/input.vue_vue_typ
  			const updateStyle = () => {
  				rAFId = void 0;
  				countStyle.value = { 
+@@ -158,6 +158,8 @@
+ 					...textareaStyle
+ 				};
+ 				nextTick(() => {
++					// The input can unmount before its queued resize callback runs.
++					if (!textarea.value) return;
+ 					textarea.value.offsetHeight;
+ 					textareaCalcStyle.value = textareaStyle;
+ 				});
 diff --git a/node_modules/element-plus/es/components/scrollbar/src/thumb.vue_vue_type_script_setup_true_lang.mjs b/node_modules/element-plus/es/components/scrollbar/src/thumb.vue_vue_type_script_setup_true_lang.mjs
 --- a/node_modules/element-plus/es/components/scrollbar/src/thumb.vue_vue_type_script_setup_true_lang.mjs
 +++ b/node_modules/element-plus/es/components/scrollbar/src/thumb.vue_vue_type_script_setup_true_lang.mjs
@@ -255,6 +264,15 @@ diff --git a/node_modules/element-plus/lib/components/input/src/input.vue_vue_ty
  			const updateStyle = () => {
  				rAFId = void 0;
  				countStyle.value = { 
+@@ -157,6 +157,8 @@
+ 					...textareaStyle
+ 				};
+ 				(0, vue.nextTick)(() => {
++					// The input can unmount before its queued resize callback runs.
++					if (!textarea.value) return;
+ 					textarea.value.offsetHeight;
+ 					textareaCalcStyle.value = textareaStyle;
+ 				});
 diff --git a/node_modules/element-plus/lib/components/scrollbar/src/thumb.vue_vue_type_script_setup_true_lang.js b/node_modules/element-plus/lib/components/scrollbar/src/thumb.vue_vue_type_script_setup_true_lang.js
 --- a/node_modules/element-plus/lib/components/scrollbar/src/thumb.vue_vue_type_script_setup_true_lang.js
 +++ b/node_modules/element-plus/lib/components/scrollbar/src/thumb.vue_vue_type_script_setup_true_lang.js
@@ -496,52 +514,98 @@ diff --git a/node_modules/element-plus/lib/utils/dom/position.js b/node_modules/
 diff --git a/node_modules/element-plus/es/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.mjs b/node_modules/element-plus/es/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.mjs
 --- a/node_modules/element-plus/es/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.mjs
 +++ b/node_modules/element-plus/es/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.mjs
-@@ -180,0 +181,2 @@
+@@ -178,6 +178,8 @@
+ 			emit("focus", event);
+ 		};
+ 		const handleBlur = (event) => {
 +			// Formatted input can skip native change; retain the model before dropping its draft.
 +			setCurrentValueToModelValue();
-@@ -216,0 +219,6 @@
+ 			data.userInput = null;
+ 			if (data.currentValue === null && input.value?.input) input.value.input.value = props.formatter?.("") ?? "";
+ 			emit("blur", event);
+@@ -214,6 +216,13 @@
+ 			innerInput.addEventListener("wheel", handleWheel, { passive: false });
+ 		});
+ 		onUpdated(() => {
 +			// Order mode changes can replace quantity bounds with currency bounds.
 +			const innerInput = input.value?.input;
 +			if (innerInput) for (const [name, value] of [["aria-valuemin", props.min], ["aria-valuemax", props.max]]) {
 +				if (Number.isFinite(value)) innerInput.setAttribute(name, String(value));
 +				else innerInput.removeAttribute(name);
 +			}
-@@ -217,0 +226 @@
 +			(input.value?.input)?.setAttribute("aria-disabled", String(inputNumberDisabled.value));
+ 			(input.value?.input)?.setAttribute("aria-valuenow", `${data.currentValue ?? ""}`);
+ 		});
+ 		__expose({
 diff --git a/node_modules/element-plus/lib/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.js b/node_modules/element-plus/lib/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.js
 --- a/node_modules/element-plus/lib/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.js
 +++ b/node_modules/element-plus/lib/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.js
-@@ -181,0 +182,2 @@
+@@ -179,6 +179,8 @@
+ 			emit("focus", event);
+ 		};
+ 		const handleBlur = (event) => {
 +			// Formatted input can skip native change; retain the model before dropping its draft.
 +			setCurrentValueToModelValue();
-@@ -217,0 +220,6 @@
+ 			data.userInput = null;
+ 			if (data.currentValue === null && input.value?.input) input.value.input.value = props.formatter?.("") ?? "";
+ 			emit("blur", event);
+@@ -215,6 +217,13 @@
+ 			innerInput.addEventListener("wheel", handleWheel, { passive: false });
+ 		});
+ 		(0, vue.onUpdated)(() => {
 +			// Order mode changes can replace quantity bounds with currency bounds.
 +			const innerInput = input.value?.input;
 +			if (innerInput) for (const [name, value] of [["aria-valuemin", props.min], ["aria-valuemax", props.max]]) {
 +				if (Number.isFinite(value)) innerInput.setAttribute(name, String(value));
 +				else innerInput.removeAttribute(name);
 +			}
-@@ -218,0 +227 @@
 +			(input.value?.input)?.setAttribute("aria-disabled", String(inputNumberDisabled.value));
+ 			(input.value?.input)?.setAttribute("aria-valuenow", `${data.currentValue ?? ""}`);
+ 		});
+ 		__expose({
 diff --git a/node_modules/element-plus/es/components/popper/src/trigger.vue_vue_type_script_setup_true_lang.mjs b/node_modules/element-plus/es/components/popper/src/trigger.vue_vue_type_script_setup_true_lang.mjs
 --- a/node_modules/element-plus/es/components/popper/src/trigger.vue_vue_type_script_setup_true_lang.mjs
 +++ b/node_modules/element-plus/es/components/popper/src/trigger.vue_vue_type_script_setup_true_lang.mjs
-@@ -69,0 +70,2 @@
+@@ -67,6 +67,8 @@
+ 							"aria-haspopup",
+ 							"aria-expanded"
+ 						].forEach((key, idx) => {
 +							// A tooltip owns only its description, not a separate disclosure on the same button.
 +							if (role?.value === "tooltip" && key !== "aria-describedby") return;
-@@ -79 +81,3 @@
+ 							isNil(watches[idx]) ? el.removeAttribute(key) : el.setAttribute(key, watches[idx]);
+ 						});
+ 					}, { immediate: true });
+@@ -76,7 +78,9 @@
+ 					"aria-describedby",
+ 					"aria-haspopup",
+ 					"aria-expanded"
 -				].forEach((key) => prevEl.removeAttribute(key));
 +				].forEach((key) => {
 +					if (role?.value !== "tooltip" || key === "aria-describedby") prevEl.removeAttribute(key);
 +				});
+ 			}, { immediate: true });
+ 		});
+ 		onBeforeUnmount(() => {
 diff --git a/node_modules/element-plus/lib/components/popper/src/trigger.vue_vue_type_script_setup_true_lang.js b/node_modules/element-plus/lib/components/popper/src/trigger.vue_vue_type_script_setup_true_lang.js
 --- a/node_modules/element-plus/lib/components/popper/src/trigger.vue_vue_type_script_setup_true_lang.js
 +++ b/node_modules/element-plus/lib/components/popper/src/trigger.vue_vue_type_script_setup_true_lang.js
-@@ -70,0 +71,2 @@
+@@ -68,6 +68,8 @@
+ 							"aria-haspopup",
+ 							"aria-expanded"
+ 						].forEach((key, idx) => {
 +							// A tooltip owns only its description, not a separate disclosure on the same button.
 +							if (role?.value === "tooltip" && key !== "aria-describedby") return;
-@@ -80 +82,3 @@
+ 							(0, lodash_unified.isNil)(watches[idx]) ? el.removeAttribute(key) : el.setAttribute(key, watches[idx]);
+ 						});
+ 					}, { immediate: true });
+@@ -77,7 +79,9 @@
+ 					"aria-describedby",
+ 					"aria-haspopup",
+ 					"aria-expanded"
 -				].forEach((key) => prevEl.removeAttribute(key));
 +				].forEach((key) => {
 +					if (role?.value !== "tooltip" || key === "aria-describedby") prevEl.removeAttribute(key);
 +				});
+ 			}, { immediate: true });
+ 		});
+ 		(0, vue.onBeforeUnmount)(() => {

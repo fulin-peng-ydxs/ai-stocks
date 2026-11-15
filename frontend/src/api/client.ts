@@ -16,6 +16,15 @@ export interface AppRequestConfig extends AxiosRequestConfig {
   skipGlobalError?: boolean
 }
 
+// 统一保留配置的查询参数类型，避免新版 Axios 将对象字面量窄化后与既有 serializer 冲突。
+// API 自己提供的 params 优先，其余取消、错误提示和序列化选项原样传递，不改写调用方对象。
+export function withRequestParams(
+  config: AppRequestConfig | undefined,
+  params: NonNullable<AppRequestConfig['params']>,
+): AppRequestConfig {
+  return { ...config, params }
+}
+
 // 把可读文案和统一响应的业务码挂到 error 上，便于调用方区分精确业务失败与网络故障。
 function decorateError<E>(error: E, message: string, apiCode?: number): E {
   if (error && typeof error === 'object') {

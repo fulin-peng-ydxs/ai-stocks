@@ -1,5 +1,5 @@
 // 榜单/评分 API（对应 backend/api/board.py）
-import http, { type AppRequestConfig } from './client'
+import http, { type AppRequestConfig, withRequestParams } from './client'
 import type { ScoreProfileBrowseResult, ScoreProfileSummary, ScoreRunRow } from './scoreProfile'
 
 export interface SubScores {
@@ -20,10 +20,9 @@ export function computeBoard(
   config?: AppRequestConfig,
 ): Promise<{ date: string; top: number; include_st: boolean; profile_version?: number; list: BoardRow[] }> {
   // 评分方案引用：与回测所选评分方案一致才能让名次对上 entry_rank。
-  return http.get('/board/compute', {
-    ...config,
-    params: { date, top, ...(scoreProfileRefOrId ? { score_profile_id: scoreProfileRefOrId } : {}) },
-  })
+  return http.get('/board/compute', withRequestParams(config, {
+    date, top, ...(scoreProfileRefOrId ? { score_profile_id: scoreProfileRefOrId } : {}),
+  }))
 }
 
 // ── 可见方案榜单（board:view）──

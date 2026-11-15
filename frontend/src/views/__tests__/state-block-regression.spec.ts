@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ElementPlus, { ElMessage } from 'element-plus'
@@ -12,6 +12,9 @@ const layoutMockState = vi.hoisted(() => ({
   hiddenColumnsBySlot: {} as Record<string, string[]>,
   visibleItems: undefined as string[] | undefined,
 }))
+
+// 路由实例跨用例复用；恢复 spy，避免下例挂载时的初始化导航进入前一例留下的 spy。
+afterEach(() => vi.restoreAllMocks())
 
 vi.mock('@/composables/useRemoteLayoutConfig', () => ({
   useRemoteLayoutConfig: (layout: unknown) => ({
@@ -1386,6 +1389,7 @@ describe('代表性页面四态回归', () => {
     expect(fund?.classes()).not.toContain('stale')
   })
 
+  // 多次真实页面装配在 V8 采集下实测约 6.5 秒，使用 15 秒有界集成预算。
   it.each([
     { ignored: 481, barIgnored: 1, label: '缺失已人工确认', confirmed: true },
     { ignored: 480, barIgnored: 1, label: '待补采', confirmed: false },
@@ -1446,7 +1450,7 @@ describe('代表性页面四态回归', () => {
     expect(refreshed.text()).toContain('滞后')
     expect(refreshed.text()).not.toContain('缺失已人工确认')
     wrapper.unmount()
-  })
+  }, 15_000)
 
   it('未知质量诊断保留原始详情入口，查看不触发修复或改写原始记录', async () => {
     const row = { id: 88, code: '000004.SZ', name: '测试', issue_type: 'new_internal_type',

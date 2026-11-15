@@ -35,9 +35,9 @@ redis>=5.0
 
 # 认证与鉴权（多租户 RBAC stage2）：密码 bcrypt 哈希 + JWT 会话
 bcrypt>=3.2
-PyJWT>=2.8
+PyJWT>=2.15
 # 平台敏感配置应用层加密（Fernet：加密 + 完整性校验）
-cryptography>=43.0
+cryptography>=50.0
 
 # 测试
-pytest>=8.0
+pytest>=9.0.3

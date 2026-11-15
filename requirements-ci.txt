@@ -1,5 +1,9 @@
 # CI 在全新 Python 环境安装；TestClient 依赖必须显式声明。
 -r requirements.txt
 -r requirements-quality.txt
-pytest==8.4.2
+pytest==9.0.3
 httpx==0.28.1
+# 覆盖率随常用回归输出；审计和锁定工具共用同一固定依赖图。
+pytest-cov==7.1.0
+pip-audit==2.10.1
+uv==0.13.8

@@ -29,7 +29,7 @@ function makeConfig() {
   const config: DrawerConfig = {
     knobs: [{ path: 'density', label: '信息密度', type: 'enum', options: ['standard'] }],
     valueOf: vi.fn(),
-    sourceOf: vi.fn(() => 'default'),
+    sourceOf: vi.fn<DrawerConfig['sourceOf']>(() => 'default'),
     setKnob: vi.fn(),
     componentValueOf: vi.fn((slotId: string, field: string) => {
       if (slotId !== 'settings') return undefined

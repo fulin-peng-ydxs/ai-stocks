@@ -27,6 +27,8 @@ it('完整前端 CI 自动收集业务目录，并拒绝失败、skip/todo、onl
       .map(folder => `src/${folder}/nested/added.test.ts`)
     const pass = 'import {it,expect} from "vitest";it("probe",()=>expect(true).toBe(true))'
     paths.forEach(path => write(path, pass))
+    // 未被导入的业务文件也必须进入覆盖率分母；纯测试文件不能充当覆盖率材料。
+    write('src/utils/uncovered.ts', 'export const uncovered = (value: number) => value + 1')
     const artifacts = resolve(fixture, 'artifacts')
     const run = (extra: string[] = []) => spawnSync('npm', ['run', 'test:ci', '--', ...extra], {
       cwd: fixture, encoding: 'utf8', timeout: 30000,
@@ -39,6 +41,9 @@ it('完整前端 CI 自动收集业务目录，并拒绝失败、skip/todo、onl
     expect(report.testResults.map((file: { name: string }) => file.name.replace(fixture + '/', '')).sort())
       .toEqual([...paths].sort())
     expect(report.numPassedTests).toBe(paths.length)
+    const measured = JSON.parse(readFileSync(resolve(directory, 'coverage/coverage-final.json'), 'utf8'))
+    expect(Object.keys(measured).map(path => path.replace(fixture + '/', '')))
+      .toEqual(['src/utils/uncovered.ts'])
     for (const source of [
       pass.replace('toBe(true)', 'toBe(false)'),
       pass.replace('it(', 'it.skip('),

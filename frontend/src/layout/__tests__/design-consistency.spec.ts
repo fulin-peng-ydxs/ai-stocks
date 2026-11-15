@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { describe, expect, it } from 'vitest'
 import { designSources } from '../../../scripts/design-source.mjs'
 import { auditDateTimeConsumers, auditDesignConsistency, auditHeadings, auditPrimaryActions, auditSharedStyleRecipes, auditSpacingMotion, findStyleReuseCandidates } from '../../../scripts/check-design-consistency.mjs'
@@ -103,5 +104,5 @@ describe('复用候选与统一执行', () => {
     const errors = auditDesignConsistency(sample(source)).join('\n')
     for (const text of ['标题不得', '游离刻度', '动效时长', '多个实色', '日期时间']) expect(errors).toContain(text)
     expect(auditDesignConsistency(designSources(), {verifyExceptions:true})).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })

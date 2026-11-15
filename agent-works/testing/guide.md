@@ -96,7 +96,7 @@ npm test -- src/layout/__tests__/pageRegistry.spec.ts
 | 分段选择状态 | `PageSegmented`、`useLayoutPreset.ts` 分段变量、`global.css` 及 DESIGN 分段矩阵 | `PageSegmented.spec.ts`、`useLayoutPreset.spec.ts`；contained neutral/primary 与 tabs、明暗底板/悬浮/按下、选中/禁用/焦点 |
 | 提示 / 截断机制 | DESIGN 提示契约、AppHoverInfo / useHoverIntent、AppIconButton / AppActionHint、AppOverflowTooltipHost 及专用原文来源 | `check:tooltips`、提示/消费者测试；实际停留、移动、点击、键盘和主题验收；详细覆盖见下方“共享控件的专项验证” |
 | 表单辅助说明 | `AppFormHelp`、真实组件登记、消费表单与响应式记录 | `AppFormHelp.spec.ts`、`formHelpContract.spec.ts`；横向标签、顶部标签表单及窄视口长说明实测 |
-| 图表依赖 / 光标标签 | ECharts 锁定版本与 `patches/echarts+5.6.0.patch`、图表消费者及 DESIGN 图表契约；升级同步补丁 | `chartAxisPointerLabel.spec.ts` 几何回归、真实光标位置复核 |
+| 图表依赖 / 光标标签 | ECharts 锁定版本与 `patches/echarts+6.1.0.patch`、图表消费者及 DESIGN 图表契约；升级同步补丁 | `chartAxisPointerLabel.spec.ts` 几何回归、真实光标位置复核 |
 | 基础表面 / 视觉预设 | `light` / `dark`、`themeSurfaces.ts`、预设目录与运行时消费者 | `presets.spec.ts`；预设能力变化验证后端目录、运行时选择及固定表面不受覆盖 |
 | 字体 / 间距体系 | `global.css` typography/spacing token、DESIGN 排版与节奏规范；新增语义层级时同步 token、文档和消费点 | `check:design` 的 CSS 变量及控件间距门禁、相关样式契约测试、关键页面视觉验收；静态门禁不证明运行时继承或实际留白；详细覆盖见下方“共享控件的专项验证” |
 | 滚动条与滚动容器 | DESIGN 滚动契约、`AppScrollArea`、Element Plus 适配与 `scrollbar.css`；迁移同步 viewport 引用、位置恢复、测高、成长布局和断言 | `check:scrollbars`、显隐/清理/消费者测试；悬停、键盘、滚动、拖出与低高度实测，不新增局部显隐 E2E；详细覆盖见下方“共享控件的专项验证” |

@@ -1,5 +1,5 @@
 // 回测 API（对应 backend/api/backtest.py）
-import http, { type AppRequestConfig } from './client'
+import http, { type AppRequestConfig, withRequestParams } from './client'
 import type {
   AssetBrowseParams,
   AssetBrowseResult,
@@ -195,14 +195,11 @@ export function getTradeDates(): Promise<{
 
 // 页头精确选择器只承载最近记录，避免不同签名长期积累后一次性 JOIN、传输和渲染全量历史。
 export function listRuns(kind?: string, source?: string, limit = 100, config?: AppRequestConfig): Promise<{ runs: RunSummary[] }> {
-  return http.get('/backtest/runs', {
-    ...config,
-    params: {
-      ...(kind ? { kind } : {}),
-      ...(source && source !== 'all' ? { source } : {}),
-      limit,
-    },
-  })
+  return http.get('/backtest/runs', withRequestParams(config, {
+    ...(kind ? { kind } : {}),
+    ...(source && source !== 'all' ? { source } : {}),
+    limit,
+  }))
 }
 
 // 搜索抽屉「浏览公开回测」分页浏览（T5）：走后端 page/page_size 契约，返回真 total。

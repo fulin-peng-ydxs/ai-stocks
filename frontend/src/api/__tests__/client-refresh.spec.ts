@@ -3,7 +3,7 @@ import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ElMessage } from 'element-plus'
 
-import http, { type AppRequestConfig } from '../client'
+import http, { type AppRequestConfig, withRequestParams } from '../client'
 import { readAuth, writeAuth } from '../authToken'
 import { startSession, revealNext, placeTrade, cancelIntent, settleRound } from '../training'
 import { deleteRun, getRun, setRunVisibility, runBacktest, prepareBacktest, runRobust, listRuns } from '../backtest'
@@ -36,6 +36,19 @@ function authHeader(config: InternalAxiosRequestConfig): string {
 }
 
 describe('api client silent refresh', () => {
+  it('查询配置合并保留取消与序列化选项，API 参数优先且不改写调用方', () => {
+    const controller = new AbortController()
+    const serialize = vi.fn(() => 'encoded=query')
+    const config: AppRequestConfig = {
+      signal: controller.signal, skipGlobalError: true,
+      params: { previous: 1 }, paramsSerializer: { serialize },
+    }
+    const merged = withRequestParams(config, { q: 'stock', limit: 50 })
+    expect(merged).toEqual({ ...config, params: { q: 'stock', limit: 50 } })
+    expect(merged.signal).toBe(controller.signal)
+    expect(merged.paramsSerializer).toBe(config.paramsSerializer)
+    expect(config.params).toEqual({ previous: 1 })
+  })
   it('HTTP 200 软失败不会把 SQL 原文带入提示，业务码继续保留', async () => {
     http.defaults.adapter = async config => ({ ...ok(config, null),
       data: { code: 5003, msg: '查询失败: Binder Error\nSQL: SELECT secret FROM private_table', data: null } })

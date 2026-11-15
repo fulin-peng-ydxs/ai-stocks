@@ -32,7 +32,7 @@ it('本地契约快检收集共享目录任意深度的新测试，失败能够�
     selected.forEach(path => write(path,pass))
     write('src/views/__tests__/business.spec.ts','throw new Error("business test is outside focused contracts")')
     const report = resolve(fixture,'report.json')
-    const args = ['run','test:contracts','--','--reporter=json',`--outputFile=${report}`,'--minWorkers=1','--maxWorkers=1']
+    const args = ['run','test:contracts','--','--reporter=json',`--outputFile=${report}`,'--maxWorkers=1']
     const run = () => execFileSync('npm',args,{cwd:fixture,encoding:'utf8',stdio:'pipe',timeout:30000})
     run()
     const results = () => JSON.parse(readFileSync(report,'utf8'))
