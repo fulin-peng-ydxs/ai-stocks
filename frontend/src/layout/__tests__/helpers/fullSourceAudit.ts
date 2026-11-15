@@ -1,3 +1,4 @@
-// 这些集成用例解析整个生产源码树并验证违规材料，实测约 13 秒；V8 采集下约 38 秒。
-// 单独给予有界的文件树扫描预算；普通单元测试仍使用 Vitest 默认时限，业务断言不变。
-export const FULL_SOURCE_AUDIT_TIMEOUT_MS = 60_000
+// 全树源码集成检查包含 Vue/TS/CSS 解析与违规反例，不是业务响应延迟断言。
+// Linux Actions 双工作进程 + V8 覆盖率下组合扫描实测约 84 秒，保留有界余量。
+// 仅供显式扫描生产源码树的用例使用；普通单元测试继续采用 Vitest 默认时限。
+export const FULL_SOURCE_AUDIT_TIMEOUT_MS = 120_000

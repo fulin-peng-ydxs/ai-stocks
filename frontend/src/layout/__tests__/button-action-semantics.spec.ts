@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -87,7 +88,7 @@ describe('按钮动作语义', () => {
       visit(ast)
     }
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('删除图标使用危险语义，自选切换通过 aria-pressed 接入共享选中态', () => {
     const violations: string[] = []
@@ -119,5 +120,5 @@ describe('按钮动作语义', () => {
       visit(baseParse(template))
     }
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })

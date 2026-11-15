@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { describe, expect, it } from 'vitest'
 import { auditCssVariables, auditCssVariablesTree, cssVariableReferences } from '../../../scripts/check-css-variables.mjs'
 
@@ -10,7 +11,7 @@ const audit = (source: string, file = 'views/Fixture.vue') => auditCssVariables(
 describe('CSS 变量统一门禁', () => {
   it('全量生产源码和锁定组件库的真实定义通过', () => {
     expect(auditCssVariablesTree()).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it.each([
     '<template><div /></template><style>.unit {margin-left:var(--space-2)}</style>',

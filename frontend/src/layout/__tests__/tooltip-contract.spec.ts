@@ -1,9 +1,10 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { describe, expect, it } from 'vitest'
 import { auditTooltipContract, auditTooltipTree } from '../../../scripts/check-tooltip-contract.mjs'
 
 const audit = (source: string) => auditTooltipContract([{ file: 'components/Fixture.vue', source }])
 describe('可访问名称与提示入口契约', () => {
-  it('生产代码不恢复原生提示和旧自动接口', () => expect(auditTooltipTree()).toEqual([]))
+  it('生产代码不恢复原生提示和旧自动接口', () => expect(auditTooltipTree()).toEqual([]), FULL_SOURCE_AUDIT_TIMEOUT_MS)
   it('拒绝原生及透传到控件的 title，拒绝旧接口', () => {
     expect(audit('<template><button title="关闭"/><el-select :title="hint"/><AppIconButton label="设置" :native-title="false"/></template>')).toHaveLength(3)
     expect(audit('<script setup>const nativeTitle = true</script>')).not.toEqual([])

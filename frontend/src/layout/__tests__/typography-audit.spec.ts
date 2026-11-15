@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { describe, expect, it } from 'vitest'
 import { auditTypography, auditTypographyTree } from '../../../scripts/check-typography.mjs'
 
@@ -15,7 +16,7 @@ describe('全站字体源码守卫', () => {
     const result = auditTypographyTree()
     expect(result.files).toBeGreaterThan(300)
     expect(result.violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('合法继承和共享 token 通过', () => {
     expect(audit('<style>.name {font:inherit; font-size:var(--app-font-size-body);font-weight:var(--app-font-weight-section)}</style>')).toEqual([])
