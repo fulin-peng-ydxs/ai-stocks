@@ -96,7 +96,7 @@ stateDiagram-v2
 
 ## 存储切换与扩展
 
-任务执行器的创建、更新、取消、日志与质量修复诊断时间复用 `backend/common/timeutil.py::shanghai_now_naive()`，沿用无时区的北京时间表示；DuckDB 的历史 `TIMESTAMP` 与诊断 JSON 不改格式，PG 运行态适配器再按北京时间转换为带时区参数。来源返回的 `next_retry_at` 若带时区，调度器先显式转为 `Asia/Shanghai` 再去除时区，与自身重试间隔取较晚者；无时区值沿用北京时间语义，不能使用部署主机的本地时区转换。通用时间边界见[系统分层](system-architecture.md#运行单元与系统分层)。
+任务执行器的创建、更新、取消、日志与质量修复诊断时间复用 `backend/common/timeutil.py::shanghai_now_naive()`，沿用无时区的北京时间表示；DuckDB 的历史 `TIMESTAMP` 与诊断 JSON 不改格式，PG 运行态适配器再按北京时间转换为带时区参数。来源返回的 `next_retry_at` 若带时区，调度器先显式转为 `Asia/Shanghai` 再去除时区，与自身重试间隔取较晚者；无时区值沿用北京时间语义，不能使用部署主机的本地时区转换。PG 原子事件认领也复用运行态客户端的同一参数转换，认领时点和更新时间都必须绑定北京时间，不能交由数据库会话时区解释无时区参数。通用时间边界见[系统分层](system-architecture.md#运行单元与系统分层)。
 
 `AI_STOCKS_TASK_STORAGE_BACKEND=auto` 在可读取 PG 标记但尚无 applied 记录时选 DuckDB，`migration.task_runtime_pg_v1` 生效后选 PG；标记不可读时失败关闭。显式 `postgres` 要求 applied 标记，显式 `duckdb` 不能越过 applied 标记强行切回。变量加载见 [环境配置](environment-configuration.md)，迁移实现为 `backend/storage/task_runtime_migration.py`。
 
