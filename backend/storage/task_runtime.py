@@ -171,7 +171,8 @@ class PostgresTaskRuntimeClient:
             RETURNING event.*
         """
         with self.pg.transaction() as conn, conn.cursor() as cur:
-            cur.execute(sql, [now, int(limit), now])
+            # 原子认领同样复用北京时间参数转换，不能让 PG 会话时区解释 naive 当前时间。
+            cur.execute(sql, self._params([now, int(limit), now]))
             columns = [item.name for item in cur.description]
             return pd.DataFrame(cur.fetchall(), columns=columns)
 

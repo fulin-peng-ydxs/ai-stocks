@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
@@ -84,6 +85,32 @@ def test_queue_deadline_is_absolute_and_inclusive():
     assert LimitLadderConfig().queue_timeout_sec == 900
     with pytest.raises(ValueError):
         LimitLadderConfig(queue_timeout_sec=0)
+
+
+
+@pytest.mark.parametrize("server_timezone", ["UTC", "Asia/Shanghai", "America/New_York"])
+@pytest.mark.parametrize("aware_now", [False, True], ids=["naive", "aware"])
+def test_event_claim_preserves_shanghai_deadline_across_pg_timezones(pg, server_timezone, aware_now):
+    """真实认领 SQL 不得借数据库会话时区解释北京时间；到期边界包含当前时刻。"""
+    runtime = PostgresTaskRuntimeClient(pg)
+    local = datetime(2026, 11, 16, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    now = local if aware_now else local.replace(tzinfo=None)
+    with runtime.transaction():
+        # 临时表沿用真实列类型，退出事务即销毁，不读取或改写共享事件。
+        runtime.execute("CREATE TEMP TABLE scheduled_trigger_event ON COMMIT DROP "
+                        "AS SELECT * FROM public.scheduled_trigger_event WITH NO DATA")
+        runtime.execute("SELECT set_config('TimeZone', ?, true)", [server_timezone])
+        for event_id, offset in [("early", -1), ("boundary", 0), ("future", 20)]:
+            runtime.execute(
+                "INSERT INTO scheduled_trigger_event "
+                "(id,status,due_at,created_at,updated_at,dispatch_order) VALUES (?,?,?,?,?,?)",
+                [event_id, "waiting", local + timedelta(seconds=offset), local, local, 0])
+        claimed = runtime.claim_due_events(now=now)
+        states = runtime.query_df("SELECT id,status FROM scheduled_trigger_event")
+    assert set(claimed.id) == {"early", "boundary"}
+    assert set(pd.to_datetime(claimed.updated_at, utc=True)) == {pd.Timestamp("2026-11-16T08:00:00Z")}
+    assert dict(zip(states.id, states.status, strict=True)) == {
+        "early": "dispatching", "boundary": "dispatching", "future": "waiting"}
 
 
 def test_writer_admission_honors_oldest_ladder_and_releases_expired_queue(pg, market, monkeypatch):
