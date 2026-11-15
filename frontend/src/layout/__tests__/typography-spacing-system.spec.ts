@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, extname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -126,7 +127,7 @@ describe('字体与间距设计契约', () => {
     }
     expect(missing).toEqual([])
     expect(highlights).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('浮起只接入明确交互角色，视觉层不接管点击并提供禁用与减弱动效边界', () => {
     const css = read(join(SRC_DIR, 'styles/global.css'))
@@ -318,7 +319,7 @@ describe('字体与间距设计契约', () => {
       .filter((file) => /\.setting-(item|label)\s*\{/.test(read(file)))
       .map((file) => relative(SRC_DIR, file))
     expect(duplicatedItemStyles).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('三档页面密度使用唯一语义变量矩阵', () => {
     const globalCss = read(join(SRC_DIR, 'styles/global.css'))
@@ -365,7 +366,7 @@ describe('字体与间距设计契约', () => {
       }
     }
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('全局样式与消费者使用统一字体、间距和缩放契约', () => {
     const globalCss = read(join(SRC_DIR, 'styles/global.css'))
@@ -437,7 +438,7 @@ describe('字体与间距设计契约', () => {
       }
     }
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('独立行内信息使用全局信息组，标签不以页面私有固定边距修补', () => {
     const violations: string[] = []
@@ -471,7 +472,7 @@ describe('字体与间距设计契约', () => {
     expect(stockSelect).toContain('popper-class="stock-option-select-popper"')
     expect(stockSelect).toContain(':global(.stock-option-select-popper .el-select-dropdown__item)')
     expect(stockSelect).not.toContain('.el-select :deep(.el-select-dropdown__item)')
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('日期控件统一经过 AppDatePicker，默认浮层不得回退到页面上方', () => {
     const directDatePickers = sourceFiles(SRC_DIR)
@@ -495,13 +496,13 @@ describe('字体与间距设计契约', () => {
       .filter((file) => /\[['"]bottom-start['"]\s*,\s*['"]bottom-end['"]\]/.test(read(file)))
       .map((file) => relative(SRC_DIR, file))
     expect(duplicatedFallbacks).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('全站逐控件检查下拉定位、复合选项浮层边界与语义宽度', () => {
     const violations = sourceFiles(SRC_DIR).filter((file) => file.endsWith('.vue'))
       .flatMap((file) => floatingContractViolations(read(file), relative(SRC_DIR, file)))
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('逐控件禁止原生入口、固定宽度和无边界复合选项，合法共享入口不误报', () => {
     const source = `<template>
@@ -545,7 +546,7 @@ describe('字体与间距设计契约', () => {
       .join('\n')
 
     for (const text of forbidden) expect(source).not.toContain(text)
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('所属板块卡片的背景与涨跌幅共用金融色，名称保持中性文字', () => {
     const source = read(join(SRC_DIR, 'components/MarketBoardTag.vue'))
@@ -596,7 +597,7 @@ describe('字体与间距设计契约', () => {
       }
     }
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('微字号（micro/tiny/ornament）不得通过宽泛后代选择器误传给嵌套元素', () => {
     // 事故复盘：.market-metric span { font-size: var(--app-font-size-micro) } 把 11px
@@ -627,7 +628,7 @@ describe('字体与间距设计契约', () => {
     }
 
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('排版语义类必须有真实页面或组件消费，避免成为无人使用的平行事实源', () => {
     const semanticClasses = [
@@ -647,7 +648,7 @@ describe('字体与间距设计契约', () => {
     expect(
       semanticClasses.filter((className) => !new RegExp(`class=["'][^"']*${className}\\b`).test(sources)),
     ).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('数据采集与任务调度表单的辅助说明统一消费共享组件及 caption 字阶', () => {
     const targets = [
@@ -695,7 +696,7 @@ describe('字体与间距设计契约', () => {
     }
 
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('页头容器对齐钉标题顶：.page-head/.page-toolbar 禁止 flex-end/center，避免跨页抽屉按钮高度不一致', () => {
     // 事故复盘：各页把「标题+副标题」整块设为 .page-head，但 align-items 各自为政 —
@@ -722,7 +723,7 @@ describe('字体与间距设计契约', () => {
     }
 
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('布局管理页统一消费全局页头结构，不再维护私有工具栏与副标题样式', () => {
     const layoutManagementPages = [
@@ -763,7 +764,7 @@ describe('字体与间距设计契约', () => {
 
     const menuManagement = read(join(SRC_DIR, 'views/system/MenuResourceView.vue'))
     expect(menuManagement).toMatch(/await updateMenu\([\s\S]*await auth\.fetchMe\((?:\{\s*background:\s*true\s*\})?\)/)
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('新页面脚手架直接消费排版/间距事实源，并显式标记未完成占位', () => {
     const scaffold = read(join(FRONTEND_DIR, 'scripts/scaffold-page.mjs'))

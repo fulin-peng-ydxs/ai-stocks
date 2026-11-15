@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import postcss from 'postcss'
@@ -6,7 +7,7 @@ import { auditCloseControls, auditCloseControlsTree } from '../../../scripts/che
 
 const audit = (source: string) => auditCloseControls([{ file: 'components/Fixture.vue', source }])
 describe('关闭入口源码门禁', () => {
-  it('生产代码共同消费关闭组件与唯一视觉配方', () => expect(auditCloseControlsTree()).toEqual([]))
+  it('生产代码共同消费关闭组件与唯一视觉配方', () => expect(auditCloseControlsTree()).toEqual([]), FULL_SOURCE_AUDIT_TIMEOUT_MS)
   it('拒绝重新手写关闭图形及库样式', () => {
     expect(audit('<template><button><Close /></button></template>')).not.toEqual([])
     expect(audit('<style>.el-tag__close { color: red }</style>')).not.toEqual([])

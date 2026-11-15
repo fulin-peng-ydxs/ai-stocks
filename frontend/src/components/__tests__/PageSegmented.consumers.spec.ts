@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from '../../layout/__tests__/helpers/fullSourceAudit'
 import { readFileSync, readdirSync } from 'node:fs'
 import { extname, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -49,7 +50,7 @@ describe('PageSegmented 消费契约', () => {
       baseParse(template.content).children.forEach(node => inspect(node, []))
     }
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('每个分段组都显式提供稳定的可访问名称', () => {
     const violations: string[] = []
@@ -64,5 +65,5 @@ describe('PageSegmented 消费契约', () => {
     }
 
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })

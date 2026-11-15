@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from '../../layout/__tests__/helpers/fullSourceAudit'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -52,5 +53,5 @@ describe('表单辅助说明复用契约', () => {
       }
     }
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 })

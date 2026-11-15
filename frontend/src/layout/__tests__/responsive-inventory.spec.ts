@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -27,7 +28,7 @@ describe('响应式组件清单覆盖契约', () => {
 
   it('生产文件与 CSS 查询一致，人工说明不得留空或待补充', () => {
     expect(syncResponsiveInventory(inventory, designSources()).violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('同步查询保留人工说明与表外内容，重复执行不改写', () => {
     const inputs = [source('Probe.vue', '@container pane (max-width: 720px) { div { display: block; } }')]

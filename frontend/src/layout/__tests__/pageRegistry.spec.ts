@@ -1,3 +1,4 @@
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 /**
  * 页面注册表完整性（P0/P1）——保证 pageRegistry 作为单一事实源始终自洽：
  * 每个登记布局都过校验器、pageKey 自洽、无重复、editable 路径合法、getPageLayout 返回深拷贝。
@@ -688,7 +689,7 @@ describe('页面注册表完整性', () => {
         `${component} 已被 ${pages.size} 个页面消费但未登记到 DESIGN 核心组件清单`,
       ).toBe(true)
     }
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('组件消费解析支持混合、别名和多行 import，并忽略纯类型导入', () => {
     const components = runtimeComponentImports(`
@@ -1181,7 +1182,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
         }
       }
     }
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('业务偏好从所有运行时消费点反查默认值、抽屉入口与 prop 传递', () => {
     const registeredCompositeSources = new Set(
@@ -1238,7 +1239,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
         }
       }
     }
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('可交互排序字段必须进入 defaultSort 配置闭环', () => {
     for (const entry of PAGE_REGISTRY) {
