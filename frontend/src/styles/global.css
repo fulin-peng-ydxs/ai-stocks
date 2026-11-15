@@ -5,6 +5,7 @@
 /* 动效时长统一使用 ms；reveal 指令与折叠组件共用此入口。 */
 :root {
   --app-motion-content: 180ms;
+  --app-motion-spin: 1000ms;
   --app-motion-page: 220ms;
   --app-motion-collapse: 200ms;
   --app-motion-distance: 4px;
@@ -1550,10 +1551,10 @@ html[data-layout-preset] .el-button {
   font-weight: var(--app-button-font-weight);
   box-shadow: none;
   transition:
-    background-color .15s ease,
-    border-color .15s ease,
-    color .15s ease,
-    box-shadow .15s ease;
+    background-color var(--app-motion-content) var(--app-motion-ease),
+    border-color var(--app-motion-content) var(--app-motion-ease),
+    color var(--app-motion-content) var(--app-motion-ease),
+    box-shadow var(--app-motion-content) var(--app-motion-ease);
 }
 /* 紧凑筛选属于选择角色，不能被前面的通用命令按钮字重覆盖。 */
 html[data-layout-preset] .app-interaction-choice {
@@ -1590,7 +1591,7 @@ html[data-layout-preset] .el-button.is-link {
 /* 行操作与命令菜单共用按钮尺寸；菜单只扩展点击区，不另设正文字号。 */
 html[data-layout-preset] .app-row-actions .el-button.app-row-actions__button {
   min-height: var(--app-control-height-xs);
-  padding: 0 5px;
+  padding: 0 var(--app-space-1);
 }
 html[data-layout-preset] .app-command-menu-popper .el-button.app-row-actions-menu__item {
   height: auto;

@@ -1,7 +1,7 @@
 import { formatPercent } from '@/utils/marketValue'
 import { formatNumber } from '@/utils/numberFormat'
 import type { IntradayCoverage, Overview } from '@/api/data'
-import { formatDateTimeSeconds } from '@/utils/dateTime'
+import { formatDateTimeSeconds, formatDateOnly } from '@/utils/dateTime'
 import { businessMessage } from '@/utils/displayText'
 import type { DataMetricInfo } from '@/components/data/DataMetricCard.vue'
 
@@ -19,7 +19,7 @@ export interface OverviewMetric {
   testId?: string
 }
 const count = (value?: number | null): string => value == null ? '—' : formatNumber(value, 'count')
-const date = (value?: string | null): string => value?.slice(0, 10) || '—'
+const date = (value?: string | null): string => formatDateOnly(value)
 
 /** 表格只保留需要行动的覆盖状态；完整分项由同一单元格的统计详情承接。 */
 export function intradayCoverageText(coverage: IntradayCoverage): string {

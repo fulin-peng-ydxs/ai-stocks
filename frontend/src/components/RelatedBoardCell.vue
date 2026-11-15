@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateOnly } from '@/utils/dateTime'
 import { formatNumber, tinyValueHint } from '@/utils/numberFormat'
 import { computed } from 'vue'
 import { getActivePinia } from 'pinia'
@@ -75,7 +76,7 @@ const formatCorrelation = (value: number) => {
     <div class="related-board-cell__popover" :aria-label="`${board.name}相关性说明`">
       <div class="related-board-cell__title">{{ board.name }}</div>
       <div v-if="board.history" class="related-board-cell__warning">
-        当日共同有效样本不足，沿用 {{ board.history.as_of_date }} 的最近有效结果
+        当日共同有效样本不足，沿用 {{ formatDateOnly(board.history.as_of_date) }} 的最近有效结果
       </div>
       <div v-if="board.confidence === 'low'" class="related-board-cell__warning">相关性较弱</div>
       <dl class="related-board-cell__metrics">
@@ -84,7 +85,7 @@ const formatCorrelation = (value: number) => {
         <div><dt>60 日相关度</dt><dd>{{ formatCorrelation(board.corr_60) }}</dd></div>
         <div><dt>20 日有效样本</dt><dd>{{ formatNumber(board.sample_20, 'count') }}</dd></div>
         <div><dt>60 日有效样本</dt><dd>{{ formatNumber(board.sample_60, 'count') }}</dd></div>
-        <div><dt>数据截止日</dt><dd>{{ asOfDate || '—' }}</dd></div>
+        <div><dt>数据截止日</dt><dd>{{ formatDateOnly(asOfDate) }}</dd></div>
         <div v-if="board.history"><dt>计算基准</dt><dd>{{ benchmark?.name || benchmark?.code || '—' }}</dd></div>
       </dl>
     </div>

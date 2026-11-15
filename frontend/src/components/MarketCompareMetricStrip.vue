@@ -56,14 +56,14 @@ function metricDescription(item: MarketMetricStripItem): string {
       >
         <span class="market-metric-content app-interaction-content">
           <span class="market-metric-label">{{ item.label }}</span>
-          <strong v-if="item.parts?.length" class="market-metric-value">
+          <strong v-if="item.parts?.length" class="market-metric-value app-data-emphasis">
             <span
               v-for="(part, partIndex) in item.parts"
               :key="`${part.text}-${partIndex}`"
               :class="part.tone"
             >{{ part.text }}</span>
           </strong>
-          <strong v-else :class="item.tone">{{ item.value }}</strong>
+          <strong v-else class="app-data-emphasis" :class="item.tone">{{ item.value }}</strong>
         </span>
       </el-button>
       <span class="market-metric-help">
@@ -131,10 +131,6 @@ function metricDescription(item: MarketMetricStripItem): string {
   max-width: 100%;
   overflow: hidden;
   margin-top: 2px;
-  font-size: var(--app-font-size-data);
-  font-weight: var(--app-font-weight-section);
-  line-height: var(--app-line-height-data);
-  font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

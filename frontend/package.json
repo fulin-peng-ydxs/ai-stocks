@@ -28,10 +28,12 @@
     "check:numbers": "node scripts/check-numbers.mjs",
     "check:design": "node scripts/check-design.mjs",
     "check:contracts": "node scripts/check-design-contracts.mjs",
+    "check:consistency": "node scripts/check-design-consistency.mjs",
+    "audit:style-reuse": "node scripts/check-design-consistency.mjs --reuse-candidates",
     "docs:responsive": "node scripts/check-responsive-inventory.mjs --write",
     "check:responsive": "node scripts/check-responsive-inventory.mjs",
     "check:contracts:docs": "node scripts/check-design-contracts.mjs --docs",
-    "test:contracts": "vitest run src/layout/__tests__",
+    "test:contracts": "vitest run --config vitest.contracts.config.ts",
     "check": "npm run check:design && npm run test:contracts && vue-tsc -b",
     "pretest": "npm run check:design"
   },

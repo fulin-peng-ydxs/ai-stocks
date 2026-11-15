@@ -498,7 +498,7 @@ const menuPageTitle = useMenuPageTitle()
 <template>
   <LayoutHost :component-value-of="componentValueOf" :layout="effective">
     <template #action>
-      <div class="audit-head">
+      <div class="audit-head page-head">
         <div class="audit-title">
           <h2 class="app-page-title">{{ menuPageTitle }}
             <HelpTip title="审计日志说明" :width="420" test-id="audit-help-tip">
@@ -821,12 +821,6 @@ const menuPageTitle = useMenuPageTitle()
 </template>
 
 <style scoped>
-.audit-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--app-space-3);
-}
 .audit-title {
   min-width: 0;
 }
@@ -846,7 +840,7 @@ const menuPageTitle = useMenuPageTitle()
   gap: var(--app-space-3);
 }
 .metric {
-  padding: 11px 12px;
+  padding: var(--app-space-3) 12px;
   min-width: 0;
 }
 .metric > span,

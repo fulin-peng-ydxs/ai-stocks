@@ -124,7 +124,7 @@ const live = computed(() => props.tone === 'error' ? 'assertive' : 'polite')
 }
 
 .app-status-notice.is-loading .app-status-notice__icon {
-  animation: app-status-notice-rotate 1s linear infinite;
+  animation: app-status-notice-rotate var(--app-motion-spin) linear infinite;
 }
 
 .app-status-notice--inline .app-status-notice__icon {

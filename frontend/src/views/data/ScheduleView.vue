@@ -49,7 +49,7 @@ import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import type { AppRequestConfig } from '@/api/client'
 import { getErrorMessage } from '@/utils/error'
-import { formatDateTimeSeconds } from '@/utils/dateTime'
+import { formatDateTimeSeconds, formatClockMinutes } from '@/utils/dateTime'
 import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import {
   APP_BOTTOM_FLOATING_FALLBACKS,
@@ -168,7 +168,7 @@ function taskTypeOptions() {
 function fmtTime(value?: string | null): string {
   const text = formatDateTimeSeconds(value)
   if (text === '—') return text
-  return settings.timeMode === 'hm' ? text.slice(11, 16) : text
+  return settings.timeMode === 'hm' ? formatClockMinutes(value) : text
 }
 
 // ── 新建/编辑对话框 ──

@@ -141,7 +141,7 @@ const resourceStats = computed(() => {
   align-items: center;
   gap: var(--app-space-2);
   min-height: 40px;
-  padding: 7px 12px;
+  padding: var(--app-space-2) 12px;
   font-size: var(--app-font-size-table);
   font-weight: var(--app-font-weight-section);
 }
@@ -164,7 +164,7 @@ const resourceStats = computed(() => {
 .pt-caret,
 .pt-resource-caret {
   color: var(--el-text-color-secondary);
-  transition: transform 150ms ease;
+  transition: transform var(--app-motion-content) var(--app-motion-ease);
 }
 .pt-group.collapsed .pt-caret {
   transform: rotate(-90deg);

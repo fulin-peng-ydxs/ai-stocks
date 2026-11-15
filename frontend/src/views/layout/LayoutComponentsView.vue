@@ -484,8 +484,8 @@ const menuPageTitle = useMenuPageTitle()
 
           <div class="detail-block">
             <div class="db-head">
-              <span class="db-title">可覆盖范围（在线编辑）</span>
-              <HelpHint text="勾选某字段允许在哪些层被覆盖（预设 / 页面 / 个人）。灰色项=代码未声明、不可开放（安全红线）。组件默认值请到「视觉预设」按预设设置。" />
+              <span class="db-title">可覆盖范围</span>
+              <HelpHint text="可在线编辑。勾选某字段允许在哪些层被覆盖（预设 / 页面 / 个人）。灰色项=代码未声明、不可开放（安全红线）。组件默认值请到「视觉预设」按预设设置。" />
             </div>
             <AppDataTable v-if="selected.configurableFields.length" :data="selected.configurableFields" size="small" embedded>
               <AppTableColumn label="字段">

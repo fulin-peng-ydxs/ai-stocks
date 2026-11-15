@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateOnly } from '@/utils/dateTime'
 import { formatNumber } from '@/utils/numberFormat'
 import { formatPercent } from '@/utils/marketValue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -633,7 +634,7 @@ onMounted(async () => {
           </template>
           <template #secondary>
             <AppWorkspacePane
-              :title="memberTradeDate || detail?.trade_date || '最新交易日'"
+              :title="formatDateOnly(memberTradeDate || detail?.trade_date, '最新交易日')"
               eyebrow="成分股"
               aria-label="板块成分股"
               :header-visible="!splitCompact"

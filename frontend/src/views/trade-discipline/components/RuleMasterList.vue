@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateOnly } from '@/utils/dateTime'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
@@ -62,7 +63,7 @@ function managementLabel(rule: TradeDisciplineRule): string {
     const action = event.event_type === 'archive'
       ? '归档'
       : event.event_type === 'restore' ? '恢复' : `发布 v${event.version_no}`
-    return `${action}待 ${event.effective_from_trade_date}`
+    return `${action}待 ${formatDateOnly(event.effective_from_trade_date)}`
   }
   if (rule.draft_revision) return '有编辑中草稿'
   if (rule.management_status === 'active') return `最新 v${rule.latest_version_no ?? '—'}`

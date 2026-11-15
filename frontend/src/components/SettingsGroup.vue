@@ -178,7 +178,7 @@ const childToggleLabel = computed(() => (
   color: var(--page-settings-text-subtle);
 }
 .sg-nested > .sg-body {
-  margin-left: 9px;
+  margin-left: var(--app-space-2);
   padding-left: var(--app-space-3);
   border-left: 1px solid var(--page-settings-divider);
 }

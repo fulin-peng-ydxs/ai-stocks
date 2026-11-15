@@ -80,7 +80,7 @@ import StrategyItemEnabledSwitch from '@/components/strategy/StrategyItemEnabled
 import type { AppRequestConfig } from '@/api/client'
 import { getErrorMessage } from '@/utils/error'
 import { businessMessage } from '@/utils/displayText'
-import { formatDateTimeMinutes, formatDateTimeSeconds } from '@/utils/dateTime'
+import { formatDateTimeMinutes, formatDateTimeSeconds, formatDateOnly } from '@/utils/dateTime'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
@@ -2477,7 +2477,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 
             <!-- 兜底 -->
             <div class="cond-block app-surface">
-              <span class="cond-title">兜底(可选,卖出安全网)</span>
+              <span class="cond-title app-inline-info">兜底<HelpHint text="可选的卖出安全网。" label="兜底说明" /></span>
               <AppControlRow class="backstop-row">
                 <span class="bs-item"><label>止盈</label><el-input-number v-model="backstop.tp" :disabled="tReadonly" :controls="false" :min="0" class="app-control-width-compact" /><i>%</i></span>
                 <span class="bs-item"><label>止损</label><el-input-number v-model="backstop.sl" :disabled="tReadonly" :controls="false" :min="0" class="app-control-width-compact" /><i>%</i></span>
@@ -2801,7 +2801,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             :description="defPreview.reason"
           />
           <div v-else-if="defPreview" class="indicator-preview-result app-surface app-surface--notice-success">
-            <span>{{ defPreview.code }} · {{ defPreview.trade_date }}</span>
+            <span>{{ defPreview.code }} · {{ formatDateOnly(defPreview.trade_date) }}</span>
             <code>{{ defPreview.rendered_expression }}</code>
             <b>结果：{{ defPreview.value }}</b>
           </div>
@@ -2859,7 +2859,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .sys-grid {
   min-width: 0;
 }
-.page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .config-body {
   flex: 1 1 auto;   /* 填满 LayoutHost 的条件成长区，页面内容在本区域内滚动 */
   min-height: 0;
@@ -3024,7 +3023,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   display: flex;
   flex-wrap: wrap;
   gap: var(--app-space-control-gap);
-  margin-top: 5px;
+  margin-top: var(--app-space-1);
 }
 .config-initial-state {
   flex: 1 1 auto;

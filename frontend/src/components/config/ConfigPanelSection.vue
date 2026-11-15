@@ -102,7 +102,7 @@ function toggle() {
 
 .is-level-1 > .config-panel-section__head {
   min-height: 48px;
-  padding: 11px 14px;
+  padding: var(--app-space-3) 14px;
 }
 
 .is-level-1 > .config-panel-section__body {
@@ -162,7 +162,7 @@ function toggle() {
 .config-panel-section__caret {
   flex: none;
   color: var(--el-text-color-secondary);
-  transition: transform .16s ease;
+  transition: transform var(--app-motion-content) var(--app-motion-ease);
 }
 
 .is-closed > .config-panel-section__head .config-panel-section__caret {

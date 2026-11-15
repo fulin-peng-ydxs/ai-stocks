@@ -321,7 +321,7 @@ function parentLabel(s: SlotSpec): string | null {
   display: flex;
   flex-direction: column;
   gap: var(--app-space-control-gap);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color var(--app-motion-content) var(--app-motion-ease), box-shadow var(--app-motion-content) var(--app-motion-ease);
 }
 .slot-box.main.grow {
   min-height: 120px;

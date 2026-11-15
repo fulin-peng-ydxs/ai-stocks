@@ -2,7 +2,7 @@ import { formatNumber } from '@/utils/numberFormat'
 import type { CheckupCheck, CheckupIssueItem, QualityIssue } from '@/api/data'
 import { ISSUE_TYPE_LABEL } from '@/api/data'
 import type { AdaptiveColumnRole } from '@/components/table/adaptiveColumnWidth'
-import { formatDateTimeSeconds } from '@/utils/dateTime'
+import { formatDateTimeSeconds, formatDateOnly } from '@/utils/dateTime'
 import { businessMessage, enumText } from '@/utils/displayText'
 
 export const checkupIssueLabels = {
@@ -185,7 +185,7 @@ export function qualityDetailText(detail: string): string {
       }
     }
     const errors = collection.diagnostics?.errors
-    return [summary, `最近核验范围：${recorded(collection.date_start).slice(0, 10)}~${recorded(collection.date_end).slice(0, 10)}`,
+    return [summary, `最近核验范围：${formatDateOnly(collection.date_start, '未记录')}~${formatDateOnly(collection.date_end, '未记录')}`,
       ...samples, ...(Array.isArray(errors) && errors.length ? ['来源请求失败，详见关联采集任务日志'] : [])].join('；')
   } catch {
     return businessMessage(detail, unsupported)

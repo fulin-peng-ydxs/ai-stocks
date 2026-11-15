@@ -81,7 +81,7 @@ import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import type { AppRequestConfig } from '@/api/client'
 import { getErrorMessage } from '@/utils/error'
-import { formatDateTimeSeconds } from '@/utils/dateTime'
+import { formatDateTimeSeconds, formatDateOnly, formatDateYear } from '@/utils/dateTime'
 import {
   formatCompactMoneyYuan,
   formatMoney,
@@ -669,8 +669,8 @@ function exitText(t: TradeRow): string {
 }
 // 历史下拉项：名称=评分方案(版本)-筛选方案(版本)-买卖方案(版本)·年份；评分验证只含评分方案
 function toRunOption(r: RunSummary) {
-  const y1 = (r.date_start || '').slice(0, 4)
-  const y2 = (r.date_end || '').slice(0, 4)
+  const y1 = formatDateYear(r.date_start, '')
+  const y2 = formatDateYear(r.date_end, '')
   const year = y1 === y2 ? y1 : `${y1}~${y2}`
   const score = nameVer(r.score_profile_name, r.score_profile_version, '—')
   let who: string
@@ -684,7 +684,7 @@ function toRunOption(r: RunSummary) {
   const ret = r.total_return
   return {
     id: runKey(r), label: `${who}·${year}`,
-    range: `${(r.date_start || '').slice(0, 10)} ~ ${(r.date_end || '').slice(0, 10)}`,
+    range: `${formatDateOnly(r.date_start, '')} ~ ${formatDateOnly(r.date_end, '')}`,
     color: marketValueClass(ret, { input: 'ratio' }) === 'up' ? 'var(--market-up-color)' : marketValueClass(ret, { input: 'ratio' }) === 'down' ? 'var(--market-down-color)' : '',
     retTxt: formatReturn(ret),
     displaySource: assetDisplaySource(r.source),
@@ -1038,7 +1038,7 @@ async function removeCurrentRun() {
     ElMessage.warning('公开回测记录为只读，不能删除')
     return
   }
-  const desc = cur ? `${cur.kind === 'strategy' ? '策略' : '评分验证'} ${cur.date_start?.slice(0, 10)}~${cur.date_end?.slice(0, 10)}` : selectedRun.value
+  const desc = cur ? `${cur.kind === 'strategy' ? '策略' : '评分验证'} ${formatDateOnly(cur.date_start)}~${formatDateOnly(cur.date_end)}` : selectedRun.value
   try {
     await ElMessageBox.confirm(`确认删除这次回测记录？\n${desc}\n删除后保留当前参数，便于重新运行。`, '删除历史回测', {
       confirmButtonType: 'danger',
@@ -1599,7 +1599,7 @@ const dlgMacdState = computed<MacdPanelState>(() => {
   return hasCompleteMacd ? 'ready' : 'insufficient'
 })
 
-const ymd = (s: string) => (s || '').slice(0, 10) // 容错：去掉可能的 " 00:00:00"
+const ymd = (s: string) => formatDateOnly(s, '')
 
 async function loadDialogIndicators(): Promise<void> {
   if (!dlgCode.value) return
@@ -2126,7 +2126,8 @@ const menuPageTitle = useMenuPageTitle()
           </div>
         </el-card>
         <el-card shadow="never" class="block">
-          <div class="block-title">资金曲线（组合 vs 基准 + 回撤）
+          <div class="block-title">资金曲线
+            <HelpHint text="比较组合与基准净值及回撤。" label="资金曲线说明" />
             <span class="bench-choice">
               <span class="bench-choice-label">对比指数</span>
               <MarketBenchmarkSelect
@@ -2244,7 +2245,8 @@ const menuPageTitle = useMenuPageTitle()
       <!-- 分层命中率（策略与信号共用）—— 核心概率口径 -->
       <el-card v-if="layersData" shadow="never" class="block">
         <div class="block-title">
-          分层命中率 vs 全市场基线（超额）
+          分层命中率 vs 全市场基线
+          <HelpHint text="展示超额命中率。" label="分层命中率说明" />
           <span class="sub">区间 {{ layersData.date_start }} ~ {{ layersData.date_end }}，总信号 {{ formatNumber(layersData.total_signals, 'count') }}</span>
         </div>
         <AppDataTable :data="layerRows" size="small" embedded>
@@ -2278,7 +2280,7 @@ const menuPageTitle = useMenuPageTitle()
       <!-- 逐笔交易（策略）-->
       <el-card v-if="hasTradeRows" shadow="never" class="block trade-block app-card-body-fill">
         <AppControlRow class="block-title">
-          逐笔交易（{{ formatNumber(strat!.trades.length, 'count') }} 笔）
+          逐笔交易 <span class="muted">{{ formatNumber(strat!.trades.length, 'count') }} 笔</span>
           <span class="sub">点任一行 → 在 K 线上看该股的买卖点与原因（不跳转）</span>
           <el-button class="export-btn" @click="exportTradesCsv">导出 CSV</el-button>
         </AppControlRow>
@@ -2344,12 +2346,12 @@ const menuPageTitle = useMenuPageTitle()
         <!-- 左上角：本笔交易摘要（收益率/买入金额/卖出金额/股数）-->
         <div v-if="dlgSummary" class="dlg-summary">
           <div class="ds-item"><span class="ds-k">本笔收益</span>
-            <span class="ds-v" :class="marketValueClass(dlgSummary.ret, { input: 'ratio' })">{{ pct(dlgSummary.ret) }}</span></div>
-          <div class="ds-item"><span class="ds-k">买入金额</span><span class="ds-v">{{ formatCompactMoneyYuan(dlgSummary.buyAmt) }}</span></div>
-          <div class="ds-item"><span class="ds-k">卖出金额</span><span class="ds-v">{{ formatCompactMoneyYuan(dlgSummary.sellAmt) }}</span></div>
-          <div class="ds-item"><span class="ds-k">股数</span><span class="ds-v">{{ formatNumber(dlgSummary.shares, 'quantity') }}</span></div>
+            <span class="app-data-emphasis ds-v" :class="marketValueClass(dlgSummary.ret, { input: 'ratio' })">{{ pct(dlgSummary.ret) }}</span></div>
+          <div class="ds-item"><span class="ds-k">买入金额</span><span class="app-data-emphasis ds-v">{{ formatCompactMoneyYuan(dlgSummary.buyAmt) }}</span></div>
+          <div class="ds-item"><span class="ds-k">卖出金额</span><span class="app-data-emphasis ds-v">{{ formatCompactMoneyYuan(dlgSummary.sellAmt) }}</span></div>
+          <div class="ds-item"><span class="ds-k">股数</span><span class="app-data-emphasis ds-v">{{ formatNumber(dlgSummary.shares, 'quantity') }}</span></div>
           <div class="ds-item"><span class="ds-k">盈亏</span>
-            <span class="ds-v" :class="marketValueClass(dlgSummary.pnl)">{{ formatCompactMoneyYuan(dlgSummary.pnl, { forceSign: true }) }}</span></div>
+            <span class="app-data-emphasis ds-v" :class="marketValueClass(dlgSummary.pnl)">{{ formatCompactMoneyYuan(dlgSummary.pnl, { forceSign: true }) }}</span></div>
           <div class="ds-item">
             <span class="ds-k">买入优先级
               <HelpTip title="为什么买它？" :width="340">
@@ -2365,7 +2367,7 @@ const menuPageTitle = useMenuPageTitle()
                 </HelpTipItem>
               </HelpTip>
             </span>
-            <span class="ds-v ds-rank">
+            <span class="app-data-emphasis ds-v ds-rank">
               方案内第 {{ dlgSummary.pickRank || '—' }}<span class="ds-sub"> / 命中 {{ dlgSummary.pool || '—' }} 只</span>
             </span>
             <span class="ds-rank2">
@@ -2403,7 +2405,7 @@ const menuPageTitle = useMenuPageTitle()
           @workspace-resize="chartPreferences.handleWorkspaceResize"
           @retry-macd="loadDialogIndicators"
         />
-        <div class="dlg-tbl-title">本股交易明细 + 卖出后表现（看卖得对不对）</div>
+        <div class="dlg-tbl-title"><span class="app-inline-info">本股交易明细与卖后表现<HelpHint text="用于复盘卖出时机。" label="卖后表现说明" /></span></div>
         <AppDataTable :data="dlgTrades" size="small" class="dlg-trades" embedded>
           <AppTableColumn label="买入" prop="entry_date" />
           <AppTableColumn label="卖出" prop="exit_date" />
@@ -2573,7 +2575,6 @@ const menuPageTitle = useMenuPageTitle()
 .ds-item { display: flex; flex-direction: column; }
 .ds-item.ds-span { margin-left: auto; }
 .ds-k { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.ds-v { font-size: var(--app-font-size-data); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-section); font-variant-numeric: tabular-nums; }
 .ds-rank { font-size: var(--app-font-size-section-title); }
 .ds-rank .ds-sub { font-size: var(--app-font-size-caption); font-weight: var(--app-font-weight-regular); color: var(--el-text-color-secondary); }
 .ds-rank2 { font-size: var(--app-font-size-caption); color: var(--el-text-color-regular); margin-top: 2px; }
@@ -2728,7 +2729,7 @@ const menuPageTitle = useMenuPageTitle()
   display: flex;
   flex-direction: column;
 }
-.block-title { font-weight: var(--app-font-weight-section); margin-bottom: 10px; display: flex; align-items: baseline; gap: var(--app-density-control-gap, var(--app-space-2)); }
+.block-title { font-weight: var(--app-font-weight-section); margin-bottom: 10px; display: flex; align-items: center; gap: var(--app-density-control-gap, var(--app-space-2)); }
 .block-title .sub { font-weight: var(--app-font-weight-regular); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .bench-choice { margin-left: auto; display: flex; align-items: center; gap: var(--app-space-2); font-weight: var(--app-font-weight-regular); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .export-btn { margin-left: auto; }

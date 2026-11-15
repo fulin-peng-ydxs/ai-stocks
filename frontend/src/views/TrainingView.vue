@@ -60,7 +60,7 @@ import {
 import type { AppRequestConfig } from '@/api/client'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import { getErrorMessage } from '@/utils/error'
-import { formatDateTimeMinutes } from '@/utils/dateTime'
+import { formatDateTimeMinutes, formatDateOnly } from '@/utils/dateTime'
 import { formatMoney, formatMoneyInput, parseMoneyInput } from '@/utils/money'
 import type { AppRowAction } from '@/components/rowActions'
 
@@ -719,11 +719,11 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
         <div v-permission="'training:trade'" v-loading="actionPending" :aria-busy="actionPending" class="action-panel">
           <p class="muted">快捷键：→ 下一日／末日结算，B 买入当前量，S 卖出当前量；仅在输入框、控件和弹窗外生效。</p>
           <div class="acct">
-            <div class="acct-item"><label>可用资金（可买上限）</label><b class="lim">{{ formatMoney(round.cash) }}</b></div>
-            <div class="acct-item"><label>持仓（可卖上限）</label><b class="lim">{{ formatNumber(round.pos_hands, 'quantity') }} 手</b><span class="muted">@{{ formatMoney(round.pos_avg_price) }}</span></div>
-            <div class="acct-item"><label>浮动盈亏</label><b :class="marketValueClass(round.unrealized_pnl)">{{ formatMoney(round.unrealized_pnl, { forceSign: true }) }}</b></div>
-            <div class="acct-item"><label>总资产</label><b>{{ formatMoney(round.equity) }}</b><span :class="marketValueClass((round.equity - view!.initial_capital) / view!.initial_capital, { input: 'ratio' })">{{ pct((round.equity - view!.initial_capital) / view!.initial_capital) }}</span></div>
-            <div class="acct-item"><label>当前价</label><b>{{ formatMoney(round.cur_close) }}</b></div>
+            <div class="acct-item"><label>可用资金（可买上限）</label><b class="app-data-emphasis lim">{{ formatMoney(round.cash) }}</b></div>
+            <div class="acct-item"><label>持仓（可卖上限）</label><b class="app-data-emphasis lim">{{ formatNumber(round.pos_hands, 'quantity') }} 手</b><span class="muted">@{{ formatMoney(round.pos_avg_price) }}</span></div>
+            <div class="acct-item"><label>浮动盈亏</label><b class="app-data-emphasis" :class="marketValueClass(round.unrealized_pnl)">{{ formatMoney(round.unrealized_pnl, { forceSign: true }) }}</b></div>
+            <div class="acct-item"><label>总资产</label><b class="app-data-emphasis">{{ formatMoney(round.equity) }}</b><span :class="marketValueClass((round.equity - view!.initial_capital) / view!.initial_capital, { input: 'ratio' })">{{ pct((round.equity - view!.initial_capital) / view!.initial_capital) }}</span></div>
+            <div class="acct-item"><label>当前价</label><b class="app-data-emphasis">{{ formatMoney(round.cur_close) }}</b></div>
           </div>
 
           <div v-if="round.pending" class="pending">
@@ -873,7 +873,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               <span class="rname app-inline-info"><span>回合 {{ rd.seq + 1 }} · {{ rd.name }} <span class="muted">{{ rd.code }}</span></span>
                 <el-tag type="info" v-if="rd.board" size="small" effect="plain">{{ rd.board }}</el-tag>
               </span>
-              <span class="muted">{{ rd.start_date }} ~ {{ rd.end_date }}</span>
+              <span class="muted">{{ formatDateOnly(rd.start_date) }} ~ {{ formatDateOnly(rd.end_date) }}</span>
               <span class="round-ret">你 <b :class="marketValueClass(rd.round_return, { input: 'ratio' })">{{ pct(rd.round_return) }}</b> · 满仓持有 <b :class="marketValueClass(rd.benchmark_return, { input: 'ratio' })">{{ pct(rd.benchmark_return) }}</b> · 回撤 <b :class="marketValueClass(rd.max_drawdown, { input: 'ratio' })">{{ pct(rd.max_drawdown) }}</b></span>
             </div>
           </template>
@@ -908,8 +908,8 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
             <div class="round-equity"><EquityChart :points="roundEquityPoints(rd, detail.initial_capital)" benchmark-code="满仓持有" fill /></div>
           </div>
           <AppDataTable :data="rd.trades" size="small" class="round-trades" empty-text="本回合无成交" embedded max-height="240">
-            <AppTableColumn label="决策日"><template #default="{ row }">{{ row.decide_date }}</template></AppTableColumn>
-            <AppTableColumn label="成交日"><template #default="{ row }">{{ row.fill_date }}</template></AppTableColumn>
+            <AppTableColumn label="决策日"><template #default="{ row }">{{ formatDateOnly(row.decide_date) }}</template></AppTableColumn>
+            <AppTableColumn label="成交日"><template #default="{ row }">{{ formatDateOnly(row.fill_date) }}</template></AppTableColumn>
             <AppTableColumn label="方向"><template #default="{ row }"><span :class="row.side === 'buy' ? 'up' : 'down'">{{ row.side === 'buy' ? '买入' : '卖出' }}</span></template></AppTableColumn>
             <AppTableColumn label="成交价" header-meta="元"><template #default="{ row }">{{ formatMoney(row.price) }}</template></AppTableColumn>
             <AppTableColumn label="手数"><template #default="{ row }">{{ formatNumber(row.hands, 'quantity') }}</template></AppTableColumn>
@@ -1086,7 +1086,6 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 .acct { display: flex; gap: var(--app-space-5); flex-wrap: wrap; }
 .acct-item { display: flex; flex-direction: column; }
 .acct-item label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.acct-item b { font-size: var(--app-font-size-data); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-section); font-variant-numeric: tabular-nums; }
 .acct-item b.lim { color: var(--el-color-primary); }
 .acct-item .muted { font-size: var(--app-font-size-caption); }
 .pending { display: flex; align-items: center; gap: var(--app-space-2); background: var(--el-color-warning-light-9); padding: 4px 10px; border-radius: var(--layout-control-radius); font-size: var(--app-font-size-table); }

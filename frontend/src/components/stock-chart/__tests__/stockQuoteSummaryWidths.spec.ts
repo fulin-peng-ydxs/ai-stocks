@@ -137,7 +137,7 @@ describe('可视窗口行情摘要容量', () => {
       'data-content': summary.metrics[0].hint,
       'data-trigger': 'hover|focus',
       'data-disabled': 'false',
-      'data-popper-class': 'app-wrapping-popper help-hint-popper',
+      'data-popper-class': 'app-wrapping-popper app-hover-info--tooltip help-hint-popper',
     })
     wrapper.unmount()
   })

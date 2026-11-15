@@ -548,7 +548,7 @@ function onSubmit() {
   background: var(--login-page-bg);
   color: var(--login-text);
   font-family: var(--app-font-family-base);
-  transition: background 0.3s, color 0.3s;
+  transition: background var(--app-motion-content) var(--app-motion-ease), color var(--app-motion-content) var(--app-motion-ease);
 }
 .login-shell.is-dark {
   --login-input-bg: color-mix(in srgb, var(--login-card-opaque-bg) 88%, var(--login-page-bg) 12%);
@@ -653,7 +653,7 @@ function onSubmit() {
 }
 .market-index {
   position: absolute;
-  padding: 5px 8px;
+  padding: var(--app-space-1) 8px;
   border-left: 1px solid color-mix(in srgb, var(--login-track) 45%, transparent);
   color: var(--login-brand-muted);
   font-family: var(--app-font-family-mono);
@@ -671,7 +671,7 @@ function onSubmit() {
   display: flex;
   flex-direction: column;
   gap: var(--app-space-1);
-  padding-left: 13px;
+  padding-left: var(--app-space-3);
   border-left: 1px solid color-mix(in srgb, var(--login-track) 52%, transparent);
 }
 .market-readout::before {
@@ -743,7 +743,7 @@ function onSubmit() {
   display: inline-flex;
   align-items: baseline;
   gap: var(--app-space-2);
-  padding: 9px 26px;
+  padding: var(--app-space-2) 26px;
   color: var(--login-brand-muted);
   font-size: var(--app-font-size-table);
   letter-spacing: 0.04em;
@@ -844,7 +844,7 @@ function onSubmit() {
 }
 .login-preset {
   height: 38px;
-  padding: 0 13px;
+  padding: 0 var(--app-space-3);
   border-radius: 999px;
   font-size: var(--app-font-size-micro);
   letter-spacing: .08em;
@@ -913,7 +913,7 @@ function onSubmit() {
   font: inherit;
   font-size: var(--app-font-size-body);
   cursor: pointer;
-  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+  transition: background var(--app-motion-content) var(--app-motion-ease), color var(--app-motion-content) var(--app-motion-ease), box-shadow var(--app-motion-content) var(--app-motion-ease);
 }
 .login-tab.active {
   color: var(--login-text);
@@ -922,7 +922,7 @@ function onSubmit() {
   font-weight: var(--app-font-weight-section);
 }
 .login-field-block {
-  margin-bottom: 13px;
+  margin-bottom: var(--app-space-3);
 }
 .login-field {
   position: relative;
@@ -936,7 +936,7 @@ function onSubmit() {
   background: var(--login-input-bg);
   color: var(--login-text-muted);
   font-size: var(--app-font-size-body);
-  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  transition: border-color var(--app-motion-content) var(--app-motion-ease), box-shadow var(--app-motion-content) var(--app-motion-ease), background var(--app-motion-content) var(--app-motion-ease);
 }
 /* 使用原生值状态兼容手动输入与自动填充；空值聚焦时仍保持标题居中。 */
 .login-field:has(input:not(:placeholder-shown)),
@@ -973,7 +973,7 @@ function onSubmit() {
 /* 不归属单字段的整体错误（如账密不匹配/锁定），展示在提交按钮上方 */
 .login-form-error {
   margin: 2px 0 0;
-  padding: 9px 12px;
+  padding: var(--app-space-2) 12px;
   border: 1px solid var(--app-border-danger);
   border-radius: 9px;
   background: var(--login-danger-bg);
@@ -1172,7 +1172,7 @@ function onSubmit() {
 @media (prefers-reduced-motion: reduce) {
   .market-track-line { animation: none; }
   .market-ticker-track { animation: none; }
-  .send-spinner { animation-duration: 1.6s; }
+  .send-spinner { animation-duration: var(--app-motion-spin); }
   .login-theme,
   .login-primary { transition: none; }
 }

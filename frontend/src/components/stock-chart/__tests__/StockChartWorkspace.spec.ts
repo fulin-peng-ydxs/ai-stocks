@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parse as parseVue } from '@vue/compiler-sfc'
 import postcss from 'postcss'
-import { mount } from '@vue/test-utils'
+import { mount, type VueWrapper } from '@vue/test-utils'
+import HelpHint from '@/components/HelpHint.vue'
 import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
@@ -20,6 +21,14 @@ import {
   WORKSPACE_PROFILE_SIZE,
   WORKSPACE_RESIZE_ACTIVE,
 } from '@/layout/workspaceResizeContext'
+
+// 消费方同时验证可见名称与口径说明，防止标题清理时把复权信息丢掉。
+function expectPanelHeading(wrapper: VueWrapper, type: 'kline' | 'macd', adjust: string) {
+  const label = type === 'kline' ? 'K线' : 'MACD'
+  expect(wrapper.get(`.stock-chart-panel--${type} .stock-chart-panel__title`).text()).toBe(label)
+  const hint = wrapper.findAllComponents(HelpHint).find(item => item.props('label') === `${label}口径说明`)
+  expect(hint?.props('text')).toBe(type === 'kline' ? adjust : `12,26,9·${adjust}`)
+}
 
 const echartsMock = vi.hoisted(() => {
   const instances: Array<Record<string, any>> = []
@@ -389,17 +398,17 @@ describe('StockChartWorkspace', () => {
     const wrapper = await mountWorkspace()
 
     expect(wrapper.findAll('.stock-chart-panel')).toHaveLength(3)
-    expect(wrapper.text()).toContain('K线（前复权）')
+    expectPanelHeading(wrapper, 'kline', '前复权')
     expect(wrapper.text()).toContain('量能')
-    expect(wrapper.text()).toContain('MACD（12,26,9·前复权）')
+    expectPanelHeading(wrapper, 'macd', '前复权')
 
     await wrapper.setProps({ adjustLabel: '原始连续指数' })
-    expect(wrapper.text()).toContain('K线（原始连续指数）')
-    expect(wrapper.text()).toContain('MACD（12,26,9·原始连续指数）')
+    expectPanelHeading(wrapper, 'kline', '原始连续指数')
+    expectPanelHeading(wrapper, 'macd', '原始连续指数')
 
     await wrapper.setProps({ adjustLabel: '后复权', macdAdjustLabel: '前复权' })
-    expect(wrapper.text()).toContain('K线（后复权）')
-    expect(wrapper.text()).toContain('MACD（12,26,9·前复权）')
+    expectPanelHeading(wrapper, 'kline', '后复权')
+    expectPanelHeading(wrapper, 'macd', '前复权')
     expect(wrapper.findAll('.stock-chart-panel__date')).toHaveLength(1)
     expect(wrapper.find('.stock-chart-panel--kline .stock-chart-panel__date').exists()).toBe(true)
     expect(wrapper.find('.stock-chart-panel--volume .stock-chart-panel__date').exists()).toBe(false)
@@ -755,7 +764,7 @@ describe('StockChartWorkspace', () => {
       .toBe('false')
     expect(wrapper.get('[data-testid="stock-chart-kline-period-week"]').attributes('aria-pressed'))
       .toBe('true')
-    expect(wrapper.text()).toContain('K线（前复权）')
+    expectPanelHeading(wrapper, 'kline', '前复权')
 
     await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
     expect(wrapper.get('[data-testid="stock-chart-measurement-mode-range"]')
@@ -764,7 +773,7 @@ describe('StockChartWorkspace', () => {
     await wrapper.setProps({ klinePeriod: 'month', returnMeasurementMode: 'latest' })
     expect(wrapper.get('[data-testid="stock-chart-kline-period-month"]').attributes('aria-pressed'))
       .toBe('true')
-    expect(wrapper.text()).toContain('K线（前复权）')
+    expectPanelHeading(wrapper, 'kline', '前复权')
     expect(wrapper.get('[data-testid="stock-chart-measurement-mode-latest"]')
       .attributes('aria-pressed')).toBe('true')
     wrapper.unmount()
@@ -785,7 +794,7 @@ describe('StockChartWorkspace', () => {
 
     await wrapper.get('[data-testid="stock-chart-adjust-mode-hfq"]').trigger('click')
     expect(wrapper.emitted('update:adjustMode')).toEqual([['hfq']])
-    expect(wrapper.text()).toContain('K线（后复权）')
+    expectPanelHeading(wrapper, 'kline', '后复权')
     wrapper.unmount()
   })
 
@@ -804,7 +813,7 @@ describe('StockChartWorkspace', () => {
 
     expect(wrapper.emitted('update:klinePeriod')).toEqual([['week']])
     expect(wrapper.emitted('activeBarChange')?.at(-1)?.[0]).toBeNull()
-    expect(wrapper.text()).toContain('K线（前复权）')
+    expectPanelHeading(wrapper, 'kline', '前复权')
     expect(kline.setOption.mock.calls.at(-1)?.[0].dataZoom[0]).toMatchObject({
       start: 0,
       end: 100,
@@ -970,7 +979,7 @@ describe('StockChartWorkspace', () => {
     const wrapper = await mountWorkspace({ macdState: 'loading' })
     let macdPanel = wrapper.find('.stock-chart-panel--macd')
 
-    expect(macdPanel.text()).toContain('MACD（12,26,9·前复权）')
+    expectPanelHeading(wrapper, 'macd', '前复权')
     expect(macdPanel.text()).toContain('MACD 数据加载中')
     expect(macdPanel.find('button').exists()).toBe(false)
     expect(macdPanel.attributes('style')).toContain('min-height: 126px')

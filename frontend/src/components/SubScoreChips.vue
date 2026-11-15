@@ -44,7 +44,7 @@ function scoreLevel(key: string): string {
   overflow: hidden;
   min-width: 0;
   max-width: 100%;
-  padding: 2px 7px;
+  padding: 2px var(--app-space-2);
   border-radius: var(--app-radius-pill);
   box-sizing: border-box;
   font-size: var(--app-font-size-caption);

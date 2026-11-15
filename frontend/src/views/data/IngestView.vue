@@ -56,7 +56,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
-import { formatDateTimeSeconds } from '@/utils/dateTime'
+import { formatDateTimeSeconds, formatClockTime } from '@/utils/dateTime'
 import type { AppRowAction } from '@/components/rowActions'
 import {
   STOCK_INGEST_RECIPE_LABEL,
@@ -1324,7 +1324,7 @@ const menuPageTitle = useMenuPageTitle()
       </div>
       <AppScrollArea ref="logBody" class="log-body">
         <div v-for="l in logs" :key="l.seq" class="log-line" :class="l.level">
-          <span class="lt">{{ (l.ts || '').slice(11, 19) }}</span>
+          <span class="lt">{{ formatClockTime(l.ts, '') }}</span>
           <span class="lm">{{ taskLogMessage(l.message) }}</span>
         </div>
         <div v-if="!logs.length" class="app-empty-inline">暂无日志…</div>

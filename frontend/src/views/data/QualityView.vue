@@ -50,7 +50,7 @@ import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTableSort } from '@/composables/useTableSort'
 import { getErrorMessage, isTimeoutError } from '@/utils/error'
-import { formatDateTimeSeconds } from '@/utils/dateTime'
+import { formatDateTimeSeconds, formatDateOnly } from '@/utils/dateTime'
 import type { AppRowAction } from '@/components/rowActions'
 
 const route = useRoute()
@@ -681,7 +681,7 @@ const menuPageTitle = useMenuPageTitle()
         <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" />
         <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" />
         <AppTableColumn v-if="colVisible('date')" label="日期">
-          <template #default="{ row }">{{ (row.trade_date || '—').slice(0, 10) }}</template>
+          <template #default="{ row }">{{ formatDateOnly(row.trade_date) }}</template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('layer')" label="层">
           <template #default="{ row }">
@@ -764,7 +764,7 @@ const menuPageTitle = useMenuPageTitle()
         <el-form-item label="股票">
           <span>{{ delistRow?.code }} {{ delistRow?.name }}</span>
         </el-form-item>
-        <el-form-item label="当前资料"><span>最后行情：{{ delistInfo?.last_bar_date || '无' }}；当前退市日：{{ delistInfo?.delist_date || '未设置' }}；接口退市日：{{ delistInfo?.delist_date_reported || '未返回' }}；{{ delistInfo?.delist_date_manual ? '人工确认' : '接口维护' }}</span></el-form-item>
+        <el-form-item label="当前资料"><span>最后行情：{{ formatDateOnly(delistInfo?.last_bar_date, '无') }}；当前退市日：{{ formatDateOnly(delistInfo?.delist_date, '未设置') }}；接口退市日：{{ delistInfo?.delist_date_reported || '未返回' }}；{{ delistInfo?.delist_date_manual ? '人工确认' : '接口维护' }}</span></el-form-item>
         <el-form-item label="操作"><el-checkbox v-model="delistRevoke" :disabled="!delistInfo?.delist_date_manual">撤销人工标记，恢复接口值</el-checkbox></el-form-item>
         <el-form-item v-if="!delistRevoke" label="退市日期" required>
           <AppDatePicker v-model="delistDate" type="date" value-format="YYYY-MM-DD"

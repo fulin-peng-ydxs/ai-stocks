@@ -558,7 +558,7 @@ describe('workspaceOptions', () => {
     expect(scaledRight[1]).toBe(8)
     expect(tooltip.transitionDuration).toBe(0)
     expect(tooltip.appendTo).toBe('body')
-    expect(tooltip.extraCssText).toContain('opacity .14s ease')
+    expect(tooltip.extraCssText).toContain('opacity var(--app-motion-content) var(--app-motion-ease)')
     expect(content).toContain('width:max-content')
     expect(content).toContain('<table style="border-collapse:collapse')
     expect(content).toContain('<thead><tr>')

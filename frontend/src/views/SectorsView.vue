@@ -1505,12 +1505,6 @@ const menuPageTitle = useMenuPageTitle()
 </template>
 
 <style scoped>
-.page-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--app-space-3);
-}
 .page-title-row {
   display: flex;
   align-items: center;

@@ -479,7 +479,6 @@ const menuPageTitle = useMenuPageTitle()
 </template>
 
 <style scoped>
-.page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
 .rm-error { height: 100%; }
 /* master-detail：窄视口体内横滚，右栏不被压垮 */
@@ -488,7 +487,7 @@ const menuPageTitle = useMenuPageTitle()
   display: flex; flex-direction: column; min-height: 0; }
 .rm-left { width: 288px; flex: none; }
 .rm-right { flex: 1 1 auto; min-width: 460px; }
-.rm-col-head { padding: 11px 14px; border-bottom: 1px solid var(--el-border-color-lighter); font-weight: var(--app-font-weight-section);
+.rm-col-head { padding: var(--app-space-3) 14px; border-bottom: 1px solid var(--el-border-color-lighter); font-weight: var(--app-font-weight-section);
   display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); }
 .rm-head-title { display: inline-flex; align-items: center; gap: var(--app-space-2); min-width: 0; }
 .rm-col-head .mini { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); font-weight: var(--app-font-weight-regular); }

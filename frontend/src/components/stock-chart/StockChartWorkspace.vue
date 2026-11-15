@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateOnly } from '@/utils/dateTime'
 import { keyboardRangeValue } from '@/utils/keyboard'
 import {
   computed,
@@ -368,7 +369,7 @@ const measurementHint = computed(() => {
   const start = rows.value[startIndex]?.bar.date
   const end = rows.value[endIndex]?.bar.date
   return {
-    headline: start && end ? `${start} → ${end}` : '自选区间',
+    headline: start && end ? `${start} → ${formatDateOnly(end)}` : '自选区间',
     note: '点击 K 线重新选择起点',
   }
 })
@@ -402,7 +403,7 @@ function measurementSupplementAt(index: number): StockQuoteSupplement | null {
   const days = tradingDayOffsets.value[endIndex + 1] - tradingDayOffsets.value[startIndex + 1]
   return measurementMode.value === 'latest'
     ? {
-        label: `截止 ${end}`,
+        label: `截止 ${formatDateOnly(end)}`,
         value: formatMarketPercent(value),
         tone: measurementToneOf(value),
         details: [{ label: '交易日', value: `${days}个交易日` }],
@@ -412,7 +413,7 @@ function measurementSupplementAt(index: number): StockQuoteSupplement | null {
         value: formatMarketPercent(value),
         tone: measurementToneOf(value),
         details: [
-          { label: '区间', value: `${start} → ${end}` },
+          { label: '区间', value: `${start} → ${formatDateOnly(end)}` },
           { label: '交易日', value: `${days}个交易日` },
         ],
       }
@@ -1295,7 +1296,7 @@ onBeforeUnmount(() => {
               class="stock-chart-panel__tail"
             >
               <time v-if="rows.length" class="stock-chart-panel__date">
-                {{ rows[metricIndex]?.bar.date }}
+                {{ formatDateOnly(rows[metricIndex]?.bar.date) }}
               </time>
               <AppIconButton
                 v-if="chartOperationsVisible"
@@ -1463,7 +1464,7 @@ onBeforeUnmount(() => {
 .stock-chart-measurement__hint {
   position: absolute;
   z-index: 2;
-  padding: 3px 7px;
+  padding: 3px var(--app-space-2);
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-micro);
   display: flex;

@@ -30,7 +30,7 @@ typography:
 
 各页面的指标清单、业务含义与操作目的地由对应架构文档维护，实际业务文案保留在领域代码中。响应式清单登记实现与验证证据，不另行定义设计规则。
 
-设计契约变更须同步对应共享实现、检查器及适用测试；页面或组件变更按 §7.4 维护登记，实际验证范围与未验证项写入相应响应式清单或当次交付，不在本文积累阶段流水。
+设计契约变更须同步对应共享实现、检查器及适用测试，新增或实质更新规则按[设计规范变更与门禁覆盖](agent-works/testing/guide.md#设计规范变更与门禁覆盖)确定验证层、正反例、实际 CI 入口及覆盖状态；页面或组件变更按 §7.4 维护登记，实际验证范围与未验证项写入相应响应式清单或当次交付，不在本文积累阶段流水。
 
 文件头 frontmatter 只保留已被自动化读取的兼容字段；运行时 token 以 `global.css`、`presets.ts` 和 `themeSurfaces.ts` 为准。新增 token 不回填 frontmatter，除非同步新增机器读取契约和测试。
 
@@ -148,6 +148,7 @@ typography:
 - 页面顶部标题字号唯一来源是全局 `app-page-title`（22px），禁止页面用 `.page-head h2`/`.title h2`/`.title-row` 等私有选择器覆盖标题字号或边距；详情页对象标题（个股/板块名）同样走 `app-page-title`。
 - 标题内嵌 `HelpTip` 时，标题行使用 `align-items: center`（flex 或 `vertical-align: middle`）保证圆点与标题垂直居中，不随行高下沉。
 - 页面、分区、组件组和弹层标题禁止出现中英文圆括号，只保留名称；用途、适用范围、技术标识等简短说明使用 `HelpHint`，多段说明使用 `HelpTip`。表头名称与元信息同样禁止圆括号，单位和口径的呈现按本文件“表格与列表”执行。标题收展和帮助入口独立操作，不因查看说明改变折叠状态。
+  动态标题的括注拆分共同消费 `utils/headingText.ts`：表头由 `resolveTableHeader()` 归入辅助元信息，股票图表面板由 `StockChartPanelHeader` 归入 `HelpHint`；保留复权和 MACD 参数说明，不在消费页私有截取或丢弃。
 - 页面主体新增 `font-size`、`line-height`、`font-weight` 时必须引用上述 token 或语义类；原始数字仅允许出现在共享 token 定义、§3.5 登记的品牌选择器或图表数字适配器中；第三方适配、角标和图标同样消费已有 token，不是整文件豁免。禁止页面内联添加另一套字体规则。
 - 10px 以下只允许使用 `--app-font-size-ornament` 或 `--app-icon-size-xs`，用于图标内部标记、红点角标或不可读正文之外的装饰性标尺；不得用于业务说明、表格、表单、按钮、筛选项。
 - 11px 只用于弱标签或极窄 chrome 信息；业务内容、表格单元格、表单 label、按钮文案不得小于 12px。
@@ -300,6 +301,7 @@ CSS token 和语义类统一在 `frontend/src/styles/global.css`；抽屉层级�
 - UI 结构和交互表现抽 Vue 组件。
 - 组合状态、表单联动、权限判断、布局计算抽 composable。
 - 纯数据转换、格式化、字段映射、参数归一化抽 util 或 API helper。
+- 同一布局、间距和状态样式配方重复时优先消费共享 class / token / 样式入口；数字强调统一消费 `.app-data-emphasis`，不得在页面复制完整配方。相同 token 不代表已完成样式复用；普通重复声明由候选扫描辅助识别，按语义判断，不能仅按外观强行合并不同角色。
 - 表格列、筛选项、弹窗/抽屉结构、空态/加载/错误态、操作按钮组第二次出现时，也纳入复用判断。
 - 不抽取时必须有明确理由，例如领域语义不同、生命周期明显不同、抽象后反而增加调用复杂度。
 - 复用单元形成后，后续同类实现必须消费该组件、composable 或 helper，禁止继续复制同类代码。
@@ -801,8 +803,8 @@ Tooltip、popover 和说明提示不得溢出到左侧菜单；说明性文字�
 
 ### 日期时间展示
 
-- 后端可以使用 ISO 8601 传输日期时间，但用户可见文本不得直接暴露 `T`、毫秒或时区后缀。秒级和分钟级展示统一消费 `frontend/src/utils/dateTime.ts` 的 `formatDateTimeSeconds` / `formatDateTimeMinutes`；页面不得通过 `slice`、`replace` 或私有 formatter 重复实现。
-- 默认完整格式分别为 `YYYY-MM-DD HH:mm:ss` 和 `YYYY-MM-DD HH:mm`。仅时间模式可以在统一格式化后截取 `HH:mm`；空值文案由调用方按场景传入，不得把无值伪装成当前时间。
+- 后端可以使用 ISO 8601 传输日期时间，但用户可见文本不得直接暴露 `T`、毫秒或时区后缀。秒级和分钟级展示统一消费 `frontend/src/utils/dateTime.ts` 的 `formatDateTimeSeconds` / `formatDateTimeMinutes`；仅日期、年份和时钟展示分别消费该文件的 `formatDateOnly` / `formatDateYear` / `formatClockTime` / `formatClockMinutes`。这些入口只规范展示形式，不转换时区；页面不得通过 `slice`、`replace` 或私有 formatter 重复实现。业务日期比较、计算和提交载荷不因此改写。
+- 默认完整格式分别为 `YYYY-MM-DD HH:mm:ss` 和 `YYYY-MM-DD HH:mm`。仅时间模式消费上述时钟入口；空值文案由调用方按场景传入，不得把无值伪装成当前时间。
 
 ### 表格与列表
 
@@ -942,7 +944,7 @@ Tooltip、popover 和说明提示不得溢出到左侧菜单；说明性文字�
 
 ### 动效与状态过渡
 
-- 全站动效时长与缓动统一由 `styles/global.css` 的 `--app-motion-content`（180ms）、`--app-motion-page`（220ms）、`--app-motion-collapse`（200ms）、`--app-motion-distance`（4px）与 `--app-motion-ease` 管理；时长固定使用 ms，不作为页面配置或视觉预设字段。
+- 全站动效时长与缓动统一由 `styles/global.css` 的 `--app-motion-content`、`--app-motion-page`、`--app-motion-collapse`、`--app-motion-distance` 与 `--app-motion-ease` 管理；加载旋转共用 `--app-motion-spin`，采用线性循环，不套用交互过渡缓动。数值以该共享入口为准，时长固定使用 ms，不作为页面配置或视觉预设字段。登录品牌匀速循环和浏览器自动填充底色兼容按 `check-design-consistency.mjs` 的选择器/属性/值及原因精确登记，不豁免整页。
 - 工作区页面切换由 `WorkspaceRouteView` 消费 `directives/reveal.ts` 的 `vReveal`，仅在路径变化时对真实页面根节点短淡入并从下方 4px 归位；不增加布局外壳、不等待旧页离场、不改变 KeepAlive 身份、滚动位置或图表恢复逻辑。同路径 query 变化不重复播放。
 - `AppAsyncRegion` 与 `AppDataTable` 共用 `vReveal`，从无内容进入有效内容时原位短淡入（初始透明度 0.35，避免整块突然消失），共享加载遮罩按相同时长淡出；同一区域已有内容刷新、轮询和数值更新不重播。错误和上下文切换立即撤下旧内容，禁止为离场动画延迟清除、双份叠放旧新数据或人为等待骨架播放完毕。
 - `WorkspaceTabs` 的摘要行与页签同处横向栏，栏高直接切换到最终尺寸，禁止对高度做连续动画以免正文图表和滚动区逐帧重算；页签透明度和箭头旋转复用折叠时长与缓动，提供轻量收展反馈；页签沿用 `v-show` 保留实例，收起意图生效时立即设置 `inert` 和 `aria-hidden`，避免离场动画期间仍可聚焦或点击。快速反向切换交由 CSS/Vue Transition 接续，减少动态效果时即时完成，不增加计时器。

@@ -7,7 +7,7 @@ import { computed, ref, watch } from 'vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
-import { formatDateTimeSeconds } from '@/utils/dateTime'
+import { formatDateTimeSeconds, formatDateOnly } from '@/utils/dateTime'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import StockRuleConditionChecklist from '@/components/trade-discipline/StockRuleConditionChecklist.vue'
 import StockStatusTag from '@/components/StockStatusTag.vue'
@@ -119,7 +119,7 @@ watch(
     <div v-if="detail" class="revision-detail">
       <section class="detail-hero">
         <div>
-          <div class="detail-kicker">{{ detail.trade_date }} · r{{ detail.revision_no }}</div>
+          <div class="detail-kicker">{{ formatDateOnly(detail.trade_date) }} · r{{ detail.revision_no }}</div>
           <h3>{{ detail.rule_name }}</h3>
           <p>规则版本 v{{ detail.version_no }} · {{ checkinAssessmentLabel(detail.assessment) }}</p>
         </div>

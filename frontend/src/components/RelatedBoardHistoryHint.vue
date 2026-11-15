@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateOnly } from '@/utils/dateTime'
 import type { RelatedBoardHistory } from '@/types/relatedBoards'
 import AppStatusDot from '@/components/AppStatusDot.vue'
 
@@ -14,7 +15,7 @@ withDefaults(defineProps<{
     v-if="history"
     class="related-board-history-hint"
     :disabled="!explain"
-    :content="`当日共同有效样本不足，沿用 ${history.as_of_date} 的最近有效结果`"
-    :label="`历史结果，来源日期 ${history.as_of_date}，当日共同有效样本不足`"
+    :content="`当日共同有效样本不足，沿用 ${formatDateOnly(history.as_of_date)} 的最近有效结果`"
+    :label="`历史结果，来源日期 ${formatDateOnly(history.as_of_date)}，当日共同有效样本不足`"
   />
 </template>

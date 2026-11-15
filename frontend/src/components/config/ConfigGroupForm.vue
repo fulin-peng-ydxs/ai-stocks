@@ -273,7 +273,7 @@ function collapsed(key: string): boolean {
   flex-wrap: wrap;
   gap: var(--app-space-control-gap) var(--app-space-2);
   min-height: 18px;
-  margin-top: 7px;
+  margin-top: var(--app-space-2);
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
   line-height: var(--app-line-height-comfy);

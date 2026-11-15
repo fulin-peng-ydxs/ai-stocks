@@ -853,7 +853,6 @@ const menuPageTitle = useMenuPageTitle()
 </template>
 
 <style scoped>
-.page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
 /* master-detail：窄视口体内横滚，右栏不被压垮 */
 .mr-split { height: 100%; --app-scroll-display: flex; --app-scroll-gap: var(--app-space-4); min-height: 0; }
@@ -861,7 +860,7 @@ const menuPageTitle = useMenuPageTitle()
   display: flex; flex-direction: column; min-height: 0; }
 .mr-left { width: 300px; flex: none; }
 .mr-right { flex: 1 1 auto; min-width: 480px; }
-.mr-col-head { padding: 11px 14px; border-bottom: 1px solid var(--el-border-color-lighter); font-weight: var(--app-font-weight-section);
+.mr-col-head { padding: var(--app-space-3) 14px; border-bottom: 1px solid var(--el-border-color-lighter); font-weight: var(--app-font-weight-section);
   display: flex; align-items: center; gap: var(--app-space-2); }
 .mr-col-head .mini { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); font-weight: var(--app-font-weight-regular); }
 .mr-head-spacer { flex: 1; }

@@ -480,7 +480,7 @@ const menuPageTitle = useMenuPageTitle()
 <template>
   <LayoutHost :layout="effective">
     <template #action>
-      <div class="dict-page-head">
+      <div class="dict-page-head page-head">
         <div class="dict-title">
           <h2 class="app-page-title">{{ menuPageTitle }}
             <HelpTip title="数据字典说明" :width="420">
@@ -733,12 +733,6 @@ const menuPageTitle = useMenuPageTitle()
 </template>
 
 <style scoped>
-.dict-page-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--app-space-3);
-}
 .dict-title {
   min-width: 0;
 }
@@ -792,7 +786,7 @@ const menuPageTitle = useMenuPageTitle()
 .dict-panel-head,
 .dict-detail-bar {
   justify-content: space-between;
-  padding: 11px 14px;
+  padding: var(--app-space-3) 14px;
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .dict-detail-bar {
@@ -811,7 +805,7 @@ const menuPageTitle = useMenuPageTitle()
   display: flex;
   align-items: center;
   gap: var(--app-space-2);
-  padding: 9px 8px;
+  padding: var(--app-space-2) 8px;
   color: var(--el-text-color-primary);
   text-align: left;
 }

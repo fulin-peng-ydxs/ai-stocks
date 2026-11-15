@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatDateOnly } from '@/utils/dateTime'
+import HelpHint from '@/components/HelpHint.vue'
 import { formatPercent } from '@/utils/marketValue'
 import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
@@ -1359,7 +1361,7 @@ onBeforeUnmount(() => {
 
           <template #secondary>
           <AppWorkspacePane
-            :title="analysisDate"
+            :title="formatDateOnly(analysisDate)"
             eyebrow="分析概览"
             aria-label="个股分析概览"
             :header-visible="!splitCompact"
@@ -1429,7 +1431,7 @@ onBeforeUnmount(() => {
             >
               评估
             </el-button>
-            <span class="hint" v-if="tradeEval">交易日 {{ tradeEval.date }} · v{{ tradeEval.version }}</span>
+            <span class="hint" v-if="tradeEval">交易日 {{ formatDateOnly(tradeEval.date) }} · v{{ tradeEval.version }}</span>
           </AppControlRow>
         </template>
         <AppAsyncRegion
@@ -1454,7 +1456,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="cond-cols">
               <div class="cond-col">
-                <div class="cond-title">买入条件（{{ tradeEval.buy.op === 'AND' ? '需全部满足' : '满足任一' }}）</div>
+                <div class="cond-title"><span class="app-inline-info">买入条件<HelpHint :text="tradeEval.buy.op === 'AND' ? '需全部满足' : '满足任一'" label="买入条件组合说明" /></span></div>
                 <div v-for="(cc, i) in tradeEval.buy.conds" :key="i" class="cond-line">
                   <el-tag :type="cc.met ? 'success' : 'info'" size="small" effect="plain">
                     {{ cc.met ? '✓' : '✗' }}
@@ -1463,7 +1465,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
               <div class="cond-col">
-                <div class="cond-title">卖出条件（{{ tradeEval.sell.op === 'AND' ? '需全部满足' : '满足任一' }}）</div>
+                <div class="cond-title"><span class="app-inline-info">卖出条件<HelpHint :text="tradeEval.sell.op === 'AND' ? '需全部满足' : '满足任一'" label="卖出条件组合说明" /></span></div>
                 <AppStateBlock state="empty" v-if="!tradeEval.sell.conds.length" size="tiny" description="无卖出条件" />
                 <div v-for="(cc, i) in tradeEval.sell.conds" :key="i" class="cond-line">
                   <el-tag :type="cc.met ? 'success' : 'info'" size="small" effect="plain">

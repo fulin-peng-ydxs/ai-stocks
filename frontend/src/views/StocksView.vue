@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateOnly } from '@/utils/dateTime'
 import { formatNumber } from '@/utils/numberFormat'
 import { formatMarketPercent, formatReturn, marketValueClass } from '@/utils/marketValue'
 import AppControlRow from '@/components/AppControlRow.vue'
@@ -1101,7 +1102,7 @@ const menuPageTitle = useMenuPageTitle()
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <el-tag type="info" size="small" effect="plain">建组 {{ groupDetail.group_date || '—' }}</el-tag>
+          <el-tag type="info" size="small" effect="plain">建组 {{ formatDateOnly(groupDetail.group_date) }}</el-tag>
           <el-tag v-if="groupDetail.is_default" size="small" type="danger" effect="plain">默认</el-tag>
           <el-tag type="info" size="small" effect="plain">{{ formatNumber(groupDetail.count, 'count') }} 只</el-tag>
           <span class="gb-ret">整组涨幅
@@ -1237,10 +1238,10 @@ const menuPageTitle = useMenuPageTitle()
             <template #default="{ row }"><b :class="marketValueClass(row.ret, { input: 'ratio' })">{{ fmtPctRatio(row.ret) }}</b></template>
           </AppTableColumn>
           <AppTableColumn v-if="groupColVisible('lastDate')" label="截至当前" prop="last_date" sortable="custom">
-            <template #default="{ row }">{{ row.last_date || '—' }}</template>
+            <template #default="{ row }">{{ formatDateOnly(row.last_date) }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="groupColVisible('addDate')" label="加入日期" prop="add_date" sortable="custom">
-            <template #default="{ row }">{{ row.add_date || '—' }}</template>
+            <template #default="{ row }">{{ formatDateOnly(row.add_date) }}</template>
           </AppTableColumn>
         </AppDataTable>
       </template>

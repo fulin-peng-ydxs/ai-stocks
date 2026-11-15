@@ -12,7 +12,7 @@ defineProps<{ text: string; label?: string }>()
     :content="text"
     placement="top"
     effect="dark"
-    popper-class="app-wrapping-popper help-hint-popper"
+    popper-class="help-hint-popper"
     :hide-after="0"
   >
     <span class="help-hint app-interaction-help" tabindex="0" role="button" :aria-label="label || '说明'">?</span>

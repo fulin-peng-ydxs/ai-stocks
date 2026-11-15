@@ -30,7 +30,7 @@ describe('HelpHint', () => {
     expect(wrapper.find('.tooltip').attributes('data-content')).toBe('默认值：3；允许范围：1 - 10')
     expect(wrapper.find('.tooltip').attributes('data-trigger')).toBe('hover|focus')
     expect(wrapper.find('.tooltip').attributes('data-popper-class'))
-      .toBe('app-wrapping-popper help-hint-popper')
+      .toBe('app-wrapping-popper app-hover-info--tooltip help-hint-popper')
     expect(wrapper.find('.help-hint').attributes('tabindex')).toBe('0')
     expect(wrapper.find('.help-hint').attributes('role')).toBe('button')
   })

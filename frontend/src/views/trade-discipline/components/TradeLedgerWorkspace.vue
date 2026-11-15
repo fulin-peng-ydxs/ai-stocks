@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatClockTime, formatDateOnly } from '@/utils/dateTime'
 import { formatNumber } from '@/utils/numberFormat'
 import { financialReportMonthRestrictionText } from '@/utils/tradeDisciplineConditions'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
@@ -542,7 +543,7 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
             <AppTableColumn prop="quote_date" label="估值日期" />
             <AppTableColumn label="所属规则" role="name"><template #default="{ row }">{{ ruleName(row.rule_id) }}</template></AppTableColumn>
           </AppDataTable>
-          <p class="app-caption-text">最近日结：{{ context?.latest_trade_date || '尚未提交' }} · 现金：{{ context?.cash == null ? '未录入' : formatMoney(context.cash) }}</p>
+          <p class="app-caption-text">最近日结：{{ formatDateOnly(context?.latest_trade_date, '尚未提交') }} · 现金：{{ context?.cash == null ? '未录入' : formatMoney(context.cash) }}</p>
           <el-button @click="emit('request-checkin', context?.latest_trade_date || tradeDate)">前往打卡记录成交或调整</el-button>
         </template>
         <template v-else>
@@ -573,7 +574,7 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
                             <HelpHint text="将其他规则下的已录成交添加到当前选择的规则，只新增规则核对，不重复记账。" label="关联已有成交说明" />
                           </template>
                           <AppSelect v-model="linkedTradeId" aria-label="选择要关联的成交" width="wide" placeholder="选择已录入股票的成交" :disabled="disabled">
-                            <el-option v-for="event in linkableTrades" :key="event.event_id" :label="`${event.stock_name_snapshot || event.stock_code} · ${event.side === 'buy' ? '买入' : '卖出'}${event.operated_at ? ` · ${event.operated_at.slice(11, 19)}` : ''}`" :value="event.event_id" />
+                            <el-option v-for="event in linkableTrades" :key="event.event_id" :label="`${event.stock_name_snapshot || event.stock_code} · ${event.side === 'buy' ? '买入' : '卖出'}${event.operated_at ? ` · ${formatClockTime(event.operated_at)}` : ''}`" :value="event.event_id" />
                           </AppSelect>
                         </AppControlItem>
                         <el-button :disabled="disabled || !linkedTradeId" @click="linkExistingTrade">添加到当前规则</el-button>
@@ -656,7 +657,7 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
       </el-card>
       <AppStateBlock v-if="historyError" state="error" title="历史加载失败" :description="historyError" retry @retry="loadHistory" />
       <AppDataTable v-else :data="history" :loading="historyBusy" :border="tableBorder" :default-sort="defaultSort" empty-text="尚无交易日记录" @sort-change="emit('sort-change', $event)">
-        <AppTableColumn v-if="columnVisible('trade_date')" prop="trade_date" label="交易日" sortable="custom"><template #default="{ row }"><el-button data-button-kind="navigation" link type="primary" class="app-table-field-link" @click="openDetail(row)">{{ row.trade_date }}</el-button></template></AppTableColumn>
+        <AppTableColumn v-if="columnVisible('trade_date')" prop="trade_date" label="交易日" sortable="custom"><template #default="{ row }"><el-button data-button-kind="navigation" link type="primary" class="app-table-field-link" @click="openDetail(row)">{{ formatDateOnly(row.trade_date) }}</el-button></template></AppTableColumn>
         <AppTableColumn v-if="columnVisible('assessment')" label="履约结果" role="status"><template #default="{ row }">{{ row.withdrawn ? '已撤回' : label(row.snapshot.assessment) }}</template></AppTableColumn>
         <AppTableColumn v-if="columnVisible('operation_count')" label="操作数" role="number"><template #default="{ row }">{{ formatNumber(row.snapshot.operation_count ?? row.snapshot.events.filter((e: LedgerEvent) => e.kind === 'trade').length, 'count') }}</template></AppTableColumn>
         <AppTableColumn v-if="columnVisible('buy_amount')" label="买入额" header-meta="元" role="number"><template #default="{ row }">{{ formatMoney(row.snapshot.buy_amount) }}</template></AppTableColumn>

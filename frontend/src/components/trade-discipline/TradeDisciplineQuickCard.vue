@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateOnly } from '@/utils/dateTime'
 import AppControlRow from '@/components/AppControlRow.vue'
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -95,7 +96,7 @@ async function quickSubmit(): Promise<void> {
     <header class="quick-head">
       <div>
         <span class="quick-kicker">今日交易纪律</span>
-        <strong>{{ summary?.trade_date || tradeDate || '最新交易日' }}</strong>
+        <strong>{{ formatDateOnly(summary?.trade_date || tradeDate, '最新交易日') }}</strong>
       </div>
       <div
         v-if="status === 'ready' && summary?.total"

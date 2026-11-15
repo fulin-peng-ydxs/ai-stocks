@@ -117,7 +117,7 @@ function colorOf(tone: StockQuoteTone | undefined, palette: StockQuotePalette): 
 }
 
 /** 挂到未缩放 body 的行情浮层共用字号、比例和紧凑内距。 */
-export const STOCK_QUOTE_TOOLTIP_CSS = 'transition:opacity .14s ease,visibility .14s ease;'
+export const STOCK_QUOTE_TOOLTIP_CSS = 'transition:opacity var(--app-motion-content) var(--app-motion-ease),visibility var(--app-motion-content) var(--app-motion-ease);'
   + 'font-size:calc(var(--app-font-size-caption) * var(--app-display-scale, 1))!important;'
   + 'line-height:var(--app-line-height-compact)!important;'
   + 'padding:calc(4px * var(--app-display-scale, 1)) calc(6px * var(--app-display-scale, 1))!important;'

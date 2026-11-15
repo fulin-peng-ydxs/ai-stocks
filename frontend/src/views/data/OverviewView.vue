@@ -47,7 +47,7 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { getErrorMessage } from '@/utils/error'
 import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
-import { formatDateTimeSeconds } from '@/utils/dateTime'
+import { formatDateTimeSeconds, formatDateOnly } from '@/utils/dateTime'
 
 const router = useRouter()
 const settingsOpen = ref(false)
@@ -603,7 +603,7 @@ const boardFreshnessItems = computed(() => {
   ]
 })
 function dateOnly(value?: string | null): string {
-  return (value || '—').slice(0, 10)
+  return formatDateOnly(value)
 }
 function boardUpdateStatus(status?: string): { label: string; type: 'success' | 'danger' | 'warning' | 'info' } {
   if (status === 'success') return { label: '成功', type: 'success' }
@@ -1039,7 +1039,7 @@ const menuPageTitle = useMenuPageTitle()
                   />
                 </template>
                 <template #description>
-                  异常入口查看对应台账 · 最新交易日 {{ (sq?.latest_trade_date || '—').slice(0, 10) }}
+                  异常入口查看对应台账 · 最新交易日 {{ formatDateOnly(sq?.latest_trade_date) }}
                 </template>
               </AppTabToolbar>
               <AppStateBlock
@@ -1069,7 +1069,7 @@ const menuPageTitle = useMenuPageTitle()
                   <AppTableColumn label="代码" prop="code" />
                   <AppTableColumn label="名称" prop="name" />
                   <AppTableColumn label="最新数据">
-                    <template #default="{ row }">{{ (row.latest_date || '—').slice(0, 10) }}</template>
+                    <template #default="{ row }">{{ formatDateOnly(row.latest_date) }}</template>
                   </AppTableColumn>
                   <AppTableColumn label="分时覆盖" role="text" control-width="medium">
                     <template #default="{ row }">
@@ -1632,10 +1632,10 @@ const menuPageTitle = useMenuPageTitle()
 
 @container app-viewport (max-height: 700px) {
   .stat-grid { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); gap: var(--app-space-2); }
-  .layer-card { padding: 3px 7px; }
+  .layer-card { padding: 3px var(--app-space-2); }
   .layer-name { margin-bottom: 2px; font-size: var(--app-font-size-caption); }
 
-  .overview-tabs :deep(.el-tabs__header) { margin-bottom: 5px; }
+  .overview-tabs :deep(.el-tabs__header) { margin-bottom: var(--app-space-1); }
 }
 
 @container app-viewport (max-width: 1100px) {

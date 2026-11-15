@@ -150,7 +150,7 @@ html[data-layout-preset] .el-checkbox-button__original:focus-visible + .el-check
 html[data-layout-preset] :is(.el-input__wrapper, .el-select__wrapper, .el-textarea__inner) {
   background-color: var(--chrome-bg-soft);
   box-shadow: 0 0 0 1px var(--app-border-default) inset;
-  transition: box-shadow .18s ease, background-color .18s ease;
+  transition: box-shadow var(--app-motion-content) var(--app-motion-ease), background-color var(--app-motion-content) var(--app-motion-ease);
 }
 @media (hover: hover) and (pointer: fine) {
   html[data-layout-preset] :is(.el-input__wrapper, .el-select__wrapper, .el-textarea__inner):hover {

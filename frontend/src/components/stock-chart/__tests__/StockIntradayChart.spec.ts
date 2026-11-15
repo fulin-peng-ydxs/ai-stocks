@@ -84,7 +84,7 @@ describe('StockIntradayChart', () => {
     expect(headers[0].text()).toContain('价格10.20')
     expect(headers[0].text()).toContain('均价10.17')
     expect(headers[1].text()).toContain('量能')
-    expect(headers[1].text()).toContain('总量30手')
+    expect(headers[1].text()).toContain('总量30 手')
     expect(headers[1].attributes('style')).toContain('top:')
     expect(headers[1].classes()).not.toContain('is-divided')
     expect(wrapper.find('.stock-intraday-chart__divider').exists()).toBe(true)

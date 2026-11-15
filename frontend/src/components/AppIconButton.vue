@@ -68,10 +68,10 @@ defineEmits<{
   flex: none;
   cursor: pointer;
   transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease,
-    box-shadow 0.15s ease;
+    background-color var(--app-motion-content) var(--app-motion-ease),
+    border-color var(--app-motion-content) var(--app-motion-ease),
+    color var(--app-motion-content) var(--app-motion-ease),
+    box-shadow var(--app-motion-content) var(--app-motion-ease);
 }
 .app-icon-button.is-xs {
   --app-icon-button-size: var(--app-control-height-xs);
@@ -96,7 +96,7 @@ defineEmits<{
   display: block;
 }
 .app-icon-button__loading {
-  animation: app-icon-button-spin 1s linear infinite;
+  animation: app-icon-button-spin var(--app-motion-spin) linear infinite;
 }
 @keyframes app-icon-button-spin {
   to {

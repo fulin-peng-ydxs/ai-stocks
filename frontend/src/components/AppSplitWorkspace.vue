@@ -487,7 +487,7 @@ onBeforeUnmount(() => {
   inset: 0 5px;
   content: '';
   background: var(--el-border-color-lighter);
-  transition: background-color 0.15s, box-shadow 0.15s;
+  transition: background-color var(--app-motion-content) var(--app-motion-ease), box-shadow var(--app-motion-content) var(--app-motion-ease);
 }
 .app-split-workspace__splitter > span {
   position: absolute;

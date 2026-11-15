@@ -233,9 +233,9 @@ function resetFilters(): void {
     <div v-if="result?.has_snapshot && !error && !forbidden && (!loading || tradeDate === result.trade_date)" class="limit-ladder__overview" :aria-busy="loading">
       <span v-if="loading" role="status" class="muted">正在更新，热点数量暂为上次结果</span>
       <section v-if="!loading" class="limit-ladder__summary" aria-label="天梯摘要">
-        <div><span>当前股票</span><strong class="is-total" data-testid="limit-ladder-summary-total">{{ formatNumber(result.summary.stock_count, 'count') }}</strong><small>只</small></div>
-        <div><span>最高板位</span><strong class="is-highest">{{ result.summary.highest_board ?? '—' }}</strong><small>板</small></div>
-        <div><span>首板股票</span><strong class="is-first">{{ formatNumber(result.summary.first_board_count, 'count') }}</strong><small>只</small></div>
+        <div><span>当前股票</span><strong class="is-total app-data-emphasis" data-testid="limit-ladder-summary-total">{{ formatNumber(result.summary.stock_count, 'count') }}</strong><small>只</small></div>
+        <div><span>最高板位</span><strong class="is-highest app-data-emphasis">{{ result.summary.highest_board ?? '—' }}</strong><small>板</small></div>
+        <div><span>首板股票</span><strong class="is-first app-data-emphasis">{{ formatNumber(result.summary.first_board_count, 'count') }}</strong><small>只</small></div>
         <div v-if="hasApproximateSt" class="limit-ladder__summary-meta"><el-tag type="warning" effect="plain" size="small">历史 ST 含近似口径</el-tag></div>
         <el-button
           class="limit-ladder__hotspots-toggle"
@@ -360,10 +360,6 @@ function resetFilters(): void {
 }
 .limit-ladder__summary strong {
   color: var(--el-text-color-primary);
-  font-size: var(--app-font-size-data);
-  font-weight: var(--app-font-weight-section);
-  line-height: var(--app-line-height-data);
-  font-variant-numeric: tabular-nums;
 }
 .limit-ladder__summary strong.is-total { color: var(--el-color-primary); }
 .limit-ladder__summary strong.is-highest { color: var(--market-up-color); }

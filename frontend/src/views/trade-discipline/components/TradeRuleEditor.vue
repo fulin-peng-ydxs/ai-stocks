@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDateOnly } from '@/utils/dateTime'
 import AppForm from '@/components/AppForm.vue'
 import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import AppFormHelp from '@/components/AppFormHelp.vue'
@@ -566,7 +567,7 @@ function managementText(): string {
   if (!event) return isUnpublished.value ? '草稿（未发布）' : latestVersionLabel.value
   const verb = event.event_type === 'archive' ? '归档' : event.event_type === 'restore' ? '恢复' : `发布 v${event.version_no}`
   return detail.value?.has_pending_management_action
-    ? `${verb}，待 ${event.effective_from_trade_date} 生效`
+    ? `${verb}，待 ${formatDateOnly(event.effective_from_trade_date)} 生效`
     : `${verb}已生效`
 }
 

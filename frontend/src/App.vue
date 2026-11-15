@@ -62,7 +62,7 @@ import PageDrawer from '@/components/PageDrawer.vue'
 import SettingsGroup from '@/components/SettingsGroup.vue'
 import PageDensitySyncSettings from '@/components/PageDensitySyncSettings.vue'
 import TradeDisciplineQuickCard from '@/components/trade-discipline/TradeDisciplineQuickCard.vue'
-import { formatDateTimeMinutes } from '@/utils/dateTime'
+import { formatDateTimeMinutes, formatDateOnly as sharedDateOnly } from '@/utils/dateTime'
 import { findMenuTrail } from '@/utils/permission'
 
 const { isDark, themeMode, setThemeMode, syncThemePreference } = useTheme()
@@ -220,8 +220,7 @@ function formatNumber(value: number | null | undefined): string {
 }
 
 function formatDateOnly(value: string | null | undefined): string {
-  if (!value) return '未同步'
-  return value.slice(0, 10)
+  return sharedDateOnly(value, '未同步')
 }
 
 function taskTypeLabel(task: AsyncTask): string {
@@ -696,7 +695,7 @@ async function onLogout() {
           :collapsible="false"
         >
           <template #actions>
-            <output class="display-scale-value" aria-live="polite">{{ displayScalePercent }}%</output>
+            <output class="display-scale-value app-data-emphasis" aria-live="polite">{{ displayScalePercent }}%</output>
           </template>
           <AppControlRow size="large">
             <PageSegmented
@@ -1002,7 +1001,7 @@ async function onLogout() {
 }
 button.topbar-status {
   cursor: pointer;
-  transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
+  transition: background-color var(--app-motion-content) var(--app-motion-ease), border-color var(--app-motion-content) var(--app-motion-ease), color var(--app-motion-content) var(--app-motion-ease), box-shadow var(--app-motion-content) var(--app-motion-ease);
 }
 button.topbar-status:hover {
   border-color: var(--app-border-strong);
@@ -1200,7 +1199,7 @@ button.topbar-status:focus-visible {
 }
 .topbar-metric {
   min-width: 0;
-  padding: 9px 10px;
+  padding: var(--app-space-2) 10px;
   display: flex;
   flex-direction: column;
   gap: var(--app-space-1);
@@ -1346,10 +1345,6 @@ button.topbar-status:focus-visible {
   flex: none;
   color: var(--page-settings-accent);
   font-family: var(--app-font-family-mono);
-  font-size: var(--app-font-size-data);
-  font-weight: var(--app-font-weight-section);
-  line-height: var(--app-line-height-data);
-  font-variant-numeric: tabular-nums;
 }
 .display-scale-control {
   display: flex;
@@ -1381,7 +1376,7 @@ button.topbar-status:focus-visible {
 .theme-option {
   width: 100%;
   min-height: 76px;
-  padding: 10px 11px;
+  padding: 10px var(--app-space-3);
   color: var(--page-settings-text-muted);
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr) 20px;
@@ -1435,7 +1430,7 @@ button.topbar-status:focus-visible {
   position: relative;
   min-width: 0;
   min-height: 142px;
-  padding: 9px;
+  padding: var(--app-space-2);
   color: var(--page-settings-text-muted);
   display: grid;
   grid-template-columns: minmax(0, 1fr) 20px;
@@ -1507,7 +1502,7 @@ button.topbar-status:focus-visible {
   right: 0;
   top: 15px;
   height: 13px;
-  padding-left: 7px;
+  padding-left: var(--app-space-2);
   border-bottom: 1px solid var(--page-settings-divider);
 }
 .nav-preview-tabs b {
@@ -1525,7 +1520,7 @@ button.topbar-status:focus-visible {
   right: 9px;
   top: 37px;
   bottom: 9px;
-  padding: 7px;
+  padding: var(--app-space-2);
   border: 1px solid var(--page-settings-section-border);
   border-radius: 5px;
 }
@@ -1533,7 +1528,7 @@ button.topbar-status:focus-visible {
   display: block;
   width: 65%;
   height: 3px;
-  margin-bottom: 5px;
+  margin-bottom: var(--app-space-1);
   border-radius: 2px;
   background: var(--page-settings-text-muted);
   opacity: .28;

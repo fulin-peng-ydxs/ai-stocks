@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HelpHint from '@/components/HelpHint.vue'
 import { formatNumber } from '@/utils/numberFormat'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
@@ -408,7 +409,7 @@ const menuPageTitle = useMenuPageTitle()
             <el-input v-model="presetForm.description" />
           </el-form-item>
 
-          <div class="form-section-title">强调色 token（背景与边栏由明暗模式固定）</div>
+          <div class="form-section-title"><span class="app-inline-info">强调色 token<HelpHint text="背景与边栏由明暗模式固定。" label="强调色说明" /></span></div>
           <el-tabs v-model="tokenTab">
             <el-tab-pane label="白天" name="light">
               <div class="form-grid three">
@@ -428,7 +429,7 @@ const menuPageTitle = useMenuPageTitle()
             </el-tab-pane>
           </el-tabs>
 
-          <div class="form-section-title">圆角（明暗共用）</div>
+          <div class="form-section-title"><span class="app-inline-info">圆角<HelpHint text="明暗模式共用。" label="圆角说明" /></span></div>
           <div class="form-grid three">
             <el-form-item v-for="s in SHAPE_KEYS" :key="s.key" :label="s.label" required>
               <el-input-number v-model="presetForm.shared[s.key]" :min="0" :max="s.max" controls-position="right" />
