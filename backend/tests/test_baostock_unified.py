@@ -65,6 +65,13 @@ def _network_query(operation, args, kwargs, queued_at=None):
     client = redis.Redis.from_url(kwargs["url"], decode_responses=True)
     try:
         with request_runtime.request_slot("baostock", policy, client=client, check=_check_cancel):
+            # 首批请求持有槽位，直到父进程实际观测到四槽并发；不猜 spawn 启动时差。
+            deadline = time.monotonic() + 30
+            while not client.exists(kwargs["release_key"]):
+                _check_cancel()
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("四个共享网络槽位未在有界时间内就绪")
+                time.sleep(.01)
             time.sleep(.15)
         return args[0], None, False, {"requests": 1}, {}, {"_baostock_worker_pid": os.getpid()}
     finally:
@@ -120,11 +127,16 @@ def test_two_task_pools_share_four_network_slots(monkeypatch):
     keys = [prefix + suffix for suffix in ["active", "last", "stats", "starts", "waiting"]]
     monkeypatch.setattr(executor, "_query", _network_query)
     stop = threading.Event()
+    saturated = threading.Event()
+    release_key = prefix + "release"
     active = []
 
     def sample():
         while not stop.is_set():
-            active.append(client.hlen(keys[0]))
+            current = client.hlen(keys[0])
+            active.append(current)
+            if current == 4:
+                saturated.set()
             stop.wait(.005)
 
     sampler = threading.Thread(target=sample)
@@ -133,7 +145,13 @@ def test_two_task_pools_share_four_network_slots(monkeypatch):
         with (executor.BaostockExecutor(4) as a, executor.BaostockExecutor(4) as b,
               ThreadPoolExecutor(8) as callers):
             futures = [callers.submit((a if i % 2 else b).call, "get_st_status", i,
-                                           keys=keys, url=store.url) for i in range(16)]
+                                           keys=keys, url=store.url, release_key=release_key)
+                       for i in range(16)]
+            try:
+                assert saturated.wait(timeout=30), "两个任务池必须实际填满四个共享槽位"
+            finally:
+                # 就绪失败也释放已进入的请求，避免 executor 退出等待形成死锁。
+                client.set(release_key, "1", ex=60)
             assert [f.result(timeout=30) for f in futures] == list(range(16))
         assert max(active) == 4
         assert client.hlen(keys[0]) == client.hlen(keys[4]) == 0
@@ -141,7 +159,7 @@ def test_two_task_pools_share_four_network_slots(monkeypatch):
     finally:
         stop.set()
         sampler.join()
-        client.delete(*keys)
+        client.delete(*keys, release_key)
 
 
 def _seed(service, codes):

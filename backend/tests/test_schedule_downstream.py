@@ -407,6 +407,9 @@ def test_snapshot_delay_conditions_and_waiting_slot(runtime, monkeypatch):
     delayed = child(svc, parent, '晚到期', delay=20)
     child(svc, parent, '失败分支', condition='failure')
     child(svc, parent, '停用', enabled=False)
+    # 调度时间显式推进，不让慢机器上建任务/重排的耗时跨过 20 秒延迟边界。
+    clock = {"now": datetime(2026, 11, 16, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai")).replace(tzinfo=None)}
+    monkeypatch.setattr(scheduler, "shanghai_now_naive", lambda: clock["now"])
     terminal(runtime, parent)
     current = svc.downstream(parent['id'])
     desired = [delayed['id'], b['id'], a['id'], early['id']] + ids(current)[4:]
@@ -415,6 +418,7 @@ def test_snapshot_delay_conditions_and_waiting_slot(runtime, monkeypatch):
     assert len(old) == 4
     assert old[old.target_job_id != delayed['id']].due_at.nunique() == 1
     # 已等待的事件保留 A→B→early；新事件使用 b→a→early，延迟任务仍最后到期。
+    clock["now"] += timedelta(seconds=1)
     newer = terminal(runtime, parent)
     created = []
     busy = {'value': True}
@@ -434,6 +438,10 @@ def test_snapshot_delay_conditions_and_waiting_slot(runtime, monkeypatch):
     assert new.loc[new.target_job_id == delayed['id'], 'dispatch_order'].iloc[0] == 0
     assert set(runtime.query_df("SELECT status FROM scheduled_trigger_event WHERE target_job_id=?",
                                 [delayed['id']]).status) == {'waiting'}
+    clock["now"] += timedelta(seconds=21)
+    assert scheduler.dispatch_due_events() == 2
+    assert created[-2:] == [delayed['id'], delayed['id']]
+    assert set(runtime.query_df('SELECT status FROM scheduled_trigger_event').status) == {'dispatched'}
 
 
 def test_more_than_one_claim_batch_keeps_order_after_pg_returning_shuffle(runtime, monkeypatch):
