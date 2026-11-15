@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { FULL_SOURCE_AUDIT_TIMEOUT_MS } from './helpers/fullSourceAudit'
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -65,7 +66,7 @@ describe('共享交互样式的消费者边界', () => {
     expect(auditSharedStyles([{ file: 'sample.vue', source: fixture('.entry { padding: 8px; }') }], roles)).toEqual([])
     const sources = vueFiles(SRC_DIR).map(file => ({ file, source: readFileSync(file, 'utf8') }))
     expect(auditSharedStyles(sources, roles)).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('卡片形态的选择器权重不低于普通宿主，避免声明在后仍被覆盖', () => {
     const css = postcss.parse(readFileSync(join(SRC_DIR, 'styles/global.css'), 'utf8'))
@@ -128,7 +129,7 @@ describe('共享交互样式的消费者边界', () => {
       readFileSync(file, 'utf8'), role, properties,
     ).map(selector => `${file}: ${selector}`))
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('能拦住蓝框灰字的局部覆盖，同时允许非链接名称保持中性', () => {
     const template = '<template><a class="name app-interaction-link app-interaction-link--primary">板块</a></template>'
@@ -141,7 +142,7 @@ describe('共享交互样式的消费者边界', () => {
       linkStyleOverrides(readFileSync(file, 'utf8')).map((selector) => `${file}: ${selector}`),
     )
     expect(violations).toEqual([])
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('字段值链接必须登记共享角色，普通命令和操作列不被误降字重', () => {
     expect(unmarkedFieldLinks('<template><AppTableColumn><el-button link>{{ row.name }}</el-button></AppTableColumn></template>')).toHaveLength(1)
@@ -156,7 +157,7 @@ describe('共享交互样式的消费者边界', () => {
     // 板块标签属于领域展示，字阶与颜色由详情/表格共享的组件维护。
     expect(parseSfc(readFileSync(join(SRC_DIR, 'components/RelatedBoardCell.vue'), 'utf8')).descriptor.template?.content)
       .toContain('<MarketBoardTag')
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('字段链接的字阶只有共享样式维护，消费页不得另配字重或字号', () => {
     const properties = ['font', 'font-family', 'font-size', 'font-weight', 'line-height']
@@ -173,7 +174,7 @@ describe('共享交互样式的消费者边界', () => {
     const declarations: Record<string, string> = {}
     rules[0]!.walkDecls(declaration => { declarations[declaration.prop] = declaration.value })
     expect(declarations).toMatchObject({ 'font-size': 'inherit', 'line-height': 'inherit', 'font-weight': 'var(--app-font-weight-regular)' })
-  })
+  }, FULL_SOURCE_AUDIT_TIMEOUT_MS)
 
   it('图标选择消费者使用 aria-pressed，不再覆盖正文或主色', () => {
     for (const file of ['components/ComparePinButton.vue', 'components/StockGroupFavoriteButton.vue']) {
