@@ -7,9 +7,11 @@ import pytest
 from backend.common.exceptions import StorageError
 from backend.devtools import e2e_trade_discipline as fixture
 from backend.services.trade_discipline_service import TradeDisciplineService
+from backend.services.trade_ledger_service import TradeLedgerService
 from backend.storage.duckdb_client import DuckDBClient
 from backend.storage.pg_identity import pg_fingerprint
 from backend.storage.trade_discipline_repository import TradeDisciplineRepository
+from backend.storage.trade_ledger_repository import TradeLedgerRepository
 from backend.tests.conftest import TEST_OWNER, TEST_TENANT
 
 TEST_OWNERS = ((TEST_TENANT, TEST_OWNER),)
@@ -66,11 +68,11 @@ def test_seed_is_deterministic_complete_and_cleanup_is_idempotent(pg, market, mo
         ("trade_discipline_stock_rule", "rule_id"): 8,
         ("trade_discipline_action_rule", "rule_id"): 8,
         ("trade_discipline_rule_activation", "id"): 6,
-        ("trade_discipline_checkin", "id"): 4,
-        ("trade_discipline_checkin_revision", "checkin_id"): 5,
-        ("trade_discipline_reason", "id"): 1,
-        ("trade_discipline_violation", "checkin_id"): 2,
-        ("trade_discipline_operation", "id"): 4,
+        ("trade_discipline_checkin", "id"): 0,
+        ("trade_discipline_checkin_revision", "checkin_id"): 0,
+        ("trade_discipline_reason", "id"): 0,
+        ("trade_discipline_violation", "checkin_id"): 0,
+        ("trade_discipline_operation", "id"): 0,
     }
     for (table, prefix_column), expected in expected_counts.items():
         assert _count_pg(pg, table, prefix_column) == expected
@@ -98,20 +100,21 @@ def test_seed_is_deterministic_complete_and_cleanup_is_idempotent(pg, market, mo
     assert state["effective_version"]["version_no"] == 3
     assert state["has_pending_management_action"] is True
 
-    combinations = pg.query_df(
-        "SELECT assessment,no_operation FROM trade_discipline_checkin c "
-        "JOIN trade_discipline_checkin_revision r ON r.tenant_id=c.tenant_id "
-        "AND r.owner_user_id=c.owner_user_id AND r.checkin_id=c.id "
-        "AND r.revision_no=c.current_revision_no "
-        "WHERE c.tenant_id=%s AND c.owner_user_id=%s ORDER BY c.trade_date",
-        [TEST_TENANT, TEST_OWNER],
-    )
-    assert list(zip(combinations["assessment"], combinations["no_operation"])) == [
-        ("complied", True),
-        ("complied", False),
-        ("breached", True),
-        ("breached", False),
+    ledger = TradeLedgerService(TradeLedgerRepository(pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER), market)
+    history = ledger.repo.history(sort_order="asc")["list"]
+    assert len(history) == 4
+    assert [(row["snapshot"]["assessment"], row["snapshot"]["operation_count"] == 0) for row in history] == [
+        ("complied", True), ("complied", False), ("breached", True), ("breached", False),
     ]
+    assert [row["current_revision_no"] for row in history] == [1, 1, 1, 2]
+    assert ledger.revisions(fixture.FIXTURE_TRADE_DATES[2], 1)["snapshot"]["rules"][0]["version_no"] == 2
+    original = ledger.revisions(fixture.FIXTURE_TRADE_DATES[5], 1)["snapshot"]
+    revised = ledger.revisions(fixture.FIXTURE_TRADE_DATES[5], 2)["snapshot"]
+    assert original["events"] == [] and original["review_note"] == "E2E 修正前快照"
+    assert len(revised["events"]) == 2 and revised["review_note"] == "E2E 账本复盘记录"
+    assert revised["buy_amount"] == revised["sell_amount"] == "1234.56"
+    assert revised["fee"] == "10.00"
+    assert ledger.context(fixture.FIXTURE_CURRENT_TRADE_DATE)["cash"] == "99980.00"
     assert int(market.query_df(
         "SELECT count(*) AS n FROM stock_basic WHERE code IN (SELECT unnest(?::VARCHAR[]))",
         [list(fixture.STOCK_CODES)],
@@ -166,6 +169,10 @@ def test_seed_is_deterministic_complete_and_cleanup_is_idempotent(pg, market, mo
         )
     assert _count_pg(pg, "trade_discipline_rule", "id") == 1
 
+    pg.execute(
+        "INSERT INTO trade_discipline_account (tenant_id,owner_user_id,id,opening_cash) "
+        "VALUES (%s,%s,'other-account',777)", [TEST_TENANT, TEST_OWNER],
+    )
     first = fixture.cleanup_trade_discipline_data(
         expected_pg_fingerprint=pg_fingerprint(pg),
         pg=pg,
@@ -179,7 +186,14 @@ def test_seed_is_deterministic_complete_and_cleanup_is_idempotent(pg, market, mo
         owners=TEST_OWNERS,
     )
     assert first["removedPg"]["rule"] == 2
-    assert first["removedPg"]["reason"] == 2
+    assert first["removedPg"]["reason"] == 1
+    assert first["removedPg"]["ledger_revision"] == 5
+    assert first["removedPg"]["ledger_day"] == 4
+    assert first["removedPg"]["account"] == 1
+    assert int(pg.query_df(
+        "SELECT opening_cash FROM trade_discipline_account "
+        "WHERE tenant_id=%s AND owner_user_id=%s AND id='other-account'", [TEST_TENANT, TEST_OWNER],
+    ).iloc[0]["opening_cash"]) == 777
     assert first["removedDuck"]["stock_basic"] == 3
     assert first["removedDuck"]["stock_st_status_daily"] == len(st_rows)
     assert int(pg.query_df(
@@ -219,3 +233,45 @@ def test_seed_failure_rolls_back_both_databases(pg, tmp_path, monkeypatch) -> No
         ).iloc[0]["n"]) == before_duck
     finally:
         market.close()
+
+
+def test_non_fixture_default_account_is_never_replaced_or_deleted(pg, market, monkeypatch):
+    pg.execute(
+        "INSERT INTO trade_discipline_account (tenant_id,owner_user_id,id,opening_cash) "
+        "VALUES (%s,%s,'default',12345.67)", [TEST_TENANT, TEST_OWNER],
+    )
+    monkeypatch.setenv("AI_STOCKS_ENV", "test")
+    monkeypatch.setenv("AI_STOCKS_E2E_WRITE", "1")
+    for action in (fixture.seed_trade_discipline_data, fixture.cleanup_trade_discipline_data):
+        with pytest.raises(StorageError, match="默认账户不属于确定性夹具"):
+            action(expected_pg_fingerprint=pg_fingerprint(pg), pg=pg, market=market, owners=TEST_OWNERS)
+        row = pg.query_df(
+            "SELECT opening_cash,initialized_on FROM trade_discipline_account "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id='default'", [TEST_TENANT, TEST_OWNER],
+        ).iloc[0]
+        assert str(row["opening_cash"]) == "12345.67"
+    assert market.query_df("SELECT count(*) n FROM stock_basic").iloc[0]["n"] == 0
+
+
+def test_ledger_failure_rolls_back_previously_written_revision_and_market(pg, tmp_path, monkeypatch):
+    monkeypatch.setenv("AI_STOCKS_ENV", "test")
+    monkeypatch.setenv("AI_STOCKS_E2E_WRITE", "1")
+    original = TradeLedgerService.submit
+    calls = 0
+    def fail_after_first(self, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("日结中途失败")
+        return original(self, *args, **kwargs)
+    monkeypatch.setattr(TradeLedgerService, "submit", fail_after_first)
+    with DuckDBClient(tmp_path / "ledger-failure.duckdb") as market:
+        with pytest.raises(StorageError, match="日结中途失败"):
+            fixture.seed_trade_discipline_data(
+                expected_pg_fingerprint=pg_fingerprint(pg), pg=pg, market=market, owners=TEST_OWNERS,
+            )
+        assert calls == 2
+        for table in ("trade_discipline_account", "trade_discipline_ledger_day", "trade_discipline_ledger_revision"):
+            assert pg.query_df(f"SELECT count(*) n FROM {table} WHERE tenant_id=%s AND owner_user_id=%s",
+                               [TEST_TENANT, TEST_OWNER]).iloc[0]["n"] == 0
+        assert market.query_df("SELECT count(*) n FROM stock_basic").iloc[0]["n"] == 0

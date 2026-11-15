@@ -40,7 +40,7 @@ Playwright 用于少量、稳定、浏览器独有的关键用户路径回归。
 
 已有套件只覆盖其收集报告中的文件、用例和项目；一般业务修改仍按准入选择最小路径，完整设计验收继续使用既有总入口。源码/条件变化后应重新验证受影响部分，交付分别记录应跑、实跑、通过/失败及未完成原因。
 
-`e2e-trade` 当前仅完成执行接线，旧打卡用例与夹具尚未迁移到流水账页面，不能计为新业务 E2E 已覆盖；迁移范围与完成判据统一见 CI 专题的[交易纪律 E2E 迁移](../architecture/continuous-integration.md#验证入口与已知限制)。
+`e2e-trade` 使用当前账户、成交与日结流水，不再以旧逐规则打卡表或手选履约结果作为页面夹具。标准项目执行共享账户的业务及权限链路，默认项目执行未保存协议；CI 登记在收集前选择适用项目/标题，严格要求实际零跳过。覆盖及失败判据统一见 CI 专题的[交易纪律账户日结 E2E](../architecture/continuous-integration.md#验证入口与已知限制)。
 
 ### 按范围选入口
 
@@ -71,10 +71,12 @@ AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:design
 |---|---|---|
 | 板块 `./start.sh e2e-board-data seed\|cleanup` | `E2E9*` 板块、`9999*.SZ` 股票、2099 年行情及其截面日的准确 ST 固定事实 | 后端停服时独占 DuckDB，复用 `scripts/run-sector-e2e.sh`；ST 按专属代码及固定截面日清理 |
 | 关联板块 `./start.sh e2e-stock-board-correlation seed\|cleanup --expected-pg-fingerprint <指纹>` | PG `default/debug_system` 下 `e2e_sbc_*` 方案/快照/任务；DuckDB `9977*.SZ`、`E2ECORR_*`、`E2E相关-*`、2097 年行情/冠军及行情日 ST 固定事实 | PG 目标与在线后端指纹一致，后端停服时 seed/cleanup；runner 校准账号、检查两库零残留 |
-| 交易纪律 `./start.sh e2e-trade-discipline seed\|cleanup --expected-pg-fingerprint <指纹>` | PG `debug_tenant` 下 `debug_normal`、只读、独立提交及租户管理员账号的 `e2e_td_` / `E2E纪律-` / `E2E类型-`；DuckDB `9988*.SZ`、2098 年交易日及行情日 ST 固定事实 | 后端指纹、直连 PG 和调用方环境一致；停服执行，复用 `scripts/run-trade-discipline-e2e.sh` |
+| 交易纪律 `./start.sh e2e-trade-discipline seed\|cleanup --expected-pg-fingerprint <指纹>` | PG `debug_tenant` 下四类固定账号的专属规则、账户及日结；规则使用 `e2e_td_` / `E2E纪律-` / `E2E类型-`，默认账户使用下述归属标记；DuckDB `9988*.SZ`、2098 年交易日及行情日 ST 固定事实 | 后端指纹、直连 PG 和调用方环境一致；停服执行，复用 `scripts/run-trade-discipline-e2e.sh` |
 | 公开回测 `./start.sh e2e-backtest-run seed\|cleanup --expected-pg-fingerprint <指纹>` | 固定调试账号归属的 `e2e_bt_` 公开回测、opaque run_ref 及对应复用审计 | 夹具独占 DuckDB 写锁，被测后端须 `AI_STOCKS_DUCKDB_READ_ONLY=1`；由完整验收总入口单独编排 |
 
 以上表格说明物理边界，不是日常手动 seed 的替代流程。PG 写夹具和临时用户须在 DDL/账号写入前比对后端实时 PG 指纹；不得使用空值、未知环境、生产/共享目标或未确认归属进行清理。账号校准沿用 `./start.sh dev-users`，需要保留密码时使用 `--keep-password`；自动写账号须传同一可信指纹。
+
+交易纪律默认账户 ID 固定为 `default`，夹具以合成创建时点 `2098-06-02T00:00:00+08:00` 精确标记归属；seed/cleanup 遇到同归属的非夹具默认账户直接失败，不按 owner、空仓或缺少日结推断可覆盖。清理仅删除该标记账户及其日结/修订，其他账户和归属保持不动。独立提交账号预留未初始化账户用于真实页面初始化，其余账号通过共用账本服务生成四类历史和不可变修订；不手填评价或伪造日结快照。PG 可重入事务与 DuckDB 外层事务共同覆盖夹具失败回滚。
 
 上述三组固定行情明确声明为非 ST，统一复用 `backend/devtools/e2e_market_data.py` 写入准确逐日事实；清理同时限定夹具来源、专属代码和固定日期。新增夹具按真实消费日期准备所需事实，不能只填 `daily_bar.is_st`，也不能在业务守卫中为 E2E 放行。
 

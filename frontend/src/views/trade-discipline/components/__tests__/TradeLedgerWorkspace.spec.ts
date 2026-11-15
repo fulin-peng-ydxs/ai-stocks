@@ -49,6 +49,51 @@ beforeEach(() => {
   api.submit.mockResolvedValue({})
 })
 describe('账户日结简化填报', () => {
+  it('首次加载中的空账户工作区不触发未保存拦截', async () => {
+    let finish!: (value: LedgerContext) => void
+    api.context.mockReturnValue(new Promise<LedgerContext>(resolve => { finish = resolve }))
+    const confirm = vi.spyOn(ElMessageBox, 'confirm')
+    const wrapper = mountWorkspace()
+    try {
+      const exposed = wrapper.vm as unknown as { isDirty: () => boolean; requestLeave: () => Promise<boolean> }
+      expect(exposed.isDirty()).toBe(false)
+      expect(await exposed.requestLeave()).toBe(true)
+      expect(confirm).not.toHaveBeenCalled()
+    } finally {
+      finish(context())
+      await flushPromises()
+      wrapper.unmount()
+      confirm.mockRestore()
+    }
+  })
+
+  it('真实成交输入在父子装配后自动计算金额并保留后续费用更新', async () => {
+    api.context.mockResolvedValue(context({ rules: [{ ...version, stock_rules: [
+      ...version.stock_rules, { ...version.stock_rules[0]!, detail_id: 'second', name: '第二选股' },
+    ] }] }))
+    const wrapper = mountWorkspace({}, false)
+    try {
+      await flushPromises()
+      await wrapper.get('button[aria-label="添加买入操作"]').trigger('click')
+      const editor = wrapper.getComponent(TradeOperationEditor)
+      editor.getComponent({ name: 'AppSelect' }).vm.$emit('update:modelValue', 's')
+      await flushPromises()
+      const inputs = editor.findAll('.operation-field--amount input')
+      expect(inputs).toHaveLength(4)
+      await inputs[0]!.setValue('10.1234')
+      await inputs[1]!.setValue('3')
+      await inputs[3]!.setValue('0.50')
+      expect((inputs[2]!.element as HTMLInputElement).value).toBe('30.37')
+      expect(editor.props('modelValue')[0]).toMatchObject({ price: '10.1234', quantity: '3',
+        amount: '30.37', amount_mode: 'auto', fee: '0.50' })
+      await inputs[2]!.setValue('30.38')
+      editor.getComponent({ name: 'AppSelect' }).vm.$emit('update:modelValue', 'second')
+      await flushPromises()
+      expect((inputs[2]!.element as HTMLInputElement).value).toBe('30.38')
+      expect(editor.props('modelValue')[0]).toMatchObject({ amount_mode: 'manual', stock_rule_id: 'second' })
+    } finally { wrapper.unmount() }
+  })
+
   it('已提交预览完整展示两套规则及各自遗漏，默认没有禁用编辑表单', async () => {
     const second = { ...version, rule_id: 'second', name: '投资-股息分红' }
     const snapshot: NonNullable<LedgerContext['snapshot']> = {

@@ -1,426 +1,338 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-
-import {
-  authenticateDebugUser,
-  installAuthSnapshot,
-  type E2EAuthSnapshot,
-} from './helpers/auth'
+import type { LedgerHistoryRow, LedgerSnapshot } from '../src/api/tradeLedger'
+import { authenticateDebugUser, installAuthSnapshot, type E2EAuthSnapshot } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
-import {
-  requireTradeDisciplineFixture,
-  TRADE_DISCIPLINE_FIXTURE,
-} from './helpers/tradeDiscipline'
+import { openPageAndWaitForHeading } from './helpers/navigation'
+import { requireTradeDisciplineFixture, ledgerContext, tradeFixtureGet,
+  TRADE_DISCIPLINE_API, TRADE_DISCIPLINE_FIXTURE as FIXTURE } from './helpers/tradeDiscipline'
 
-async function useAuth(page: Page, auth: E2EAuthSnapshot): Promise<void> {
+test.use({ actionTimeout: 15_000 })
+
+async function useAuth(page: Page, auth: E2EAuthSnapshot, query = '') {
   await installAuthSnapshot(page, auth)
-  await page.goto('/trade-discipline')
+  await openPageAndWaitForHeading(page, `/trade-discipline${query}`, '交易纪律')
+}
+async function chooseDialog(page: Page, name: string) {
+  await page.getByRole('dialog').getByRole('button', { name, exact: true }).click()
+}
+// Element Plus 将原生 input 隐藏；通过可见标签操作，并核对真实 checked 状态。
+async function checkLabeledCheckbox(scope: Locator, label: string) {
+  const input = scope.getByRole('checkbox', { name: label, exact: true })
+  if (!await input.isChecked()) await scope.getByText(label, { exact: true }).click()
+  await expect(input).toBeChecked()
+}
+async function navigateToDailyBoard(page: Page) {
+  await page.getByRole('menubar', { name: '侧栏导航' }).getByRole('menuitem', { name: '每日榜单', exact: true }).click()
+}
+async function selectStock(page: Page, scope: Locator, code: string) {
+  await scope.locator('.stock-option-select').getByRole('combobox').fill(code)
+  await page.getByRole('option', { name: new RegExp(`${code.replace('.', '\\.')}.*E2E股票`) }).click()
+}
+async function addTrade(page: Page, side: 'buy' | 'sell', code: string, price: string, quantity: string) {
+  const workspace = page.getByTestId('trade-ledger-workspace')
+  await workspace.getByRole('button', { name: side === 'buy' ? '添加买入操作' : '添加卖出操作', exact: true }).click()
+  const editor = workspace.getByTestId('operation-card-editor')
+  await expect(editor).toHaveCount(1)
+  await selectStock(page, editor, code)
+  await editor.getByTestId(/^operation-stock-rule-/).click()
+  await page.getByRole('option', { name: '主趋势候选', exact: true }).click()
+  await editor.getByLabel('成交价', { exact: true }).fill(price)
+  await editor.getByLabel('数量', { exact: true }).fill(quantity)
+  await editor.getByLabel('费用', { exact: true }).fill('0.50')
+  return editor
+}
+function ledgerResponse(page: Page, suffix: string) {
+  return page.waitForResponse(r => new URL(r.url()).pathname === `/api/trade-discipline/ledger${suffix}` && r.request().method() === 'POST')
+}
+async function assertNoDocumentOverflow(page: Page) {
+  const overflow = await page.evaluate(() => ({
+    document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    workspace: Math.max(...Array.from(document.querySelectorAll<HTMLElement>(
+      '[data-testid="app-main-surface"], [data-testid="trade-ledger-workspace"]',
+    )).map(el => el.scrollWidth - el.clientWidth)),
+  }))
+  expect(overflow.document).toBeLessThanOrEqual(1)
+  expect(overflow.workspace).toBeLessThanOrEqual(1)
 }
 
-async function chooseDialog(page: Page, label: string): Promise<void> {
-  await page.getByRole('dialog').getByRole('button', { name: label, exact: true }).click()
-}
-
-async function navigateToDailyBoard(page: Page): Promise<void> {
-  await page.getByRole('menubar', { name: '侧栏导航' })
-    .getByRole('menuitem', { name: '每日榜单', exact: true }).click()
-}
-
-async function navigateToSystemManagement(page: Page): Promise<void> {
-  const topEntry = page.getByRole('button', { name: '系统管理', exact: true })
-  if (await topEntry.isVisible()) {
-    await topEntry.click()
-    return
-  }
-  const permissionMenu = page.getByRole('menuitem', { name: '权限管理', exact: true })
-  if (await permissionMenu.getAttribute('aria-expanded') !== 'true') await permissionMenu.click()
-  await page.getByRole('menuitem', { name: '用户管理', exact: true }).click()
-}
-
-async function expectHistoryLayout(page: Page): Promise<void> {
-  const geometry = await page.evaluate(() => {
-    const panel = document.querySelector<HTMLElement>('.history-panel')
-    const workspace = document.querySelector<HTMLElement>('.history-workspace')
-    const filterCard = document.querySelector<HTMLElement>('.history-filter-card .el-card__body')
-    const filters = document.querySelector<HTMLElement>('.history-filter-card .filter-row')
-    const controlWidths = [
-      '.date-filter', '.rule-filter', '.assessment-filter', '.operation-filter',
-      '.amended-filter', '.stock-filter', '.reason-filter',
-    ].map((selector) => document.querySelector<HTMLElement>(selector)?.getBoundingClientRect().width ?? 0)
-    return {
-      panelWidth: panel?.getBoundingClientRect().width ?? 0,
-      workspaceWidth: workspace?.getBoundingClientRect().width ?? 0,
-      filterCardLeft: filterCard?.getBoundingClientRect().left ?? 0,
-      filterCardRight: filterCard?.getBoundingClientRect().right ?? 0,
-      filtersLeft: filters?.getBoundingClientRect().left ?? 0,
-      filtersRight: filters?.getBoundingClientRect().right ?? 0,
-      filtersDisplay: filters ? getComputedStyle(filters).display : '',
-      filterCardPaddingLeft: filterCard ? Number.parseFloat(getComputedStyle(filterCard).paddingLeft) : 0,
-      filterCardPaddingRight: filterCard ? Number.parseFloat(getComputedStyle(filterCard).paddingRight) : 0,
-      controlWidths,
-    }
-  })
-  expect(geometry.panelWidth).toBeGreaterThan(0)
-  expect(Math.abs(geometry.panelWidth - geometry.workspaceWidth)).toBeLessThanOrEqual(1)
-  expect(geometry.filtersDisplay).toBe('flex')
-  expect(Math.abs(
-    geometry.filtersLeft - geometry.filterCardLeft - geometry.filterCardPaddingLeft,
-  )).toBeLessThanOrEqual(1)
-  expect(Math.abs(
-    geometry.filterCardRight - geometry.filtersRight - geometry.filterCardPaddingRight,
-  )).toBeLessThanOrEqual(1)
-  expect(Math.min(...geometry.controlWidths)).toBeGreaterThan(0)
-  expect(Math.max(...geometry.controlWidths)).toBeLessThanOrEqual(300)
-}
-
-async function expectPrimaryLeftAccent(
-  locator: Locator,
-  background: 'fill' | 'transparent' = 'transparent',
-): Promise<void> {
-  const styles = await locator.evaluate((element) => {
-    const style = getComputedStyle(element)
-    const primaryProbe = document.createElement('span')
-    primaryProbe.style.color = 'var(--el-color-primary)'
-    primaryProbe.style.backgroundColor = 'var(--el-fill-color-extra-light)'
-    element.append(primaryProbe)
-    const fillBackgroundColor = getComputedStyle(primaryProbe).backgroundColor
-    const primaryColor = getComputedStyle(primaryProbe).color
-    primaryProbe.remove()
-    return {
-      backgroundColor: style.backgroundColor,
-      borderBottomWidth: style.borderBottomWidth,
-      borderLeftColor: style.borderLeftColor,
-      borderLeftStyle: style.borderLeftStyle,
-      borderLeftWidth: style.borderLeftWidth,
-      borderRightWidth: style.borderRightWidth,
-      borderTopWidth: style.borderTopWidth,
-      color: style.color,
-      fillBackgroundColor,
-      primaryColor,
-    }
-  })
-  expect(styles).toMatchObject({
-    backgroundColor: background === 'fill'
-      ? styles.fillBackgroundColor
-      : 'rgba(0, 0, 0, 0)',
-    borderBottomWidth: '0px',
-    borderLeftColor: styles.primaryColor,
-    borderLeftStyle: 'solid',
-    borderLeftWidth: '3px',
-    borderRightWidth: '0px',
-    borderTopWidth: '0px',
-  })
-  expect(styles.color).not.toBe(styles.primaryColor)
-}
-
-async function expectWorkspaceSurface(locator: Locator): Promise<void> {
-  const colors = await locator.evaluate((element) => {
-    const probe = document.createElement('span')
-    probe.style.backgroundColor = 'var(--el-bg-color)'
-    element.append(probe)
-    const surfaceColor = getComputedStyle(probe).backgroundColor
-    probe.remove()
-    return {
-      backgroundColor: getComputedStyle(element).backgroundColor,
-      surfaceColor,
-    }
-  })
-  expect(colors.backgroundColor).toBe(colors.surfaceColor)
-}
-
-async function expectChildFillsContainer(container: Locator, childSelector: string): Promise<void> {
-  const geometry = await container.evaluate((element, selector) => {
-    const child = element.querySelector<HTMLElement>(selector)
-    const style = getComputedStyle(element)
-    const contentWidth = element.clientWidth
-      - Number.parseFloat(style.paddingLeft)
-      - Number.parseFloat(style.paddingRight)
-    return {
-      childWidth: child?.getBoundingClientRect().width ?? 0,
-      contentWidth,
-    }
-  }, childSelector)
-  expect(geometry.childWidth).toBeGreaterThan(0)
-  expect(Math.abs(geometry.contentWidth - geometry.childWidth)).toBeLessThanOrEqual(1)
-}
-
-async function expectOperationEditorLayout(checkin: Locator): Promise<void> {
-  const geometry = await checkin.getByTestId('operation-card-editor').evaluate((editor) => {
-    const grid = editor.querySelector<HTMLElement>('.operation-grid')
-    const stock = editor.querySelector<HTMLElement>('.operation-field--stock')
-    const time = editor.querySelector<HTMLElement>('.operation-field--time')
-    const rules = Array.from(editor.querySelectorAll<HTMLElement>('.operation-field--rule'))
-    const amounts = Array.from(editor.querySelectorAll<HTMLElement>('.operation-field--amount'))
-    return {
-      gridWidth: grid?.getBoundingClientRect().width ?? 0,
-      stockWidth: stock?.getBoundingClientRect().width ?? 0,
-      timeWidth: time?.getBoundingClientRect().width ?? 0,
-      ruleWidths: rules.map((item) => item.getBoundingClientRect().width),
-      amountWidths: amounts.map((item) => item.getBoundingClientRect().width),
-    }
-  })
-  expect(geometry.gridWidth).toBeGreaterThan(0)
-  expect(geometry.stockWidth).toBeGreaterThan(0)
-  expect(geometry.timeWidth).toBeGreaterThan(0)
-  expect(Math.abs(geometry.stockWidth - geometry.timeWidth)).toBeLessThanOrEqual(1)
-  expect(geometry.ruleWidths).toHaveLength(2)
-  expect(Math.abs(geometry.ruleWidths[0]! - geometry.ruleWidths[1]!)).toBeLessThanOrEqual(1)
-  expect(geometry.amountWidths).toHaveLength(4)
-  expect(Math.max(...geometry.amountWidths) - Math.min(...geometry.amountWidths)).toBeLessThanOrEqual(1)
-}
-
-test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历史与稳定布局', async ({ page, request }, testInfo) => {
-  const consoleIssues = collectConsoleIssues(page)
+test('真实账本展示生命周期版本、成交历史、不可变修订与响应式布局', async ({ page, request }, info) => {
+  const issues = collectConsoleIssues(page)
   const auth = await authenticateDebugUser(request, 'debug_normal')
-  const fixture = await requireTradeDisciplineFixture(request, auth.accessToken, {
-    verifyStockSearch: true,
-  })
-  await useAuth(page, auth)
-  const initialViewport = page.viewportSize()
-  if (testInfo.project.name === 'chromium-default') {
-    await page.setViewportSize({ width: 2560, height: 1080 })
-  }
-  await page.goto(`/trade-discipline?tab=rules&rule_ref=${fixture.ruleId}`)
-
+  const fixture = await requireTradeDisciplineFixture(request, auth.accessToken, { verifyStockSearch: true })
+  await useAuth(page, auth, `?tab=rules&rule_ref=${fixture.ruleId}&trade_date=${fixture.currentTradeDate}`)
   const editor = page.getByTestId('rule-editor')
   await expect(editor).toContainText('当前正式 v4')
   await expect(editor.getByLabel('规则双状态')).toContainText('当前按 v3 履约')
-  await expect(editor.getByLabel('规则双状态')).toContainText('发布 v4，待 2098-06-11 生效')
-  await expectWorkspaceSurface(editor)
-  await expectPrimaryLeftAccent(editor.locator('.readonly-banner'))
+  await expect(editor.getByLabel('规则双状态')).toContainText('待 2098-06-11 生效')
   await expect(editor.getByTestId('rule-capital-input')).toBeDisabled()
   await editor.getByTestId('stock-rule-card').first().getByTestId('rule-card-toggle').click()
   await expect(editor.getByTestId('stock-rule-capital-input').first()).toBeDisabled()
-  await expectWorkspaceSurface(editor.getByTestId('rule-card-editor'))
-  await editor.getByTestId('buy-rule-group').getByTestId('rule-card-toggle').first().click()
-  const typeHelp = editor.getByTestId('action-rule-type-help')
-  await typeHelp.hover()
-  await expect(page.getByText('内置类型不可删除；输入新类型并保存后可复用，自定义类型可从下拉项删除。', { exact: true })).toBeVisible()
-  await expectChildFillsContainer(editor, '.rule-editor__form')
 
-  await page.goto(`/trade-discipline?tab=checkin&rule_ref=${fixture.ruleId}&trade_date=${TRADE_DISCIPLINE_FIXTURE.operationTradeDate}`)
-  const checkin = page.getByTestId('checkin-form')
-  const operationCards = checkin.getByTestId('operation-card')
-  await expect(operationCards).toHaveCount(2)
-  await expect(checkin.getByTestId('buy-operation-group')).toContainText('买入操作')
-  await expect(checkin.getByTestId('sell-operation-group')).toContainText('卖出操作')
-  await expect(checkin.getByTestId('buy-operation-group').getByTestId('operation-card')).toHaveCount(1)
-  await expect(checkin.getByTestId('sell-operation-group').getByTestId('operation-card')).toHaveCount(1)
-  await expect(checkin.getByTestId('operation-card-editor')).toHaveCount(0)
-  await expect(operationCards.first()).toContainText('E2E股票01 998801.SZ')
-  await expect(operationCards.first()).toContainText('成交金额 · 12,345.60')
-  const operationToggles = checkin.getByTestId('operation-card-toggle')
-  await operationToggles.first().click()
-  await expect(checkin.getByTestId('operation-card-editor')).toHaveCount(1)
-  await expect(operationToggles.first()).toHaveAttribute('aria-expanded', 'true')
-  await expect(checkin.getByTestId('operation-card-editor').getByText('方向', { exact: true })).toHaveCount(0)
-  await expect(checkin.getByTestId('operation-card-editor').getByText('买入规则', { exact: true })).toBeVisible()
-  await operationToggles.nth(1).click()
-  await expect(checkin.getByTestId('operation-card-editor')).toHaveCount(1)
-  await expect(operationToggles.first()).toHaveAttribute('aria-expanded', 'false')
-  await expect(operationToggles.nth(1)).toHaveAttribute('aria-expanded', 'true')
-  await expect(checkin.getByTestId('operation-card-editor').getByText('卖出规则', { exact: true })).toBeVisible()
-  await expectWorkspaceSurface(page.locator('.panel-detail'))
-  await expectWorkspaceSurface(checkin.getByTestId('operation-card-editor'))
-  await expectChildFillsContainer(checkin, '.checkin-form')
-  await expectChildFillsContainer(checkin.getByTestId('operation-card-editor'), '.operation-grid')
-  await expectOperationEditorLayout(checkin)
-
-  await checkin.getByRole('button', { name: '修正打卡', exact: true }).click()
-  await checkin.getByTestId('checkin-assessment').getByText('部分履约', { exact: true }).click()
-  await expect(checkin.getByTestId('checkin-no-operation')).toBeDisabled()
-  await expect(operationCards.first()).toContainText('已履约')
-  await expect(operationCards.nth(1)).toContainText('已履约')
-  await operationToggles.first().click()
-  await checkin.getByTestId('operation-compliance-0').getByText('已履约', { exact: true }).click()
-  await operationToggles.nth(1).click()
-  await checkin.getByTestId('operation-compliance-1').getByText('未履约', { exact: true }).click()
-  await expect(operationCards.first()).toContainText('已履约')
-  await expect(operationCards.nth(1)).toContainText('未履约')
-  await checkin.getByRole('button', { name: '取消修正', exact: true }).click()
-
-  if (testInfo.project.name === 'chromium-default' && initialViewport) {
-    await page.setViewportSize(initialViewport)
-  }
+  await page.goto(`/trade-discipline?tab=checkin&trade_date=${FIXTURE.operationTradeDate}`)
+  const workspace = page.getByTestId('trade-ledger-workspace')
+  await expect(workspace.getByTestId('ledger-record')).toContainText('实际成交 2 笔')
+  await expect(workspace.getByTestId('ledger-record')).toContainText('12.3456')
+  await expect(workspace.getByTestId('operation-card-editor')).toHaveCount(0)
+  await expect(workspace).toContainText('历史记录只读')
+  await expect(workspace.getByRole('button', { name: '修正最新记录' })).toHaveCount(0)
+  await expect(workspace.getByRole('button', { name: '撤回最新日结' })).toHaveCount(0)
 
   await page.getByRole('button', { name: '历史记录', exact: true }).click()
-  const history = page.getByRole('table', { name: '履约历史', exact: true })
-  await expect(history).toBeVisible()
-  for (const checkinId of fixture.checkinIds) {
-    await expect(page.getByTestId(`history-detail-${checkinId}`)).toBeVisible()
-  }
-  await expect(history.getByText('已履约', { exact: true }).first()).toBeVisible()
-  await expect(history.getByText('未履约', { exact: true }).first()).toBeVisible()
-  await expect(history.getByText('无操作', { exact: true }).first()).toBeVisible()
-  await expect(history.getByText('2 笔', { exact: true }).first()).toBeVisible()
-  await expect(history.getByText('r2 · 已修正', { exact: true }).first()).toBeVisible()
-  await expect(page.locator('.history-filter-card')).toBeVisible()
-  await expectHistoryLayout(page)
-
-  const startDate = page.getByPlaceholder('开始交易日')
-  await startDate.click()
-  const calendar = page.locator('.trade-cal:visible')
-  await expect(calendar).toBeVisible()
-  const calendarGeometry = await page.evaluate(() => {
-    const input = document.querySelector<HTMLElement>('input[placeholder="开始交易日"]')
-    const panel = Array.from(document.querySelectorAll<HTMLElement>('.trade-cal'))
-      .find((element) => getComputedStyle(element).display !== 'none')
-    return {
-      inputBottom: input?.getBoundingClientRect().bottom ?? 0,
-      panelTop: panel?.getBoundingClientRect().top ?? 0,
-    }
-  })
-  expect(calendarGeometry.panelTop).toBeGreaterThanOrEqual(calendarGeometry.inputBottom - 1)
-  await page.keyboard.press('Escape')
-
-  const firstMainRow = page.locator('.history-workspace .el-table__body-wrapper tbody tr').first()
-  const latestDateBeforeSort = (await firstMainRow.locator('td').first().innerText()).trim()
-  const ascResponse = page.waitForResponse((response) => {
-    const url = new URL(response.url())
-    return url.pathname === '/api/trade-discipline/checkins'
-      && url.searchParams.get('sort_order') === 'asc'
-      && response.ok()
-  })
+  for (const day of FIXTURE.ledgerDates) await expect(page.getByTestId(`ledger-history-${day}`)).toBeVisible()
+  // 三态排序从默认降序先清空，再进入升序；清空继续消费默认降序。
   await page.getByRole('button', { name: '按 交易日 排序' }).press('Enter')
-  await ascResponse
-  await expect(firstMainRow).toContainText('2098-06-04')
-
-  const descResponse = page.waitForResponse((response) => {
-    const url = new URL(response.url())
-    return url.pathname === '/api/trade-discipline/checkins'
-      && url.searchParams.get('sort_order') === 'desc'
-      && response.ok()
-  })
+  const sorted = page.waitForResponse(r => new URL(r.url()).pathname === '/api/trade-discipline/ledger/history'
+    && new URL(r.url()).searchParams.get('sort_order') === 'asc' && r.ok())
   await page.getByRole('button', { name: '按 交易日 排序' }).press('Enter')
-  await descResponse
-  await expect(firstMainRow.locator('td').first()).toHaveText(latestDateBeforeSort)
-
-  await page.getByTestId('page-settings-trigger').click()
-  const settingsDrawer = page.getByTestId('page-settings-drawer')
-  await expect(settingsDrawer.getByText('列显隐', { exact: true })).toBeVisible()
-  for (const column of [
-    'trade_date', 'rule_name', 'assessment', 'operation_count',
-    'reason_name_snapshot', 'current_revision_no', 'updated_at',
-  ]) {
-    await expect(settingsDrawer.getByTestId(
-      `component-history-hiddenColumns-${column}-switch`,
-    )).toBeVisible()
-  }
-  await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
-
-  await expect(page.locator('.trade-date-summary')).toHaveCount(0)
-  await expect(page.locator('.discipline-summary')).toHaveCount(0)
-
-  const overflow = await page.evaluate(() => ({
-    document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    main: Math.max(...Array.from(document.querySelectorAll<HTMLElement>('[data-testid="app-main-surface"], .discipline-panel'))
-      .map((element) => element.scrollWidth - element.clientWidth)),
-  }))
-  expect(overflow.document).toBeLessThanOrEqual(1)
-  expect(overflow.main).toBeLessThanOrEqual(1)
-  if (testInfo.project.name === 'chromium-default') {
+  await sorted
+  await expect(workspace.getByTestId(/^ledger-history-2098/).first()).toHaveText(FIXTURE.ledgerDates[0])
+  await page.getByTestId(`ledger-history-${FIXTURE.latestSeededTradeDate}`).click()
+  const detail = page.getByRole('dialog', { name: '交易日记录', exact: true })
+  await expect(detail.getByTestId('ledger-record')).toContainText('E2E 账本复盘记录')
+  await expect(detail.getByTestId('ledger-record')).toContainText('实际成交 2 笔')
+  await detail.getByLabel('历史修订', { exact: true }).press('ArrowDown')
+  await page.getByRole('option', { name: 'r1', exact: true }).click()
+  await expect(detail.getByTestId('ledger-record')).toContainText('E2E 修正前快照')
+  await expect(detail.getByTestId('ledger-record')).not.toContainText('E2E 账本复盘记录')
+  await expect(detail.getByTestId('ledger-record')).toContainText('实际成交 0 笔')
+  await expect(detail.getByRole('button', { name: '前往修正最新记录' })).toHaveCount(0)
+  await assertNoDocumentOverflow(page)
+  if (info.project.name === 'chromium-default') {
     await page.setViewportSize({ width: 2560, height: 1080 })
-    await expectHistoryLayout(page)
+    await assertNoDocumentOverflow(page)
   }
-  expect(consoleIssues).toEqual([])
+  expect(issues).toEqual([])
 })
 
-test('从缓存的交易纪律历史切换系统管理不触发隐藏页面请求', async ({ page, request }, testInfo) => {
-  test.skip(testInfo.project.name !== 'chromium-standard', '跨模块导航链路只需在一个桌面视口执行')
-  const consoleIssues = collectConsoleIssues(page)
+test('从缓存的账户日结历史切换系统管理不触发隐藏页面请求', async ({ page, request }, info) => {
+  test.skip(info.project.name !== 'chromium-standard', '共享固定账号的导航回归只执行标准项目')
+  const issues = collectConsoleIssues(page)
   const auth = await authenticateDebugUser(request, 'debug_tenant_admin')
   await requireTradeDisciplineFixture(request, auth.accessToken)
-  await useAuth(page, auth)
-  await page.goto('/trade-discipline?tab=history&trade_date=2098-06-10')
-  await expect(page.getByRole('table', { name: '履约历史', exact: true })).toBeVisible()
-
-  const hiddenPageRequests: string[] = []
-  page.on('request', (request) => {
-    const pathname = new URL(request.url()).pathname
-    if (pathname.startsWith('/api/trade-discipline/')) hiddenPageRequests.push(pathname)
-  })
-  await navigateToSystemManagement(page)
+  await useAuth(page, auth, '?tab=history&trade_date=2098-06-10')
+  await expect(page.getByTestId(`ledger-history-${FIXTURE.latestSeededTradeDate}`)).toBeVisible()
+  const requests: string[] = []
+  page.on('request', r => { if (new URL(r.url()).pathname.startsWith('/api/trade-discipline/')) requests.push(new URL(r.url()).pathname) })
+  const permission = page.getByRole('menuitem', { name: '权限管理', exact: true })
+  if (await permission.getAttribute('aria-expanded') !== 'true') await permission.click()
+  await page.getByRole('menuitem', { name: '用户管理', exact: true }).click()
   await expect(page).toHaveURL(/\/system\//)
   await page.waitForTimeout(300)
-
-  expect(hiddenPageRequests).toEqual([])
-  await expect(page.getByText('履约日期不是已有行情交易日', { exact: true })).toHaveCount(0)
-  expect(consoleIssues).toEqual([])
+  expect(requests).toEqual([])
+  expect(issues).toEqual([])
 })
 
-test('标准视口真实完成规则、打卡、修订、快捷入口与权限闭环', async ({ page, request }, testInfo) => {
+test('真实成交流水日结失败保留、修正不累加、撤回保留历史', async ({ page, request }, info) => {
   test.setTimeout(120_000)
-  test.skip(testInfo.project.name !== 'chromium-standard', '写链路只执行一次，其他项目只读验收')
-  const consoleIssues = collectConsoleIssues(page, { allowedHttpStatuses: [500] })
-  const normal = await authenticateDebugUser(request, 'debug_normal')
-  const fixture = await requireTradeDisciplineFixture(request, normal.accessToken)
-  await useAuth(page, normal)
-  await page.goto('/stocks')
-  await page.goto('/trade-discipline?tab=rules')
+  test.skip(info.project.name !== 'chromium-standard', '固定账户写链路仅在标准项目执行一次')
+  const issues = collectConsoleIssues(page, { allowedHttpStatuses: [503] })
+  const auth = await authenticateDebugUser(request, 'debug_normal')
+  const fixture = await requireTradeDisciplineFixture(request, auth.accessToken)
+  await useAuth(page, auth, `?tab=checkin&trade_date=${fixture.currentTradeDate}&rule_ref=${fixture.ruleId}`)
+  const workspace = page.getByTestId('trade-ledger-workspace')
+  const before = await ledgerContext(request, auth.accessToken)
+  expect(before.cash).toBe('99980.00')
+  const buy = await addTrade(page, 'buy', FIXTURE.stockCodes[0], '10.1234', '3')
+  await expect(buy.getByLabel('成交金额', { exact: true })).toHaveValue('30.37')
+  await buy.getByLabel('成交金额', { exact: true }).fill('30.38')
+  await expect(buy).toContainText('与填写金额不一致')
+  await buy.getByRole('button', { name: '恢复自动计算', exact: true }).click()
+  await expect(buy.getByLabel('成交金额', { exact: true })).toHaveValue('30.37')
+  await addTrade(page, 'sell', FIXTURE.stockCodes[1], '11', '2')
+  await workspace.getByRole('button', { name: '记录资金变动', exact: true }).click()
+  const adjustment = workspace.getByTestId('ledger-adjustment-row')
+  await adjustment.getByLabel('金额', { exact: true }).fill('100')
+  await adjustment.getByLabel('原因', { exact: true }).fill('E2E 入金流水')
+  await workspace.getByLabel('复盘备注（选填）').fill('E2E 首次账户日结')
+  await page.route('**/api/trade-discipline/ledger/days', r => r.fulfill({ status: 503,
+    contentType: 'application/json', body: JSON.stringify({ code: 5030, msg: 'E2E 日结保存失败', data: null }) }), { times: 1 })
+  const failed = ledgerResponse(page, '/days')
+  await workspace.getByRole('button', { name: '提交当日记录', exact: true }).click()
+  expect((await failed).status()).toBe(503)
+  await expect(workspace.getByLabel('复盘备注（选填）')).toHaveValue('E2E 首次账户日结')
+  expect((await ledgerContext(request, auth.accessToken)).account_revision).toBe(before.account_revision)
+  expect((await ledgerContext(request, auth.accessToken)).snapshot).toBeNull()
+  const saved = ledgerResponse(page, '/days')
+  await workspace.getByRole('button', { name: '提交当日记录', exact: true }).click()
+  const response = await saved
+  expect(response.ok()).toBe(true)
+  const result = (await response.json()).data as LedgerSnapshot
+  expect(result).toMatchObject({ revision_no: 1, assessment: 'complied', buy_amount: '30.37', sell_amount: '22.00', fee: '1.00', cash: '100070.63' })
+  expect(result.events).toHaveLength(3)
+  expect(result.positions.map(p => [p.stock_code, p.quantity])).toEqual([[FIXTURE.stockCodes[0], '1203'], [FIXTURE.stockCodes[1], '798']])
+  await expect(workspace.getByTestId('ledger-record')).toContainText('E2E 首次账户日结')
+  await page.reload()
+  await expect(workspace.getByTestId('ledger-record')).toContainText('E2E 首次账户日结')
+  await page.getByRole('button', { name: '现有持仓', exact: true }).click()
+  await expect(workspace).toContainText('1,203')
+  await expect(workspace).toContainText('100,070.63')
+  await page.getByRole('button', { name: '今日打卡', exact: true }).click()
+  await workspace.getByRole('button', { name: '修正最新记录', exact: true }).click()
+  await expect(workspace.getByRole('button', { name: '提交修正', exact: true })).toBeDisabled()
+  await workspace.getByLabel('复盘备注（选填）').fill('应被取消的修正')
+  await workspace.getByRole('button', { name: '取消修正', exact: true }).click()
+  await expect(workspace.getByTestId('ledger-record')).toContainText('E2E 首次账户日结')
+  await workspace.getByRole('button', { name: '修正最新记录', exact: true }).click()
+  await workspace.getByLabel('复盘备注（选填）').fill('E2E 修正账户日结')
+  const amended = ledgerResponse(page, '/days')
+  await workspace.getByRole('button', { name: '提交修正', exact: true }).click()
+  expect((await amended).ok()).toBe(true)
+  const latest = await ledgerContext(request, auth.accessToken)
+  expect(latest.current_revision_no).toBe(2)
+  expect(latest.snapshot?.positions).toEqual(result.positions)
+  expect(latest.snapshot?.cash).toBe(result.cash)
+  const old = await tradeFixtureGet<LedgerHistoryRow>(request, auth.accessToken, `/ledger/revisions/${fixture.currentTradeDate}/1`)
+  expect(old.snapshot.review_note).toBe('E2E 首次账户日结')
+  expect(old.snapshot.positions).toEqual(result.positions)
+  let withdrawals = 0
+  page.on('request', r => { if (new URL(r.url()).pathname.endsWith('/ledger/withdraw')) withdrawals += 1 })
+  await workspace.getByRole('button', { name: '撤回最新日结', exact: true }).click()
+  await chooseDialog(page, '取消')
+  expect(withdrawals).toBe(0)
+  await workspace.getByRole('button', { name: '撤回最新日结', exact: true }).click()
+  const withdrawn = ledgerResponse(page, '/withdraw')
+  await chooseDialog(page, '确认撤回')
+  expect((await withdrawn).ok()).toBe(true)
+  const restored = await ledgerContext(request, auth.accessToken)
+  expect(restored.snapshot).toBeNull()
+  expect(restored.cash).toBe(before.cash)
+  expect(restored.positions).toEqual(before.positions)
+  await page.getByRole('button', { name: '历史记录', exact: true }).click()
+  await expect(page.getByTestId(`ledger-history-${fixture.currentTradeDate}`)).toHaveCount(0)
+  await workspace.getByRole('button', { name: /^高级搜索/ }).click()
+  await checkLabeledCheckbox(workspace, '显示已撤回')
+  await page.getByTestId(`ledger-history-${fixture.currentTradeDate}`).click()
+  const detail = page.getByRole('dialog', { name: '交易日记录', exact: true })
+  await expect(detail).toContainText('该日结已撤回，仅供追溯，不参与持仓及统计。')
+  await expect(detail.getByTestId('ledger-record')).toContainText('E2E 修正账户日结')
+  await expect(detail.getByRole('button', { name: '前往修正最新记录' })).toHaveCount(0)
+  expect(withdrawals).toBe(1)
+  expect(issues).toEqual([])
+})
 
-  await page.getByRole('button', { name: '新建规则' }).click()
+test('首次账户完整性确认与独立提交账号的快捷日结共享真实账本', async ({ page, request }, info) => {
+  test.skip(info.project.name !== 'chromium-standard', '首次初始化固定账户只执行一次')
+  const issues = collectConsoleIssues(page)
+  const auth = await authenticateDebugUser(request, 'debug_trade_discipline_submit')
+  await requireTradeDisciplineFixture(request, auth.accessToken, { initialized: false })
+  await useAuth(page, auth, '?tab=checkin&trade_date=2098-06-10')
+  const opening = page.getByTestId('ledger-initialize')
+  await expect(opening.getByRole('button', { name: '确认期初持仓' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '新建规则' })).toHaveCount(0)
+  await opening.getByRole('button', { name: '添加期初股票' }).click()
+  const row = opening.locator('.ledger-opening-position')
+  await selectStock(page, row, FIXTURE.stockCodes[0])
+  await row.getByLabel('期初数量（股）', { exact: true }).fill('3')
+  await row.getByLabel('持仓成本价（元/股，选填）', { exact: true }).fill('10.1234')
+  await expect(row).toContainText('30.37')
+  await opening.getByLabel('金额（元，选填）', { exact: true }).fill('50000')
+  await checkLabeledCheckbox(opening, '已完整录入真实期初持仓（没有股票即为空仓）')
+  const initialized = ledgerResponse(page, '/initialize')
+  await opening.getByRole('button', { name: '确认期初持仓' }).click()
+  expect((await initialized).ok()).toBe(true)
+  const context = await ledgerContext(request, auth.accessToken)
+  expect(context.initialized_on).toBe(FIXTURE.currentTradeDate)
+  expect(context.opening_positions[0]).toMatchObject({ stock_code: FIXTURE.stockCodes[0], quantity: '3', cost: '30.37' })
+  expect(context.cash).toBe('50000.00')
+  await page.getByTestId('app-topbar-surface').getByRole('button', { name: '用户中心', exact: true }).click()
+  const card = page.getByTestId('trade-discipline-quick-card')
+  await expect(card).toContainText('0/1')
+  await card.getByRole('button', { name: '今日无操作', exact: true }).click()
+  await chooseDialog(page, '确认打卡')
+  await expect(card).toContainText('1/1')
+  const saved = await ledgerContext(request, auth.accessToken)
+  expect(saved.current_revision_no).toBe(1)
+  expect(saved.snapshot).toMatchObject({ assessment: 'complied', events: [], cash: '50000.00' })
+  expect(saved.snapshot?.positions[0].quantity).toBe('3')
+  await card.getByRole('button', { name: '查看记录', exact: true }).click()
+  await expect(page.getByTestId('ledger-record')).toContainText('实际成交 0 笔')
+  await page.getByRole('button', { name: '现有持仓', exact: true }).click()
+  await expect(page.getByTestId('trade-ledger-workspace').getByRole('link', { name: FIXTURE.stockCodes[0], exact: true })).toHaveCount(0)
+  expect(issues).toEqual([])
+})
+
+test('只读、无权限与私人账户归属同时约束界面和真实接口', async ({ page, request }, info) => {
+  test.skip(info.project.name !== 'chromium-standard', '权限边界在标准项目执行')
+  const issues = collectConsoleIssues(page)
+  const auth = await authenticateDebugUser(request, 'debug_trade_discipline_view')
+  const fixture = await requireTradeDisciplineFixture(request, auth.accessToken)
+  await useAuth(page, auth, `?tab=checkin&trade_date=${FIXTURE.latestSeededTradeDate}`)
+  const workspace = page.getByTestId('trade-ledger-workspace')
+  await expect(workspace.getByTestId('ledger-record')).toContainText('E2E 账本复盘记录')
+  for (const name of ['修正最新记录', '撤回最新日结', '提交当日记录', '提交修正']) {
+    await expect(workspace.getByRole('button', { name, exact: true })).toHaveCount(0)
+  }
+  const context = await ledgerContext(request, auth.accessToken)
+  expect(context.rules[0].rule_id).toBe(fixture.ruleId)
+  const headers = { authorization: `Bearer ${auth.accessToken}` }
+  expect((await request.post(`${TRADE_DISCIPLINE_API}/trade-discipline/ledger/days`, { headers, data: {} })).status()).toBe(403)
+  expect((await request.get(`${TRADE_DISCIPLINE_API}/trade-discipline/rules/e2e_td_normal_rule`, { headers })).status()).toBe(404)
+  const none = await authenticateDebugUser(request, 'debug_board_only')
+  await installAuthSnapshot(page, none)
+  await page.goto('/trade-discipline')
+  await expect(page).toHaveURL(/\/board$/)
+  expect((await request.get(`${TRADE_DISCIPLINE_API}/trade-discipline/ledger`, {
+    headers: { authorization: `Bearer ${none.accessToken}` }, params: { trade_date: FIXTURE.currentTradeDate },
+  })).status()).toBe(403)
+  expect(issues).toEqual([])
+})
+
+test('规则草稿失败保留与正式发布归档恢复沿用当前规则契约', async ({ page, request }, info) => {
+  test.setTimeout(90_000)
+  test.skip(info.project.name !== 'chromium-standard', '固定账号规则写链路只执行一次')
+  const issues = collectConsoleIssues(page, { allowedHttpStatuses: [500] })
+  const auth = await authenticateDebugUser(request, 'debug_normal')
+  await useAuth(page, auth, '?tab=rules')
+  await page.getByRole('button', { name: '新建规则', exact: true }).click()
   const editor = page.getByTestId('rule-editor')
-  const e2eName = 'E2E纪律-T13页面全链路'
-  await editor.getByTestId('rule-name-input').fill(e2eName)
-  await editor.getByTestId('rule-capital-input').fill('100000.00')
+  const name = 'E2E纪律-账户规则维护'
+  await editor.getByTestId('rule-name-input').fill(name)
+  await editor.getByTestId('rule-capital-input').fill('100000')
   await editor.getByRole('button', { name: '添加选股规则' }).click()
   const stock = editor.getByTestId('stock-rule-card').first()
   await stock.getByTestId('stock-rule-name-input').fill('E2E趋势候选')
-  await stock.getByTestId('stock-rule-capital-input').fill('100000.00')
+  await stock.getByTestId('stock-rule-capital-input').fill('100000')
   await stock.locator('[data-condition-section="notes"] [role="button"]').click()
   await stock.getByLabel('补充说明', { exact: true }).fill('只选择确定性趋势候选')
-  const buyGroup = editor.getByTestId('buy-rule-group')
-  const sellGroup = editor.getByTestId('sell-rule-group')
-  await buyGroup.getByRole('button', { name: '添加', exact: true }).click()
-  const buyRule = buyGroup.getByTestId('action-rule-card').first()
-  await buyRule.getByTestId('action-rule-name-input').fill('E2E确认买入')
-  const buyType = buyRule.getByTestId('action-rule-type-select').getByRole('combobox')
-  await buyType.click()
-  await page.getByRole('option', { name: '建仓', exact: true }).click()
-  await buyRule.getByLabel('规则内容').fill('确认趋势后买入')
-  await buyRule.getByRole('button', { name: '复制买卖规则' }).click()
-  await expect(buyGroup.getByTestId('action-rule-card')).toHaveCount(2)
-
-  await sellGroup.getByRole('button', { name: '添加', exact: true }).click()
-  const sellRule = sellGroup.getByTestId('action-rule-card').first()
-  await sellRule.getByTestId('action-rule-name-input').fill('E2E破位卖出')
-  await sellRule.getByLabel('规则内容').fill('跌破关键位卖出')
-
+  for (const [side, label] of [['buy', 'E2E确认买入'], ['sell', 'E2E破位卖出']]) {
+    const group = editor.getByTestId(`${side}-rule-group`)
+    await group.getByRole('button', { name: '添加', exact: true }).click()
+    const rule = group.getByTestId('action-rule-card').first()
+    await rule.getByTestId('action-rule-name-input').fill(label)
+    await rule.getByLabel('规则内容').fill('E2E 明确的买卖执行条件')
+    await rule.getByTestId('action-rule-type-select').click()
+    await page.getByRole('option', { name: side === 'buy' ? '建仓' : '清仓', exact: true }).click()
+    if (side === 'buy') {
+      await expect(page.getByRole('button', { name: '删除自定义买卖类型' })).toHaveCount(0)
+      await rule.getByRole('button', { name: '复制买卖规则' }).click()
+      await expect(group.getByTestId('action-rule-card')).toHaveCount(2)
+    }
+  }
   await page.getByRole('button', { name: '今日打卡', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: '未保存的规则修改' })).toBeVisible()
   await chooseDialog(page, '继续编辑')
-  await expect(editor.getByTestId('rule-name-input')).toHaveValue(e2eName)
-
-  await page.route('**/api/trade-discipline/rules/*/draft', async (route) => {
-    if (route.request().method() === 'PUT') {
-      await route.fulfill({
-        status: 500,
-        contentType: 'application/json',
-        body: JSON.stringify({ code: 5000, msg: 'E2E 注入保存失败', data: null }),
-      })
-    } else await route.continue()
-  }, { times: 1 })
+  await expect(editor.getByTestId('rule-name-input')).toHaveValue(name)
+  await page.route('**/api/trade-discipline/rules/*/draft', r => r.request().method() === 'PUT'
+    ? r.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ code: 5000, msg: 'E2E 注入保存失败', data: null }) })
+    : r.continue(), { times: 1 })
   await page.getByRole('button', { name: '今日打卡', exact: true }).click()
   await chooseDialog(page, '保存草稿')
   await expect(page.getByRole('dialog', { name: '未保存的规则修改' })).toBeVisible()
-  await expect(editor.getByTestId('rule-name-input')).toHaveValue(e2eName)
+  await expect(editor.getByTestId('rule-name-input')).toHaveValue(name)
   await chooseDialog(page, '保存草稿')
-  await expect(page.getByRole('button', { name: '今日打卡', exact: true })).toHaveAttribute('aria-pressed', 'true')
-
   await page.getByRole('button', { name: '规则管理', exact: true }).click()
-  await page.getByRole('option', { name: new RegExp(e2eName) }).click()
-  await expect(editor.getByTestId('rule-card-editor')).toHaveCount(0)
-  await editor.getByTestId('stock-rule-card').first().getByTestId('rule-card-toggle').click()
-  await expect(editor.getByTestId('rule-card-editor')).toHaveCount(1)
-  await editor.getByTestId('buy-rule-group').getByTestId('rule-card-toggle').first().click()
-  await expect(editor.getByTestId('rule-card-editor')).toHaveCount(1)
-  const savedBuyType = editor.getByTestId('buy-rule-group')
-    .getByTestId('action-rule-card').first()
-    .getByTestId('action-rule-type-select').getByRole('combobox')
-  await savedBuyType.press('ArrowDown')
-  await expect(page.getByRole('option', { name: '建仓', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: '删除自定义买卖类型' })).toHaveCount(0)
-  await savedBuyType.press('Escape')
-  await editor.getByRole('button', { name: '保存并启用' }).click()
+  await page.getByRole('button', { name: new RegExp(`^${name} `) }).click()
+  await expect(editor.getByRole('button', { name: '保存并启用', exact: true })).toBeDisabled()
+  // 保存并启用消费当前修改；已保存但未变化时保持现行禁用契约。
+  await editor.getByLabel('最大同时持仓数', { exact: true }).fill('2')
+  await editor.getByLabel('最大同时持仓数', { exact: true }).press('Tab')
+  const publishResponse = page.waitForResponse(r => r.request().method() === 'POST'
+    && /\/api\/trade-discipline\/rules\/[^/]+\/publish$/.test(new URL(r.url()).pathname))
+  await editor.getByRole('button', { name: '保存并启用', exact: true }).click()
+  const published = await publishResponse
+  expect(published.ok()).toBe(true)
+  const publishedId = (await published.json()).data.rule_id
+  const stored = await tradeFixtureGet<{ latest_version: { max_positions: number } }>(request, auth.accessToken, `/rules/${publishedId}`)
+  expect(stored.latest_version.max_positions).toBe(2)
   await expect(editor).toContainText('当前正式 v1')
   await editor.getByRole('button', { name: '归档', exact: true }).click()
   await chooseDialog(page, '归档')
@@ -428,146 +340,65 @@ test('标准视口真实完成规则、打卡、修订、快捷入口与权限�
   await editor.getByRole('button', { name: '恢复', exact: true }).click()
   await chooseDialog(page, '恢复')
   await expect(editor.getByLabel('规则双状态')).toContainText('恢复已生效')
-
-  await page.goto(`/trade-discipline?tab=checkin&rule_ref=${fixture.ruleId}&trade_date=${fixture.currentTradeDate}`)
-  const checkin = page.getByTestId('checkin-form')
-  await expect(checkin.getByTestId('checkin-version-kicker')).toHaveText('履约版本 v3')
-  await checkin.getByTestId('checkin-assessment').getByText('未履约', { exact: true }).click()
-  await checkin.getByTestId('checkin-no-operation').click()
-  await checkin.getByTestId('checkin-violation-items').getByRole('checkbox', { name: '应卖未卖', exact: true }).check()
-  const reasonSelect = checkin.getByTestId('checkin-reason').getByRole('combobox')
-  await reasonSelect.fill('E2E原因-T13临时偏差')
-  await page.getByRole('option', { name: 'E2E原因-T13临时偏差', exact: true }).click()
-  await expect(checkin.getByTestId('checkin-reason')).toContainText('E2E原因-T13临时偏差')
-  await checkin.getByTestId('checkin-violation-detail').fill('E2E 页面真实提交')
-  await checkin.getByTestId('checkin-review-note').fill('E2E 首次打卡现场')
-
-  await page.getByRole('button', { name: '规则管理', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: '放弃未提交修改？' })).toBeVisible()
-  await chooseDialog(page, '继续编辑')
-  await expect(checkin.getByTestId('checkin-review-note')).toHaveValue('E2E 首次打卡现场')
-  await expect(checkin.getByTestId('checkin-reason')).toContainText('E2E原因-T13临时偏差')
-  await checkin.getByRole('button', { name: '提交打卡' }).click()
-  await expect(page.locator('.rule-master__item.active .rule-master__management'))
-    .toContainText('未履约 · r1')
-  await checkin.getByRole('button', { name: '修正打卡' }).click()
-  await expect(checkin.getByRole('button', { name: '提交修正' })).toBeDisabled()
-  await expect(checkin).toContainText('当前内容与最新修订一致；修改后才可提交')
-  await checkin.getByTestId('checkin-review-note').fill('应被取消的修正')
-  await checkin.getByRole('button', { name: '取消修正' }).click()
-  await expect(checkin.getByTestId('checkin-review-note')).toHaveValue('E2E 首次打卡现场')
-  await expect(checkin.getByTestId('checkin-review-note')).toBeDisabled()
-  await checkin.getByRole('button', { name: '修正打卡' }).click()
-  await reasonSelect.press('ArrowDown')
-  await page.getByRole('option', { name: /E2E原因-T13临时偏差/ })
-    .getByRole('button', { name: '删除自定义原因' }).click()
-  await chooseDialog(page, '删除')
-  await checkin.getByTestId('checkin-assessment').getByText('已履约', { exact: true }).click()
-  await checkin.getByRole('button', { name: '提交修正' }).click()
-  await expect(page.locator('.rule-master__item.active .rule-master__management'))
-    .toContainText('已履约 · r2')
-
-  await page.getByRole('button', { name: '历史记录', exact: true }).click()
-  await expect(page.getByRole('table', { name: '履约历史', exact: true }).getByText('r2 · 已修正', { exact: true })).toHaveCount(2)
-  const currentHistoryRow = page.getByRole('row').filter({ hasText: fixture.currentTradeDate })
-  await expect(currentHistoryRow.getByRole('button', { name: /^查看.+详情$/ })).toBeVisible()
-
-  const submitOnly = await authenticateDebugUser(request, 'debug_trade_discipline_submit')
-  await page.evaluate(() => localStorage.clear())
-  await installAuthSnapshot(page, submitOnly)
-  await page.goto('/stocks')
-  await page.getByTestId('app-topbar-surface').getByRole('button', { name: '用户中心', exact: true }).click()
-  const quickCard = page.getByTestId('trade-discipline-quick-card')
-  await expect(quickCard).toContainText('0/1')
-  await quickCard.getByRole('button', { name: '无操作履约' }).click()
-  await chooseDialog(page, '确认打卡')
-  await expect(quickCard).toContainText('1/1')
-
-  const viewOnly = await authenticateDebugUser(request, 'debug_trade_discipline_view')
-  await page.evaluate(() => localStorage.clear())
-  await installAuthSnapshot(page, viewOnly)
-  await page.goto(`/trade-discipline?tab=rules&rule_ref=e2e_td_trade_discipline_view_rule`)
-  await expect(page.getByText('当前账号只有查看权限。')).toBeVisible()
-  await expectPrimaryLeftAccent(page.locator('.readonly-banner'))
-  await expect(page.getByRole('button', { name: '新建规则' })).toHaveCount(0)
-  await page.getByRole('button', { name: '今日打卡', exact: true }).click()
-  await expect(page.getByText('当前账号仅可查看，不能提交或修正打卡。')).toBeVisible()
-  await expectPrimaryLeftAccent(page.locator('.permission-note'))
-  await expect(page.getByRole('button', { name: '提交打卡' })).toHaveCount(0)
-  await page.getByRole('button', { name: '历史记录', exact: true }).click()
-  const readonlyStockSearch = page.waitForResponse((response) => (
-    new URL(response.url()).pathname === '/api/trade-discipline/stock-options'
-      && response.status() === 200
-  ))
-  await page.locator('.stock-filter').getByRole('combobox').fill('998803')
-  await readonlyStockSearch
-  await expect(page.getByRole('option', { name: /998803\.SZ.*E2E股票03/ })).toContainText('已退市')
-
-  const noPermission = await authenticateDebugUser(request, 'debug_board_only')
-  await page.evaluate(() => localStorage.clear())
-  await installAuthSnapshot(page, noPermission)
-  await page.goto('/trade-discipline')
-  await expect(page.getByRole('heading', { name: /每日榜单/ })).toBeVisible()
-  await expect(page).not.toHaveURL(/\/trade-discipline/)
-  expect(consoleIssues).toEqual([])
+  expect(issues).toEqual([])
 })
 
-test('真实页面未保存协议拦截路由、当前标签关闭、注销与浏览器刷新', async ({ page, request }, testInfo) => {
-  test.setTimeout(60_000)
-  test.skip(testInfo.project.name !== 'chromium-default', '未保存壳层链路只需在一个桌面视口执行')
+test('真实页面未保存协议拦截路由、当前标签关闭、注销与浏览器刷新', async ({ page, request }, info) => {
+  test.setTimeout(90_000)
+  test.skip(info.project.name !== 'chromium-default', '壳层未保存协议沿用默认项目独立执行')
+  const issues = collectConsoleIssues(page)
   const auth = await authenticateDebugUser(request, 'debug_normal')
-  await requireTradeDisciplineFixture(request, auth.accessToken)
   await useAuth(page, auth)
   await navigateToDailyBoard(page)
   await expect(page).toHaveURL(/\/board$/)
+  await expect(page.getByRole('heading', { name: '每日榜单' })).toBeVisible()
+  const expand = page.getByRole('button', { name: '展开工作区', exact: true })
+  if (await expand.isVisible()) await expand.click()
   await page.getByRole('tab', { name: '交易纪律' }).click()
   await expect(page).toHaveURL(/\/trade-discipline/)
-  await expect(page.getByRole('button', { name: '关闭 交易纪律' })).toBeVisible()
   await page.getByRole('button', { name: '规则管理', exact: true }).click()
-  await page.getByRole('button', { name: '新建规则' }).click()
-  await page.getByTestId('rule-name-input').fill('E2E纪律-T13未保存保护')
-  const draftSaved = page.waitForResponse((response) => (
-    response.request().method() === 'PUT'
-      && /\/api\/trade-discipline\/rules\/[^/]+\/draft$/.test(new URL(response.url()).pathname)
-      && response.ok()
-  ))
+  await page.getByRole('button', { name: '新建规则', exact: true }).click()
+  const input = page.getByTestId('rule-name-input')
+  await input.fill('E2E纪律-未保存保护')
+  const saved = page.waitForResponse(r => r.request().method() === 'PUT' && /\/draft$/.test(new URL(r.url()).pathname) && r.ok())
   await page.getByRole('button', { name: '保存草稿', exact: true }).click()
-  await draftSaved
-  await page.getByTestId('rule-name-input').fill('E2E纪律-T13未保存保护-修改中')
-  await expect(page.getByText('有未保存修改', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '重置', exact: true }).click()
-  await expect(page.getByTestId('rule-name-input')).toHaveValue('E2E纪律-T13未保存保护')
+  await saved
+  await input.fill('E2E纪律-未保存保护-修改中')
+  await page.getByRole('button', { name: '还原修改', exact: true }).click()
+  await expect(input).toHaveValue('E2E纪律-未保存保护')
   await expect(page.getByText('有未保存修改', { exact: true })).toHaveCount(0)
-  await page.getByTestId('rule-name-input').fill('E2E纪律-T13未保存保护-修改中')
+  await input.fill('E2E纪律-未保存保护-修改中')
   await expect(page.getByText('有未保存修改', { exact: true })).toBeVisible()
-
-  await navigateToDailyBoard(page)
-  await expect(page.getByRole('dialog', { name: '未保存的规则修改' })).toBeVisible()
-  await chooseDialog(page, '继续编辑')
-  await expect(page).toHaveURL(/\/trade-discipline/)
-  await expect(page.getByTestId('rule-name-input'))
-    .toHaveValue('E2E纪律-T13未保存保护-修改中')
-
+  for (const intent of [() => navigateToDailyBoard(page), () => page.getByRole('button', { name: '关闭 交易纪律', exact: true }).click()]) {
+    await intent()
+    await expect(page.getByRole('dialog', { name: '未保存的规则修改' })).toBeVisible()
+    await chooseDialog(page, '继续编辑')
+    await expect(page).toHaveURL(/\/trade-discipline/)
+    await expect(input).toHaveValue('E2E纪律-未保存保护-修改中')
+  }
   const nativeDialog = page.waitForEvent('dialog')
-  const reloadAttempt = page.reload({ waitUntil: 'domcontentloaded', timeout: 10_000 })
-    .catch(() => null)
+  const reload = page.reload({ waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(() => null)
   const dialog = await nativeDialog
   expect(dialog.type()).toBe('beforeunload')
   await dialog.dismiss()
-  await reloadAttempt
+  await reload
   await expect(page).toHaveURL(/\/trade-discipline/)
-  await expect(page.getByTestId('rule-name-input'))
-    .toHaveValue('E2E纪律-T13未保存保护-修改中')
-
-  await page.getByRole('button', { name: '关闭 交易纪律' }).click()
-  await expect(page.getByRole('dialog', { name: '未保存的规则修改' })).toBeVisible()
-  await chooseDialog(page, '继续编辑')
-  await expect(page).toHaveURL(/\/trade-discipline/)
-
+  await expect(input).toHaveValue('E2E纪律-未保存保护-修改中')
   await page.getByTestId('app-topbar-surface').getByRole('button', { name: '用户中心', exact: true }).click()
-  await page.getByRole('button', { name: '退出登录' }).click()
-  await expect(page.getByRole('dialog', { name: '未保存的规则修改' })).toBeVisible()
+  await page.getByRole('button', { name: '退出登录', exact: true }).click()
   await chooseDialog(page, '继续编辑')
   await expect(page).toHaveURL(/\/trade-discipline/)
-  await expect(page.getByTestId('rule-name-input')).toHaveValue('E2E纪律-T13未保存保护-修改中')
+  await expect(input).toHaveValue('E2E纪律-未保存保护-修改中')
+  await page.getByRole('button', { name: '关闭用户中心', exact: true }).click()
+  await page.getByRole('button', { name: '今日打卡', exact: true }).click()
+  await chooseDialog(page, '放弃修改')
+  const note = page.getByLabel('复盘备注（选填）')
+  await note.fill('E2E 账本未提交保护')
+  await page.getByRole('button', { name: '历史记录', exact: true }).click()
+  await chooseDialog(page, '继续编辑')
+  await expect(note).toHaveValue('E2E 账本未提交保护')
+  await navigateToDailyBoard(page)
+  await chooseDialog(page, '继续编辑')
+  await expect(note).toHaveValue('E2E 账本未提交保护')
+  expect(issues).toEqual([])
 })

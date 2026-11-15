@@ -282,15 +282,16 @@ function selectStock(index: number, stock: StockOption | null): void {
 function selectStockRule(index: number, stockRuleId: string): void {
   const operation = props.modelValue[index]
   if (!operation || props.disabled || operation.stock_rule_id === stockRuleId) return
-  update(index, withStockRule(operation, stockRuleId))
+  update(index, stockRulePatch(operation, stockRuleId))
 }
 
-function withStockRule(operation: CheckinOperation, stockRuleId: string): CheckinOperation {
+function stockRulePatch(operation: CheckinOperation, stockRuleId: string): Partial<CheckinOperation> {
   const rule = props.version.stock_rules.find((item) => item.detail_id === stockRuleId)
   const defaults = manualConditionDefaults(rule, operation.side)
-  // 切换规则只补未填写项，保留已确认的事实（包括“未知”），避免掩盖真实违规。
+  // 只更新选股关联与核对项；传回完整操作会把原 amount 误识别为用户手填金额。
+  // 保留已确认的事实（包括“未知”），避免掩盖真实违规。
   return {
-    ...operation, stock_rule_id: stockRuleId, checklist_results: checklistDefaults(rule, operation.side),
+    stock_rule_id: stockRuleId, checklist_results: checklistDefaults(rule, operation.side),
     loss_status: operation.loss_status ?? defaults.loss_status,
     st_risk_status: operation.st_risk_status ?? defaults.st_risk_status,
   }
@@ -315,7 +316,8 @@ watch(() => props.version.version_no, () => {
     const stockRuleId = stocks.some((rule) => rule.detail_id === item.stock_rule_id)
       ? item.stock_rule_id : (stocks.length === 1 ? stocks[0].detail_id! : '')
     return guardCompliance({
-      ...(stockRuleId === item.stock_rule_id ? item : withStockRule(item, stockRuleId)),
+      ...item,
+      ...(stockRuleId === item.stock_rule_id ? {} : stockRulePatch(item, stockRuleId)),
       action_rule_id: actions.some((rule) => rule.detail_id === item.action_rule_id)
         ? item.action_rule_id : (actions.length === 1 ? actions[0].detail_id! : ''),
     })

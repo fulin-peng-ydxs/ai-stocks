@@ -72,6 +72,7 @@ const resolvedCloseLabel = computed(() => props.closeLabel || `关闭${props.tit
     ref="drawer"
     v-model="model"
     v-bind="$attrs"
+    :aria-label="title"
     :show-close="false"
     :append-to="appendTarget"
     class="page-drawer--surface app-drawer-surface-host app-control-row-boundary"

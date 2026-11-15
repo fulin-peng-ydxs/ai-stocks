@@ -84,7 +84,8 @@
         "config/ci-suites.json",
         "frontend/src/stores/auth.ts",
         "frontend/src/components/SideMenu*",
-        "frontend/src/components/WorkspaceTabs.vue"
+        "frontend/src/components/WorkspaceTabs.vue",
+        "frontend/src/components/PageDrawer.vue"
       ],
       "e2e": {
         "runner": "shell",
@@ -134,7 +135,8 @@
         "frontend/src/components/SectorCompareChart.vue",
         "frontend/src/components/stock-chart/*",
         "frontend/src/components/data/BoardTaskScopeFields.vue",
-        "backend/api/sectors.py"
+        "backend/api/sectors.py",
+        "frontend/src/components/PageDrawer.vue"
       ],
       "e2e": {
         "runner": "sectors",
@@ -178,7 +180,8 @@
         "frontend/src/components/MarketBoardTag.vue",
         "frontend/src/components/asset-search/*",
         "backend/api/stocks.py",
-        "backend/api/board.py"
+        "backend/api/board.py",
+        "frontend/src/components/PageDrawer.vue"
       ],
       "e2e": {
         "runner": "correlation",
@@ -192,7 +195,7 @@
     "e2e-trade": {
       "kind": "e2e",
       "common": false,
-      "description": "旧打卡 E2E 的隔离执行入口；当前流水账页面的断言与夹具待迁移，尚未验收",
+      "description": "真实账户、成交流水与日结：初始化、持仓回读、修正撤回、历史、规则、权限与未保存保护",
       "impact_paths": [
         "frontend/playwright*.ts",
         "frontend/e2e/helpers/*",
@@ -220,7 +223,13 @@
         "frontend/src/api/tradeDiscipline.ts",
         "frontend/src/utils/tradeDiscipline*",
         "frontend/src/composables/useTradeDiscipline*",
-        "backend/storage/trade_discipline_repository.py"
+        "backend/storage/trade_discipline_repository.py",
+        "backend/services/trade_ledger*.py",
+        "backend/storage/trade_ledger_repository.py",
+        "frontend/src/api/tradeLedger.ts",
+        "frontend/src/utils/tradeLedgerRecord.ts",
+        "frontend/src/utils/tradeNumeric.ts",
+        "frontend/src/components/PageDrawer.vue"
       ],
       "e2e": {
         "runner": "trade",
@@ -263,7 +272,8 @@
         "frontend/src/api/backtest.ts",
         "frontend/src/components/asset-search/*",
         "backend/api/backtest.py",
-        "backend/devtools/e2e_market_data.py"
+        "backend/devtools/e2e_market_data.py",
+        "frontend/src/components/PageDrawer.vue"
       ],
       "e2e": {
         "runner": "backtest",
@@ -324,7 +334,7 @@
     },
     "frontend/e2e/trade-discipline.spec.ts": {
       "suite": "e2e-trade",
-      "reason": "旧打卡/履约历史及未保存协议回归；页面已切换流水账，需迁移用例与夹具；不得计为已覆盖"
+      "reason": "独立账户/规则及固定行情夹具；标准项目执行账本和权限链路，默认项目执行未保存协议"
     },
     "frontend/e2e/backtest-public-runs.spec.ts": {
       "suite": "e2e-backtest",

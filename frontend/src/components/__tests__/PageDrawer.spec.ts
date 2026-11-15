@@ -127,6 +127,9 @@ describe('PageDrawer 页面边界', () => {
     await nextTick()
 
     expect(document.querySelector('.el-overlay.page-drawer-modal--title-compact')).not.toBeNull()
+    expect(document.querySelector('.el-drawer[role="dialog"]')?.getAttribute('aria-label')).toBe('局部工具')
+    await wrapper.setProps({ title: '更新后的工具' })
+    expect(document.querySelector('.el-drawer[role="dialog"]')?.getAttribute('aria-label')).toBe('更新后的工具')
 
     wrapper.unmount()
   })

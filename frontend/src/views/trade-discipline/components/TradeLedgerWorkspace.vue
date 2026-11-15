@@ -162,6 +162,8 @@ watch(linkableTrades, candidates => {
     linkedTradeId.value = candidates.length === 1 ? candidates[0].event_id : ''
   }
 })
+// 首次加载尚无用户输入，空工作区也应有比较基线；实际输入与保存中仍按同一判据保护。
+baseline.value = snapshot()
 const dirty = () => busy.value || baseline.value !== snapshot()
 async function requestLeave(): Promise<boolean> {
   if (busy.value) { ElMessage.warning('正在保存账户记录，请完成后再离开'); return false }
@@ -657,7 +659,7 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
       </el-card>
       <AppStateBlock v-if="historyError" state="error" title="历史加载失败" :description="historyError" retry @retry="loadHistory" />
       <AppDataTable v-else :data="history" :loading="historyBusy" :border="tableBorder" :default-sort="defaultSort" empty-text="尚无交易日记录" @sort-change="emit('sort-change', $event)">
-        <AppTableColumn v-if="columnVisible('trade_date')" prop="trade_date" label="交易日" sortable="custom"><template #default="{ row }"><el-button data-button-kind="navigation" link type="primary" class="app-table-field-link" @click="openDetail(row)">{{ formatDateOnly(row.trade_date) }}</el-button></template></AppTableColumn>
+        <AppTableColumn v-if="columnVisible('trade_date')" prop="trade_date" label="交易日" sortable="custom"><template #default="{ row }"><el-button :data-testid="`ledger-history-${row.trade_date}`" data-button-kind="navigation" link type="primary" class="app-table-field-link" @click="openDetail(row)">{{ formatDateOnly(row.trade_date) }}</el-button></template></AppTableColumn>
         <AppTableColumn v-if="columnVisible('assessment')" label="履约结果" role="status"><template #default="{ row }">{{ row.withdrawn ? '已撤回' : label(row.snapshot.assessment) }}</template></AppTableColumn>
         <AppTableColumn v-if="columnVisible('operation_count')" label="操作数" role="number"><template #default="{ row }">{{ formatNumber(row.snapshot.operation_count ?? row.snapshot.events.filter((e: LedgerEvent) => e.kind === 'trade').length, 'count') }}</template></AppTableColumn>
         <AppTableColumn v-if="columnVisible('buy_amount')" label="买入额" header-meta="元" role="number"><template #default="{ row }">{{ formatMoney(row.snapshot.buy_amount) }}</template></AppTableColumn>
@@ -676,7 +678,7 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
     </template>
     <AppDetailDrawer v-model="detailOpen" title="交易日记录" size="xxl" :subtitle="detail?.trade_date" :state="detailBusy ? 'loading' : detailError ? 'error' : 'ready'" :state-description="detailError" retry @retry="loadRevision">
       <AppStatusNotice v-if="detail?.withdrawn" tone="info" title="该日结已撤回，仅供追溯，不参与持仓及统计。" />
-      <AppControlRow><span>{{ label(detailSnapshot?.assessment) }}</span><AppSelect v-model="revisionNo" class="app-control-width-short" @change="loadRevision"><el-option v-for="n in detail?.current_revision_no ?? 0" :key="n" :label="`r${n}`" :value="n" /></AppSelect><el-button v-if="canSubmit && !detail?.withdrawn && detail?.trade_date === context?.latest_trade_date && revisionNo === detail?.current_revision_no" @click="detailOpen = false; emit('request-checkin', detail!.trade_date)">前往修正最新记录</el-button></AppControlRow>
+      <AppControlRow><span>{{ label(detailSnapshot?.assessment) }}</span><AppSelect v-model="revisionNo" aria-label="历史修订" class="app-control-width-short" @change="loadRevision"><el-option v-for="n in detail?.current_revision_no ?? 0" :key="n" :label="`r${n}`" :value="n" /></AppSelect><el-button v-if="canSubmit && !detail?.withdrawn && detail?.trade_date === context?.latest_trade_date && revisionNo === detail?.current_revision_no" @click="detailOpen = false; emit('request-checkin', detail!.trade_date)">前往修正最新记录</el-button></AppControlRow>
       <TradeLedgerRecord v-if="detailSnapshot" :snapshot="detailSnapshot" :stock-options="detailStockOptions" />
       <el-collapse v-model="detailRuleIds">
         <el-collapse-item v-for="rule in detailSnapshot?.rules ?? []" :key="rule.rule_id" :name="rule.rule_id">

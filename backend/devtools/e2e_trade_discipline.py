@@ -2,6 +2,7 @@
 
 夹具只允许在明确的本地/测试环境和 ``AI_STOCKS_E2E_WRITE=1`` 下运行。PG 写入按
 ``debug_tenant + debug_* owner`` 归属，并使用 ``e2e_td_`` ID / ``E2E纪律-``、``E2E类型-`` 名称前缀；
+默认账户以专属合成创建时点标记，日结使用正式账本服务生成；非夹具账户拒绝覆盖。
 DuckDB 只写 ``9988*.SZ`` 与 2098 年固定交易日。seed/cleanup 在任何物理写入前都会把
 调用方显式传入的后端 PG 指纹与夹具进程直连值做常量时间比较，禁止猜测数据库目标。
 """
@@ -20,10 +21,13 @@ from zoneinfo import ZoneInfo
 from backend.common.exceptions import StorageError
 from backend.devtools.e2e_market_data import cleanup_st_daily, seed_non_st_daily
 from backend.devtools.environment_guard import require_e2e_write_enabled
+from backend.services.trade_ledger import prepare_opening
+from backend.services.trade_ledger_service import TradeLedgerService
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.pg_client import PostgresClient, get_pg_client
 from backend.storage.pg_identity import pg_fingerprint
+from backend.storage.trade_ledger_repository import TradeLedgerRepository
 
 FIXTURE_TENANT_ID = "debug_tenant"
 FIXTURE_ID_PREFIX = "e2e_td_"
@@ -60,6 +64,8 @@ FIXTURE_TRADE_DATES = fixture_trade_dates()
 FIXTURE_CURRENT_TRADE_DATE = FIXTURE_TRADE_DATES[6]
 FIXTURE_PENDING_TRADE_DATE = FIXTURE_TRADE_DATES[7]
 FIXTURE_DELIST_DATE = date(2098, 6, 9)
+# 默认账户 ID 固定为 default，以专属合成创建时点标记归属；真实账户绝不据 owner 全删。
+FIXTURE_ACCOUNT_CREATED_AT = datetime.combine(FIXTURE_TRADE_DATES[0], time.min, SHANGHAI)
 
 
 def _assert_pg_target(pg: PostgresClient, expected_pg_fingerprint: str) -> None:
@@ -102,10 +108,28 @@ def _cleanup_pg(cur, owners: Iterable[tuple[str, str]]) -> dict[str, int]:
     labels = (
         "operation", "violation", "reason", "checkin_revision", "checkin", "activation",
         "draft_action", "draft_stock", "draft", "action_rule", "stock_rule", "rule_version",
-        "name_claim", "rule", "action_subtype",
+        "name_claim", "rule", "action_subtype", "ledger_revision", "ledger_day", "account",
     )
     removed.update(dict.fromkeys(labels, 0))
     for tenant_id, owner_user_id in targets:
+        cur.execute(
+            "SELECT created_at FROM trade_discipline_account "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id='default' FOR UPDATE",
+            [tenant_id, owner_user_id],
+        )
+        account = cur.fetchone()
+        if account and account[0] != FIXTURE_ACCOUNT_CREATED_AT:
+            raise RuntimeError("交易纪律默认账户不属于确定性夹具，拒绝覆盖或清理")
+        if account:
+            for label, table in (("ledger_revision", "trade_discipline_ledger_revision"),
+                                 ("ledger_day", "trade_discipline_ledger_day"),
+                                 ("account", "trade_discipline_account")):
+                key = "id" if label == "account" else "account_id"
+                cur.execute(
+                    f"DELETE FROM {table} WHERE tenant_id=%s AND owner_user_id=%s AND {key}='default'",
+                    [tenant_id, owner_user_id],
+                )
+                removed[label] += max(cur.rowcount, 0)
         cur.execute(
             "SELECT r.id FROM trade_discipline_rule r "
             "WHERE r.tenant_id=%s AND r.owner_user_id=%s AND ("
@@ -313,48 +337,6 @@ def _insert_rule_version(cur, tenant_id: str, owner_user_id: str, rule_id: str, 
         )
 
 
-def _insert_operation(
-    cur,
-    *,
-    tenant_id: str,
-    owner_user_id: str,
-    rule_id: str,
-    checkin_id: str,
-    revision_no: int,
-    operation_id: str,
-    stock_index: int,
-    side: str,
-    display_order: int,
-    operated_at: datetime,
-) -> None:
-    cur.execute(
-        "INSERT INTO trade_discipline_operation "
-        "(id,tenant_id,owner_user_id,checkin_id,revision_no,rule_id,version_no,stock_code,"
-        "stock_name_snapshot,side,stock_rule_id,action_rule_id,price,quantity,amount,fee,"
-        "operated_at,note,display_order) "
-        "VALUES (%s,%s,%s,%s,%s,%s,3,%s,%s,%s,'e2e_td_stock_primary',%s,%s,%s,%s,%s,%s,%s,%s)",
-        [
-            operation_id,
-            tenant_id,
-            owner_user_id,
-            checkin_id,
-            revision_no,
-            rule_id,
-            STOCK_CODES[stock_index],
-            f"E2E股票{stock_index + 1:02d}",
-            side,
-            "e2e_td_action_buy" if side == "buy" else "e2e_td_action_sell",
-            "12.3456",
-            "1000.0000",
-            "12345.60",
-            "5.00",
-            operated_at,
-            "E2E 多笔操作",
-            display_order,
-        ],
-    )
-
-
 def _insert_owner_fixture(cur, tenant_id: str, owner_user_id: str) -> dict[str, object]:
     slug = owner_user_id.removeprefix("debug_")
     rule_id = f"{FIXTURE_ID_PREFIX}{slug}_rule"
@@ -395,80 +377,55 @@ def _insert_owner_fixture(cur, tenant_id: str, owner_user_id: str) -> dict[str, 
             [f"{FIXTURE_ID_PREFIX}{slug}_activation_{event_seq}", tenant_id, owner_user_id, rule_id, event_seq, event_type, version_no, occurred_at, occurred_at, effective_date],
         )
 
-    reason_id = f"{FIXTURE_ID_PREFIX}{slug}_reason_custom"
-    cur.execute(
-        "INSERT INTO trade_discipline_reason "
-        "(id,tenant_id,owner_user_id,name,normalized_name,is_active) VALUES (%s,%s,%s,'E2E计划外','e2e计划外',TRUE)",
-        [reason_id, tenant_id, owner_user_id],
-    )
-    combinations = (
-        ("complied", True),
-        ("complied", False),
-        ("breached", True),
-        ("breached", False),
-    )
-    checkin_ids: list[str] = []
-    for index, (assessment, no_operation) in enumerate(combinations, 1):
-        trade_date = FIXTURE_TRADE_DATES[index + 1]
-        checkin_id = f"{FIXTURE_ID_PREFIX}{slug}_checkin_{index}"
-        checkin_ids.append(checkin_id)
-        current_revision = 2 if index == 4 else 1
-        submitted_at = datetime.combine(trade_date, time(15), SHANGHAI)
-        amended_at = datetime.combine(trade_date, time(16), SHANGHAI) if current_revision == 2 else None
-        cur.execute(
-            "INSERT INTO trade_discipline_checkin "
-            "(id,tenant_id,owner_user_id,rule_id,trade_date,current_revision_no,status,submitted_at,submission_source,amended_at,created_at,updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'workbench',%s,%s,%s)",
-            [checkin_id, tenant_id, owner_user_id, rule_id, trade_date, current_revision, "amended" if current_revision == 2 else "submitted", submitted_at, amended_at, submitted_at, amended_at or submitted_at],
+    return {"owner": owner_user_id, "ruleId": rule_id}
+
+
+def _seed_ledger(pg: PostgresClient, market: DuckDBClient, owner: dict, tenant_id: str) -> None:
+    """借用外层 PG 事务生成真正日结；不伪造评价、规则版本或修订快照。"""
+    user_id, rule_id = owner["owner"], owner["ruleId"]
+    repo = TradeLedgerRepository(pg, tenant_id=tenant_id, owner_user_id=user_id)
+    with repo.transaction() as conn:
+        conn.execute(
+            "INSERT INTO trade_discipline_account (tenant_id,owner_user_id,id,created_at) "
+            "VALUES (%s,%s,'default',%s)", [tenant_id, user_id, FIXTURE_ACCOUNT_CREATED_AT],
         )
-        if current_revision == 2:
-            cur.execute(
-                "INSERT INTO trade_discipline_checkin_revision "
-                "(checkin_id,tenant_id,owner_user_id,revision_no,rule_id,version_no,revision_kind,assessment,no_operation,violation_detail,review_note,created_at) "
-                "VALUES (%s,%s,%s,1,%s,3,'initial','complied',TRUE,NULL,'E2E 修正前快照',%s)",
-                [checkin_id, tenant_id, owner_user_id, rule_id, submitted_at],
-            )
-        cur.execute(
-            "INSERT INTO trade_discipline_checkin_revision "
-            "(checkin_id,tenant_id,owner_user_id,revision_no,rule_id,version_no,revision_kind,assessment,no_operation,violation_detail,review_note,created_at) "
-            "VALUES (%s,%s,%s,%s,%s,3,%s,%s,%s,%s,%s,%s)",
-            [checkin_id, tenant_id, owner_user_id, current_revision, rule_id, "amendment" if current_revision == 2 else "initial", assessment, no_operation, "E2E 未按计划执行" if assessment == "breached" else None, "E2E 复盘记录", amended_at or submitted_at],
-        )
-        if assessment == "breached":
-            cur.execute(
-                "INSERT INTO trade_discipline_violation "
-                "(checkin_id,tenant_id,owner_user_id,revision_no,reason_code,reason_id,reason_name_snapshot) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
-                [checkin_id, tenant_id, owner_user_id, current_revision, "missed_required_action" if no_operation else None, None if no_operation else reason_id, "未执行计划动作" if no_operation else "E2E计划外"],
-            )
-        if not no_operation:
-            _insert_operation(
-                cur,
-                tenant_id=tenant_id,
-                owner_user_id=owner_user_id,
-                rule_id=rule_id,
-                checkin_id=checkin_id,
-                revision_no=current_revision,
-                operation_id=f"{FIXTURE_ID_PREFIX}{slug}_operation_{index}_1",
-                stock_index=0,
-                side="buy",
-                display_order=1,
-                operated_at=datetime.combine(trade_date, time(10, 30), SHANGHAI),
-            )
-            _insert_operation(
-                cur,
-                tenant_id=tenant_id,
-                owner_user_id=owner_user_id,
-                rule_id=rule_id,
-                checkin_id=checkin_id,
-                revision_no=current_revision,
-                operation_id=f"{FIXTURE_ID_PREFIX}{slug}_operation_{index}_2",
-                stock_index=1,
-                side="sell",
-                display_order=2,
-                operated_at=datetime.combine(trade_date, time(14, 30), SHANGHAI),
-            )
-    return {"owner": owner_user_id, "ruleId": rule_id, "checkinIds": checkin_ids}
+        # 独立提交账号专用于浏览器初始化路径；先预留可识别的空账户，不预填真实持仓。
+        if user_id == "debug_trade_discipline_submit":
+            owner["initialized"] = False
+            owner["ledgerDates"] = []
+            return
+        opening = prepare_opening([
+            {"stock_code": code, "stock_name": f"E2E股票{i + 1:02d}", "quantity": "1000",
+             "cost_price": "10", "rule_id": rule_id, "stock_rule_id": "e2e_td_stock_primary"}
+            for i, code in enumerate(STOCK_CODES[:2])
+        ])
+        repo.initialize(conn, FIXTURE_TRADE_DATES[0], opening, "100000.00")
+        svc = TradeLedgerService(repo, market)
+        for index, day in enumerate(FIXTURE_TRADE_DATES[2:6]):
+            events = []
+            if index in (1, 3):
+                events = [
+                    {"event_id": f"{FIXTURE_ID_PREFIX}{user_id}_{index}_{side}", "kind": "trade",
+                     "stock_code": STOCK_CODES[stock], "side": side, "rule_id": rule_id,
+                     "stock_rule_id": "e2e_td_stock_primary", "action_rule_id": f"e2e_td_action_{side}",
+                     "price": "12.3456", "quantity": "100", "fee": "5.00",
+                     "operated_at": datetime.combine(day, time(hour, 30), SHANGHAI).isoformat(),
+                     "display_order": order, "action_matches": index != 3, "stock_matches": True}
+                    for stock, side, hour, order in ((0, "buy", 10, 1), (1, "sell", 14, 2))
+                ]
+            payload = {"request_id": f"{FIXTURE_ID_PREFIX}{user_id}_{index}",
+                       "expected_account_revision": repo.account(conn)["revision"], "expected_revision": 0,
+                       "events": [], "omissions": [], "review_note": "E2E 修正前快照"}
+            # 最后一日保留 r1 与 r2，读取旧修订时不能看到后来的成交或备注。
+            if index == 3:
+                svc.submit(day, payload)
+                payload.update(request_id=payload["request_id"] + "_amend",
+                               expected_account_revision=repo.account(conn)["revision"], expected_revision=1)
+            payload.update(events=events, review_note="E2E 账本复盘记录")
+            if index == 2:
+                payload["omissions"] = [{"kind": "missed_buy", "stock_code": STOCK_CODES[0], "rule_id": rule_id}]
+            svc.submit(day, payload)
+        owner.update(initialized=True, ledgerDates=[d.isoformat() for d in FIXTURE_TRADE_DATES[2:6]])
 
 
 def seed_trade_discipline_data(
@@ -488,11 +445,15 @@ def seed_trade_discipline_data(
     duck_committed = False
     try:
         with pg.transaction() as conn, conn.cursor() as cur:
+            removed_pg = _cleanup_pg(cur, targets)
             with market.transaction():
-                removed_pg = _cleanup_pg(cur, targets)
                 removed_duck = _cleanup_duck(market)
                 seeded_duck = _seed_duck(market)
-                seeded_owners = [_insert_owner_fixture(cur, *owner) for owner in targets]
+                seeded_owners = []
+                for tenant_id, user_id in targets:
+                    owner = _insert_owner_fixture(cur, tenant_id, user_id)
+                    _seed_ledger(pg, market, owner, tenant_id)
+                    seeded_owners.append(owner)
             duck_committed = True
     except StorageError as seed_error:
         # 极窄窗口：DuckDB 已提交而 PG 最终提交失败时，补偿删除本夹具专属数据。
