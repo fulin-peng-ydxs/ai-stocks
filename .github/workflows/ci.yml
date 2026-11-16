@@ -79,6 +79,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-ci.lock
+      - name: Install locked result validation dependencies
+        run: python3 -m pip install --require-hashes -r requirements-ci.lock
       - name: Collect plan and actual suite evidence
         uses: actions/download-artifact@v4
         with:

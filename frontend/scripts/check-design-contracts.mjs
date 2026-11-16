@@ -75,7 +75,7 @@ function protectedProperty(role, property) {
 }
 
 /** 使用选择器中的角色/别名及后代关系判断覆盖，不剥离伪类后再靠 DOM 偶然匹配。 */
-function targetsSelector(selector, target) {
+function selectorTargetMatcher(selector) {
   const globallyApplied = selector.includes(':global(')
   // Vue 的 deep/global 包装不改变最终样式目标；先展开再判断末端，避免把子文字当成按钮根。
   for (const name of ['deep', 'global']) {
@@ -98,29 +98,36 @@ function targetsSelector(selector, target) {
     else subject += char
   }
   subject = withoutHas(subject)
-  // .cell 等通用名称只在表格上下文中受控，不能误伤指标条等独立组件的同名类。
-  if (target.contexts && !globallyApplied
-    && !cssClasses(selector.slice(0, selector.length - subject.length)).some(name => target.contexts.includes(name))) return false
-  // 装饰伪元素默认归组件几何；共享标题的装饰线等具名角色可显式纳入材质保护。
+  const contextClasses = cssClasses(selector.slice(0, selector.length - subject.length))
   const pseudoElement = subject.match(/::(before|after|marker)\b/)?.[1]
-  if (pseudoElement && !target.role.pseudoElements?.includes(pseudoElement)) return false
-  // 明确排除该角色的普通名称样式不属于覆盖；排除条件不能含组合器或其它状态。
-  for (const match of subject.matchAll(/:not\(([^()]+)\)/g)) {
-    if (nestingDepth(subject.slice(0, match.index)) > 0) continue
-    if (match[1].split(',').some(value => target.exclusions.includes(value.trim().match(/^\.([\w-]+)$/)?.[1]))) return false
-  }
+  const exclusions = [...subject.matchAll(/:not\(([^()]+)\)/g)]
+    .filter(match => nestingDepth(subject.slice(0, match.index)) <= 0)
+    .flatMap(match => match[1].split(',').map(value => value.trim().match(/^\.([\w-]+)$/)?.[1]))
   const classes = cssClasses(subject)
   // is-active 等通用状态名不能把无关的另一种组件认作同一控件。
   const identities = classes.filter(name => !/^(?:is|has)-/.test(name))
-  if ((identities.length ? identities : classes).some(name => target.classes.includes(name))) return true
+  const targetClasses = identities.length ? identities : classes
   const tag = subject.match(/^[a-z][\w-]*/i)?.[0]
-  // input/textarea 是库组件生成的真实内层，也须沿调用方别名追踪，不能只识别 .el-* 类。
-  if (tag && target.role.innerTags?.includes(tag)
-    && (!cssClasses(selector).length || cssClasses(selector.slice(0, -subject.length))
-      .some(name => [...target.classes, ...target.ancestors].includes(name)))) return true
-  return !!tag && (tag === target.node.tag || tag === target.role.elementTag
-    && target.role.tags?.some(name => canonicalTag(name) === canonicalTag(target.node.tag))) && (!cssClasses(selector).length
-    || cssClasses(selector).some(name => target.ancestors.includes(name)))
+  const selectorClasses = cssClasses(selector)
+  const ancestorClasses = cssClasses(selector.slice(0, -subject.length))
+  // 选择器预处理与目标节点无关；同一 CSS 规则只做一次，再逐个匹配真实消费者。
+  return target => {
+    // .cell 等通用名称只在表格上下文中受控，不能误伤指标条等独立组件的同名类。
+    if (target.contexts && !globallyApplied
+      && !contextClasses.some(name => target.contexts.includes(name))) return false
+    // 装饰伪元素默认归组件几何；共享标题的装饰线等具名角色可显式纳入材质保护。
+    if (pseudoElement && !target.role.pseudoElements?.includes(pseudoElement)) return false
+    // 明确排除该角色的普通名称样式不属于覆盖；排除条件不能含组合器或其它状态。
+    if (exclusions.some(name => target.exclusions.includes(name))) return false
+    if (targetClasses.some(name => target.classes.includes(name))) return true
+    // input/textarea 是库组件生成的真实内层，也须沿调用方别名追踪，不能只识别 .el-* 类。
+    if (tag && target.role.innerTags?.includes(tag)
+      && (!selectorClasses.length || ancestorClasses
+        .some(name => [...target.classes, ...target.ancestors].includes(name)))) return true
+    return !!tag && (tag === target.node.tag || tag === target.role.elementTag
+      && target.role.tags?.some(name => canonicalTag(name) === canonicalTag(target.node.tag))) && (!selectorClasses.length
+      || selectorClasses.some(name => target.ancestors.includes(name)))
+  }
 }
 
 const controlWidthKinds = ['compact', 'short', 'medium', 'long', 'wide', 'fill']
@@ -222,9 +229,9 @@ export function auditControlWidths(sources) {
     for (const style of item.styles) postcss.parse(style.content).walkRules(rule => {
       const declarations = rule.nodes.filter(node => node.type === 'decl' && controlWidthProperties.test(node.prop))
       if (!declarations.length) return
-      const selectors = rule.selectors.flatMap(widthSelectorBranches)
+      const selectors = rule.selectors.flatMap(widthSelectorBranches).map(selectorTargetMatcher)
       // 无本地实例的 :deep(.el-input) 同样受控，但装饰子元素不作为控件根。
-      if (![...rootTargets, ...targets].some(target => selectors.some(selector => targetsSelector(selector, target)))) {
+      if (![...rootTargets, ...targets].some(target => selectors.some(matches => matches(target)))) {
         declarations.filter(decl => decl.prop === '--app-control-inline-width')
           .forEach(decl => inspectDeclaration(rule.selector, decl.prop, decl.value))
         return
@@ -342,8 +349,9 @@ export function auditSharedStyles(sources, roles = designContracts.styleRoles, {
       return true
     })
     for (const style of item.styles) postcss.parse(style.content).walkRules(rule => {
+      const selectors = rule.selectors.map(selectorTargetMatcher)
       for (const target of targets) {
-        if (!rule.selectors.some(selector => targetsSelector(selector, target))) continue
+        if (!selectors.some(matches => matches(target))) continue
         rule.walkDecls(decl => {
           if (protectedProperty(target.role, decl.prop) && !allowed(target.role, rule.selector, decl.prop)) report(rule.selector, decl.prop)
         })

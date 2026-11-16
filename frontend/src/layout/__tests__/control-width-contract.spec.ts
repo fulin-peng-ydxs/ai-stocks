@@ -76,6 +76,19 @@ describe('输入与选择控件的容量门禁', () => {
       </style>`)).toEqual([])
   })
 
+  it('复用选择器解析后仍分别判断每个目标的排除条件，不受节点顺序影响', () => {
+    const exempt = '<AppSelect class="field is-exempt" />'
+    const protectedInput = '<el-input class="field" />'
+    const style = '<style>.field:not(.is-exempt){width:173px}</style>'
+    expect(audit(`<template>${exempt}</template>${style}`)).toEqual([])
+    const expected = audit(`<template>${protectedInput}</template>${style}`)
+    expect(expected).toHaveLength(1)
+    expect(expected[0]).toContain('控件宽度')
+    for (const nodes of [exempt + protectedInput, protectedInput + exempt]) {
+      expect(audit(`<template>${nodes}</template>${style}`)).toEqual(expected)
+    }
+  })
+
   it('表格列的编辑容量与全部公共 CSS 档位保持一致', () => {
     const css = readFileSync(new URL('../../styles/global.css', import.meta.url), 'utf8')
     const values = new Map<string, string>()
