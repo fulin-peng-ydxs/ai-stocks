@@ -31,6 +31,25 @@ export interface TemporaryE2EUser {
   pgFingerprint: string
 }
 
+/** 对齐 pageSessionStorage.ts 的租户/用户/Tab 隔离协议，禁止再写已退役的全局 localStorage。 */
+function pageSessionKey(auth: E2EAuthSnapshot, namespace: string): string {
+  return `ai-stocks:page-session:v1:${namespace}:${auth.tenant.id}:${auth.user.id}`
+}
+
+export async function installPageSession(
+  page: Page, auth: E2EAuthSnapshot, namespace: string, value: unknown,
+): Promise<void> {
+  await page.addInitScript(({ key, value }) => {
+    sessionStorage.setItem(key, JSON.stringify(value))
+  }, { key: pageSessionKey(auth, namespace), value })
+}
+
+export async function readPageSession<T>(
+  page: Page, auth: E2EAuthSnapshot, namespace: string,
+): Promise<T | null> {
+  return page.evaluate(key => JSON.parse(sessionStorage.getItem(key) || 'null'), pageSessionKey(auth, namespace))
+}
+
 function debugPassword(): string {
   return process.env.AI_STOCKS_TEST_USER_PASSWORD || 'Test@12345'
 }
@@ -210,6 +229,29 @@ export async function saveUserPreference(
   expect(resp.ok(), '保存用户偏好失败').toBe(true)
   const body = await resp.json()
   expect(body.code, body.msg || '保存用户偏好返回非 0 code').toBe(0)
+}
+
+/** 组件默认值持久化在布局用户层，不能再从页面业务偏好中推断其保存结果。 */
+export async function getUserLayoutValues(request: APIRequestContext, auth: E2EAuthSnapshot,
+  pageKey: string): Promise<Record<string, unknown>> {
+  const response = await request.get(`${API_URL}/layout/users/${encodeURIComponent(pageKey)}`, {
+    headers: { authorization: `Bearer ${auth.accessToken}` },
+  })
+  expect(response.ok(), `读取 ${pageKey} 布局用户层失败`).toBe(true)
+  const body = await response.json()
+  expect(body.code, body.msg).toBe(0)
+  return body.data?.config?.values ?? {}
+}
+
+export async function saveUserLayoutValues(request: APIRequestContext, auth: E2EAuthSnapshot,
+  pageKey: string, values: Record<string, unknown>): Promise<void> {
+  const response = await request.post(`${API_URL}/layout/users/${encodeURIComponent(pageKey)}`, {
+    headers: { authorization: `Bearer ${auth.accessToken}` },
+    data: { userId: 'local', config: { schemaVersion: 1, values } },
+  })
+  expect(response.ok(), `保存 ${pageKey} 布局用户层失败`).toBe(true)
+  const body = await response.json()
+  expect(body.code, body.msg).toBe(0)
 }
 
 export async function getUserPreference(

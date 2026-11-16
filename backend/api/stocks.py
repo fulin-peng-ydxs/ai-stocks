@@ -41,6 +41,12 @@ _STOCK_SORT_COLS = {"pct_chg": "pct_chg", "close": "b.close", "name": "sb.name",
 _INDICATOR_FIELD_ALLOWLIST = frozenset(_IND_COLS) - {"code", "trade_date", "param_hash"}
 
 
+def _latest_market_date(client, table: Literal["daily_bar", "index_bar"]) -> date | None:
+    """空库没有可用交易日，不把 NaT 传进点时查询或用今天补造日期。"""
+    value = client.query_df(f"SELECT max(trade_date) AS d FROM {table}").iloc[0]["d"]
+    return None if value is None or pd.isna(value) else pd.Timestamp(value).date()
+
+
 def _parse_indicator_fields(fields: str | None) -> list[str] | None:
     """解析逗号字段列表；空项/重复项归一化，未知字段在计算前拒绝。"""
     if fields is None:
@@ -133,8 +139,9 @@ def list_stocks(q: str | None = None, boards: str | None = None,
             selected_statuses = ["正常上市"] if exclude_st else ["正常上市", "ST"]
     include_active = bool({"正常上市", "ST"}.intersection(selected_statuses))
     include_delisted = "退市" in selected_statuses
-    td = (trade_date if trade_date else pd.Timestamp(
-        c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]).date())
+    td = trade_date or _latest_market_date(c, "daily_bar")
+    if td is None:
+        return ok({"total": 0, "page": page, "size": size, "trade_date": None, "list": []})
     from backend.services.stock_st_status import StockSTStatusService
 
     board_placeholders = ",".join(["?"] * len(selected_boards))
@@ -339,10 +346,11 @@ def stock_bars(code: str, adjust: Literal["", "qfq", "hfq"] = "qfq", lookback: i
     if include_market_values and not 1 <= lookback <= 6000:
         raise HTTPException(status_code=422, detail="市值行情窗口必须在 1 到 6000 根之间")
     c = get_client()
-    end_date = end if end else pd.Timestamp(
-        c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]).date()
+    end_date = end or _latest_market_date(c, "daily_bar")
     name_df = c.query_df("SELECT name FROM stock_basic WHERE code = ?", [code])
     name = str(name_df.iloc[0]["name"]) if not name_df.empty else None
+    if end_date is None:
+        return ok({"code": code, "name": name, "adjust": adjust, "bars": []})
     # 缺复权输入走统一业务错误，前端展示原因；不把 NULL K 线传入数值图表。
     df = MarketRepository(c).get_bars(code, end_date, lookback=lookback, adjust=adjust)
     if df.empty:
@@ -399,12 +407,14 @@ def stock_benchmark_bars(
 ) -> ApiResponse:
     """个股相对强弱使用的市场交易日基准；与板块入口共享查询但保持 stocks 权限。"""
     c = get_client()
-    end_date = end if end else pd.Timestamp(
-        c.query_df("SELECT max(trade_date) AS d FROM index_bar").iloc[0]["d"]
-    ).date()
+    end_date = end or _latest_market_date(c, "index_bar")
     service = MarketBenchmarkService(c)
     try:
-        rows = service.get_lookback(index_code, end_date, int(lookback))
+        if end_date is None:
+            service.validate_code(index_code)
+            rows = []
+        else:
+            rows = service.get_lookback(index_code, end_date, int(lookback))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     bars = [
@@ -419,7 +429,7 @@ def stock_benchmark_bars(
     return ok({
         "index_code": index_code,
         "name": service.name(index_code),
-        "end": str(end_date),
+        "end": end_date.isoformat() if end_date else None,
         "bars": bars,
     })
 
@@ -434,8 +444,10 @@ def stock_signal(
     from backend.services.screen_score import ScreenScoreService
 
     c = get_client()
-    d = date_ if date_ else pd.Timestamp(
-        c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]).date()
+    d = date_ or _latest_market_date(c, "daily_bar")
+    if d is None:
+        return ok({"code": code, "date": None, "buy_point": None,
+                   "risk_flags": [], "buypoint_markers": []})
     svc = ScreenScoreService(c)
     sig = svc.compute_signals(d, [code]).get(code, {})
     return ok({"code": code, "date": str(d),
@@ -501,12 +513,11 @@ def stock_trade_eval(
     prof = TradeProfileRepo(c).get_visible(profile_id)
     if not prof:
         return err(404, "买卖方案不存在")
-    d = date_ if date_ else pd.Timestamp(
-        c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]).date()
+    d = date_ or _latest_market_date(c, "daily_bar")
     eng = IndicatorEngine(c)
-    snap = eng.wide_snapshot(d, d, codes=[code])
+    snap = eng.wide_snapshot(d, d, codes=[code]) if d else pd.DataFrame()
     if snap.empty:
-        return ok({"code": code, "date": str(d), "profile_id": profile_id,
+        return ok({"code": code, "date": d.isoformat() if d else None, "profile_id": profile_id,
                    "name": prof["name"], "buy_signal": False, "sell_signal": False,
                    "buy": {"op": "AND", "conds": []}, "sell": {"op": "OR", "conds": []},
                    "backstop": prof.get("backstop") or {}})

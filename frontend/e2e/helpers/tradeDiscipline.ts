@@ -1,5 +1,5 @@
-import { expect, type APIRequestContext } from '@playwright/test'
-import type { LedgerContext, LedgerHistoryRow } from '../../src/api/tradeLedger'
+import { expect, type APIRequestContext, type Page } from '@playwright/test'
+import type { LedgerContext, LedgerHistoryRow, LedgerSnapshot } from '../../src/api/tradeLedger'
 import { DEFAULT_E2E_API_URL } from './e2e-backend-health.mjs'
 
 export const TRADE_DISCIPLINE_API = process.env.E2E_API_URL || DEFAULT_E2E_API_URL
@@ -10,6 +10,36 @@ export const TRADE_DISCIPLINE_FIXTURE = {
   ledgerDates: ['2098-06-04', '2098-06-05', '2098-06-06', '2098-06-09'],
   stockCodes: ['998801.SZ', '998802.SZ', '998803.SZ'],
 } as const
+
+/** 界面接线用完整账户结构；不能把此固定材料当成真实记账执行证据。 */
+export function makeLedgerSnapshot(overrides: Partial<LedgerSnapshot> = {}): LedgerSnapshot {
+  return {
+    trade_date: '2026-08-21', revision_no: 1, events: [], positions: [], opening_positions: [],
+    omissions: [], rules: [], assessment: 'complied', complete: true, peak_positions: 0,
+    buy_amount: '0.00', sell_amount: '0.00', fee: '0.00', net_outflow: '0.00',
+    cash: '100000.00', realized_pnl: '0.00', review_note: null, evaluations: [],
+    ...overrides,
+  }
+}
+
+export function makeLedgerContext(snapshot: LedgerSnapshot | null,
+  overrides: Partial<LedgerContext> = {}): LedgerContext {
+  return {
+    trade_date: snapshot?.trade_date ?? '2026-08-21', account_revision: 3,
+    initialized_on: '2026-08-20', can_edit: true,
+    latest_trade_date: snapshot?.trade_date ?? null, current_revision_no: snapshot?.revision_no ?? 0,
+    snapshot, rules: snapshot?.rules ?? [], opening_positions: [], opening_cash: '100000.00',
+    positions: snapshot?.positions ?? [], cash: snapshot?.cash ?? '100000.00', ...overrides,
+  }
+}
+
+/** 外壳只在已知市场交易日后加载纪律摘要，界面材料必须同时提供该前置。 */
+export async function installLedgerUiCalendar(page: Page, tradeDate = '2026-08-21') {
+  await page.route('**/api/data/trade-dates*', route => route.fulfill({
+    contentType: 'application/json', body: JSON.stringify({ code: 0, msg: 'ok',
+      data: { dates: [tradeDate], min: tradeDate, max: tradeDate, count: 1 } }),
+  }))
+}
 
 export async function tradeFixtureGet<T>(
   request: APIRequestContext, accessToken: string, path: string,

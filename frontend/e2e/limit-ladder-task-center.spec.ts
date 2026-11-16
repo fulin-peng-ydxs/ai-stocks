@@ -122,7 +122,7 @@ test('连板天梯任务可筛选并在日志抽屉展示快照与 coverage 摘�
   const result = page.getByTestId('limit-ladder-task-result')
   await expect(result).toBeVisible()
   await expect(result.getByText('snapshot-e2e')).toBeVisible()
-  await expect(result.getByText('5200')).toBeVisible()
+  await expect(result.getByText('5,200', { exact: true })).toBeVisible()
   await expect(result.getByText('success')).toBeVisible()
   await expect(page.getByText('快照已原子切换')).toBeVisible()
 

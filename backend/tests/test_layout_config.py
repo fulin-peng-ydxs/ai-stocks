@@ -81,6 +81,26 @@ def test_layout_tables_created(client):
     assert {"layout_preset", "layout_page_config", "layout_user_config"} <= tables
 
 
+def test_layout_http_reads_never_reexecute_market_schema_upgrade(client, monkeypatch):
+    """运行期布局读取不得重放市场全库升级或重建行情索引和约束。"""
+    from backend.storage import ddl
+
+    def reject_runtime_upgrade(*_args, **_kwargs):
+        pytest.fail("布局读取不得执行整库安装或升级")
+
+    # 用例夹具已完成安装；只验证运行期请求，不在这里重放应用启动流程。
+    http = TestClient(app)
+    monkeypatch.setattr(ddl, "init_db", reject_runtime_upgrade)
+    try:
+        for path in ("/api/layout/presets", "/api/layout/effective/limit-ladder",
+                     "/api/layout/users/limit-ladder"):
+            response = http.get(path, headers=_sys_headers())
+            assert response.status_code == 200
+            assert response.json()["code"] == 0
+    finally:
+        http.close()
+
+
 def test_builtin_presets_seed_and_custom_preset_roundtrip(client, monkeypatch):
     repo = LayoutConfigRepo(client)
     keys = {p["key"] for p in repo.list_presets()}

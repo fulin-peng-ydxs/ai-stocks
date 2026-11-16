@@ -63,9 +63,9 @@ test('三档桌面视口完成组合筛选、热点、短历史与 CSV 导出', 
       .getBoundingClientRect()
     const cards = [...document.querySelectorAll('.limit-ladder-card')]
       .map((node) => node.getBoundingClientRect())
-    const controls = [...document.querySelectorAll<HTMLElement>(
-      '.limit-ladder__toolbar .app-control-row > *',
-    )].map((node) => node.getBoundingClientRect())
+    const controls = ['limit-ladder-boards', 'limit-ladder-ignore-st', 'limit-ladder-one-word', 'limit-ladder-keyword']
+      .map(id => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)!)
+      .map(node => (node.closest('.el-input') || node).getBoundingClientRect())
     const overlaps = controls.reduce((count, box, index) => (
       count + controls.slice(index + 1).filter((other) => (
         Math.min(box.right, other.right) - Math.max(box.left, other.left) > 1
@@ -84,7 +84,8 @@ test('三档桌面视口完成组合筛选、热点、短历史与 CSV 导出', 
   expect(geometry.pageOverflow).toBeLessThanOrEqual(1)
   expect(geometry.pageWidth).toBeGreaterThan(0)
   expect(geometry.cardWidthDelta).toBeLessThanOrEqual(1)
-  expect(geometry.controlHeights.every((height) => Math.abs(height - 32) <= 1)).toBe(true)
+  expect(geometry.controlHeights.length).toBeGreaterThan(0)
+  expect(geometry.controlHeights).toEqual([32, 24, 24, 32])
   expect(geometry.overlaps).toBe(0)
 
   const screenshotPath = testInfo.outputPath(`limit-ladder-${testInfo.project.name}.png`)

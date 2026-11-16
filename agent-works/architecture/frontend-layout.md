@@ -29,6 +29,8 @@
 
 挂载后只请求一次 `GET /api/layout/effective/{pageKey}`。后端 [LayoutConfigRepo.effective_config](../../backend/storage/layout_config.py) 分别读取页面和当前用户配置，过滤 page/user 覆盖，返回各层、来源摘要及组件字段策略；它没有前端完整的代码默认布局，因此返回值不能替代前端最终布局。
 
+布局接口和登录页公开预设读取不触发市场库初始化或升级。`LayoutConfigRepo` 保留布局自身 PG 表的幂等建立和内置预设校准，构造不执行 DuckDB 全库迁移，避免并发读取时交错删除/重建行情索引。完整新装与旧库升级统一由 [数据库初始化流程](database-lifecycle.md) 完成，布局的局部初始化不替代整库验收。
+
 前端按以下顺序应用响应：
 
 1. `applyComponentFieldPolicies()` 安装当前字段开放策略。

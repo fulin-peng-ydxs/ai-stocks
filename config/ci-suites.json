@@ -311,6 +311,86 @@
           }
         ]
       }
+    },
+    "e2e-ladder": {
+      "kind": "e2e",
+      "common": false,
+      "description": "连板天梯筛选导出、分析返回、真实偏好及任务呈现；固定接口材料",
+      "impact_paths": [
+        "frontend/src/views/LimitLadderView.vue",
+        "frontend/src/views/limit-ladder/*",
+        "frontend/src/api/limitLadder.ts",
+        "frontend/src/stores/limitLadderSession.ts",
+        "backend/api/limit_ladder.py",
+        "backend/services/limit_ladder*",
+        "backend/storage/limit_ladder_task_repository.py",
+        "frontend/e2e/helpers/limitLadder.ts",
+        "frontend/e2e/limit-ladder.spec.ts",
+        "frontend/e2e/limit-ladder-analysis.spec.ts",
+        "frontend/e2e/limit-ladder-preferences.spec.ts",
+        "frontend/e2e/limit-ladder-task-center.spec.ts"
+      ],
+      "e2e": {
+        "runner": "shell",
+        "projects": [
+          {
+            "name": "chromium-standard"
+          }
+        ]
+      }
+    },
+    "e2e-stocks": {
+      "kind": "e2e",
+      "common": false,
+      "description": "个股查询与详情图表、返回现场、故障恢复及真实PG偏好隔离；隔离固定行情",
+      "impact_paths": [
+        "frontend/src/views/StockDetailView.vue",
+        "frontend/src/views/StocksView.vue",
+        "frontend/src/views/BoardView.vue",
+        "frontend/src/components/StockAnalysisPanel.vue",
+        "frontend/src/components/stock-chart/*",
+        "frontend/src/components/StockChartSettingSection.vue",
+        "frontend/src/api/stocks.ts",
+        "frontend/src/composables/useStockChart*",
+        "frontend/src/composables/useLegacyStockChartPreferenceMigration.ts",
+        "frontend/src/composables/useRelatedBoardFirstLoad.ts",
+        "frontend/src/layout/stockChartRatioProfiles.ts",
+        "backend/api/stocks.py",
+        "backend/devtools/e2e_market_data.py",
+        "frontend/e2e/stock-detail-chart-workspace.spec.ts"
+      ],
+      "e2e": {
+        "runner": "stocks",
+        "projects": [
+          {
+            "name": "chromium-standard"
+          }
+        ]
+      }
+    },
+    "e2e-trade-ui": {
+      "kind": "e2e",
+      "common": false,
+      "description": "账户日结历史筛选、修订回看与快捷卡导航；固定接口材料验证页面接线",
+      "impact_paths": [
+        "frontend/src/views/TradeDisciplineView.vue",
+        "frontend/src/views/trade-discipline/**/*",
+        "frontend/src/components/trade-discipline/*",
+        "frontend/src/api/tradeDiscipline.ts",
+        "frontend/src/api/tradeLedger.ts",
+        "frontend/src/composables/useTradeDiscipline*",
+        "frontend/e2e/trade-discipline-history.spec.ts",
+        "frontend/e2e/trade-discipline-quick-card.spec.ts",
+        "frontend/e2e/helpers/tradeDiscipline.ts"
+      ],
+      "e2e": {
+        "runner": "shell",
+        "projects": [
+          {
+            "name": "chromium-standard"
+          }
+        ]
+      }
     }
   },
   "dependency_paths": [
@@ -403,44 +483,20 @@
       "review_status": "manual-design"
     },
     "frontend/e2e/limit-ladder-analysis.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "待整合：天梯分析路由、返回与窄视口抽屉已有固定接口材料，尚需核实夹具和当前页面契约",
-      "review_status": "migration-required",
-      "impact_paths": [
-        "frontend/src/views/LimitLadderView.vue",
-        "frontend/src/views/limit-ladder/*",
-        "frontend/e2e/helpers/limitLadder.ts"
-      ]
+      "suite": "e2e-ladder",
+      "reason": "复用确定性天梯接口材料；偏好通过正式PG回读，其他断言只证明浏览器接线"
     },
     "frontend/e2e/limit-ladder-preferences.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "待整合：天梯偏好写入依赖完整天梯行情与页面前置，不能把空行情初始化视为已满足",
-      "review_status": "migration-required",
-      "impact_paths": [
-        "frontend/src/views/LimitLadderView.vue",
-        "frontend/src/views/limit-ladder/*",
-        "frontend/e2e/helpers/limitLadder.ts"
-      ]
+      "suite": "e2e-ladder",
+      "reason": "复用确定性天梯接口材料；偏好通过正式PG回读，其他断言只证明浏览器接线"
     },
     "frontend/e2e/limit-ladder-task-center.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "待整合：天梯任务状态与日志展示使用专属Mock材料，尚需核实当前任务字段",
-      "review_status": "migration-required",
-      "impact_paths": [
-        "frontend/src/views/LimitLadderView.vue",
-        "frontend/src/views/limit-ladder/*",
-        "frontend/e2e/helpers/limitLadder.ts"
-      ]
+      "suite": "e2e-ladder",
+      "reason": "复用确定性天梯接口材料；偏好通过正式PG回读，其他断言只证明浏览器接线"
     },
     "frontend/e2e/limit-ladder.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "待整合：天梯主链路及状态矩阵依赖专属接口材料与适用项目分配",
-      "review_status": "migration-required",
-      "impact_paths": [
-        "frontend/src/views/LimitLadderView.vue",
-        "frontend/src/views/limit-ladder/*",
-        "frontend/e2e/helpers/limitLadder.ts"
-      ]
+      "suite": "e2e-ladder",
+      "reason": "复用确定性天梯接口材料；偏好通过正式PG回读，其他断言只证明浏览器接线"
     },
     "frontend/e2e/page-settings-drawer.spec.ts": {
       "suite": "e2e-settings",
@@ -472,13 +528,8 @@
       "review_status": "manual-design"
     },
     "frontend/e2e/stock-detail-chart-workspace.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "待整合：个股详情包含真实行情前置、临时账号和偏好隔离，需专属确定性行情夹具，不能依赖空库或在线来源",
-      "review_status": "migration-required",
-      "impact_paths": [
-        "frontend/src/views/StockDetailView.vue",
-        "frontend/src/composables/useStockChartPreferences.ts"
-      ]
+      "suite": "e2e-stocks",
+      "reason": "复用共用空库行情与既有浏览器runner；当前图表契约和真实PG用户偏好隔离"
     },
     "frontend/e2e/stock-ingest-management.spec.ts": {
       "suite": "e2e-tasks",
@@ -489,14 +540,12 @@
       "reason": "任务轮询、操作和日志抽屉；固定接口材料不冒充真实采集"
     },
     "frontend/e2e/trade-discipline-history.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "待迁移：旧逐规则checkins接口及日期模型已过期；当前真实日结历史由trade-discipline.spec.ts验证，本文件不得计为通过",
-      "review_status": "migration-required"
+      "suite": "e2e-trade-ui",
+      "reason": "迁移到账户日结和不可变修订接口结构；固定材料只证明页面接线，真实账本由e2e-trade验证"
     },
     "frontend/e2e/trade-discipline-quick-card.spec.ts": {
-      "suite": "manual-e2e",
-      "reason": "待迁移：旧逐规则快捷打卡模型已过期；当前账户快捷日结已有真实E2E，本文件不得计为通过",
-      "review_status": "migration-required"
+      "suite": "e2e-trade-ui",
+      "reason": "迁移到账户日结和不可变修订接口结构；固定材料只证明页面接线，真实账本由e2e-trade验证"
     }
   },
   "special_nodes": {
@@ -538,6 +587,10 @@
     "backend/devtools/ci*.py",
     ".github/workflows/*",
     "frontend/src/layout/*",
+    "backend/api/layout.py",
+    "backend/storage/layout_config.py",
+    "backend/api/user_preferences.py",
+    "backend/storage/user_preference.py",
     "frontend/src/router/*",
     "frontend/src/App.vue",
     "frontend/package*.json",

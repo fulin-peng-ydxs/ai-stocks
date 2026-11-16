@@ -10,6 +10,7 @@
 列表查询全部在 SQL 层完成筛选、排序、分页，不在前端排全量（`backend/api/stocks.py` `list_stocks`）。
 - 排序字段走白名单映射防注入：`_STOCK_SORT_COLS`（`stocks.py`）只放行 `pct_chg / close / name / industry / code`，其余回落 `pct_chg`；`sort_order` 仅 `asc/desc`。排序统一 `... NULLS LAST, sb.code ASC`（`stocks.py`），停牌（当日无行情）的 NULL 涨跌幅恒排末尾，并以 code 作稳定次序键。
 - 当日涨跌幅按交易日 `LEFT JOIN daily_bar` 现算 `(close/pre_close-1)*100`（`stocks.py`），`trade_date` 缺省取 `max(trade_date)`。
+- 空行情边界：默认截止日统一经 `_latest_market_date()` 读取；日线或指数表为空时不把 `NaT` 传入 SQL，也不以当前日期补造行情。股票列表、K线、基准、信号及可见买卖方案评估返回各自空结果，缺失日期为 `null`；显式历史日期仍执行点时 ST 门禁，非法基准及不可见方案仍拒绝。
 - 退市/ST 口径：`board='退市'` 只看 `delist_date IS NOT NULL`，其余板块一律 `delist_date IS NULL` 排除退市；`board='ST'` 与 `exclude_st` 均读取查询日 `stock_st_status_daily` 的准确点时事实，缺失或刷新批次未发布时拒绝返回残缺结果。
 - 行业/概念筛选统一使用同花顺 `board_dict + board_member` 累计归属，选项由 `GET /stocks/membership-options` 按行业、概念稳定返回，列表与分组接口共同消费 `membership_board_code`。指定历史交易日时排除 `first_seen_date` 明确晚于该日的关系；存量空日期视为历史已存在。该口径不同于列表“行业”列的证监会行业分类。
 - 只有认证上下文具备 `stock-group:view`（或 system）时才构造 `StockGroupRepo` 并批量调用 `groups_for_codes`；无权限时统一返回空 `groups`，不读取分组资产，也不会因仓库构造而创建默认分组。前端同时隐藏分组列、分组视图和对应页面设置元数据。

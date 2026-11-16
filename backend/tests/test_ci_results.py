@@ -252,10 +252,45 @@ def test_physical_runner_loads_shared_helper_before_environment_guard(entrypoint
     assert "AI_STOCKS_ENV=dev|test|local" in result.stdout
 
 
-def test_changed_business_path_cannot_ignore_unintegrated_browser_requirement(monkeypatch, fixed_source):
-    monkeypatch.setattr(ci, "changed_paths", lambda _selected: {"frontend/src/views/StockDetailView.vue"})
+def test_changed_business_path_cannot_ignore_unintegrated_browser_requirement(monkeypatch, fixed_source, tmp_path):
+    data = ci.registry()
+    file = "frontend/e2e/stock-chart-workspace-preview.spec.ts"
+    path = "frontend/src/components/stock-chart/StockChartWorkspace.vue"
+    data["special_files"][file]["impact_paths"] = [path]
+    registry = tmp_path / "ci-suites.json"
+    registry.write_text(json.dumps(data))
+    monkeypatch.setattr(ci, "REGISTRY", registry)
+    monkeypatch.setattr(ci, "changed_paths", lambda _selected: {path})
     value = ci_results.execution_plan("change")
-    assert any(entry["file"].endswith("stock-detail-chart-workspace.spec.ts") for entry in value["pending_checks"])
+    assert any(entry["file"] == file for entry in value["pending_checks"])
+
+
+def test_remaining_business_e2e_are_integrated_without_manual_waiver(fixed_source, monkeypatch):
+    data = ci.registry()
+    assert {entry["review_status"] for entry in data["special_files"].values()
+            if entry["suite"] == "manual-e2e"} == {"manual-design"}
+    for path, suite in [
+        ("frontend/src/views/StockDetailView.vue", "e2e-stocks"),
+        ("frontend/src/views/LimitLadderView.vue", "e2e-ladder"),
+        ("frontend/e2e/trade-discipline-history.spec.ts", "e2e-trade-ui"),
+        ("frontend/e2e/trade-discipline-quick-card.spec.ts", "e2e-trade-ui"),
+    ]:
+        monkeypatch.setattr(ci, "changed_paths", lambda _selected, changed=path: {changed})
+        value = ci_results.execution_plan("change")
+        assert suite in {item["suite"] for item in value["include"]}
+        assert not value["pending_checks"]
+
+
+@pytest.mark.parametrize("path", [
+    "backend/api/layout.py", "backend/storage/layout_config.py",
+    "backend/api/user_preferences.py", "backend/storage/user_preference.py",
+])
+def test_shared_layout_and_preference_changes_require_browser_consumers(fixed_source, monkeypatch, path):
+    monkeypatch.setattr(ci, "changed_paths", lambda _selected: {path})
+    value = ci_results.execution_plan("change")
+    expected = {name for name, entry in ci.registry()["suites"].items() if entry["kind"] == "e2e"}
+    assert expected <= {item["suite"] for item in value["include"]}
+    assert not value["pending_checks"]
 
 
 def test_local_partial_run_preserves_and_grades_existing_overall_plan(tmp_path, fixed_source, monkeypatch):

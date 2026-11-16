@@ -1,5 +1,5 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
-import { loginAsDebugUser } from './helpers/auth'
+import { loginAsDebugUser, readPageSession } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
 import {
   installDeterministicLimitLadder,
@@ -9,11 +9,13 @@ import {
   makeLimitLadderResult,
 } from './helpers/limitLadder'
 
+test.use({ actionTimeout: 15_000 })
+
 test('桌面分析、详情返回与 1100×620 低高度上下文保持', async ({ page, request }, testInfo: TestInfo) => {
   test.skip(testInfo.project.name !== 'chromium-standard', '聚焦串行验证一次')
   await page.setViewportSize({ width: 1100, height: 620 })
   const consoleIssues = collectConsoleIssues(page)
-  await loginAsDebugUser(page, request, 'debug_system')
+  const auth = await loginAsDebugUser(page, request, 'debug_system')
   const ladderApi = await installDeterministicLimitLadder(page)
   await page.route(
     new RegExp(`/api/sectors/${stock.latest_related_concept.board_code}(?:\\?.*)?$`),
@@ -75,26 +77,28 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
 
   await page.goto('/limit-ladder')
   await expect(page.getByText('完整工作台')).toHaveCount(0)
+  if (!await page.getByTestId('limit-ladder-one-word').isVisible()) {
+    await page.locator('[data-search-toggle]').click()
+  }
   const boardFilter = page.getByTestId('limit-ladder-boards')
-  await expect(boardFilter.getByText('主板', { exact: true })).toBeVisible()
-  await expect(boardFilter.getByText('科创板', { exact: true })).toBeVisible()
-  await expect(boardFilter.getByText('创业板', { exact: true })).toBeVisible()
+  await expect(boardFilter).toContainText('全部板块')
+  await boardFilter.locator('.el-select__wrapper').click()
+  for (const name of ['主板', '科创板', '创业板']) {
+    await expect(page.getByRole('option', { name, exact: true })).toHaveAttribute('aria-selected', 'true')
+  }
+  await page.keyboard.press('Escape')
   await expect(boardFilter.getByText('+1', { exact: true })).toHaveCount(0)
   const toolbarGeometry = await page.evaluate(() => {
-    const toolbarNode = document.querySelector<HTMLElement>('.limit-ladder__toolbar')!
+    const toolbarNode = document.querySelector<HTMLElement>('[data-testid="limit-ladder-filters"]')!
     const toolbar = toolbarNode.getBoundingClientRect()
-    const panel = document.querySelector('.market-list-panel')!.getBoundingClientRect()
+    const panel = document.querySelector('[data-testid="limit-ladder-page"]')!.getBoundingClientRect()
     const exported = document.querySelector('[data-testid="limit-ladder-export"]')!.getBoundingClientRect()
     const recompute = document.querySelector('[data-testid="limit-ladder-recompute"]')!.getBoundingClientRect()
-    const controlHeights = [
-      toolbarNode.querySelector('.el-date-editor'),
-      toolbarNode.querySelector('.page-segmented'),
-      toolbarNode.querySelector('.app-filter-select'),
-      toolbarNode.querySelector('.limit-ladder__checks'),
-      toolbarNode.querySelector('.app-search-input'),
-      toolbarNode.querySelector('[data-testid="limit-ladder-reset"]'),
-    ].map((node) => node!.getBoundingClientRect().height)
-    const controls = [...toolbarNode.querySelectorAll<HTMLElement>('.app-control-row > *')]
+    const controls = [toolbarNode.querySelector<HTMLElement>('.el-date-editor')!, ...['limit-ladder-window', 'limit-ladder-boards',
+      'limit-ladder-ignore-st', 'limit-ladder-one-word', 'limit-ladder-keyword', 'limit-ladder-reset']
+      .map(id => toolbarNode.querySelector<HTMLElement>(`[data-testid="${id}"]`)!)]
+      .map(node => node.closest<HTMLElement>('.el-input') || node)
+    const controlHeights = controls.map(node => node.getBoundingClientRect().height)
     const controlBoxes = controls.map((node) => node.getBoundingClientRect())
     const overlapCount = controlBoxes.reduce((count, box, index) => (
       count + controlBoxes.slice(index + 1).filter((other) => (
@@ -102,6 +106,13 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
         && Math.min(box.bottom, other.bottom) - Math.max(box.top, other.top) > 1
       )).length
     ), 0)
+    const search = controls[5]!
+    const inputSizing = [search, search.querySelector('.el-input__wrapper')!, search.querySelector('input')!]
+      .map(node => {
+        const style = getComputedStyle(node)
+        return { height: style.height, padding: style.padding, boxSizing: style.boxSizing,
+          inputHeight: style.getPropertyValue('--el-input-height'), rowHeight: style.getPropertyValue('--app-control-row-height') }
+      })
     return {
       panelRight: panel.right,
       exportRight: exported.right,
@@ -113,6 +124,7 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
       controlHeights,
       controlOverflow: Math.max(...controls.map((node) => node.scrollWidth - node.clientWidth)),
       overlapCount,
+      inputSizing,
     }
   })
   expect(toolbarGeometry.exportRight).toBeLessThanOrEqual(toolbarGeometry.panelRight + 1)
@@ -121,13 +133,14 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   expect(toolbarGeometry.headerActionTopDelta).toBeLessThanOrEqual(1)
   expect(toolbarGeometry.toolbarOverflow).toBeLessThanOrEqual(1)
   expect(toolbarGeometry.bodyOverflow).toBeLessThanOrEqual(1)
-  expect(toolbarGeometry.controlHeights).toEqual([32, 32, 32, 32, 32, 32])
+  // 设计契约保留普通开关的自身尺寸，输入、选择、分段与命令仍为标准 32px。
+  expect(toolbarGeometry.controlHeights, JSON.stringify(toolbarGeometry.inputSizing)).toEqual([32, 32, 32, 24, 24, 32, 32])
   expect(toolbarGeometry.controlOverflow).toBeLessThanOrEqual(1)
   expect(toolbarGeometry.overlapCount).toBe(0)
   await expect(page.getByTestId('limit-ladder-recompute')).toHaveText('重算当日')
   await expect(page.getByTestId('limit-ladder-recompute')).not.toHaveClass(/el-button--warning/)
-  await page.getByTestId('limit-ladder-card-sort').locator('.el-select__wrapper').click()
-  await page.getByRole('option', { name: '累计涨幅' }).click()
+  await page.getByTestId('limit-ladder-card-sort').click()
+  await page.getByRole('menuitem', { name: '累计涨幅', exact: true }).click()
   await expect(page).toHaveURL(/\/limit-ladder$/)
   await expect(page.getByTestId('limit-ladder-card-sort')).toContainText('累计涨幅')
 
@@ -182,13 +195,14 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   await expect(card).toContainText('累计涨幅')
   await expect(card).toContainText('+12.34%')
   const headlineAlignment = await card.evaluate((node) => {
-    const name = node.querySelector<HTMLElement>('.limit-ladder-card__identity strong')!
+    const identity = node.querySelector<HTMLElement>('.limit-ladder-card__identity')!
       .getBoundingClientRect()
-    const value = node.querySelector<HTMLElement>('.limit-ladder-card__return strong')!
+    const returns = node.querySelector<HTMLElement>('.limit-ladder-card__return')!
       .getBoundingClientRect()
-    return Math.abs(name.bottom - value.bottom)
+    return [Math.abs(identity.top - returns.top), Math.abs(identity.bottom - returns.bottom)]
   })
-  expect(headlineAlignment).toBeLessThanOrEqual(1)
+  // 当前卡头为“名称/代码”和“累计涨幅/数值”两列，两列顶底均须对齐。
+  expect(Math.max(...headlineAlignment)).toBeLessThanOrEqual(1)
   await expect(card.locator('.limit-ladder-card__window-stat b')).toHaveClass(/is-multiple/)
   await expect(card.locator('.limit-ladder-card__foot')).toBeVisible()
   const cardContentGeometry = await card.evaluate((node) => {
@@ -229,23 +243,31 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   expect(benchmarkOverflow).toBeLessThanOrEqual(1)
   await expect(page.getByTestId('stock-analysis-open-detail')).toBeVisible()
   await expect(page).toHaveURL(/\/limit-ladder$/)
-  await expect(page.locator('.ladder-hotspots__chip')).toHaveCount(8)
+  // 热点现保留全部材料供宽度测量，折叠通过 inert/裁剪实现，不能再断言旧版截断的 DOM 数量。
+  await expect(page.locator('.ladder-hotspots__chip')).toHaveCount(12)
+  const hotspots = page.locator('#limit-ladder-hotspots')
+  await expect(hotspots).toBeHidden()
+  await page.getByRole('button', { name: '展开热点', exact: true }).click()
+  await expect(hotspots).toBeVisible()
+  await page.getByRole('button', { name: '收起热点', exact: true }).click()
+  await expect(hotspots).toBeHidden()
+  await expect(page.locator('.limit-ladder__summary-meta')).toHaveCount(0)
   const lowHeightLayout = await page.evaluate(() => {
-    const scrollRegion = document.querySelector<HTMLElement>('[data-testid="limit-ladder-scroll-region"]')!
+    const scrollRegion = document.querySelector<HTMLElement>('[data-testid="limit-ladder-scroll-region"] .el-scrollbar__wrap')!
     const summary = document.querySelector<HTMLElement>('.limit-ladder__summary')!
     const metrics = [...summary.children].slice(0, 3).map((node) => node.getBoundingClientRect())
-    const meta = summary.querySelector<HTMLElement>('.limit-ladder__summary-meta')!.getBoundingClientRect()
+    const toggle = summary.querySelector<HTMLElement>('.limit-ladder__hotspots-toggle')!.getBoundingClientRect()
     return {
       scrollable: scrollRegion.scrollHeight > scrollRegion.clientHeight,
       summaryOverflow: summary.scrollWidth - summary.clientWidth,
       metricTopDelta: Math.max(...metrics.map((box) => box.top)) - Math.min(...metrics.map((box) => box.top)),
-      metaBelowMetrics: meta.top >= Math.max(...metrics.map((box) => box.bottom)) - 1,
+      toggleBelowMetrics: toggle.top >= Math.max(...metrics.map((box) => box.bottom)) - 1,
     }
   })
   expect(lowHeightLayout.scrollable).toBe(true)
   expect(lowHeightLayout.summaryOverflow).toBeLessThanOrEqual(1)
   expect(lowHeightLayout.metricTopDelta).toBeLessThanOrEqual(1)
-  expect(lowHeightLayout.metaBelowMetrics).toBe(true)
+  expect(lowHeightLayout.toggleBelowMetrics).toBe(true)
   await page.getByTestId('limit-ladder-layer-2').scrollIntoViewIfNeeded()
   await expect(page.getByTestId('limit-ladder-layer-2')).toBeInViewport()
   await expect(card).toBeInViewport()
@@ -265,16 +287,16 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   expect(cardLayout.headBeforeMetrics).toBe(true)
   expect(cardLayout.metricsBeforeFooter).toBe(true)
 
-  const returnPath = await page.evaluate(() => JSON.parse(localStorage.getItem('ai-stocks:stockSet') || '{}').returnPath)
+  const returnPath = (await readPageSession<{ returnPath?: string }>(page, auth, 'stock-set'))?.returnPath
   expect(returnPath).toBeUndefined()
   await page.getByTestId('stock-analysis-open-detail').click()
   await expect(page).toHaveURL(new RegExp(`/stocks/${stock.code.replace('.', '\\.')}$`))
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('ai-stocks:stockSet') || '{}'))
-  expect(stored.items).toEqual([
+  const stored = await readPageSession<{ items: unknown[]; returnPath: string }>(page, auth, 'stock-set')
+  expect(stored?.items).toEqual([
     { code: stock.code, name: stock.name },
     ...firstBoardStocks.map(({ code, name }) => ({ code, name })),
   ])
-  expect(stored.returnPath).toBe('/limit-ladder?restore=1')
+  expect(stored?.returnPath).toBe('/limit-ladder?restore=1')
 
   await page.getByTestId('stock-detail-back').click()
   await expect(page).toHaveURL(/\/limit-ladder$/)
@@ -296,11 +318,11 @@ test('768×1024 使用页面边界内全宽分析抽屉并可返回原卡片', a
 
   await page.goto('/limit-ladder')
   await page.getByTestId(`limit-ladder-card-select-${stock.code}`).click()
-  const drawer = page.getByTestId('limit-ladder-analysis-drawer')
+  const drawer = page.getByTestId('market-analysis-drawer')
   await expect(drawer).toBeVisible()
   const readGeometry = () => page.evaluate(() => {
     const pageRoot = document.querySelector('[data-testid="limit-ladder-page"]')!.getBoundingClientRect()
-    const drawerRoot = document.querySelector('[data-testid="limit-ladder-analysis-drawer"]')!.getBoundingClientRect()
+    const drawerRoot = document.querySelector('[data-testid="market-analysis-drawer"]')!.getBoundingClientRect()
     return { pageX: pageRoot.x, pageWidth: pageRoot.width, drawerX: drawerRoot.x, drawerWidth: drawerRoot.width }
   })
   await expect.poll(async () => {

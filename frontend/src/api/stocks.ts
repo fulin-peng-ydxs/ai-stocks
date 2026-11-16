@@ -37,7 +37,7 @@ export interface StockList {
   total: number
   page: number
   size: number
-  trade_date: string
+  trade_date: string | null
   list: StockBasic[]
 }
 
@@ -143,7 +143,7 @@ export interface StockIntraday {
 export interface StockBenchmarkBars {
   index_code: string
   name: string
-  end: string
+  end: string | null
   bars: Bar[]
 }
 
@@ -286,7 +286,7 @@ export function getIndicators(
 
 export interface StockSignal {
   code: string
-  date: string
+  date: string | null
   buy_point: string | null
   risk_flags: string[]
   buypoint_markers: { date: string; label: string }[]
@@ -302,7 +302,7 @@ export interface TradeCondStatus {
 }
 export interface TradeEval {
   code: string
-  date: string
+  date: string | null
   profile_id: string
   name: string
   version: number | null

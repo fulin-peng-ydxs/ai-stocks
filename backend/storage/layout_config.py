@@ -802,9 +802,8 @@ class LayoutConfigRepo:
     def __init__(self, client: DuckDBClient | None = None, *, tenant_id: str | None = None,
                  pg=None):
         self.c = client or get_client()
-        from backend.storage.ddl import init_db
-
-        init_db(self.c)
+        # 市场存储安装/升级由 initialize_database 完成。运行期读取配置不得重放市场迁移，
+        # 否则并发请求会交错删除/重建索引，并触发 DuckDB 的依赖约束错误。
         self.pg = pg or get_pg_client()
         self._init_pg_layout_tables()
         # 平台预设、页面模板和字段策略是全局配置，公开登录页也需要在未认证请求中读取。

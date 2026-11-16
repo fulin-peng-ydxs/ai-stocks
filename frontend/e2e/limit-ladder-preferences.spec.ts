@@ -1,29 +1,18 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
 import {
   getUserPreference,
+  getUserLayoutValues,
   loginAsDebugUser,
   saveUserPreference,
+  saveUserLayoutValues,
   type E2EAuthSnapshot,
 } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
-import { createDefaultStockChartPreferences } from '../src/composables/useStockChartPreferences'
+import { DEFAULT_LIMIT_LADDER_PREFERENCE } from '../src/views/limit-ladder/preferences'
+import { installDeterministicLimitLadder } from './helpers/limitLadder'
 
-const defaultPreference = {
-  schemaVersion: 1,
-  window: 31,
-  ignoreSt: true,
-  boards: ['main', 'star', 'gem'],
-  showAnalysisPanel: false,
-  cardSort: 'limitUps',
-  cardSortOrder: 'desc',
-  defaultChartMode: 'compare',
-  compareRange: 60,
-  benchmarkCode: '000905.SH',
-  compareMetrics: ['cum', 'roll_5d', 'roll_10d', 'roll_20d', 'roll_30d', 'roll_60d'],
-  defaultCompareMetric: 'cum',
-  adjustMode: 'qfq',
-  charts: createDefaultStockChartPreferences(),
-}
+const defaultPreference = structuredClone(DEFAULT_LIMIT_LADDER_PREFERENCE)
+test.use({ actionTimeout: 15_000 })
 
 async function openBusinessSettings(page: Page): Promise<void> {
   await page.getByTestId('page-settings-trigger').click()
@@ -54,7 +43,10 @@ test('个人默认修改即保存并同步当前页面、详情现场独立于 U
   const consoleIssues = collectConsoleIssues(page)
   // 偏好写用独立普通账号，避免与并行执行的 system 页面用例互相覆盖同一远端偏好。
   const auth = await loginAsDebugUser(page, request, 'debug_normal')
+  await installDeterministicLimitLadder(page)
   const originalPreference = await readPreference(request, auth)
+  const originalLayout = await getUserLayoutValues(request, auth, 'limit-ladder')
+  await saveUserLayoutValues(request, auth, 'limit-ladder', {})
   await saveUserPreference(request, auth, {
     scope: 'page',
     pageKey: 'limit-ladder',
@@ -69,25 +61,24 @@ test('个人默认修改即保存并同步当前页面、详情现场独立于 U
 
     await openBusinessSettings(page)
     await page.getByTestId('limit-ladder-default-window-20').click()
-    await page.getByTestId('limit-ladder-default-boards')
-      .getByText('科创板', { exact: true })
-      .click()
+    await page.getByTestId('limit-ladder-default-boards').locator('.el-select__wrapper').click()
+    await page.getByRole('option', { name: '科创板', exact: true }).click()
+    await expect(page.getByRole('option', { name: '科创板', exact: true })).toHaveAttribute('aria-selected', 'false')
+    await page.keyboard.press('Escape')
     await page.getByTestId('limit-ladder-default-ignore-st-switch').click()
     await page.getByTestId('limit-ladder-default-card-sort-order-asc').click()
     await page.getByTestId('stock-analysis-default-benchmark').locator('.el-select__wrapper').click()
     await page.getByRole('option', { name: '沪深 300' }).click()
     await expect(page.getByTestId('limit-ladder-default-window-20'))
       .toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByTestId('limit-ladder-default-boards')
-      .getByRole('checkbox', { name: '科创板' }))
-      .not.toBeChecked()
+    await expect(page.getByTestId('limit-ladder-default-boards')).not.toContainText('科创板')
     await expect(page.getByTestId('limit-ladder-default-ignore-st-switch'))
       .not.toHaveClass(/is-checked/)
     await expect(page.getByTestId('limit-ladder-default-card-sort-order-asc'))
       .toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByTestId('limit-ladder-window-20'))
       .toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByTestId('limit-ladder-ignore-st').getByRole('switch')).toHaveAttribute('aria-checked', 'false')
+    await expect(page.getByTestId('limit-ladder-ignore-st')).not.toHaveClass(/is-checked/)
     await expect(page.getByTestId('limit-ladder-boards')).not.toContainText('科创板')
     await expect(page).toHaveURL(/\/limit-ladder$/)
 
@@ -104,15 +95,18 @@ test('个人默认修改即保存并同步当前页面、详情现场独立于 U
       ignoreSt: false,
       boards: ['main', 'gem'],
       cardSortOrder: 'asc',
-      benchmarkCode: '000300.SH',
     })
+    await expect.poll(async () => {
+      const values = await getUserLayoutValues(request, auth, 'limit-ladder')
+      return (values['slots.analysis.config.stockAnalysis'] as { benchmarkCode?: string })?.benchmarkCode
+    }).toBe('000300.SH')
     await page.getByRole('button', { name: '关闭页面设置' }).click()
 
     await page.goto('/limit-ladder')
     await expect(page).toHaveURL(/\/limit-ladder$/)
     await expect(page.getByTestId('limit-ladder-window-20'))
       .toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByTestId('limit-ladder-ignore-st').getByRole('switch')).toHaveAttribute('aria-checked', 'false')
+    await expect(page.getByTestId('limit-ladder-ignore-st')).not.toHaveClass(/is-checked/)
     await expect(page.getByTestId('limit-ladder-boards')).not.toContainText('科创板')
     await expect(page.getByTestId('market-show-analysis')).toBeVisible()
     await page.getByTestId('market-show-analysis').click()
@@ -122,18 +116,20 @@ test('个人默认修改即保存并同步当前页面、详情现场独立于 U
     await expect(page).toHaveURL(/\/limit-ladder$/)
     await expect(page.getByTestId('limit-ladder-window-20'))
       .toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByTestId('limit-ladder-ignore-st').getByRole('switch')).toHaveAttribute('aria-checked', 'false')
+    await expect(page.getByTestId('limit-ladder-ignore-st')).not.toHaveClass(/is-checked/)
 
     await openBusinessSettings(page)
     await page.getByTestId('page-settings-reset').click()
     await expect(page).toHaveURL(/\/limit-ladder$/)
     await expect(page.getByTestId('limit-ladder-window-31'))
       .toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByTestId('limit-ladder-ignore-st').getByRole('switch')).toHaveAttribute('aria-checked', 'true')
+    await expect(page.getByTestId('limit-ladder-ignore-st')).toHaveClass(/is-checked/)
     await expect(page.getByTestId('market-show-analysis')).toBeVisible()
     await expect.poll(() => readPreference(request, auth)).toEqual(defaultPreference)
+    await expect.poll(() => getUserLayoutValues(request, auth, 'limit-ladder')).toEqual({})
     expect(consoleIssues).toEqual([])
   } finally {
+    await saveUserLayoutValues(request, auth, 'limit-ladder', originalLayout)
     await saveUserPreference(request, auth, {
       scope: 'page',
       pageKey: 'limit-ladder',

@@ -212,6 +212,14 @@ export async function installDeterministicLimitLadder(
       },
     }),
   }))
+  // 详情常驻报价与图表使用同一固定截面，避免读取开发库或空库的其它日期。
+  await page.route(`**/api/stocks/${limitLadderStock.code}/quote-summary*`, (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ code: 0, msg: 'ok', data: {
+      ...bar, trade_date: limitLadderTradeDate, code: limitLadderStock.code,
+      name: limitLadderStock.name, board: '主板', is_st: false,
+    } }),
+  }))
 
   return {
     recomputeCount: () => recomputeRequests,

@@ -14,7 +14,7 @@ interface FirstLoadPollingOptions {
 /** 用股票和业务日期标识一次读取上下文，切页/切日期后必须重新计算等待时限。 */
 export function relatedBoardFirstLoadContext<T extends RelatedBoardRow>(
   rows: T[],
-  businessDate: string | ((row: T) => string | null | undefined),
+  businessDate: string | null | ((row: T) => string | null | undefined),
 ): string {
   return rows
     .map((row) => {

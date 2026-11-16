@@ -16,14 +16,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import secrets
 import uuid
 from datetime import timedelta
 
 from backend.auth.context import AuthContext, reset_context, set_context
 from backend.common.timeutil import shanghai_now_naive
-from backend.devtools.e2e_market_data import seed_non_st_daily
+from backend.devtools.e2e_market_data import seed_ci_market as seed_isolated_ci_market
 from backend.devtools.environment_guard import require_e2e_write_enabled
 from backend.services.backtest_service import BacktestService
 from backend.storage.duckdb_client import DuckDBClient
@@ -35,55 +34,10 @@ _RUN_ID_PREFIX = "e2e_bt_"
 
 def seed_ci_market(client: DuckDBClient) -> dict[str, int]:
     """只为已初始化的空 CI 库准备行情；公开 run 仍由正式引擎撮合并写 PG。"""
-    require_e2e_write_enabled()
-    if os.environ.get("AI_STOCKS_CI_SUITE") != "e2e-backtest":
-        raise RuntimeError("确定性公开回测行情仅供隔离 CI 专项")
-    for table in ("stock_basic", "daily_bar", "daily_metrics", "stock_st_status_daily",
-                  "index_bar", "trade_calendar"):
-        if client.query_df(f"SELECT count(*) n FROM {table}").iloc[0]["n"]:
-            raise RuntimeError("公开回测 CI 行情只允许写入空临时库")
-    # 默认撮合窗口是最近 45 天，另准备暖机材料；只使用昨天及更早的固定合成日线。
-    end = shanghai_now_naive().date() - timedelta(days=1)
-    first = end - timedelta(days=180)
-    days = [first + timedelta(days=i) for i in range(181)]
-    trading = [day for day in days if day.weekday() < 5]
-    codes = ("996601.SZ", "996602.SZ")
-    with client.transaction():
-        client.conn.executemany(
-            "INSERT INTO trade_calendar(trade_date,is_open) VALUES (?,?)",
-            [(day, day.weekday() < 5) for day in days],
-        )
-        client.conn.executemany(
-            "INSERT INTO stock_basic(code,name,exchange,board,list_date,industry,price_limit_pct) "
-            "VALUES (?,?,'SZ','主板',?,'E2E回测',0.10)",
-            [(code, f"E2E回测股票{i}", first - timedelta(days=365)) for i, code in enumerate(codes)],
-        )
-        bars, metrics, benchmarks = [], [], []
-        for i, code in enumerate(codes):
-            for point, day in enumerate(trading):
-                close = 10 + i * 3 + point * 0.02
-                bars.append((code, day, close - 0.01, close + 0.1, close - 0.1,
-                             close, close - 0.02, 1_000_000, close * 1_000_000))
-                metrics.append((code, day, close * 80_000_000, close * 100_000_000))
-        for point, day in enumerate(trading):
-            close = 5000 + point
-            benchmarks.append(("000905.SH", day, close, close + 1, close - 1, close, 10_000_000, 1e9))
-        client.conn.executemany(
-            "INSERT INTO daily_bar(code,trade_date,open,high,low,close,pre_close,volume,amount,"
-            "adj_factor,adj_factor_clean,turnover_rate,is_suspended,limit_status,is_one_word) "
-            "VALUES (?,?,?,?,?,?,?,?,?,1,1,1,FALSE,0,FALSE)", bars,
-        )
-        client.conn.executemany(
-            "INSERT INTO daily_metrics(code,trade_date,float_mv,total_mv) VALUES (?,?,?,?)", metrics,
-        )
-        client.conn.executemany(
-            "INSERT INTO index_bar(index_code,trade_date,open,high,low,close,volume,amount) "
-            "VALUES (?,?,?,?,?,?,?,?)", benchmarks,
-        )
-        seed_non_st_daily(
-            client, ((code, day) for code in codes for day in trading), source="e2e-backtest",
-        )
-    return {"stocks": len(codes), "trading_days": len(trading), "bars": len(bars)}
+    return seed_isolated_ci_market(
+        client, suite="e2e-backtest", end=shanghai_now_naive().date() - timedelta(days=1),
+        stock_name_prefix="E2E回测股票",
+    )
 
 
 def _assert_pg_target(pg: PostgresClient, expected_pg_fingerprint: str) -> None:

@@ -22,6 +22,7 @@ RUNNERS = {
     "correlation": "scripts/run-stock-board-correlation-e2e.sh",
     "trade": "scripts/run-trade-discipline-e2e.sh",
     "backtest": "scripts/run-playwright.sh",
+    "stocks": "scripts/run-playwright.sh",
 }
 
 
@@ -226,6 +227,19 @@ def run_e2e(suite: str) -> int:
                          ("from backend.devtools.e2e_backtest_runs import seed_ci_market; "
                           "from backend.storage.duckdb_client import get_client; "
                           "print(seed_ci_market(get_client()))")],
+                        cwd=ROOT, env=env, check=True, timeout=120,
+                    )
+                elif profile["runner"] == "stocks":
+                    # 复用公开回测的空库行情协议，另备齐页面可选基准；偏好仍写正式 PG。
+                    subprocess.run(
+                        [sys.executable, "-c",
+                         ("from datetime import timedelta; "
+                          "from backend.common.timeutil import shanghai_now_naive; "
+                          "from backend.devtools.e2e_market_data import seed_ci_market; "
+                          "from backend.storage.duckdb_client import get_client; "
+                          "print(seed_ci_market(get_client(), suite='e2e-stocks', "
+                          "end=shanghai_now_naive().date()-timedelta(days=1), "
+                          "benchmark_codes=('000905.SH','000300.SH')))")],
                         cwd=ROOT, env=env, check=True, timeout=120,
                     )
                 service_command(env=env)
