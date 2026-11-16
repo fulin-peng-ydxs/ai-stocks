@@ -82,6 +82,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-ci.lock
       - name: Install locked result validation dependencies
+        if: needs.plan.result == 'success' && contains(fromJSON(needs.plan.outputs.matrix).include.*.kind, 'audit')
         run: python3 -m pip install --require-hashes -r requirements-ci.lock
       - name: Collect plan and actual suite evidence
         uses: actions/download-artifact@v4

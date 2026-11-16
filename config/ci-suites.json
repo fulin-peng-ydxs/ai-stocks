@@ -68,8 +68,9 @@
         "frontend/src/stores/auth.ts",
         "frontend/src/components/SideMenu*",
         "frontend/src/components/WorkspaceTabs.vue",
-        "frontend/src/components/PageDrawer.vue",
-        "backend/api/stocks.py"
+        "backend/api/stocks.py",
+        "frontend/src/api/menu.ts",
+        "backend/api/menus.py"
       ],
       "e2e": {
         "runner": "shell",
@@ -105,10 +106,11 @@
         "frontend/src/components/stock-chart/*",
         "frontend/src/components/data/BoardTaskScopeFields.vue",
         "backend/api/sectors.py",
-        "frontend/src/components/PageDrawer.vue",
         "backend/api/data_admin.py",
         "backend/scheduler/*",
-        "frontend/e2e/helpers/sectorData.ts"
+        "frontend/e2e/helpers/sectorData.ts",
+        "frontend/src/api/data.ts",
+        "backend/api/data_tasks.py"
       ],
       "e2e": {
         "runner": "sectors",
@@ -138,9 +140,12 @@
         "frontend/src/components/asset-search/*",
         "backend/api/stocks.py",
         "backend/api/board.py",
-        "frontend/src/components/PageDrawer.vue",
         "frontend/e2e/stock-board-correlation-t9.spec.ts",
-        "frontend/e2e/helpers/stockBoardCorrelation.ts"
+        "frontend/e2e/helpers/stockBoardCorrelation.ts",
+        "frontend/src/api/data.ts",
+        "backend/api/data_tasks.py",
+        "frontend/src/api/screening.ts",
+        "backend/api/profiles.py"
       ],
       "e2e": {
         "runner": "correlation",
@@ -173,8 +178,8 @@
         "frontend/src/api/tradeLedger.ts",
         "frontend/src/utils/tradeLedgerRecord.ts",
         "frontend/src/utils/tradeNumeric.ts",
-        "frontend/src/components/PageDrawer.vue",
-        "frontend/e2e/helpers/tradeDiscipline.ts"
+        "frontend/e2e/helpers/tradeDiscipline.ts",
+        "backend/api/trade_discipline.py"
       ],
       "e2e": {
         "runner": "trade",
@@ -203,8 +208,13 @@
         "frontend/src/components/asset-search/*",
         "backend/api/backtest.py",
         "backend/devtools/e2e_market_data.py",
-        "frontend/src/components/PageDrawer.vue",
-        "frontend/e2e/helpers/backtestRuns.ts"
+        "frontend/e2e/helpers/backtestRuns.ts",
+        "frontend/src/api/screening.ts",
+        "backend/api/profiles.py",
+        "frontend/src/api/scoreProfile.ts",
+        "frontend/src/api/tradeProfile.ts",
+        "backend/api/score_profiles.py",
+        "backend/api/trade_profiles.py"
       ],
       "e2e": {
         "runner": "backtest",
@@ -223,7 +233,8 @@
         "frontend/src/components/asset-search/*",
         "frontend/src/views/ScreenView.vue",
         "backend/api/profiles.py",
-        "frontend/e2e/asset-search-drawer.spec.ts"
+        "frontend/e2e/asset-search-drawer.spec.ts",
+        "frontend/src/api/screening.ts"
       ],
       "e2e": {
         "runner": "shell",
@@ -259,8 +270,14 @@
       "impact_paths": [
         "frontend/src/views/system/RoleManageView.vue",
         "frontend/src/views/system/MenuResourceView.vue",
-        "backend/auth/*",
-        "frontend/e2e/role-permission-tree-accessibility.spec.ts"
+        "frontend/e2e/role-permission-tree-accessibility.spec.ts",
+        "frontend/src/views/system/PermissionTree.vue",
+        "frontend/src/views/system/permissionTree.ts",
+        "frontend/src/api/role.ts",
+        "frontend/src/api/menu.ts",
+        "backend/api/roles.py",
+        "backend/api/menus.py",
+        "backend/api/resources.py"
       ],
       "e2e": {
         "runner": "shell",
@@ -281,7 +298,9 @@
         "backend/scheduler/*",
         "frontend/e2e/quality-repair-schedule.spec.ts",
         "frontend/e2e/schedule-dependency.spec.ts",
-        "frontend/e2e/schedule-frequency-sort.spec.ts"
+        "frontend/e2e/schedule-frequency-sort.spec.ts",
+        "frontend/src/api/data.ts",
+        "backend/api/data_tasks.py"
       ],
       "e2e": {
         "runner": "shell",
@@ -301,7 +320,9 @@
         "frontend/src/views/data/taskLogs.ts",
         "backend/api/data_admin.py",
         "frontend/e2e/stock-ingest-management.spec.ts",
-        "frontend/e2e/task-center-polling.spec.ts"
+        "frontend/e2e/task-center-polling.spec.ts",
+        "frontend/src/api/data.ts",
+        "backend/api/data_tasks.py"
       ],
       "e2e": {
         "runner": "shell",
@@ -541,11 +562,11 @@
     },
     "frontend/e2e/trade-discipline-history.spec.ts": {
       "suite": "e2e-trade-ui",
-      "reason": "迁移到账户日结和不可变修订接口结构；固定材料只证明页面接线，真实账本由e2e-trade验证"
+      "reason": "账户日结和不可变修订接口结构；固定材料只证明页面接线，真实账本由e2e-trade验证"
     },
     "frontend/e2e/trade-discipline-quick-card.spec.ts": {
       "suite": "e2e-trade-ui",
-      "reason": "迁移到账户日结和不可变修订接口结构；固定材料只证明页面接线，真实账本由e2e-trade验证"
+      "reason": "账户日结和不可变修订接口结构；固定材料只证明页面接线，真实账本由e2e-trade验证"
     }
   },
   "special_nodes": {
@@ -601,6 +622,29 @@
     "backend/devtools/backend_runtime_state.py",
     "scripts/load-local-env.sh",
     "start.sh",
-    "config/ci-suites.json"
-  ]
+    "config/ci-suites.json",
+    "frontend/src/components/App*.vue",
+    "frontend/src/styles/*",
+    "frontend/src/directives/*",
+    "backend/auth/*",
+    "backend/api/auth.py",
+    "frontend/src/components/PageDrawer.vue"
+  ],
+  "markdown_only": {
+    "suites": [
+      "secrets",
+      "quality"
+    ],
+    "full_ci_paths": [
+      "AGENTS.md",
+      "CLAUDE.md",
+      "README.md",
+      "DESIGN.md",
+      "agent-works/configurable-layout-system/page-template.md",
+      "agent-works/configurable-layout-system/responsive-components.md",
+      "agent-works/configurable-layout-system/responsive-pages.md",
+      "agent-works/testing/guide.md",
+      "agent-works/e2e-automation/guide.md"
+    ]
+  }
 }

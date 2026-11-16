@@ -122,6 +122,17 @@ def registry() -> dict:
             entry["suite"] == name for entry in data["special_files"].values()
         ):
             raise ValueError(f"E2E 专项缺少用例登记：{name}")
+    markdown = data.get("markdown_only")
+    if markdown is not None:
+        if not isinstance(markdown, dict):
+            raise ValueError("Markdown 轻量策略必须为对象")
+        names = markdown.get("suites", [])
+        if (not isinstance(names, list) or any(not isinstance(name, str) for name in names)
+                or len(names) != len(set(names))
+                or {suites.get(name, {}).get("kind") for name in names} != {"quality", "secrets"}
+                or any(not suites[name]["common"] for name in names)):
+            raise ValueError("Markdown 轻量集合必须保留常用质量与密钥检查")
+        validate_impact_paths("Markdown 完整验证输入", markdown.get("full_ci_paths"))
     return data
 
 
@@ -129,6 +140,16 @@ def suite_impact_paths(data: dict, entry: dict) -> list[str]:
     """新增浏览器组自动继承共享装配规则，领域路径只在本组维护。"""
     shared = data.get("e2e_impact_paths", []) if entry["kind"] == "e2e" else []
     return list(dict.fromkeys([*shared, *entry.get("impact_paths", [])]))
+
+
+def markdown_only(paths: set[str] | None, data: dict) -> bool:
+    """仅对已知非空的纯说明变更减量；程序输入、符号链接和未知范围保持完整检查。"""
+    policy = data.get("markdown_only")
+    return bool(policy and paths) and all(
+        path.endswith(".md") and not (ROOT / path).is_symlink()
+        and not any(fnmatch.fnmatch(path, pattern) for pattern in policy["full_ci_paths"])
+        for path in paths
+    )
 
 
 def plan(suite: str = "common", base: str | None = None, head: str | None = None) -> dict:
@@ -173,12 +194,20 @@ def inventory() -> str:
     for category in ("special_files", "special_nodes"):
         for name, entry in data[category].items():
             lines.append(f"| `{name}` | `{entry['suite']}` | {entry['reason']} |")
-    lines += ["", "| 专项 | 变更命中路径 | 执行方式 |", "| --- | --- | --- |"]
+    shared = "、".join(f"`{path}`" for path in data.get("e2e_impact_paths", []))
+    lines += ["", f"所有浏览器组共同继承的触发路径：{shared}。", "",
+              "| 专项 | 本组追加路径 | 执行方式 |", "| --- | --- | --- |"]
     for name, entry in data["suites"].items():
-        patterns = suite_impact_paths(data, entry)
+        patterns = entry.get("impact_paths", [])
         if patterns:
             paths = "、".join(f"`{path}`" for path in patterns)
             lines.append(f"| `{name}` | {paths} | `run change` 按命中调用；`run {name}` 显式执行 |")
+    if data.get("markdown_only"):
+        policy = data["markdown_only"]
+        names = "、".join(f"`{name}`" for name in policy["suites"])
+        protected = "、".join(f"`{path}`" for path in policy["full_ci_paths"])
+        lines += ["", f"纯 Markdown 的轻量集合：{names}；仍执行登记、文档生成块和依赖锁校验。",
+                  f"必须保留完整检查的 Markdown 输入：{protected}。"]
     return "\n".join(lines)
 
 
@@ -203,15 +232,21 @@ def assess(base: str | None = None, head: str | None = None) -> dict:
                 "required_parameters": {"scale_stocks": {"minimum": 100, "maximum": 5000}}
                 if name == "backend-scale" else {},
             })
+    manual = [
+        {"file": path, "reason": entry["reason"], "review_status": entry["review_status"],
+         "impact_paths": entry.get("impact_paths", [])}
+        for path, entry in data["special_files"].items() if entry["suite"] == "manual-e2e"
+    ]
+    # 已登记的专项/人工要求优先于扩展名，不能以 Markdown 分类吞掉必要检查。
+    manual_hit = any(entry["file"] in (paths or set()) or any(
+        fnmatch.fnmatch(path, pattern) for path in paths or [] for pattern in entry["impact_paths"]
+    ) for entry in manual)
     return {
         "range": selected, "scope": "known" if paths is not None else "review-required",
+        "profile": "markdown" if markdown_only(paths, data) and not required and not manual_hit else "standard",
         "changed_paths": sorted(paths) if paths is not None else None,
         "required_specials": required,
-        "not_integrated_e2e": [
-            {"file": path, "reason": entry["reason"], "review_status": entry["review_status"],
-             "impact_paths": entry.get("impact_paths", [])}
-            for path, entry in data["special_files"].items() if entry["suite"] == "manual-e2e"
-        ],
+        "not_integrated_e2e": manual,
         "note": "这是必跑计划，不是通过证据；命中专项须实际执行并核对其报告，未编码语义仍须审查。",
     }
 

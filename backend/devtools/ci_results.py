@@ -56,7 +56,9 @@ def change_matrix(base: str | None = None, head: str | None = None) -> dict:
     data = ci.registry()
     assessment = ci.assess(base, head)
     selected = assessment["range"] or (None, None)
-    items = ci.plan("common", *selected)["include"]
+    items = ([{"suite": name, "kind": data["suites"][name]["kind"]}
+              for name in data["markdown_only"]["suites"]]
+             if assessment["profile"] == "markdown" else ci.plan("common", *selected)["include"])
     for required in assessment["required_specials"]:
         name = required["suite"]
         entry = {"suite": name, "kind": data["suites"][name]["kind"]}
@@ -84,6 +86,7 @@ def execution_plan(suite: str, base: str | None = None, head: str | None = None,
     )]
     return {
         "schema": 1, "mode": suite, "source": source_identity(),
+        "profile": assessment["profile"] if suite == "change" else "standard",
         "range": list(assessment["range"]) if assessment["range"] else None,
         "include": items, "required_specials": assessment["required_specials"],
         "not_integrated_e2e": assessment["not_integrated_e2e"],
@@ -234,11 +237,13 @@ def reconcile(plan: dict, directory: Path) -> dict:
         raise ValueError("验收计划存在重复或错误执行器")
     if plan["mode"] == "change":
         expected = execution_plan("change", *(plan["range"] or (None, None)))
-        if any(plan[key] != expected[key] for key in (
-            "include", "pending_checks", "required_specials", "source", "scope",
+        if any(plan.get(key) != expected[key] for key in (
+            "include", "pending_checks", "required_specials", "source", "scope", "profile",
         )):
             raise ValueError("验收计划已漂移或遗漏必跑项，须重新规划")
     else:
+        if plan.get("profile") != "standard":
+            raise ValueError("显式套件不能使用 Markdown 轻量计划")
         expected = ci.plan(plan["mode"], *(plan["range"] or (None, None)))["include"]
         names = {item["suite"] for item in plan["include"]}
         if not {item["suite"] for item in expected}.issubset(names) or any(
@@ -271,11 +276,13 @@ def reconcile(plan: dict, directory: Path) -> dict:
     passed = bool(rows) and all(r["status"] == "passed" for r in rows) and not pending
     if plan["mode"] == "change" and plan["scope"] != "known":
         passed = False
-    result = {"schema": 1, "mode": plan["mode"], "source": plan["source"],
+    result = {"schema": 1, "mode": plan["mode"], "source": plan["source"], "profile": plan["profile"],
               "status": "passed" if passed else "not-completed", "checks": rows,
               "pending_checks": pending, "not_integrated_e2e": plan["not_integrated_e2e"]}
     save_json(directory / "ci-result.json", result)
     summary = [f"CI {plan['mode']}：{'通过' if passed else '未完成'}", "",
+               "范围：纯 Markdown 轻量检查，不代表业务回归。" if plan["profile"] == "markdown"
+               else "范围：所选常用/专项检查。", "",
                "| 必跑检查 | 实际结果 |", "| --- | --- |"]
     labels = {"passed": "通过", "failed": "失败", "not-executed": "未执行"}
     summary += [f"| {row['suite']} | {labels[row['status']]} |" for row in rows]

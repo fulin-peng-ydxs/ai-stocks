@@ -149,22 +149,40 @@ def test_stock_catalog_endpoints_override_sdk_timeout_and_share_request_gate(mon
     assert gates == [(group, 0.5), (group, 0.5)]
 
 
-def test_shared_limiter_allows_overlap_but_keeps_aggregate_start_interval():
-    cache = _Redis()
-    starts, tracker = [], threading.Lock()
+@pytest.mark.parametrize("delay_first_return", [False, True])
+def test_shared_limiter_allows_overlap_but_keeps_aggregate_start_interval(delay_first_return):
+    # 与跨进程治理回归相同，观察原子准入时刻；准入后的线程调度不能反推频率。
+    starts, admission_lock = [], threading.Lock()
+    second_admission = threading.Event()
+
+    class RecordingRedis(_Redis):
+        def eval(self, script, keys, key, interval):
+            with admission_lock:
+                wait_ms = super().eval(script, keys, key, interval)
+                first = False
+                if wait_ms <= 0:
+                    starts.append(float(self.values[key]))
+                    first = len(starts) == 1
+                    if len(starts) == 2:
+                        second_admission.set()
+            # 确定性复现拿到额度后被调度延迟，不能因此误判共享准入过快。
+            if delay_first_return and first:
+                assert second_admission.wait(5), "首个请求等待时其它请求未能准入"
+            return wait_ms
+
+    cache = RecordingRedis()
     policy = rp.RequestPolicy(50, 1, 1, 0)
+    waiting_requests = threading.Barrier(4, timeout=5)
 
     def worker(_):
         rp.wait_for_source("sina", policy, client=cache)
-        with tracker:
-            starts.append(time.monotonic())
-        time.sleep(0.04)
+        # 每批四个请求都进入等待才完成，直接证明等待可重叠，不用主机耗时猜测。
+        waiting_requests.wait()
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         list(pool.map(worker, range(12)))
     assert len(starts) == 12
-    assert all(b - a >= 0.018 for a, b in itertools.pairwise(starts))
-    assert starts[-1] - starts[0] < 0.45  # HTTP等待没有串行叠加
+    assert all(b - a >= 1 / policy.rate for a, b in itertools.pairwise(starts))
 
 
 def test_baostock_adapter_serializes_probe_and_collection_even_without_caller_lock(monkeypatch):

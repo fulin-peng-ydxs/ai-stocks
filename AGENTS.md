@@ -98,7 +98,7 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 
 - 路由层保持薄封装，复杂业务放 `services/` 或领域模块；测试文件使用 `test_*.py`。
 - 前端使用 Vue 3 Composition API + TypeScript，组件 PascalCase；API 封装在 `frontend/src/api/*.ts`，布局逻辑在 `frontend/src/layout/`。
-- 新增或修改业务行为、技术契约及检查规则时，同步受影响的测试、持续 CI 接入和所属事实文档；复用已有覆盖须说明其实际覆盖本次变化，缺失的必要验证不能以常用 CI 通过代替。验证选择遵循[开发验证规范](agent-works/testing/guide.md#验证选择与完成条件)，测试发现、专项归属、登记和文档同步按[CI 接入流程](agent-works/architecture/continuous-integration.md#接入扩展与变更影响)完成。
+- 行为、契约或检查规则变化时，按[开发验证规范](agent-works/testing/guide.md#验证选择与完成条件)同步测试及领域文档，按[CI 接入流程](agent-works/architecture/continuous-integration.md#接入扩展与变更影响)维护自动发现、专项归属和实际执行证据。
 
 ## 协作与提交
 

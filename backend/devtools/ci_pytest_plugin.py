@@ -9,6 +9,7 @@ import pytest
 from backend.devtools.ci import ROOT, registry
 from backend.devtools.database_gate_plugin import (  # noqa: F401
     pytest_deselected,
+    pytest_runtest_logreport,
     pytest_sessionfinish,
 )
 

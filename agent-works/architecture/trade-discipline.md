@@ -224,9 +224,7 @@ npm test -- --run src/views/__tests__/TradeDisciplineView.spec.ts \
   src/components/trade-discipline/__tests__/TradeDisciplineQuickCard.spec.ts
 ```
 
-验证优先使用领域、真实 PG 服务/API 及定向 Vitest；页面实测按受影响范围完成。当前账户/成交/日结 Playwright 已复用既有隔离入口 `scripts/run-ci.sh run e2e-trade`；覆盖、项目选择、实际报告及持续接入唯一维护在[CI 专题](continuous-integration.md#机制隔离浏览器专项与既有-runner-复用)，物理夹具和默认账户保护见 [E2E 指南](../e2e-automation/guide.md#夹具与服务保护)。一般改动仍按风险选择最小路径，不默认运行整组或完整构建。
-
-确定性夹具仅使用 `debug_tenant` 下固定调试账号、`e2e_td_`/`E2E纪律-`/`E2E类型-` 前缀、DuckDB `9988*.SZ` 和 2098 年专属日期。seed/cleanup 必须在后端停服时执行，并校验 `/api/health/e2e` 与直连 PG 指纹一致。
+日常验证使用上述定向测试及 [E2E 指南](../e2e-automation/guide.md#按范围选入口)中的原生交易纪律 runner；物理夹具、默认账户保护和服务恢复只维护在该指南。正式隔离验收使用 `scripts/run-ci.sh run e2e-trade`；固定项目、报告及自动接入见 [CI 专题](continuous-integration.md#机制隔离浏览器专项与既有-runner-复用)。
 
 ## 风险事项
 

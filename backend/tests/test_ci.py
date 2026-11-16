@@ -45,6 +45,8 @@ def test_new_suite_automatically_enters_common_and_document(monkeypatch, tmp_pat
 
 def test_empty_common_set_fails(monkeypatch, tmp_path):
     data = ci.registry()
+    # 本例单独验证空常用集合；轻量策略对常用套件的依赖另有专属负例。
+    data.pop("markdown_only", None)
     for suite in data["suites"].values():
         suite["common"] = False
     source = tmp_path / "ci.json"
@@ -151,7 +153,7 @@ def test_new_test_automatically_collected_and_special_routed():
     assert config._ci_routed == ["test.py::large"]
 
 
-@pytest.mark.parametrize("mode", ["pass", "failure", "skip", "deselect"])
+@pytest.mark.parametrize("mode", ["pass", "failure", "skip", "deselect", "failure-then-abort"])
 def test_real_pytest_discovers_new_nested_tests_and_enforces_ci_result(tmp_path, mode):
     """真实运行新增深层文件；专项在导入前隔离，普通失败/跳过/筛选均不能变绿。"""
     root = tmp_path / "project"
@@ -160,6 +162,7 @@ def test_real_pytest_discovers_new_nested_tests_and_enforces_ci_result(tmp_path,
     outcome = {
         "pass": "assert 2 + 2 == 4",
         "failure": "assert False, 'new business regression'",
+        "failure-then-abort": "assert False, 'failure before process abort'",
         "skip": "pytest.skip('unregistered skip')",
         "deselect": "assert 2 + 2 == 4",
     }[mode]
@@ -168,10 +171,13 @@ def test_real_pytest_discovers_new_nested_tests_and_enforces_ci_result(tmp_path,
         "def test_first(): assert 1 + 1 == 2\n"
         f"def test_new_behavior(): {outcome}\n"
         "def test_scale_only(): raise AssertionError('must be routed to scale')\n"
+        + ("def test_abort():\n    import os\n    os._exit(17)\n" if mode == "failure-then-abort" else "")
     )
     manual = root / "backend/tests/test_manual.py"
     manual.write_text("raise RuntimeError('manual fixture must not be imported by common CI')\n")
     data = ci.registry()
+    # 独立 Python 收集夹具不含仓库 Markdown 输入，不能继承主仓的文档路径契约。
+    data.pop("markdown_only", None)
     data["special_files"] = {
         "backend/tests/test_manual.py": {"suite": "manual-market", "reason": "fixture boundary"}
     }
@@ -207,6 +213,11 @@ def test_real_pytest_discovers_new_nested_tests_and_enforces_ci_result(tmp_path,
         cwd=root, env=env, capture_output=True, text=True, timeout=30, check=False,
     )
     assert (result.returncode == 0) is (mode == "pass"), result.stdout + result.stderr
+    if mode == "failure-then-abort":
+        assert result.returncode == 17 and not report.exists()
+        assert "CI pytest call 失败：" in result.stdout
+        assert "AssertionError: failure before process abort" in result.stdout
+        return
     assert report.is_file(), result.stdout + result.stderr
     if mode != "deselect":
         from xml.etree import ElementTree
