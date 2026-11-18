@@ -142,7 +142,7 @@ function subtypeIsMissing(item: DraftActionRule, side: ActionType): boolean {
 }
 
 function stockCapitalMeta(item: DraftStockRule): string {
-  return item.max_capital ? `上限 · ${formatMoney(item.max_capital)} 元` : '未设置资金上限'
+  return item.max_capital ? `资金上限 · ${formatMoney(item.max_capital)} 元` : '未设置资金上限'
 }
 
 function cardTitle(item: DraftStockRule | DraftActionRule, fallback: string): string {
@@ -648,10 +648,10 @@ defineExpose({
             <el-input-number :model-value="form.max_positions ?? undefined" :min="1" :max="2147483647" :step="1" :controls="false" placeholder="不限" data-testid="rule-max-positions" @update:model-value="form.max_positions = $event ?? null" />
             <AppFormHelp>本套规则同时持有的不同股票数量上限，留空不限。</AppFormHelp>
           </el-form-item>
-          <el-form-item label="资金分配">
+          <el-form-item label="资金上限汇总">
             <div class="capital-meter app-surface app-surface--inset app-surface--transparent" :class="{ danger: capitalExceeded, 'app-surface--danger-border': capitalExceeded, 'app-surface--success-border': !capitalExceeded }">
-              <span>启用规则已分配 {{ allocatedCapitalText }}</span>
-              <strong>剩余 {{ remainingCapitalText }}</strong>
+              <span>启用规则资金上限合计 {{ allocatedCapitalText }}</span>
+              <strong>本金剩余额度 {{ remainingCapitalText }}</strong>
             </div>
           </el-form-item>
         </div>

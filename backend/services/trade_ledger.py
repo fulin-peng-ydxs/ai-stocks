@@ -229,7 +229,7 @@ def calculate_day(
                          and (stock_rule_ids is None or p.get("stock_rule_id") in stock_rule_ids)
                          and p.get("stock_rule_id") not in stock_rules}
             if unmatched:
-                warnings.append("财报月份前月持仓分组无法匹配有效资金分配，半仓限制待核对")
+                warnings.append("财报月份前月持仓分组无法匹配有效资金上限，半仓限制待核对")
         for stock_rule in stock_rules.values():
             sid = stock_rule["detail_id"]
             if stock_rule_ids is not None and sid not in stock_rule_ids:
@@ -239,7 +239,7 @@ def calculate_day(
                 if half_capital and any(p.get("rule_id") == rule["rule_id"]
                                        and p.get("stock_rule_id") == sid
                                        and Decimal(p["quantity"]) > 0 for p in positions):
-                    warnings.append(f"{stock_rule['name']}缺少有效资金分配，半仓限制待核对")
+                    warnings.append(f"{stock_rule['name']}缺少有效资金上限，半仓限制待核对")
                 continue
             value = cost_for(rule["rule_id"], sid)
             if value is None:
@@ -247,7 +247,7 @@ def calculate_day(
             elif half_capital and value * 2 > Decimal(str(maximum)):
                 # 比较时不把一半预算四舍五入到分，避免奇数分预算被多放行半分。
                 issues.append(f"{stock_rule['name']}持仓成本{money(value)}元，"
-                              f"超过财报月份前月资金上限（分配资金{maximum}元的50%）")
+                              f"超过财报月份前月持仓成本限额（资金上限{maximum}元的50%）")
             elif not half_capital and value > Decimal(str(maximum)):
                 issues.append(f"{stock_rule['name']}持仓成本{money(value)}元，超过资金上限")
         return issues, warnings

@@ -212,4 +212,4 @@ export function holdingCountWarning(limit?: number | null, actual?: number | nul
 }
 
 /** 规则编辑、当日核对和历史快照共用同一条财报月份限制说明。 */
-export const financialReportMonthRestrictionText = '3、7、9月，各选股规则持仓成本不超过其分配资金的50%，并在该月最后一个交易日结束前清仓；4、8、10月保持空仓。'
+export const financialReportMonthRestrictionText = '3、7、9月，各选股规则的持仓成本合计（含买入费用）不得超过该规则资金上限的50%，比例固定；按期初及每笔增加持仓的成交或调整核对，日内超限后减仓仍保留超限记录。各规则独立核对，不共用额度；该月最后一个交易日结束前清仓，4、8、10月保持空仓。'

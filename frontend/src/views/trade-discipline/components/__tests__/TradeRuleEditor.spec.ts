@@ -504,7 +504,7 @@ describe('TradeRuleEditor', () => {
     })
     const wrapper = await mountEditor()
 
-    expect(wrapper.text()).toContain('剩余 0.00')
+    expect(wrapper.text()).toContain('本金剩余额度 0.00')
     await field(wrapper, '规则名称').get('input').setValue('小额精度验证')
     await wrapper.get('.rule-editor__footer .el-button:last-child').trigger('click')
     await flushPromises()
@@ -525,10 +525,10 @@ describe('TradeRuleEditor', () => {
 
     expect(field(wrapper, '总本金').get('input').element.value)
       .toBe('999,999,999,999,999,999.99')
-    expect(wrapper.text()).toContain('剩余 0.01')
+    expect(wrapper.text()).toContain('本金剩余额度 0.01')
     await wrapper.get('[data-testid="stock-rule-card"]')
       .get('[data-testid="rule-card-toggle"]').trigger('click')
-    await field(wrapper, '资金上限').get('input').setValue('9007199254740992.01')
+    await field(wrapper, '资金上限（元）').get('input').setValue('9007199254740992.01')
     await wrapper.get('.rule-editor__footer .el-button:nth-last-child(2)').trigger('click')
     await flushPromises()
 
@@ -560,7 +560,7 @@ describe('TradeRuleEditor', () => {
     const wrapper = await mountEditor()
 
     expect(wrapper.findAll('[data-testid="rule-card-editor"]')).toHaveLength(0)
-    expect(wrapper.text()).toContain('上限 · 40,000.00 元')
+    expect(wrapper.text()).toContain('资金上限 · 40,000.00 元')
     expect(wrapper.text()).toContain('第一行')
     expect(wrapper.text()).toContain('第二行')
     expect(wrapper.text()).toContain('建仓')
