@@ -1,5 +1,7 @@
 # 执行计划：布局配置产品化（收尾 + 新增）
 
+归档状态：已归档
+
 > 需求：[requirement.md](./requirement.md)。
 > 承接 [configurable-layout-system/plan.md](../configurable-layout-system/plan.md)。
 > 阶段编号沿用 `P9~P16`，表明这是同一布局模块的续作。

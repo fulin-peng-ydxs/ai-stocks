@@ -1,5 +1,7 @@
 # 开发计划
 
+归档状态：已归档
+
 ## 1. 需求来源与目标
 
 - 需求文档：`agent-works/multi-tenant-rbac/requirement.md`

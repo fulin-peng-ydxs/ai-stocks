@@ -1,5 +1,7 @@
 # 开发计划 · 资产归属重构（asset-ownership-refactor）
 
+归档状态：已归档
+
 ## 1. 需求来源与目标
 - 需求文档：[requirement.md](./requirement.md)（R3–R14，含 §0 上游确认 C1–C9）
 - 原型：[prototypes/public-asset-search-drawer.html](./prototypes/public-asset-search-drawer.html)

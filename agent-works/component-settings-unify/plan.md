@@ -1,5 +1,7 @@
 # 组件特性渲染统一与折叠层级一致化
 
+归档状态：已归档
+
 > 入口规范：[DESIGN.md](../../DESIGN.md) §4/§5.2/§7.3/§7.4、[page-template.md](../configurable-layout-system/page-template.md)。
 > 触发**页面设计闭环**（改造既有「设置抽屉 / 页面布局编辑器」的组件特性渲染与折叠交互）。
 

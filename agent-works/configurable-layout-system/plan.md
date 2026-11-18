@@ -1,5 +1,7 @@
 # 可配置 Web 布局系统开发计划
 
+归档状态：已归档
+
 > 对应需求文档：[requirement.md](./requirement.md)。
 > 目标：在现有 `frontend/src/layout/` 底座上，建设“组件化、自适应化、可配置化、AI 开发稳定化”的后台 Web 布局系统。
 

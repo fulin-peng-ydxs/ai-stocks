@@ -1,5 +1,7 @@
 # 开发计划：盘感训练
 
+归档状态：已归档
+
 ## 1. 需求来源与目标
 
 - **需求文档**：[requirement.md](agent-works/market-sense-training/requirement.md)

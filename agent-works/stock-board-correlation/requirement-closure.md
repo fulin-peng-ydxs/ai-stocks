@@ -1,5 +1,7 @@
 # 个股走势关联板块需求闭环
 
+归档状态：已归档
+
 > 确认日期：2026-08-27
 > 上游能力：[`concept-industry-board`](../concept-industry-board/requirement.md)
 > 状态：业务闭环已确认，可进入正式需求与开发计划阶段

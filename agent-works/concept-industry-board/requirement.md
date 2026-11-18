@@ -1,5 +1,7 @@
 # 需求文档:板块概念数据采集与展示
 
+归档状态：已归档
+
 > 需求文档版本：2026-08-14（同步页面、MACD、凭证安全与发布验收事实）
 > 上游闭环分析：[requirement-closure.md](requirement-closure.md)（已确认）
 > 数据源调研：[research.md](research.md)（同花顺主源）

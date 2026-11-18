@@ -1,5 +1,7 @@
 # 个股走势关联板块业务核查
 
+归档状态：已归档
+
 > 业务闭环分析快照（2026-09-02）：[`stock-board-correlation-closed-loop-flow.md`](stock-board-correlation-closed-loop-flow.md)；现行实现见 [走势关联架构](../architecture/stock-board-correlation.md)。
 
 ## 核查范围

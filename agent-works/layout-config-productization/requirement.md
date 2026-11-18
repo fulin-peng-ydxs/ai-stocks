@@ -1,5 +1,7 @@
 # 需求文档：布局配置产品化（收尾 + 新增）
 
+归档状态：已归档
+
 > 承接模块：[configurable-layout-system](../configurable-layout-system/requirement.md)。
 > 本文档处理两类事项：① 原模块完成定义之外、但布局系统需求仍要求的产品化能力；② 用户本轮新增的菜单归属、新页面闭环和治理收口诉求。
 > 设计索引：[DESIGN.md](../../DESIGN.md)。

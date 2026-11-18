@@ -1,5 +1,7 @@
 # 需求文档：连板天梯
 
+归档状态：已归档
+
 > 文档状态：已确认；R1～R19 已完成本地开发验收，R20～R31 保持既定范围状态
 >
 > 上游依据：`agent-works/limit-up-ladder/requirement-closure.md`

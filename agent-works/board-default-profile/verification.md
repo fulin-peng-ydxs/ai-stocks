@@ -1,5 +1,7 @@
 # 验证：榜单页「默认加载方案」
 
+归档状态：已归档
+
 > 验证日期 2026-08-04。环境：后端 `127.0.0.1:8000` 运行中；前端 Vite 专用预览端口 `5181`；调试账号 `debug_board_only`（`debug_tenant`，角色 `debug_role_board_only`：仅 `board:view`，无 `score-profile:save`——无自己的评分方案且无复制权限，正好覆盖「无方案」前提）。
 
 ## 自动化
