@@ -121,6 +121,7 @@ class TradeLedgerService:
                 {**p, "available_quantity": p["quantity"]}
                 for p in (opening["positions"] if opening else account.get("opening_positions", []))
             ]
+            profits = self._cumulative_profits(shown_positions, trade_date, conn)
             return json_value({
                 "trade_date": trade_date, "account_revision": account["revision"],
                 "initialized_on": account["initialized_on"], "can_edit": can_edit,
@@ -130,7 +131,7 @@ class TradeLedgerService:
                 "stock_options": self._supplement_stock_options(snapshot, trade_date),
                 "opening_positions": [] if before_initialization else opening["positions"] if opening else account.get("opening_positions", []),
                 "opening_cash": None if before_initialization else opening["cash"] if opening else account.get("opening_cash"),
-                "positions": self._marked_positions(shown_positions, trade_date),
+                "positions": self._marked_positions(shown_positions, trade_date, profits),
                 "cash": None if before_initialization else snapshot["cash"] if snapshot else opening["cash"] if opening else account.get("opening_cash"),
             })
 
@@ -149,8 +150,38 @@ class TradeLedgerService:
                  "board": None, "industry": None, "is_st": statuses.get(code),
                  "st_as_of_date": trade_date.isoformat()} for code, item in selected.items()]
 
-    def _marked_positions(self, positions: list[dict], trade_date: date) -> list[dict]:
-        """估值只读目标日及更早未复权收盘价，缺行情保留数量并明确空值。"""
+    def _cumulative_profits(self, positions: list[dict], trade_date: date, conn) -> dict[str, Decimal | None]:
+        """复用正式成本分摊计算累计已实现盈亏，分红计入对应股票收益。"""
+        codes = sorted({p["stock_code"] for p in positions})
+        profits: dict[str, Decimal | None] = dict.fromkeys(codes, Decimal(0))
+        for day in self.repo.profit_history(trade_date, codes, conn):
+            grouped: dict[str, list[dict]] = {}
+            for event in day["events"]:
+                code = event.get("stock_code")
+                if code in profits:
+                    grouped.setdefault(code, []).append(event)
+            for code, events in grouped.items():
+                if profits[code] is None:
+                    continue
+                stock_events = [event for event in events if event.get("kind", "trade") != "cash"]
+                if any(event.get("kind", "trade") == "trade" and event["side"] == "sell"
+                       for event in stock_events):
+                    opening = [p for p in day["opening_positions"] if p["stock_code"] == code]
+                    realized = calculate_day(opening, stock_events, day["trade_date"])["realized_pnl"]
+                    if realized is None:
+                        profits[code] = None
+                        continue
+                    profits[code] += Decimal(realized)
+                profits[code] += sum((Decimal(event["amount"]) for event in events
+                                      if event.get("kind") == "cash"
+                                      and event.get("adjustment_type") == "dividend"), Decimal(0))
+        return profits
+
+    def _marked_positions(
+        self, positions: list[dict], trade_date: date,
+        profits: dict[str, Decimal | None],
+    ) -> list[dict]:
+        """持仓按股票汇总，累计盈亏包含历史卖出、分红及剩余持仓估值。"""
         codes = sorted({p["stock_code"] for p in positions})
         if not codes:
             return []
@@ -161,14 +192,33 @@ class TradeLedgerService:
             [trade_date, *codes],
         )
         quotes = {r["code"]: r for r in frame.to_dict("records")}
-        result = []
+        grouped: dict[str, dict] = {}
         for position in positions:
+            code = position["stock_code"]
+            if code not in grouped:
+                grouped[code] = {**position, "rule_ids": [position.get("rule_id")]}
+                continue
+            current = grouped[code]
+            for field in ("quantity", "available_quantity"):
+                current[field] = str(Decimal(current[field]) + Decimal(position[field]))
+            current["cost"] = None if current["cost"] is None or position.get("cost") is None else money(
+                Decimal(current["cost"]) + Decimal(position["cost"]),
+            )
+            if position.get("rule_id") not in current["rule_ids"]:
+                current["rule_ids"].append(position.get("rule_id"))
+            current["rule_id"] = None
+            current["stock_rule_id"] = None
+        result = []
+        for position in grouped.values():
             quote = quotes.get(position["stock_code"])
             value = None if quote is None else money(Decimal(str(quote["close"])) * Decimal(position["quantity"]))
             cost = position.get("cost")
+            unrealized = None if value is None or cost is None else Decimal(value) - Decimal(cost)
+            realized = profits.get(position["stock_code"])
             result.append({**position, "market_value": value,
                            "quote_date": None if quote is None else str(quote["trade_date"])[:10],
-                           "unrealized_pnl": None if value is None or cost is None else money(Decimal(value) - Decimal(cost))})
+                           "unrealized_pnl": None if unrealized is None else money(unrealized),
+                           "total_pnl": None if unrealized is None or realized is None else money(unrealized + realized)})
         return result
 
     def _prepare(self, payload: dict, trade_date: date, rules: list[dict], previous=None) -> tuple[list, list]:

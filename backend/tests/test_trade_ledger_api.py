@@ -46,6 +46,10 @@ def test_ledger_api_actual_record_and_private_read(client, pg, market, monkeypat
         assert submitted.json()["data"]["assessment"] == "breached"
         assert submitted.json()["data"]["positions"][0]["quantity"] == "103"
         assert submitted.json()["data"]["positions"][0]["cost"] == "1030.37"
+        market.execute("UPDATE daily_bar SET close=12 WHERE code='600000.SH'")
+        held = client.get("/api/trade-discipline/ledger", params={"trade_date": target}, headers=headers)
+        assert held.status_code == 200, held.text
+        assert held.json()["data"]["positions"][0]["total_pnl"] == "205.63"
         assert client.post("/api/trade-discipline/ledger/days", json=payload, headers=headers).json()["data"]["idempotent"]
         history = client.get("/api/trade-discipline/ledger/history", params={"assessment": "breached"}, headers=headers)
         assert history.json()["data"]["total"] == 1

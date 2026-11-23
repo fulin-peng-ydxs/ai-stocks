@@ -541,10 +541,11 @@ defineExpose({ isDirty: dirty, requestLeave, load, startAmend, reload: loadHisto
             <AppTableColumn prop="available_quantity" label="可卖数量" header-meta="股"><template #default="{ row }">{{ formatNumber(row.available_quantity, 'quantity') }}</template></AppTableColumn>
             <AppTableColumn label="总成本" header-meta="元" role="number"><template #default="{ row }">{{ row.cost == null ? '未录入' : formatMoney(row.cost) }}</template></AppTableColumn>
             <AppTableColumn label="市值" header-meta="元" role="number"><template #default="{ row }">{{ row.market_value == null ? '暂无行情' : formatMoney(row.market_value) }}</template></AppTableColumn>
-            <AppTableColumn label="浮动盈亏" header-meta="元" role="number"><template #default="{ row }"><span :class="marketValueClass(row.unrealized_pnl)">{{ row.unrealized_pnl == null ? '数据不完整' : formatMoney(row.unrealized_pnl, { forceSign: true }) }}</span></template></AppTableColumn>
+            <AppTableColumn label="累计盈亏" header-meta="元" role="number"><template #default="{ row }"><span :class="marketValueClass(row.total_pnl)">{{ row.total_pnl == null ? '数据不完整' : formatMoney(row.total_pnl, { forceSign: true }) }}</span></template></AppTableColumn>
             <AppTableColumn prop="quote_date" label="估值日期" />
-            <AppTableColumn label="所属规则" role="name"><template #default="{ row }">{{ ruleName(row.rule_id) }}</template></AppTableColumn>
+            <AppTableColumn label="所属规则" role="name"><template #default="{ row }">{{ (row.rule_ids ?? [row.rule_id]).map(ruleName).join('、') }}</template></AppTableColumn>
           </AppDataTable>
+          <p class="app-caption-text">累计盈亏包含账本起算以来该股票的买卖盈亏、已录费用和分红，以及剩余持仓按估值日期收盘价计算的盈亏。</p>
           <p class="app-caption-text">最近日结：{{ formatDateOnly(context?.latest_trade_date, '尚未提交') }} · 现金：{{ context?.cash == null ? '未录入' : formatMoney(context.cash) }}</p>
           <el-button @click="emit('request-checkin', context?.latest_trade_date || tradeDate)">前往打卡记录成交或调整</el-button>
         </template>

@@ -2,6 +2,10 @@ import http from './client'
 import type { CheckinAssessment, CheckinOperation, RuleVersionDetail, StockOption } from './tradeDiscipline'
 
 export interface LedgerPosition {
+  /** 仅账本展示持仓返回：历史已实现盈亏、现金分红与剩余持仓浮盈亏之和。 */
+  total_pnl?: string | null
+  /** 持仓展示按股票汇总，保留所有主记账规则；历史快照仍按原分组保存。 */
+  rule_ids?: (string | null)[]
   market_value?: string | null
   quote_date?: string | null
   unrealized_pnl?: string | null

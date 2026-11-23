@@ -1,6 +1,7 @@
 """真实交易账本：顺序、成本、幂等、归属和最新日修正回归。"""
 
 from datetime import date
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -776,7 +777,7 @@ def test_buy_and_sell_fees_are_allocated_once_to_cost_cash_and_profit():
 
     service = TradeLedgerService.__new__(TradeLedgerService)
     service.discipline = type("Discipline", (), {"market": Quotes()})()
-    marked = service._marked_positions(bought["positions"], DAY)
+    marked = service._marked_positions(bought["positions"], DAY, {"A": Decimal(0)})
     assert marked[0]["market_value"] == "1100.00"
     assert marked[0]["unrealized_pnl"] == "95.00"
     sold = calculate_day(bought["positions"], [event(side="sell", quantity="40", price="12", fee="2")],
@@ -785,7 +786,96 @@ def test_buy_and_sell_fees_are_allocated_once_to_cost_cash_and_profit():
     assert sold["realized_pnl"] == "76.00"  # 480 - 2 - 402（402中包含已分摊买入费用2元）
     assert sold["cash"] == "1473.00"
     assert sold["net_outflow"] == "-478.00"
-    marked = service._marked_positions(sold["positions"], DAY)
+    marked = service._marked_positions(sold["positions"], DAY, {"A": Decimal(sold["realized_pnl"])})
     assert marked[0]["market_value"] == "660.00"
     assert marked[0]["unrealized_pnl"] == "57.00"
+    assert marked[0]["total_pnl"] == "133.00"
     assert sold["realized_pnl"] == "76.00"
+
+
+def test_position_total_profit_includes_sales_and_only_current_valid_revisions(pg, market):
+    _seed_market(market)
+    code = "603706.SH"
+    market.execute("INSERT INTO stock_basic(code,name,board) VALUES (?,?,'主板')", [code, "东方环宇"])
+    fills = [(13, "buy", "100", "28.20"), (16, "buy", "100", "25.49"),
+             (17, "buy", "100", "22.48"), (18, "buy", "100", "20.92"),
+             (19, "sell", "300", "21.70")]
+    for day in (13, 16, 17, 18, 19, 20):
+        target = date(2026, 11, day)
+        market.execute("INSERT INTO trade_calendar(trade_date,is_open) VALUES (?,TRUE) "
+                       "ON CONFLICT DO NOTHING", [target])
+        close = "22.48" if day == 17 else "21.54"
+        market.execute("INSERT INTO daily_bar(code,trade_date,close) VALUES (?,?,?)", [code, target, close])
+    service = ledger(pg, market)
+    service.initialize(date(2026, 11, 13), [], None, 0)
+    last_fill = None
+    for day, side, quantity, price in fills:
+        target = date(2026, 11, day)
+        last_fill = event(code, side, kind="trade", quantity=quantity, price=price, fee="5",
+                          event_id=f"actual-{day}",
+                          operated_at=f"{target}T14:00:00+08:00")
+        service.submit(target, submit_payload(service.context(target), [last_fill]))
+    target = date(2026, 11, 19)
+    original = service.revisions(target, 1)["snapshot"]
+    position = service.context(date(2026, 11, 20))["positions"][0]
+    assert (position["quantity"], position["cost"], position["market_value"]) == ("100", "2432.25", "2154.00")
+    assert position["unrealized_pnl"] == "-278.25"
+    assert position["total_pnl"] == "-1070.00"
+    assert service.context(date(2026, 11, 17))["positions"][0]["total_pnl"] == "-888.00"
+    assert service.revisions(target, 1)["snapshot"] == original
+    # 同日修正只替换有效成交，旧修订不累加；手工金额也必须按实际交割金额记账。
+    revised = dict(last_fill, amount_mode="manual", amount="6540")
+    service.submit(target, submit_payload(service.context(target), [revised]))
+    assert service.context(target)["positions"][0]["total_pnl"] == "-1040.00"
+    assert ledger(pg, market, owner="other").context(target)["positions"] == []
+    other_tenant = TradeLedgerService(TradeLedgerRepository(pg, tenant_id="other", owner_user_id=TEST_OWNER), market)
+    assert other_tenant.context(target)["positions"] == []
+    service.withdraw(target, service.context(target)["account_revision"])
+    position = service.context(target)["positions"][0]
+    assert position["quantity"] == "400"
+    assert position["total_pnl"] == "-1113.00"
+    assert service.revisions(target, 1)["snapshot"] == original
+
+
+@pytest.mark.parametrize("known_cost", [True, False])
+def test_position_profit_includes_dividends_but_not_deposits_or_transfers(pg, market, known_cost):
+    dates = _seed_market(market)
+    service = ledger(pg, market)
+    context = service.initialize(dates[0], [{"stock_code": "600000.SH", "quantity": "100",
+                                          "cost_price": "10" if known_cost else None}], None, 0)
+    market.execute("UPDATE daily_bar SET close=12 WHERE code='600000.SH'")
+    events = [event("600000.SH", "sell", kind="trade", quantity="40", price="9", fee="2",
+                    operated_at=f"{dates[0]}T10:00:00+08:00"),
+              event("600000.SH", order=2, kind="cash", adjustment_type="dividend", amount="5", note="现金分红",
+                    operated_at=f"{dates[0]}T10:01:00+08:00"),
+              event(order=3, kind="cash", adjustment_type="deposit", amount="10000", note="入金",
+                    operated_at=f"{dates[0]}T10:02:00+08:00"),
+              event("600000.SH", order=4, kind="position", adjustment_type="transfer", side="sell",
+                    quantity="10", note="转出不算卖出收益", operated_at=f"{dates[0]}T10:03:00+08:00")]
+    service.submit(dates[0], submit_payload(context, events))
+    # 余仓50股浮盈100，卖出亏42，分红5；入金和转出不创造盈亏。
+    position = service.context(dates[1])["positions"][0]
+    assert position["total_pnl"] == ("63.00" if known_cost else None)
+
+
+def test_marked_positions_merge_stock_groups_without_double_counting_profit():
+    import pandas as pd
+
+    class Quotes:
+        def query_df(self, _sql, _params):
+            return pd.DataFrame([{"code": "A", "trade_date": DAY, "close": 12}])
+
+    service = TradeLedgerService.__new__(TradeLedgerService)
+    service.discipline = type("Discipline", (), {"market": Quotes()})()
+    positions = prepare_opening([
+        {"stock_code": "A", "quantity": "100", "cost": "1000", "rule_id": "r1"},
+        {"stock_code": "A", "quantity": "200", "cost": "2200", "rule_id": "r2"},
+    ])
+    marked = service._marked_positions(positions, DAY, {"A": Decimal(-500)})
+    assert len(marked) == 1
+    assert marked[0]["quantity"] == marked[0]["available_quantity"] == "300"
+    assert marked[0]["cost"] == "3200.00"
+    assert marked[0]["total_pnl"] == "-100.00"
+    assert marked[0]["rule_ids"] == ["r1", "r2"]
+    assert positions[0]["quantity"] == "100"  # 展示汇总不能改变原始分组账本。
+    assert service._marked_positions(positions, DAY, {})[0]["total_pnl"] is None

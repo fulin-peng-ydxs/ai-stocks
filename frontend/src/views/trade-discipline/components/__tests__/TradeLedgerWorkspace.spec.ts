@@ -296,11 +296,11 @@ describe('账户日结简化填报', () => {
       vi.useRealTimers()
     }
   })
-  it('浮动盈亏按正负展示金融颜色，零值和缺失值不套用盈亏色', async () => {
+  it('只展示累计盈亏并按正负着色，不误用剩余持仓浮盈亏', async () => {
     api.context.mockResolvedValue(context({ positions: [
       ...['45.00', '-45.00', '0.00', null].map((pnl, index) => ({ stock_code: `60000${index}.SH`,
         stock_name: `股票${index}`, quantity: '100', available_quantity: '100', cost: '1000',
-        market_value: '1000', unrealized_pnl: pnl, quote_date: '2026-10-23', rule_id: 'r', stock_rule_id: 's' })),
+        market_value: '1000', total_pnl: pnl, unrealized_pnl: '999.00', quote_date: '2026-10-23', rule_id: 'r', stock_rule_id: 's' })),
     ] }))
     const wrapper = mountWorkspace({ mode: 'positions' })
     try {
@@ -311,9 +311,25 @@ describe('账户日结简化填报', () => {
       expect(wrapper.findAll('.up, .down')).toHaveLength(2)
       const headers = wrapper.findAll('th.is-right')
       expect(headers.map(node => node.find('.app-table-column-header__label').text())).toEqual([
-        '数量', '可卖数量', '总成本', '市值', '浮动盈亏',
+        '数量', '可卖数量', '总成本', '市值', '累计盈亏',
       ])
+      expect(wrapper.text()).not.toContain('999.00')
+      expect(wrapper.text()).not.toContain('浮动盈亏')
       expect(headers.slice(2).map(node => node.find('.app-table-column-header__meta').text())).toEqual(['元', '元', '元'])
+    } finally { wrapper.unmount() }
+  })
+  it('累计亏损展示东方环宇完整买卖结果，合并持仓保留全部规则归属', async () => {
+    api.context.mockResolvedValue(context({ rules: [version, { ...version, rule_id: 'second', name: '分红纪律' }],
+      positions: [{ stock_code: '603706.SH', stock_name: '东方环宇', quantity: '100',
+        available_quantity: '100', cost: '2432.25', market_value: '2154.00',
+        unrealized_pnl: '-278.25', total_pnl: '-1070.00', quote_date: '2026-11-20',
+        rule_id: null, stock_rule_id: null, rule_ids: ['r', 'second'] }] }))
+    const wrapper = mountWorkspace({ mode: 'positions' })
+    try {
+      await flushPromises()
+      expect(wrapper.get('.down').text()).toBe('-1,070.00')
+      expect(wrapper.text()).not.toContain('-278.25')
+      expect(wrapper.text()).toContain('趋势纪律、分红纪律')
     } finally { wrapper.unmount() }
   })
   it.each(['cancel', 'success', 'failure', 'stale'] as const)('撤回确认使用统一弹窗，%s 分支不遗留抽屉或丢失失败反馈', async outcome => {

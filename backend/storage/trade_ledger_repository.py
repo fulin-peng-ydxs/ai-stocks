@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import date
 from typing import Any
 
@@ -58,6 +59,30 @@ class TradeLedgerRepository(TradeDisciplineRepository):
             )
             row = cur.fetchone()
             return self.day(row["trade_date"], conn) if row else None
+
+    def profit_history(self, trade_date: date, stock_codes: list[str], conn) -> Iterator[dict]:
+        """流式读取所选日以前涉及持仓股票卖出/分红的有效日结，不累加旧修订。"""
+        if not stock_codes:
+            return
+        with conn.cursor(name="trade_ledger_profit_history", row_factory=dict_row) as cur:
+            cur.execute(
+                "SELECT d.trade_date,r.snapshot->'opening_positions' AS opening_positions,"
+                "r.snapshot->'events' AS events "
+                "FROM trade_discipline_ledger_day d JOIN trade_discipline_ledger_revision r "
+                "ON r.tenant_id=d.tenant_id AND r.owner_user_id=d.owner_user_id "
+                "AND r.account_id=d.account_id AND r.trade_date=d.trade_date "
+                "AND r.revision_no=d.current_revision_no "
+                "WHERE d.tenant_id=%s AND d.owner_user_id=%s AND d.account_id=%s "
+                "AND NOT d.withdrawn AND d.trade_date<=%s AND EXISTS ("
+                "SELECT 1 FROM jsonb_array_elements(r.snapshot->'events') e "
+                "WHERE e->>'stock_code'=ANY(%s) AND ("
+                "(COALESCE(e->>'kind','trade')='trade' AND e->>'side'='sell') OR "
+                "(e->>'kind'='cash' AND e->>'adjustment_type'='dividend'))) "
+                "ORDER BY d.trade_date",
+                [*self.scope, trade_date, stock_codes],
+            )
+            while rows := cur.fetchmany(100):
+                yield from rows
 
     def initialize(self, conn, trade_date: date, positions: list[dict], cash: str | None) -> None:
         conn.execute(
