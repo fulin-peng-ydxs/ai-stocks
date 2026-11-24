@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.devtools import ci, ci_changes, ci_coverage, ci_dependencies, ci_secrets
+from backend.devtools import ci, ci_changes, ci_coverage, ci_dependencies, ci_results, ci_secrets
 
 
 @pytest.mark.parametrize("paths,expected", [
@@ -28,15 +28,24 @@ def test_common_dependency_routing_is_conservative(monkeypatch, paths, expected)
     assert ci.plan("dependency-audit")["include"] == [{"suite": "dependency-audit", "kind": "audit"}]
 
 
-def test_push_and_pr_ranges_include_deleted_dependency_and_local_addition(tmp_path, monkeypatch):
+@pytest.fixture
+def git_repository(tmp_path, monkeypatch):
+    """范围识别使用独立真实 Git 历史，不接触当前仓库引用或业务存储。"""
     monkeypatch.setattr(ci_changes, "ROOT", tmp_path)
 
     def git(*arguments):
         return subprocess.check_output(["git", *arguments], cwd=tmp_path, text=True).strip()
 
-    git("init", "-q")
+    git("init", "-q", "-b", "main")
     git("config", "user.name", "CI probe")
     git("config", "user.email", "probe@example.invalid")
+    return git
+
+
+def test_push_and_pr_ranges_include_deleted_dependency_and_local_addition(
+    tmp_path, monkeypatch, git_repository,
+):
+    git = git_repository
     (tmp_path / "requirements-extra.txt").write_text("pytest==9.0.3\n")
     git("add", ".")
     git("commit", "-qm", "baseline")
@@ -58,6 +67,88 @@ def test_push_and_pr_ranges_include_deleted_dependency_and_local_addition(tmp_pa
         assert {"requirements-extra.txt", "new.txt"} <= ci_changes.changed_paths(selected)
     assert ci_changes.commit_range("0" * 40, head) is None
     assert ci_changes.commit_range("-bad-option", head) is None
+
+
+@pytest.fixture
+def new_branch_push(tmp_path, monkeypatch, git_repository):
+    """默认分支另有新提交，功能分支包含多个提交，防止首推漏扫早期修改。"""
+    git = git_repository
+    (tmp_path / "README.md").write_text("baseline\n")
+    git("add", ".")
+    git("commit", "-qm", "baseline")
+    base = git("rev-parse", "HEAD")
+    git("checkout", "-qb", "codex/probe")
+    for name in ("early.py", "late.py"):
+        (tmp_path / name).write_text("value = 1\n")
+        git("add", name)
+        git("commit", "-qm", f"add {name}")
+    head = git("rev-parse", "HEAD")
+    git("checkout", "-q", "main")
+    (tmp_path / "default-only.py").write_text("value = 2\n")
+    git("add", ".")
+    git("commit", "-qm", "advance default branch")
+    git("update-ref", "refs/remotes/origin/main", git("rev-parse", "HEAD"))
+    git("checkout", "-q", "codex/probe")
+    event = tmp_path / ".git" / "event.json"
+    payload = {
+        "created": True, "deleted": False, "before": "0" * 40, "after": head,
+        "ref": "refs/heads/codex/probe", "repository": {"default_branch": "main"},
+    }
+    event.write_text(json.dumps(payload))
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+    return SimpleNamespace(git=git, base=base, head=head, event=event, payload=payload)
+
+
+def test_new_branch_push_uses_default_branch_merge_base(new_branch_push, monkeypatch):
+    push = new_branch_push
+    selected = ci_changes.commit_range()
+    assert selected == (push.base, push.head)
+    assert ci_changes.changed_paths(selected) == {"early.py", "late.py"}
+    assert ci.assess()["scope"] == "known"
+    monkeypatch.setattr(ci_results, "source_identity", lambda: {
+        "commit": push.head, "sha256": "a" * 64,
+    })
+    plan = ci_results.execution_plan("change")
+    assert plan["range"] == [push.base, push.head]
+    assert plan["scope"] == "known" and plan["pending_checks"] == []
+    # 显式输入仍须通过原有 SHA 校验，不能借事件元数据接受零 SHA 或 Git 选项。
+    assert ci_changes.commit_range("0" * 40, push.head) is None
+    assert ci_changes.commit_range("-bad-option", push.head) is None
+
+
+@pytest.mark.parametrize("overrides", [
+    {"created": False},
+    {"created": None},
+    {"deleted": True},
+    {"deleted": None},
+    {"before": "f" * 40},
+    {"after": "-bad-option"},
+    {"after": None},
+    {"ref": "refs/tags/v1"},
+    {"ref": "refs/heads/main"},
+    {"ref": "refs/heads/../invalid"},
+    {"repository": {}},
+    {"repository": None},
+    {"repository": {"default_branch": "../main"}},
+])
+def test_new_branch_push_rejects_incomplete_or_invalid_metadata(new_branch_push, overrides):
+    push = new_branch_push
+    push.event.write_text(json.dumps(push.payload | overrides))
+    assert ci_changes.commit_range() is None
+
+
+def test_new_branch_push_without_default_ref_keeps_unknown_scope(new_branch_push):
+    new_branch_push.git("update-ref", "-d", "refs/remotes/origin/main")
+    assert ci_changes.commit_range() is None
+
+
+def test_new_branch_push_without_common_ancestor_keeps_unknown_scope(new_branch_push):
+    git = new_branch_push.git
+    git("checkout", "-q", "--orphan", "disconnected")
+    git("commit", "-qm", "unrelated root")
+    git("update-ref", "refs/remotes/origin/main", git("rev-parse", "HEAD"))
+    git("checkout", "-q", "codex/probe")
+    assert ci_changes.commit_range() is None
 
 
 def test_lock_tracks_recursive_inputs_and_rejects_drift(tmp_path, monkeypatch):
