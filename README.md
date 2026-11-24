@@ -29,7 +29,7 @@
 
 ### 准备依赖和本机配置
 
-后端使用 Python ≥3.11、FastAPI、DuckDB、PostgreSQL ≥14 和 Redis ≥6；前端使用 Vue 3、TypeScript、Element Plus 和 Vite，Node.js 使用 22.12+（建议 22 LTS）。依赖版本以 [Python 清单](requirements.txt)、[项目配置](pyproject.toml) 和 [前端清单](frontend/package.json) 为准。
+后端使用 Python ≥3.11、FastAPI、DuckDB、PostgreSQL ≥14 和 Redis ≥6；前端使用 Vue 3、TypeScript、Element Plus 和 Vite，Node.js 建议使用 22 LTS（≥22.12.0）。依赖版本以 [Python 清单](requirements.txt)、[项目配置](pyproject.toml) 和 [前端清单](frontend/package.json) 为准；Node.js 的完整兼容范围以其中的 `engines.node` 为准。
 
 先启动并准备 PostgreSQL 数据库/角色与 Redis；再在仓库根目录安装依赖并复制变量模板：
 
@@ -185,9 +185,16 @@ python -m pytest backend/tests/test_xxx.py::test_name -q  # 替换为受影响�
 
 ```bash
 cd frontend && npm run build && cd ..
-./start.sh prod
-./start.sh status
 ```
+
+启动生产模式时，先按 [项目命令](AGENTS.md) 检查当前服务并安全停服；已有服务运行时，`prod` 动作只提示已运行，不会切换模式。停服成功后再启动生产服务，停服被活跃任务或状态异常阻止时先处理阻塞原因。
+
+```bash
+./start.sh status
+./start.sh stop && ./start.sh prod && ./start.sh status
+```
+
+启动后核对 `logs/backend-runtime.json` 的 `pid` 与当前服务 PID 一致，确认 `mode=prod`、`safeEnv.AI_STOCKS_ENV=production`；完整核查步骤见 [环境身份与运行模式](agent-works/architecture/environment-configuration.md#环境身份与运行模式)。
 
 浏览器访问 `http://localhost:8000` 或部署地址。生产启动方式监听 `0.0.0.0:8000` 并托管 `frontend/dist`，公网部署还需反向代理、TLS、限流和运维访问控制；密钥、真实 SMTP 与连接配置按环境配置正文准备。停止、健康检查和活跃任务保护沿用启动脚本。
 
