@@ -31,12 +31,12 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
 import StockStatusTag from '@/components/StockStatusTag.vue'
-import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import MarketDetailHero from '@/components/MarketDetailHero.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import StockQuoteSummary from '@/components/stock-chart/StockQuoteSummary.vue'
+import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import { useKlineHeaderQuote } from '@/composables/useKlineHeaderQuote'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import {
@@ -577,7 +577,12 @@ onMounted(async () => {
               data-testid="sector-detail-chart-section"
             >
               <template #actions>
-                <KlineRangeSelect v-model="viewDays" test-id="sector-detail-range" />
+                <KlineRangeSelect
+                  v-if="!chartLoading && !bars.length"
+                  v-model="viewDays"
+                  test-id="sector-detail-range-recovery"
+                  aria-label="调整无数据的K线范围"
+                />
                 <AppIconButton
                   :label="splitCompact ? '查看成分股' : (memberPanelVisible ? '收起成分股，仅看走势' : '显示成分股')"
                   data-testid="sector-detail-toggle-members"
@@ -605,6 +610,8 @@ onMounted(async () => {
                 <StockChartWorkspace
                   embedded
                   class="sector-chart-workspace"
+                  v-model:range-days="viewDays"
+                  range-test-id="sector-detail-range"
                   :bars="bars"
                   :warmup-bars="warmupBars"
                   :indicators="indicators"

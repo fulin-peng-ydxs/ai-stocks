@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import postcss from 'postcss'
 import { describe, expect, it } from 'vitest'
 import { TABLE_CONTROL_WIDTHS } from '@/components/table/adaptiveColumnWidth'
-import { auditControlWidths, auditDesignContracts } from '../../../scripts/check-design-contracts.mjs'
+import { auditControlWidths, auditDesignContracts, auditSharedStyles } from '../../../scripts/check-design-contracts.mjs'
 import { auditComponentEntries, designSources } from '../../../scripts/design-source.mjs'
 
 const audit = (source: string) => auditControlWidths([{ file: 'views/WidthProbe.vue', source }])
@@ -74,6 +74,22 @@ describe('输入与选择控件的容量门禁', () => {
       .grid{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr))}
       .field{width:min(var(--app-control-width-long),30cqw)}
       </style>`)).toEqual([])
+  })
+
+  it('范围选择器仅允许登记的语义宽度透传，不放开其它动态表达式', () => {
+    const source = (expression: string) => [{
+      file: 'components/KlineRangeSelect.vue',
+      source: `<template><AppSelect :width="${expression}" /></template>`,
+    }]
+    expect(auditControlWidths(source('width'))).toEqual([])
+    expect(auditControlWidths(source('privateWidth'))).not.toEqual([])
+    const roles = [{ className: 'el-select', tags: ['AppSelect'], properties: [], bindings: [{
+      file: 'components/KlineRangeSelect.vue', tag: 'AppSelect', name: 'width',
+      expression: 'width', reason: '范围控件的语义容量透传',
+    }] }]
+    expect(auditSharedStyles(source('width'), roles, { verifyOwners: true })).toEqual([])
+    expect(auditSharedStyles(source('privateWidth'), roles, { verifyOwners: true }).join())
+      .toContain('绑定归属已失效')
   })
 
   it('复用选择器解析后仍分别判断每个目标的排除条件，不受节点顺序影响', () => {

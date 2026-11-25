@@ -212,6 +212,25 @@ function pointerEvent(type: string, pointerId: number, clientY: number): Event {
 }
 
 describe('StockChartWorkspace', () => {
+  it('范围统一在图表抽屉调整，标题保留当前范围，未声明范围的图表不新增入口', async () => {
+    const wrapper = await mountWorkspace({ rangeDays: 120, rangeTestId: 'test-range' })
+    expect(wrapper.get('.stock-chart-panel__range').text()).toBe('近 120 日')
+    expect(wrapper.find('[data-testid="test-range"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
+    expect(wrapper.get('.chart-operation-group').text()).toContain('K线范围')
+    const select = wrapper.findComponent({ name: 'KlineRangeSelect' })
+    select.vm.$emit('update:modelValue', 250)
+    expect(wrapper.emitted('update:rangeDays')).toEqual([[250]])
+    await wrapper.setProps({ rangeDays: 250 })
+    expect(wrapper.get('.stock-chart-panel__range').text()).toBe('近 250 日')
+    await wrapper.setProps({ bars: [] })
+    expect(wrapper.find('[data-testid="stock-chart-toggle-operations"]').exists()).toBe(true)
+    wrapper.unmount()
+    const fixed = await mountWorkspace()
+    expect(fixed.find('.stock-chart-panel__range').exists()).toBe(false)
+    expect(fixed.find('[data-testid="stock-chart-toggle-operations"]').exists()).toBe(false)
+    fixed.unmount()
+  })
   it('真实宿主与异步层组合去重外框，独立画布保留边框且模式可切换', async () => {
     // jsdom 不解析 CSS 变量边框 shorthand；仅替换测试 token，选择器和声明直接来自生产样式。
     const css = readFileSync(resolve(process.cwd(), 'src/styles/global.css'), 'utf8')
@@ -634,7 +653,7 @@ describe('StockChartWorkspace', () => {
     await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
     expect(wrapper.find('.stock-chart-operations-drawer-stub').exists()).toBe(true)
 
-    expect(latestOption.series[0].markArea).toBeUndefined()
+    expect(latestOption.series[0].markArea.data).toEqual([])
 
     kline.emit('globalout', {})
     await nextTick()

@@ -843,9 +843,11 @@ test.describe('个股详情三图工作区', () => {
     await expect(workspace.getByText('MACD 加载失败', { exact: true })).toHaveCount(0)
 
     const range = page.getByTestId('stock-detail-range')
+    await workspace.getByTestId('stock-chart-toggle-operations').click()
     await range.click()
     await page.getByRole('option', { name: '近 250 日' }).click()
     await expect.poll(() => indicatorRequests).toBe(3)
+    await page.getByRole('button', { name: '关闭图表操作', exact: true }).click()
 
     await expect(page.locator('[data-panel-key]')).toHaveCount(3)
     await expect(page.getByTestId('stock-group-select')).toHaveCount(0)

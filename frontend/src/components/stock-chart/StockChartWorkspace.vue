@@ -18,6 +18,8 @@ import { Operation } from '@element-plus/icons-vue'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import AppIconButton from '@/components/AppIconButton.vue'
 import ChartOperationGroup from '@/components/ChartOperationGroup.vue'
+import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
+import { klineRangeLabel } from '@/composables/useKlinePrefs'
 import PageSegmented from '@/components/PageSegmented.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
@@ -149,6 +151,9 @@ const props = withDefaults(defineProps<{
   macdError?: string
   zoomStart?: number
   zoomEnd?: number
+  /** 数据范围仍由消费方请求或裁切；工作区统一承载其会话选择入口。 */
+  rangeDays?: number
+  rangeTestId?: string
   minHeight?: number
   fitAvailableHeight?: boolean
   /** 宿主已承接外框时只保留内部面板分隔，不依赖宿主与图表之间的 DOM 层数。 */
@@ -177,6 +182,8 @@ const props = withDefaults(defineProps<{
   macdError: '请检查网络或稍后重试',
   zoomStart: 0,
   zoomEnd: 100,
+  rangeDays: undefined,
+  rangeTestId: 'stock-chart-range',
   fitAvailableHeight: false,
   embedded: false,
   ariaLabel: '行情多图联动工作区',
@@ -203,6 +210,7 @@ const emit = defineEmits<{
   'update:returnMeasurementMode': [mode: MeasurementMode]
   'update:klinePeriod': [period: KlinePeriod]
   'update:adjustMode': [mode: StockAdjustMode]
+  'update:rangeDays': [days: number]
 }>()
 
 defineSlots<{
@@ -212,7 +220,18 @@ defineSlots<{
 
 const groupId = nextStockChartWorkspaceGroupId()
 const workspaceEl = ref<HTMLElement | null>(null)
-provide(PAGE_OVERLAY_TARGET, workspaceEl)
+const operationOverlayTarget = computed(() => {
+  const workspace = workspaceEl.value
+  const parent = workspace?.parentElement
+  if (!parent) return workspace
+  const style = getComputedStyle(parent)
+  const clipsContent = /^(hidden|clip|auto|scroll)$/.test(style.overflowY || style.overflow)
+  const positionsOverlay = ['relative', 'absolute', 'fixed', 'sticky'].includes(style.position)
+  // 画布的硬下限可能大于宿主可见区。使用已定位的裁切宿主作为抽屉边界，
+  // 让抽屉正文在真实余量内滚动，避免末项随超高画布一起被裁掉。
+  return clipsContent && positionsOverlay ? parent : workspace
+})
+provide(PAGE_OVERLAY_TARGET, operationOverlayTarget)
 const ancestorWorkspaceResizeActive = inject(WORKSPACE_RESIZE_ACTIVE, ref(false))
 const ancestorWorkspaceProfileSize = inject(WORKSPACE_PROFILE_SIZE, null)
 const chartElements = new Map<WorkspacePanelKey, HTMLElement>()
@@ -350,8 +369,8 @@ const measurementHintVisible = computed(() => (
   && measurementMode.value === 'range'
 ))
 const chartOperationsVisible = computed(() => (
-  (props.enableReturnMeasurement || props.enableAdjustModeSwitch)
-  && rows.value.length > 0
+  props.rangeDays !== undefined
+  || ((props.enableReturnMeasurement || props.enableAdjustModeSwitch) && rows.value.length > 0)
 ))
 
 const measurementHint = computed(() => {
@@ -623,7 +642,9 @@ function clearActiveBar(): void {
 function refreshKlineChart(): void {
   const chart = charts.get('kline')
   if (!chart || chart.isDisposed()) return
-  chart.setOption(chartOption({ key: 'kline', type: 'kline' }, panels.value.length === 1), true)
+  // 缩放和测算预览只更新内容；notMerge 会重建 dataZoom 控制器，
+  // 清掉当前 mousedown 状态，导致按住平移只响应第一段 mousemove。
+  chart.setOption(chartOption({ key: 'kline', type: 'kline' }, panels.value.length === 1))
 }
 
 function setMeasurementMode(value: string | number | boolean): void {
@@ -699,7 +720,7 @@ function onDataZoom(sourceKey: WorkspacePanelKey, event: DataZoomEvent): void {
       end: next.end,
     })
   })
-  // 极值标签取当前可视窗口；缩放完成后只重建 K 线 option，量能/MACD 保持原实例状态。
+  // 极值标签取当前可视窗口；增量刷新 K 线，保留各图正在进行的平移和滑块拖动。
   refreshKlineChart()
 }
 
@@ -1290,6 +1311,9 @@ onBeforeUnmount(() => {
             aria-label="K线周期"
             @update:model-value="setKlinePeriod"
           />
+          <span v-if="panel.type === 'kline' && rangeDays !== undefined" class="stock-chart-panel__range app-caption-text">
+            {{ klineRangeLabel(rangeDays) }}
+          </span>
           <template #tail>
             <div
               v-if="panel.type === 'kline'"
@@ -1385,12 +1409,21 @@ onBeforeUnmount(() => {
     </template>
 
     <StockChartOperationsDrawer
-      v-if="enableReturnMeasurement || enableAdjustModeSwitch"
+      v-if="rangeDays !== undefined || enableReturnMeasurement || enableAdjustModeSwitch"
       v-model="operationsDrawerOpen"
       :drawer-id="`${groupId}-kline-operations`"
       @closed="restoreOperationsTriggerFocus"
     >
       <slot name="operation-actions" />
+      <ChartOperationGroup v-if="rangeDays !== undefined" label="K线范围">
+        <KlineRangeSelect
+          :model-value="rangeDays"
+          :test-id="rangeTestId"
+          width="fill"
+          aria-label="K线范围"
+          @update:model-value="emit('update:rangeDays', $event)"
+        />
+      </ChartOperationGroup>
       <ChartOperationGroup v-if="enableAdjustModeSwitch" label="复权口径">
         <PageSegmented
           :model-value="selectedAdjustMode"
@@ -1436,6 +1469,10 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-micro);
+}
+.stock-chart-panel__range {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .stock-chart-panel__tail {

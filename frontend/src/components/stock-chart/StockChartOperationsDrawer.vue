@@ -28,3 +28,11 @@ defineEmits<{
     </div>
   </PageDrawer>
 </template>
+
+<style scoped>
+.stock-chart-operations-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-4);
+}
+</style>

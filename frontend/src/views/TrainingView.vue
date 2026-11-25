@@ -39,7 +39,6 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
-import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import { useStockChartComponentConfig } from '@/composables/useStockChartComponentConfig'
 import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import { usePageSettings } from '@/composables/usePageSettings'
@@ -677,9 +676,6 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           </p>
         </div>
         <AppControlRow class="page-head-actions">
-          <div class="ops">
-            <KlineRangeSelect v-model="viewDays" />
-          </div>
           <el-button :disabled="actionPending" @click="backToConfig">退出训练</el-button>
           <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
         </AppControlRow>
@@ -698,6 +694,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           >
             <StockChartWorkspace
               class="training-chart-workspace"
+              v-model:range-days="viewDays"
               :bars="displayBars"
               :warmup-bars="warmupBars"
               :indicators="indicatorRows"
@@ -814,9 +811,6 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           <p class="page-subtitle">{{ modeText(detail.mode) }} · {{ formatNumber(detail.n_rounds, 'count') }} 回合 · {{ formatDateTimeMinutes(detail.created_at) }}</p>
         </div>
         <AppControlRow class="page-head-actions">
-          <div class="ops">
-            <KlineRangeSelect v-model="viewDays" />
-          </div>
           <el-button :disabled="actionPending" @click="backToConfig">返回</el-button>
           <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
         </AppControlRow>
@@ -888,6 +882,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               >
                 <StockChartWorkspace
                   class="training-chart-workspace"
+                  v-model:range-days="viewDays"
                   :bars="viewDays >= 99999 ? rd.bars : rd.bars.slice(-viewDays)"
                   :warmup-bars="viewDays >= 99999 ? [] : rd.bars.slice(0, -viewDays || undefined)"
                   :indicators="barsToIndicatorRows(rd.bars)"

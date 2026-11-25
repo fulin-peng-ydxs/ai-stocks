@@ -182,6 +182,11 @@ def test_ci_e2e_refuses_to_stop_production_or_unknown_environment(tmp_path, monk
     ({"frontend/src/views/data/QualityView.vue"}, {"e2e-sectors"}),
     ({"frontend/src/views/ConfigView.vue"}, {"e2e-sectors"}),
     ({"frontend/src/utils/sectorCompare.ts"}, {"e2e-sectors"}),
+    ({"frontend/src/components/ChartOperationGroup.vue"}, {"e2e-stocks", "e2e-sectors"}),
+    ({"frontend/src/components/KlineRangeSelect.vue"}, {"e2e-stocks", "e2e-sectors"}),
+    ({"frontend/src/components/MarketAnalysisHeader.vue"}, {"e2e-stocks", "e2e-sectors"}),
+    ({"frontend/src/composables/useKlineHeaderQuote.ts"}, {"e2e-stocks", "e2e-sectors"}),
+    ({"frontend/src/composables/useKlinePrefs.ts"}, {"e2e-stocks", "e2e-sectors"}),
     (None, "all-specials"),
 ])
 def test_impact_assessment_lists_required_not_executed_specials(monkeypatch, paths, required):

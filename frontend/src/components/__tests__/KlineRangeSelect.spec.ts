@@ -23,6 +23,8 @@ describe('KlineRangeSelect', () => {
     expect(select.attributes('data-testid')).toBe('range')
     select.vm.$emit('update:modelValue', 1000)
     expect(wrapper.emitted('update:modelValue')).toEqual([[1000]])
+    await wrapper.setProps({ width: 'fill' })
+    expect(select.props('width')).toBe('fill')
     wrapper.unmount()
   })
 })

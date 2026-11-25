@@ -202,6 +202,8 @@ const StockChartWorkspaceStub = defineComponent({
     'klinePeriod',
     'returnMeasurementMode',
     'showKlineTooltip',
+    'rangeDays',
+    'rangeTestId',
   ],
   emits: [
     'retryMacd',
@@ -214,6 +216,7 @@ const StockChartWorkspaceStub = defineComponent({
     'update:adjustMode',
     'update:klinePeriod',
     'update:returnMeasurementMode',
+    'update:rangeDays',
   ],
   setup(props, { emit, slots }) {
     return () => h('section', {
@@ -1106,7 +1109,8 @@ describe('StockDetailView 三图数据协调', () => {
     const wrapper = await mountView()
     vi.mocked(stocksApi.getBars).mockRejectedValueOnce(new Error('范围刷新失败'))
 
-    await wrapper.get('[data-testid="range-250"]').trigger('click')
+    wrapper.findComponent(StockChartWorkspaceStub).vm.$emit('update:rangeDays', 250)
+    await nextTick()
     await flushPromises()
 
     expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(false)
@@ -1129,7 +1133,8 @@ describe('StockDetailView 三图数据协调', () => {
     expect(stocksApi.getIndicators).toHaveBeenCalledTimes(initialIndicators)
     expect(stocksApi.getTradeEval).toHaveBeenCalledTimes(initialTrade)
 
-    await wrapper.get('[data-testid="range-250"]').trigger('click')
+    wrapper.findComponent(StockChartWorkspaceStub).vm.$emit('update:rangeDays', 250)
+    await nextTick()
     await flushPromises()
 
     expect(stocksApi.getBars).toHaveBeenCalledTimes(initialBars + 2)
@@ -1348,7 +1353,7 @@ describe('StockDetailView 三图数据协调', () => {
     expect(toggle.attributes('label')).toBe('显示辅助信息')
   })
 
-  it('左右栏具有统一栏头，K 线范围置于行情栏操作区', async () => {
+  it('左右栏具有统一栏头，K 线范围由图表操作抽屉承载', async () => {
     const wrapper = await mountView()
     const primary = wrapper.get('[data-testid="stock-detail-primary"]')
     const pageActions = wrapper.get('.page-head-actions')
@@ -1356,10 +1361,11 @@ describe('StockDetailView 三图数据协调', () => {
     const auxiliaryPanel = wrapper.get('[data-testid="stock-detail-auxiliary-panel"]')
     const panes = wrapper.findAllComponents(AppWorkspacePaneStub)
 
-    expect(primary.findComponent(KlineRangeSelectStub).exists()).toBe(true)
+    const workspace = primary.findComponent(StockChartWorkspaceStub)
+    expect(workspace.props('rangeDays')).toBeGreaterThan(0)
+    expect(workspace.props('rangeTestId')).toBe('stock-detail-range')
+    expect(primary.findComponent(KlineRangeSelectStub).exists()).toBe(false)
     expect(pageActions.findComponent(KlineRangeSelectStub).exists()).toBe(false)
-    // 容量归共享选择器，详情页只安排位置，不再覆盖像素宽度。
-    expect(wrapper.findComponent(KlineRangeSelectStub).props('width')).toBeUndefined()
     expect(chartPanel.get('.app-workspace-pane__header').text()).toContain('行情走势')
     expect(auxiliaryPanel.get('.app-workspace-pane__eyebrow').text()).toBe('分析概览')
     expect(auxiliaryPanel.get('.app-workspace-pane__header h3').text()).toBe('2026-07-23')
@@ -1373,7 +1379,8 @@ describe('StockDetailView 三图数据协调', () => {
     const barsCalls = vi.mocked(stocksApi.getBars).mock.calls.length
     vi.mocked(stocksApi.getIndicators).mockRejectedValueOnce(new Error('指标服务超时'))
 
-    await wrapper.get('[data-testid="range-250"]').trigger('click')
+    wrapper.findComponent(StockChartWorkspaceStub).vm.$emit('update:rangeDays', 250)
+    await nextTick()
     await flushPromises()
 
     const workspace = wrapper.findComponent(StockChartWorkspaceStub)
@@ -1408,10 +1415,10 @@ describe('StockDetailView 三图数据协调', () => {
       .mockImplementationOnce(() => oldIndicators.promise)
       .mockImplementationOnce(() => newIndicators.promise)
 
-    const range = wrapper.findComponent(KlineRangeSelectStub)
-    range.vm.$emit('update:modelValue', 60)
+    const range = wrapper.findComponent(StockChartWorkspaceStub)
+    range.vm.$emit('update:rangeDays', 60)
     await nextTick()
-    range.vm.$emit('update:modelValue', 250)
+    range.vm.$emit('update:rangeDays', 250)
     await nextTick()
 
     const rangeBarCalls = vi.mocked(stocksApi.getBars).mock.calls.slice(-2)
@@ -1583,7 +1590,8 @@ describe('StockDetailView 三图数据协调', () => {
       httpError(403, '股票查看权限已撤销'),
     )
 
-    await wrapper.get('[data-testid="range-250"]').trigger('click')
+    wrapper.findComponent(StockChartWorkspaceStub).vm.$emit('update:rangeDays', 250)
+    await nextTick()
     await flushPromises()
 
     let state = wrapper.findComponent(AppStateBlockStub)

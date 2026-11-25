@@ -211,7 +211,7 @@ html[data-layout-preset] .side-menu-node > .el-sub-menu__title:not(.is-disabled,
   }
 }
 html[data-layout-preset] .app-interaction-target.app-interaction-nav:not(:disabled, .is-disabled, .is-loading, [aria-disabled='true']):active {
-  background: var(--app-button-neutral-pressed-bg);
+  background: var(--app-interaction-nav-pressed-background, var(--app-button-neutral-pressed-bg));
 }
 /* 卡片只有一张可移动表面；宿主仅保留透明的边框占位和稳定点击区域。 */
 html[data-layout-preset] .app-interaction-target.app-interaction-card {

@@ -690,6 +690,7 @@ export function buildKlineOption(context: OptionContext) {
             ...buildTradeMarkPoints(context),
           ],
         },
+        // 增量刷新必须显式清空旧区间；undefined 不会移除已合并的底色和端点。
         markArea: context.measurementRange
           ? {
               silent: true,
@@ -700,7 +701,7 @@ export function buildKlineOption(context: OptionContext) {
                 { xAxis: context.measurementRange.endIndex },
               ]],
             }
-          : undefined,
+          : { data: [] },
         markLine: context.measurementRange
           ? {
               silent: true,
@@ -712,7 +713,7 @@ export function buildKlineOption(context: OptionContext) {
                 { xAxis: context.measurementRange.endIndex },
               ],
             }
-          : undefined,
+          : { data: [] },
       },
       ...KLINE_MA_DEFINITIONS.map((definition) => {
         const full = movingAverage(allCloses, definition.period)

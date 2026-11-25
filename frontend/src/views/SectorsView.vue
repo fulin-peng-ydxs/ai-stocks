@@ -21,6 +21,9 @@ import CompareQueueRail from '@/components/CompareQueueRail.vue'
 import type { CompareQueueItem } from '@/components/CompareQueueRail.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
+import StockQuoteSummary from '@/components/stock-chart/StockQuoteSummary.vue'
+import { useKlineHeaderQuote } from '@/composables/useKlineHeaderQuote'
+import { formatDateOnly } from '@/utils/dateTime'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import MarketCompareMetricStrip from '@/components/MarketCompareMetricStrip.vue'
 import type { MarketMetricStripItem } from '@/components/MarketCompareMetricStrip.vue'
@@ -415,6 +418,12 @@ const klineWarmupBars = computed<Bar[]>(() =>
     isSelectionRefresh.value ? loadedChartActiveCode.value : activeCode.value
   ] ?? []),
 )
+const {
+  activeBar: chartActiveBar, supplement: chartMeasurementSummary,
+  quoteWindow: chartQuoteWindow, summary: headerSummary, widths: headerQuoteWidths,
+} = useKlineHeaderQuote(klineBars, () => `${activeCode.value}:${chartMode.value}:${chartPreferences.klinePeriod.value}`)
+const headerQuoteReady = computed(() => !chartLoading.value && !chartError.value
+  && loadedChartActiveCode.value === activeCode.value && headerSummary.value !== null)
 const klineIndicators = computed(() => compareIndicators.value[
   isSelectionRefresh.value ? loadedChartActiveCode.value : activeCode.value
 ] ?? [])
@@ -1346,14 +1355,30 @@ const menuPageTitle = useMenuPageTitle()
           >
             <template #description>
               <span>
-                {{ chartMode === 'compare' ? `与 ${Math.max(0, chartCodes.length - 1)} 个板块对比区间强弱` : '查看板块指数开高低收与量能' }}
-                <template v-if="activeRow?.leader_stock">
+                {{ chartMode === 'compare' ? `与 ${Math.max(0, chartCodes.length - 1)} 个板块对比区间强弱` : `原始连续指数 · ${headerQuoteReady ? formatDateOnly(headerSummary?.time) : '行情摘要'}` }}
+                <template v-if="chartMode === 'compare' && activeRow?.leader_stock">
                   · 领涨 {{ activeRow.leader_stock }}
                   <strong :class="pctClass(activeRow.leader_pct)">{{ fmtPct(activeRow.leader_pct) }}</strong>
                 </template>
               </span>
             </template>
+            <template v-if="chartMode === 'kline' && activeRow" #summary>
+              <StockQuoteSummary
+                v-if="headerQuoteReady && headerSummary"
+                :summary="headerSummary"
+                :widths="headerQuoteWidths"
+                column-gap="relaxed"
+                data-testid="sectors-quote"
+              />
+              <span v-else class="app-caption-text">{{ chartLoading ? '行情摘要加载中…' : '行情摘要暂不可用' }}</span>
+            </template>
             <template #controls>
+              <KlineRangeSelect
+                v-if="chartMode === 'kline' && activeRow && !chartLoading && !hasChartContent"
+                v-model="rangeDays"
+                test-id="sectors-range-recovery"
+                aria-label="调整无数据的K线范围"
+              />
               <div v-if="chartMode === 'compare' && compareMetricKind === 'line'" class="benchmark-control">
                 <span class="market-analysis-control-label">对比指数</span>
                 <MarketBenchmarkSelect
@@ -1361,9 +1386,8 @@ const menuPageTitle = useMenuPageTitle()
                   test-id="sectors-benchmark"
                 />
               </div>
-              <KlineRangeSelect v-if="chartMode === 'kline'" v-model="rangeDays" test-id="sectors-range" />
               <AppSelect
-                v-else-if="chartMode === 'compare' && compareMetric === 'cum'"
+                v-if="chartMode === 'compare' && compareMetric === 'cum'"
                 v-model="compareWindow"
                 data-testid="sectors-compare-range"
                 width="compact"
@@ -1426,6 +1450,12 @@ const menuPageTitle = useMenuPageTitle()
               v-else
               embedded
               class="sector-kline-workspace"
+              v-model:range-days="rangeDays"
+              range-test-id="sectors-range"
+              :show-kline-tooltip="false"
+              @active-bar-change="chartActiveBar = $event"
+              @measurement-summary-change="chartMeasurementSummary = $event"
+              @quote-window-change="chartQuoteWindow = $event"
               :bars="klineBars"
               :warmup-bars="klineWarmupBars"
               :indicators="klineIndicators"

@@ -359,6 +359,11 @@ export function auditSharedStyles(sources, roles = designContracts.styleRoles, {
     })
     // 外部 CSS 借模板识别消费类，但绑定必须在模板所属文件校验，不能把 CSS 文件当成透传者。
     for (const target of item.targets) {
+      // width 的值域由 auditControlWidths 校验；精确适配器绑定也须计入归属使用，
+      // 否则合法的宽度透传会在下方被误判为失效登记。
+      for (const prop of attributes(target.node, 'width').filter(prop => prop.type === 7)) {
+        allowsBinding(target, prop)
+      }
       for (const prop of (target.role.styleAttributes ?? ['style']).flatMap(name => attributes(target.node, name))) {
         if (prop.type === 6) postcss.parse(`x{${attributeText(prop)}}`).walkDecls(decl => {
           if (protectedProperty(target.role, decl.prop) && !allowed(target.role, '<inline style>', decl.prop)) report('<inline style>', decl.prop)

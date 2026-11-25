@@ -26,7 +26,7 @@ const emit = defineEmits<{
 
 <template>
   <div class="market-analysis-header">
-    <header class="market-analysis-header__content">
+    <header class="market-analysis-header__content" :class="{ 'market-analysis-header__content--with-summary': $slots.summary }">
       <div class="market-analysis-header__identity">
         <div class="market-analysis-header__eyebrow">{{ eyebrow }}</div>
         <div class="market-analysis-header__title-line">
@@ -48,6 +48,9 @@ const emit = defineEmits<{
         <div v-if="$slots.description" class="market-analysis-header__description">
           <slot name="description" />
         </div>
+      </div>
+      <div v-if="$slots.summary" class="market-analysis-header__summary">
+        <slot name="summary" />
       </div>
       <AppControlRow v-if="$slots.controls" class="market-analysis-header__controls">
         <slot name="controls" />
@@ -72,6 +75,18 @@ const emit = defineEmits<{
 }
 .market-analysis-header__identity {
   min-width: 0;
+}
+.market-analysis-header__content--with-summary {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+}
+.market-analysis-header__summary {
+  min-width: 0;
+  min-height: calc(4 * var(--app-line-height-table) + 3 * var(--app-space-control-gap));
+  display: flex;
+  align-items: center;
+  padding-left: var(--app-space-4);
+  border-left: 1px solid var(--app-border-divider);
 }
 .market-analysis-header__eyebrow {
   color: var(--el-color-primary);
@@ -126,9 +141,40 @@ const emit = defineEmits<{
     width: 100%;
     flex-wrap: wrap;
   }
+  .market-analysis-header__content--with-summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+  .market-analysis-header__content--with-summary .market-analysis-header__controls {
+    grid-column: 2;
+    grid-row: 1;
+    width: auto;
+  }
+  .market-analysis-header__summary {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    padding: var(--app-space-3) 0 0;
+    border-top: 1px solid var(--app-border-divider);
+    border-left: 0;
+  }
+  .market-analysis-header__content--with-summary .market-analysis-header__description {
+    display: block;
+  }
   .market-analysis-header__description,
   .market-analysis-header__controls :deep(.market-analysis-control-label) {
     display: none;
+  }
+}
+@container (max-width: 480px) {
+  .market-analysis-header__content--with-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .market-analysis-header__content--with-summary .market-analysis-header__controls {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .market-analysis-header__content--with-summary .market-analysis-header__summary {
+    grid-row: 3;
   }
 }
 @container app-viewport (max-height: 700px) {

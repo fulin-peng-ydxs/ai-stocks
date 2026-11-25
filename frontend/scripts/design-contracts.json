@@ -800,6 +800,13 @@
           "reason": "共享适配器原样转发调用属性，消费方仍接受同一角色检查"
         },
         {
+          "file": "components/KlineRangeSelect.vue",
+          "tag": "AppSelect",
+          "name": "width",
+          "expression": "width",
+          "reason": "共享范围选择器仅接受 short 或 fill；恢复入口保持短容量，图表抽屉字段铺满"
+        },
+        {
           "file": "components/indicator/IndicatorSelect.vue",
           "tag": "AppSelect",
           "name": "attrs",

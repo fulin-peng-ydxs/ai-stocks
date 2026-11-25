@@ -13,7 +13,10 @@ import MarketBenchmarkSelect from '@/components/MarketBenchmarkSelect.vue'
 import type { MarketMetricStripItem } from '@/components/MarketCompareMetricStrip.vue'
 import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import StockQuoteSummary from '@/components/stock-chart/StockQuoteSummary.vue'
+import { useKlineHeaderQuote } from '@/composables/useKlineHeaderQuote'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
+import { formatDateOnly } from '@/utils/dateTime'
 import MarketAnalysisHeader from '@/components/MarketAnalysisHeader.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import StockCompareChart from '@/components/StockCompareChart.vue'
@@ -105,6 +108,13 @@ const klineWarmupBars = ref<Bar[]>([])
 const klineIndicators = ref<IndicatorRow[]>([])
 const klineIndicatorPeriod = ref<KlinePeriod>('day')
 const loadedKlineCode = ref('')
+const {
+  activeBar: chartActiveBar, supplement: chartMeasurementSummary,
+  quoteWindow: chartQuoteWindow, summary: headerSummary, widths: headerQuoteWidths,
+} = useKlineHeaderQuote(klineBars, () => `${props.active?.code}:${props.mode}:${props.klinePeriod}`)
+// 保留旧图等待新对象时，不把旧行情挂到新对象的身份区下。
+const headerQuoteReady = computed(() => !loading.value && !error.value
+  && loadedKlineCode.value === props.active?.code && headerSummary.value !== null)
 const loadedCompareActiveCode = ref('')
 const loadedCompareItems = ref<StockAnalysisItem[]>([])
 const retainSelectionContent = ref(false)
@@ -440,9 +450,26 @@ onBeforeUnmount(() => {
       @open-detail="emit('openDetail')"
     >
       <template #description>
-        {{ mode === 'compare' ? `与 ${Math.max(0, items.length - 1)} 只股票比较区间走势` : `查看${adjustLabel}K线、量能与技术指标` }}
+        {{ mode === 'compare' ? `与 ${Math.max(0, items.length - 1)} 只股票比较区间走势` : `${adjustLabel} · ${headerQuoteReady ? formatDateOnly(headerSummary?.time) : '行情摘要'}` }}
+      </template>
+      <template v-if="mode === 'kline' && active" #summary>
+        <StockQuoteSummary
+          v-if="headerQuoteReady && headerSummary"
+          :summary="headerSummary"
+          :widths="headerQuoteWidths"
+          column-gap="relaxed"
+          data-testid="stock-analysis-quote"
+        />
+        <span v-else class="app-caption-text">{{ loading ? '行情摘要加载中…' : '行情摘要暂不可用' }}</span>
       </template>
       <template #controls>
+        <KlineRangeSelect
+          v-if="mode === 'kline' && active && !loading && !hasChartContent"
+          :model-value="klineRange"
+          test-id="stock-analysis-kline-range-recovery"
+          aria-label="调整无数据的K线范围"
+          @update:model-value="emit('update:klineRange', $event)"
+        />
         <div v-if="mode === 'compare'" class="stock-benchmark-control">
           <span class="market-analysis-control-label">对比指数</span>
           <MarketBenchmarkSelect
@@ -460,13 +487,6 @@ onBeforeUnmount(() => {
         >
           <el-option v-for="option in COMPARE_RANGE_OPTIONS" :key="option.value" :value="option.value" :label="option.label" />
         </AppSelect>
-        <KlineRangeSelect
-          v-else-if="mode === 'kline'"
-          :model-value="klineRange"
-
-          test-id="stock-analysis-kline-range"
-          @update:model-value="emit('update:klineRange', $event)"
-        />
         <PageSegmented
           :model-value="mode"
           :options="MODE_OPTIONS"
@@ -555,6 +575,10 @@ onBeforeUnmount(() => {
         :min-height="384"
         :zoom-start="0"
         :zoom-end="100"
+        :range-days="klineRange"
+        range-test-id="stock-analysis-kline-range"
+        @update:range-days="emit('update:klineRange', $event)"
+        :show-kline-tooltip="false"
         aria-label="股票K线多图联动工作区"
         enable-intraday-drilldown
         :preserve-active-bar="intradayOpen"
@@ -571,6 +595,9 @@ onBeforeUnmount(() => {
         @workspace-resize="emit('workspaceResize', $event)"
         @retry-macd="loadKline"
         @bar-click="openIntraday"
+        @active-bar-change="chartActiveBar = $event"
+        @measurement-summary-change="chartMeasurementSummary = $event"
+        @quote-window-change="chartQuoteWindow = $event"
       />
     </AppAsyncRegion>
 

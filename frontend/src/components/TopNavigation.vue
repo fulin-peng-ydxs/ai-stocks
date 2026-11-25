@@ -198,10 +198,14 @@ function descendantLeaves(
 /* 一级保留整栏底部定位线，只有悬停/焦点表面使用紧凑高度。 */
 .primary-entry.app-interaction-nav {
   --app-interaction-nav-hover-background: transparent;
+  --app-interaction-nav-pressed-background: transparent;
   --app-interaction-inset: calc((100% - var(--app-nav-context-entry-height)) / 2) var(--app-space-1);
 }
 .primary-entry.app-interaction-nav::before {
   background: var(--chrome-bg-soft-hover);
+}
+.primary-entry.app-interaction-nav:active::before {
+  background: var(--app-button-neutral-pressed-bg);
 }
 .primary-entry::after {
   content: '';
