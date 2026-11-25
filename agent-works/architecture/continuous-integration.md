@@ -14,9 +14,9 @@
 
 - 输入输出与调用者：
 
-  push（含主分支直推）和 PR 自动执行 `change`；已知变更范围内，普通说明 Markdown 走轻量集合，其余变更执行常用集合并追加命中的专项。每日北京时间 05:00 仅审计依赖。手动可选择 `change`、`common` 或登记套件；本地 `run` 默认 `common`，不会因写文档而自动缩减显式常用验收。
+  代码变更仅在 PR 打开、更新或重新打开时自动执行 `change`；普通分支 push 和合并后的主分支 push 均不触发 CI。已知变更范围内，普通说明 Markdown 走轻量集合，其余变更执行常用集合并追加命中的专项。每日北京时间 05:00 仅审计依赖。手动可选择 `change`、`common` 或登记套件；本地 `run` 默认 `common`，不会因写文档而自动缩减显式常用验收。
 
-  输出包括本次 `ci-plan.json`、套件回执、实际报告和 `ci-result.json/md`。总状态 `CI common result` 代表 push/PR 规划范围完成，轻量报告会明确标为纯 Markdown 检查，不能解释为业务全量已运行。
+  输出包括本次 `ci-plan.json`、套件回执、实际报告和 `ci-result.json/md`。总状态 `CI common result` 代表 PR 或手动 `change` 的规划范围完成，轻量报告会明确标为纯 Markdown 检查，不能解释为业务全量已运行。
 
 - 组成与关系：
 
@@ -26,7 +26,7 @@
 
   ```mermaid
   flowchart TD
-    Push["push / PR：change"] --> Plan["ci.yml / run-ci.sh：prepare / run"]
+    PR["PR：change"] --> Plan["ci.yml / run-ci.sh：prepare / run"]
     Manual["手动：change / common / 登记套件"] --> Plan
     Daily["每日 05:00：dependency-audit"] --> Plan
     Registry["config/ci-suites.json"] -.-> Plan
@@ -156,7 +156,7 @@
 
 - 数据、权限与状态：
 
-  GitHub 只授予仓库读取权限，后端/数据库/E2E job 使用临时 PG/Redis，其他 job 不启动业务存储。同分支旧 CI 可取消。为兼容既有绑定，push / PR 和手动 `change` 的最终状态继续名为 `CI common result`，现在同时要求命中的专项证据完整。显式手动 `common` 与单专项使用 `CI suite <套件> result`，不能以同名状态覆盖完整变更结果；每日审计同样是单套件状态。直接推主分支后失败不会自动回退代码；分支必过状态须在 GitHub 核对并绑定完整常用状态，代码不自动修改远端设置。
+  GitHub 只授予仓库读取权限，后端/数据库/E2E job 使用临时 PG/Redis，其他 job 不启动业务存储。同分支旧 CI 可取消。为兼容既有绑定，PR 和手动 `change` 的最终状态继续名为 `CI common result`，现在同时要求命中的专项证据完整。显式手动 `common` 与单专项使用 `CI suite <套件> result`，不能以同名状态覆盖完整变更结果；每日审计同样是单套件状态。主分支准入依赖平台的 PR 要求与 `CI common result` 必过绑定，须在 GitHub 核实；代码不自动修改远端设置。
 
 - 配置与扩展：
 
@@ -252,11 +252,11 @@
 
 - 目标与入口：
 
-  `ci_dependencies.py` 维护 CI 锁和审计，`dependency-audit` 复用同一登记、规划器和执行器。push、PR 的 common 在依赖变化时调用；每日和手动显式选择该套件，不运行全套 common。
+  `ci_dependencies.py` 维护 CI 锁和审计，`dependency-audit` 复用同一登记、规划器和执行器。PR 的 common 在依赖变化时调用；每日和手动显式选择该套件，不运行全套 common。
 
 - 处理与结果：
 
-  `ci_changes.py` 读取 push 的 before/after 或 PR 共同祖先与 head，校验提交对象；比较时覆盖删除、重命名两侧及本地未提交/新文件。非默认分支首次 push 的 `before` 为零 SHA 时，只有事件明确为创建分支且未删除、默认分支元数据及引用合法、`origin/<默认分支>` 已获取并存在共同祖先，才以该共同祖先和 head 确定完整范围，覆盖首推的全部提交。默认分支自身首推、标签、缺失引用或无共同祖先仍保持未知，不退回 HEAD 的单个父提交。命中登记中的 `dependency_paths` 时审计；范围缺失或浅克隆缺对象时保守审计。本地可传 `--base <完整SHA> --head <完整SHA>`；显式零 SHA 不借事件元数据修正，不传范围时完整常用包含审计。
+  `ci_changes.py` 读取 PR 共同祖先与 head，校验提交对象；同时保留历史 push 的 before/after 解析能力，但当前 workflow 不订阅 push。比较时覆盖删除、重命名两侧及本地未提交/新文件。非默认分支首次 push 的 `before` 为零 SHA 时，只有事件明确为创建分支且未删除、默认分支元数据及引用合法、`origin/<默认分支>` 已获取并存在共同祖先，才以该共同祖先和 head 确定完整范围，覆盖首推的全部提交。默认分支自身首推、标签、缺失引用或无共同祖先仍保持未知，不退回 HEAD 的单个父提交。命中登记中的 `dependency_paths` 时审计；范围缺失或浅克隆缺对象时保守审计。本地可传 `--base <完整SHA> --head <完整SHA>`；显式零 SHA 不借事件元数据修正，不传范围时完整常用包含审计。
 
 - 数据、权限与状态：
 
@@ -423,7 +423,7 @@
 
 - 目标与入口：
 
-  `ci.assess()` 和 `ci_results.change_matrix()` 为 `change` 选择 `profile=markdown|standard`；沿用 push/PR、本地 `run change` 和最终汇总，不另建 workflow 或执行器。
+  `ci.assess()` 和 `ci_results.change_matrix()` 为 `change` 选择 `profile=markdown|standard`；沿用 PR、本地 `run change` 和最终汇总，不另建 workflow 或执行器。
 
 - 处理与结果：
 
@@ -471,7 +471,7 @@
   | 文档和锁 | 生成块及源指纹漂移失败 | 正文事实、兼容与依赖升级验证 |
   | 证据 | 源码、范围、参数及原报告逐项对账 | 未编码需求、必要人工呈现和真实环境边界 |
 
-  push/PR 验收分别核对事件、源提交与实际被测提交（PR 可为合并提交）、规划矩阵、总状态及产物；不能以旧提交或另一事件的绿色替代。GitHub 必过规则须读取实际绑定；直接推主分支后失败不会回退已推代码，CI 通过也不代表已配置合并拦截。现有门禁不自动提交修复、刷新契约或创建新调度。表末五项缺口保持待处理，未实现能力不注册空套件；满足各自验收条件并有实际证据后才能关闭。
+  PR 验收核对 PR 事件、源提交与实际被测提交（PR 可为合并提交）、规划矩阵、总状态及产物；不能以旧提交或另一事件的绿色替代。GitHub 必过规则须读取实际绑定；移除 push 触发不会自动创建 PR 保护，CI 通过也不代表已配置合并拦截。现有门禁不自动提交修复、刷新契约或创建新调度。表末五项缺口保持待处理，未实现能力不注册空套件；满足各自验收条件并有实际证据后才能关闭。
 
 ## 验证入口与已知限制
 
@@ -480,7 +480,7 @@
 | 常用及专项编排 | `scripts/run-ci.sh plan/check/run` | 执行器、登记与 workflow | 同一分类驱动本地和远端 | 每次交付记录实际运行范围与结果 |
 | 自动接入与失败关闭 | `test_ci.py` | 规划、环境清洗、生成块、专项分流及 Pytest 负例 | 防止漏接入或跳过冒充成功 | 变更机制时定向回归 |
 | 数据库生命周期 | `scripts/run-ci.sh run database` | 既有数据库门禁 | 验证代码安装与升级契约 | 实际实例另验收 |
-| GitHub 执行及分支规则 | 推送后查看 Actions 与仓库设置 | 本地运行不能替代远端证据 | 服务镜像、权限和平台可能影响执行 | 首次推送后确认各矩阵及总状态 |
+| GitHub 执行及分支规则 | PR 创建或更新后查看 Actions 与仓库设置 | 本地运行不能替代远端证据 | 服务镜像、权限和平台可能影响执行 | 首次 PR 验证后确认各矩阵及总状态，合并后确认未新增 push 运行 |
 | 前端与静态质量 | `run frontend`、`run quality` | 完整前端配置、报告判定、构建、Ruff、actionlint | 自动发现和实际执行均须有证据 | 执行器及收集范围变化时验证正反例 |
 | 安全与锁漂移 | `run secrets`、`run dependency-audit`、`check` | 脱敏扫描/审计报告、`test_ci_security.py` | 新发现、查询失败、过期例外和清单漂移均阻断 | 定向修复后复验；每日重新查询依赖漏洞 |
 | 覆盖率度量 | `run frontend/backend/database` | 本轮 JSON / LCOV / XML | 有效非空报告必须生成，百分比先作基线 | 按关键模块缺口补用例后再决定门槛 |
