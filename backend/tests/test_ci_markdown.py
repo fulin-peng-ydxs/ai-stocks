@@ -237,12 +237,17 @@ def test_api_and_permission_tree_changes_select_their_browser_groups(known_chang
     assert {item["suite"] for item in plan["include"] if item["kind"] == "e2e"} == expected
 
 
-def test_push_pr_and_final_status_remain_present_for_lightweight_changes():
+def test_pr_only_change_trigger_preserves_audit_manual_entry_and_final_status():
     import yaml
 
     workflow = yaml.safe_load((ci.ROOT / ".github/workflows/ci.yml").read_text())
     triggers = workflow.get("on", workflow.get(True))
-    assert triggers["push"] is None and triggers["pull_request"] is None
+    assert set(triggers) == {"pull_request", "schedule", "workflow_dispatch"}
+    assert triggers["pull_request"] is None
+    assert triggers["schedule"] == [{"cron": "0 21 * * *"}]
+    assert set(triggers["workflow_dispatch"]["inputs"]) == {
+        "suite", "scale_stocks", "base_revision",
+    }
     result = workflow["jobs"]["result"]
     assert result["if"] == "always()" and set(result["needs"]) == {"plan", "checks"}
     install = next(step for step in result["steps"] if step.get("name") == "Install locked result validation dependencies")
