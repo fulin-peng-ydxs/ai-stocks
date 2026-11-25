@@ -61,8 +61,10 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
             preserveActiveBar: Boolean,
             enableReturnMeasurement: Boolean,
             enableAdjustModeSwitch: Boolean,
+            showKlineTooltip: Boolean,
+            rangeDays: Number,
           },
-          emits: ['barClick', 'update:adjustMode'],
+          emits: ['barClick', 'update:adjustMode', 'update:rangeDays', 'activeBarChange', 'measurementSummaryChange', 'quoteWindowChange'],
           template: '<button class="stock-chart-workspace-stub" @click="$emit(\'barClick\', \'2026-08-07\')" />',
         },
         StockIntradayDialog: { name: 'StockIntradayDialog', props: ['modelValue', 'code', 'name', 'tradeDate'], emits: ['update:modelValue'], template: '<div class="intraday-dialog-stub" :data-open="modelValue" :data-date="tradeDate" />' },
@@ -147,6 +149,50 @@ describe('StockAnalysisPanel', () => {
       name: '平安银行',
       tradeDate: '2026-08-07',
     })
+  })
+
+  it('K线行情常驻头部并联动光标和测算，范围由图表抽屉回传而不重复请求行情', async () => {
+    const wrapper = mountPanel({ mode: 'kline' })
+    await flushPromises()
+    const workspace = wrapper.findComponent({ name: 'StockChartWorkspace' })
+    const quote = () => wrapper.get('[data-testid="stock-analysis-quote"]')
+    expect(quote().text()).toContain('10.50')
+    expect(workspace.props('showKlineTooltip')).toBe(false)
+    expect(workspace.props('rangeDays')).toBe(120)
+    expect(wrapper.find('kline-range-select-stub').exists()).toBe(false)
+    const requests = vi.mocked(stockApi.getBars).mock.calls.length
+
+    workspace.vm.$emit('activeBarChange', { ...bar, date: '2026-08-06', close: 9.5 })
+    workspace.vm.$emit('measurementSummaryChange', { label: '截止涨幅', value: '+4.00%', tone: 'up' })
+    await flushPromises()
+    expect(quote().text()).toContain('9.50')
+    expect(quote().text()).toContain('+4.00%')
+    expect(wrapper.get('[data-testid="stock-analysis-header"]').text()).toContain('2026-08-06')
+    workspace.vm.$emit('activeBarChange', null)
+    workspace.vm.$emit('measurementSummaryChange', null)
+    await flushPromises()
+    expect(quote().text()).toContain('10.50')
+    expect(quote().text()).not.toContain('+4.00%')
+    expect(stockApi.getBars).toHaveBeenCalledTimes(requests)
+    workspace.vm.$emit('update:rangeDays', 250)
+    expect(wrapper.emitted('update:klineRange')).toEqual([[250]])
+    wrapper.unmount()
+  })
+
+  it('没有可用行情时保留范围恢复入口，重新加载成功后收回图表抽屉', async () => {
+    vi.mocked(stockApi.getBars).mockResolvedValueOnce({ code: '000001.SZ', name: '平安银行', adjust: 'qfq', bars: [] })
+    const wrapper = mountPanel({ mode: 'kline' })
+    await flushPromises()
+    const recovery = wrapper.findComponent({ name: 'KlineRangeSelect' })
+    expect(recovery.props('testId')).toBe('stock-analysis-kline-range-recovery')
+    recovery.vm.$emit('update:modelValue', 250)
+    expect(wrapper.emitted('update:klineRange')).toEqual([[250]])
+    expect(wrapper.find('[data-testid="stock-analysis-quote"]').exists()).toBe(false)
+    await wrapper.setProps({ klineRange: 250 })
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'KlineRangeSelect' }).exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stock-analysis-quote"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('加载统一市场日历，并将 30/60 日指标切换作为页面会话事件发出', async () => {

@@ -176,7 +176,8 @@ test.describe('板块行情工作台', () => {
       await expect(page.getByRole('heading', { name: boards[3]!.name })).toBeVisible({
         timeout: 20_000,
       })
-      await expect(page.getByTestId('sector-detail-range')).toContainText('近 120 日')
+      await expect(page.getByLabel('板块指数 K 线与量能联动工作区')
+        .locator('.stock-chart-panel__range')).toHaveText('近 120 日')
       const chartSection = page.getByTestId('sector-detail-chart-section')
       const memberSection = page.getByTestId('sector-detail-member-section')
       await expect(chartSection).toBeVisible()

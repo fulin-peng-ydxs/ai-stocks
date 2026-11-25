@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { baseParse, type ElementNode, type TemplateChildNode } from '@vue/compiler-dom'
 import { parse as parseSfc } from '@vue/compiler-sfc'
+import { designContracts } from '../../../scripts/design-source.mjs'
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url))
 const FRONTEND_DIR = join(TEST_DIR, '../../..')
@@ -66,7 +67,14 @@ function floatingContractViolations(source: string, file: string): string[] {
     }
     if (tag === 'app-select' || selects.has(tag)) {
       const width = valueOf(node, 'width')
-      if (width && !['compact', 'short', 'medium', 'long', 'wide', 'fill'].includes(width)) {
+      // 与容量门禁共用精确适配器登记，不在测试中再维护一份动态宽度白名单。
+      const declaredWidthBinding = designContracts.styleRoles.some(role => role.bindings?.some(binding => (
+        binding.file === file && binding.name === 'width'
+        && binding.tag.replaceAll('-', '').toLowerCase() === node.tag.replaceAll('-', '').toLowerCase()
+        && binding.reason?.trim() && hasBound(node, 'width', binding.expression)
+      )))
+      if (width && !['compact', 'short', 'medium', 'long', 'wide', 'fill'].includes(width)
+        && !declaredWidthBinding) {
         violations.push(`${where}: semantic width`)
       }
       if (/(?:^|;)\s*(?:min-|max-)?width\s*:\s*[\d.]+(?:px|rem|em)\b/.test(valueOf(node, 'style') ?? '')) {
@@ -519,6 +527,10 @@ describe('字体与间距设计契约', () => {
     expect(violations.some((item) => item.endsWith(': semantic width'))).toBe(true)
     expect(violations.some((item) => item.endsWith(': inline fixed width'))).toBe(true)
     expect(violations.some((item) => item.endsWith(': compound option popper-class'))).toBe(true)
+    expect(floatingContractViolations('<template><AppSelect :width="width" /></template>',
+      'components/KlineRangeSelect.vue')).toEqual([])
+    expect(floatingContractViolations('<template><AppSelect :width="privateWidth" /></template>',
+      'components/KlineRangeSelect.vue').some(item => item.endsWith(': semantic width'))).toBe(true)
   })
 
   it('指数单选复用 AppSelect 与语义容量，宽度由业务组件持有', () => {

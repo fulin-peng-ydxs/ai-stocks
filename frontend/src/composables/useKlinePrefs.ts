@@ -6,6 +6,11 @@ import { useUserPreference } from './useUserPreference'
 const STORAGE_KEY = 'ai-stocks:kline-prefs'
 export const ALL_DAYS = 99999 // “全部”范围哨兵值
 
+/** 范围选择器与收起后的图表标题共用同一文案。 */
+export function klineRangeLabel(days: number): string {
+  return days === ALL_DAYS ? '全部' : `近 ${days} 日`
+}
+
 interface KlinePrefs {
   periods: number[] // 可配置的快捷范围（交易日），升序去重
   includeAll: boolean // 是否提供“全部”选项
@@ -72,8 +77,8 @@ export function useKlinePrefs() {
   const prefState = preference()
   const state = prefState.value
   const options = computed(() => {
-    const opts = state.periods.map((d) => ({ value: d, label: `近 ${d} 日` }))
-    if (state.includeAll) opts.push({ value: ALL_DAYS, label: '全部' })
+    const opts = state.periods.map((d) => ({ value: d, label: klineRangeLabel(d) }))
+    if (state.includeAll) opts.push({ value: ALL_DAYS, label: klineRangeLabel(ALL_DAYS) })
     return opts
   })
   // 归一后的默认范围：默认值被删除/失效时回退到首个可用项

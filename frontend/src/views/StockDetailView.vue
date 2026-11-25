@@ -50,7 +50,6 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
-import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import MarketDetailHero from '@/components/MarketDetailHero.vue'
 import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
 import StockGroupFavoriteButton from '@/components/StockGroupFavoriteButton.vue'
@@ -59,6 +58,7 @@ import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vu
 import { MACD_INDICATOR_FIELDS, formatIndicatorValue } from '@/components/stock-chart/indicatorFields'
 import StockIntradayDialog from '@/components/stock-chart/StockIntradayDialog.vue'
 import StockQuoteSummary from '@/components/stock-chart/StockQuoteSummary.vue'
+import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import {
   buildKlineQuoteSummary,
   formatShares,
@@ -1297,8 +1297,10 @@ onBeforeUnmount(() => {
           >
             <template #actions>
               <KlineRangeSelect
+                v-if="!barsLoading && !bars.length && !barsPermissionDenied"
                 v-model="viewDays"
-                test-id="stock-detail-range"
+                test-id="stock-detail-range-recovery"
+                aria-label="调整无数据的K线范围"
               />
               <AppIconButton
                 v-if="hasAuxiliaryContent"
@@ -1323,6 +1325,8 @@ onBeforeUnmount(() => {
               <StockChartWorkspace
                 embedded
                 class="detail-chart-workspace"
+                v-model:range-days="viewDays"
+                range-test-id="stock-detail-range"
                 :bars="displayBars"
                 :warmup-bars="warmupBars"
                 :indicators="chartIndicatorRows"

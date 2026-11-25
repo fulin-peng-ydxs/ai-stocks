@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import SettingsGroup from '@/components/SettingsGroup.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 
 defineProps<{
   label: string
@@ -7,12 +7,12 @@ defineProps<{
 </script>
 
 <template>
-  <SettingsGroup
-    :title="label"
-    :level="1"
-    :collapsible="false"
+  <PageSettingItem
+    :label="label"
     class="chart-operation-group"
+    role="group"
+    :aria-label="label"
   >
     <slot />
-  </SettingsGroup>
+  </PageSettingItem>
 </template>
